@@ -1,0 +1,8 @@
+# config.yml for Cloudflare Tunnel
+tunnel: 2e1669ce-b51e-4b21-858e-c4d79ff1f45a
+credentials-file: /etc/cloudflared/webhook-tunnel.json
+
+ingress:
+  - hostname: webhook.28042000.xyz
+    service: http://localhost:5000
+  - service: http_status:404
