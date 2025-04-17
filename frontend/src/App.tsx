@@ -26,6 +26,7 @@ import Purchases from './pages/admin/Purchases';
 import AdminSettings from './pages/admin/AdminSettings';
 import { AccountProvider } from './contexts/AccountContext';
 import AccessibilityMenu from './components/AccessibilityMenu';
+import CookieConsent from './components/CookieConsent';
 
 function App() {
   useEffect(() => {
@@ -67,6 +68,7 @@ function App() {
                 </Route>
               </Routes>
               <AccessibilityMenu />
+              <CookieConsent />
             </SearchProvider>
           </EventProvider>
         </UserProvider>
