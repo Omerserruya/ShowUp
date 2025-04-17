@@ -11,7 +11,8 @@ import MenuItem from '@mui/material/MenuItem';
 import Drawer from '@mui/material/Drawer';
 import MenuIcon from '@mui/icons-material/Menu';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
-import ColorModeIconDropdown from '../shared-theme/ColorModeIconDropdown';
+import { useNavigate } from 'react-router-dom';
+import ColorModeIconDropdown from '../components/ColorModeIconDropdown';
 import Logo from './Logo';
 
 const StyledToolbar = styled(Toolbar)(({ theme }: { theme: Theme & { vars?: any } }) => ({
@@ -39,9 +40,18 @@ const menuItems = [
 export default function AppAppBar() {
   const [open, setOpen] = React.useState(false);
   const [mode, setMode] = React.useState<'light' | 'dark' | 'system'>('light');
+  const navigate = useNavigate();
 
   const toggleDrawer = (newOpen: boolean) => () => {
     setOpen(newOpen);
+  };
+
+  const handleLoginClick = () => {
+    navigate('/login');
+  };
+
+  const handleRegisterClick = () => {
+    navigate('/register');
   };
 
   return (
@@ -79,6 +89,7 @@ export default function AppAppBar() {
               color="primary" 
               variant="outlined" 
               size="small"
+              onClick={handleLoginClick}
               sx={{
                 borderWidth: 2,
                 '&:hover': {
@@ -88,10 +99,15 @@ export default function AppAppBar() {
             >
               התחברות
             </Button>
-            <Button color="primary" variant="contained" size="small">
+            <Button 
+              color="primary" 
+              variant="contained" 
+              size="small"
+              onClick={handleRegisterClick}
+            >
               הרשמה
             </Button>
-            <ColorModeIconDropdown mode={mode} onChange={setMode} />
+            <ColorModeIconDropdown mode={mode} onChange={setMode} size="small" />
           </Box>
           <Box sx={{ display: { xs: 'flex', md: 'none' }, gap: 1 }}>
             <ColorModeIconDropdown size="medium" />
@@ -148,6 +164,7 @@ export default function AppAppBar() {
                     color="primary" 
                     variant="outlined" 
                     fullWidth
+                    onClick={handleLoginClick}
                     sx={{
                       borderWidth: 2,
                       '&:hover': {
@@ -157,7 +174,12 @@ export default function AppAppBar() {
                   >
                     התחברות
                   </Button>
-                  <Button color="primary" variant="contained" fullWidth>
+                  <Button 
+                    color="primary" 
+                    variant="contained" 
+                    fullWidth
+                    onClick={handleRegisterClick}
+                  >
                     הרשמה
                   </Button>
                 </Box>

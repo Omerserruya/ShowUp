@@ -6,6 +6,7 @@ import Link from '@mui/material/Link';
 import IconButton from '@mui/material/IconButton';
 import LinkedInIcon from '@mui/icons-material/LinkedIn';
 import TwitterIcon from '@mui/icons-material/X';
+import { Link as RouterLink } from 'react-router-dom';
 import Logo from './Logo';
 
 function Copyright() {
@@ -131,10 +132,30 @@ export default function Footer() {
           <Typography variant="body2" fontWeight={600}>
             משפטי
           </Typography>
-          <Link color="text.secondary" href="#">
+          <Link 
+            component={RouterLink} 
+            to="/terms" 
+            color="text.secondary" 
+            sx={{ 
+              textDecoration: 'none', 
+              '&:hover': { 
+                textDecoration: 'underline' 
+              } 
+            }}
+          >
             תנאי שימוש
           </Link>
-          <Link color="text.secondary" href="#">
+          <Link 
+            component={RouterLink} 
+            to="/privacy" 
+            color="text.secondary" 
+            sx={{ 
+              textDecoration: 'none', 
+              '&:hover': { 
+                textDecoration: 'underline' 
+              } 
+            }}
+          >
             מדיניות פרטיות
           </Link>
         </Box>
@@ -150,6 +171,36 @@ export default function Footer() {
         }}
       >
         <Copyright />
+        <Box sx={{ display: 'flex', gap: 3 }}>
+          <Link 
+            component={RouterLink} 
+            to="/terms" 
+            color="text.secondary" 
+            sx={{ 
+              fontSize: '0.875rem',
+              textDecoration: 'none', 
+              '&:hover': { 
+                textDecoration: 'underline' 
+              } 
+            }}
+          >
+            תנאי שימוש
+          </Link>
+          <Link 
+            component={RouterLink} 
+            to="/privacy" 
+            color="text.secondary" 
+            sx={{ 
+              fontSize: '0.875rem',
+              textDecoration: 'none', 
+              '&:hover': { 
+                textDecoration: 'underline' 
+              } 
+            }}
+          >
+            מדיניות פרטיות
+          </Link>
+        </Box>
       </Box>
     </Container>
   );

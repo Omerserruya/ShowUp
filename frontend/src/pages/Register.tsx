@@ -14,8 +14,11 @@ import {
   IconButton,
   Divider,
   Card,
+  Checkbox,
+  FormControlLabel,
+  FormHelperText,
 } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import PersonAddOutlinedIcon from '@mui/icons-material/PersonAddOutlined';
 import GoogleIcon from '@mui/icons-material/Google';
 import FacebookIcon from '@mui/icons-material/Facebook';
@@ -28,6 +31,15 @@ interface RegisterFormData {
   email: string;
   password: string;
   confirmPassword: string;
+  agreedToTerms: boolean;
+}
+
+interface FormErrors {
+  username?: string;
+  email?: string;
+  password?: string;
+  confirmPassword?: string;
+  agreedToTerms?: string;
 }
 
 const StyledCard = styled(Card)(({ theme }: { theme: Theme }) => ({
@@ -47,8 +59,9 @@ const Register = () => {
     email: '',
     password: '',
     confirmPassword: '',
+    agreedToTerms: false,
   });
-  const [errors, setErrors] = useState<Partial<RegisterFormData>>({});
+  const [errors, setErrors] = useState<FormErrors>({});
   const [loading, setLoading] = useState(false);
   const [snackbar, setSnackbar] = useState({
     open: false,
@@ -57,7 +70,7 @@ const Register = () => {
   });
 
   const validateForm = () => {
-    const newErrors: Partial<RegisterFormData> = {};
+    const newErrors: FormErrors = {};
     if (!formData.username) {
       newErrors.username = 'שם משתמש הוא שדה חובה';
     }
@@ -73,6 +86,9 @@ const Register = () => {
     }
     if (formData.password !== formData.confirmPassword) {
       newErrors.confirmPassword = 'הסיסמאות אינן תואמות';
+    }
+    if (!formData.agreedToTerms) {
+      newErrors.agreedToTerms = 'עליך להסכים לתנאי השימוש ולמדיניות הפרטיות';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -236,6 +252,35 @@ const Register = () => {
                     error={!!errors.confirmPassword}
                     helperText={errors.confirmPassword}
                   />
+                </Grid>
+                <Grid item xs={12}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={formData.agreedToTerms}
+                        onChange={(e) =>
+                          setFormData({ ...formData, agreedToTerms: e.target.checked })
+                        }
+                        name="agreedToTerms"
+                        color="primary"
+                      />
+                    }
+                    label={
+                      <Box component="span" sx={{ fontSize: '0.875rem' }}>
+                        אני מאשר שקראתי ואני מסכים ל-
+                        <Link component={RouterLink} to="/terms" target="_blank">
+                          תנאי השימוש
+                        </Link>
+                        {' '}ו-
+                        <Link component={RouterLink} to="/privacy" target="_blank">
+                          מדיניות הפרטיות
+                        </Link>
+                      </Box>
+                    }
+                  />
+                  {errors.agreedToTerms && (
+                    <FormHelperText error>{errors.agreedToTerms}</FormHelperText>
+                  )}
                 </Grid>
               </Grid>
 

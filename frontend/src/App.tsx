@@ -17,6 +17,8 @@ import Seating from './pages/Seating';
 import Profile from './pages/Profile';
 import About from './pages/About';
 import Settings from './pages/Settings';
+import Terms from './pages/Terms';
+import Privacy from './pages/Privacy';
 import Users from './pages/admin/Users';
 import Events from './pages/admin/Events';
 import Purchases from './pages/admin/Purchases';
@@ -41,6 +43,8 @@ function App() {
                 <Route path="/register" element={<Register />} />
                 <Route path="/oauth/callback" element={<OAuthCallback />} />
                 <Route path="/" element={<MarketingPage />} />
+                <Route path="/terms" element={<Terms />} />
+                <Route path="/privacy" element={<Privacy />} />
                 
                 {/* Main routes */}
                 <Route element={<Layout />}>

@@ -1,11 +1,10 @@
 import * as React from 'react';
-import Accordion from '@mui/material/Accordion';
-import AccordionDetails from '@mui/material/AccordionDetails';
-import AccordionSummary from '@mui/material/AccordionSummary';
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
-import Link from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
+import Accordion from '@mui/material/Accordion';
+import AccordionSummary from '@mui/material/AccordionSummary';
+import AccordionDetails from '@mui/material/AccordionDetails';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 export default function FAQ() {
@@ -42,9 +41,9 @@ export default function FAQ() {
           textAlign: { sm: 'left', md: 'center' },
         }}
       >
-        Frequently asked questions
+        שאלות נפוצות
       </Typography>
-      <Box sx={{ width: '100%' }}>
+      <Box sx={{ width: '100%', direction: 'rtl' }}>
         <Accordion
           expanded={expanded.includes('panel1')}
           onChange={handleChange('panel1')}
@@ -55,7 +54,7 @@ export default function FAQ() {
             id="panel1d-header"
           >
             <Typography component="span" variant="subtitle2">
-              How do I contact customer support if I have a question or issue?
+              ❓האם אתם באמת שולחים הודעות בוואטסאפ ולא SMS?
             </Typography>
           </AccordionSummary>
           <AccordionDetails>
@@ -64,10 +63,7 @@ export default function FAQ() {
               gutterBottom
               sx={{ maxWidth: { sm: '100%', md: '70%' } }}
             >
-              You can reach our customer support team by emailing&nbsp;
-              <Link href="mailto:support@email.com">support@email.com</Link>
-              &nbsp;or calling our toll-free number. We&apos;re here to assist you
-              promptly.
+              בהחלט. המערכת שלנו מבוססת על WhatsApp Business API – ההודעות מגיעות מיידית וישירות.
             </Typography>
           </AccordionDetails>
         </Accordion>
@@ -81,7 +77,7 @@ export default function FAQ() {
             id="panel2d-header"
           >
             <Typography component="span" variant="subtitle2">
-              Can I return the product if it doesn&apos;t meet my expectations?
+              ❓אני לא מבין בטכנולוגיה – איך מגדירים את האירוע?
             </Typography>
           </AccordionSummary>
           <AccordionDetails>
@@ -90,9 +86,7 @@ export default function FAQ() {
               gutterBottom
               sx={{ maxWidth: { sm: '100%', md: '70%' } }}
             >
-              Absolutely! We offer a hassle-free return policy. If you&apos;re not
-              completely satisfied, you can return the product within [number of
-              days] days for a full refund or exchange.
+              קל מאוד. כל מה שצריך זה למלא טופס קצר – ואת השאר אנחנו עושים.
             </Typography>
           </AccordionDetails>
         </Accordion>
@@ -106,7 +100,7 @@ export default function FAQ() {
             id="panel3d-header"
           >
             <Typography component="span" variant="subtitle2">
-              What makes your product stand out from others in the market?
+              ❓אפשר לשנות את רשימת האורחים אחרי ההגדרה?
             </Typography>
           </AccordionSummary>
           <AccordionDetails>
@@ -115,9 +109,7 @@ export default function FAQ() {
               gutterBottom
               sx={{ maxWidth: { sm: '100%', md: '70%' } }}
             >
-              Our product distinguishes itself through its adaptability, durability,
-              and innovative features. We prioritize user satisfaction and
-              continually strive to exceed expectations in every aspect.
+              בוודאי. ניתן לעדכן, למחוק ולהוסיף אורחים בכל שלב.
             </Typography>
           </AccordionDetails>
         </Accordion>
@@ -131,7 +123,7 @@ export default function FAQ() {
             id="panel4d-header"
           >
             <Typography component="span" variant="subtitle2">
-              Is there a warranty on the product, and what does it cover?
+              ❓כמה הודעות נשלחות לאורח?
             </Typography>
           </AccordionSummary>
           <AccordionDetails>
@@ -140,10 +132,30 @@ export default function FAQ() {
               gutterBottom
               sx={{ maxWidth: { sm: '100%', md: '70%' } }}
             >
-              Yes, our product comes with a [length of warranty] warranty. It covers
-              defects in materials and workmanship. If you encounter any issues
-              covered by the warranty, please contact our customer support for
-              assistance.
+              ברירת מחדל היא 3: הזמנה, תזכורת, ותזכורת שנייה – ניתן לשנות את זה בכל חבילה.
+            </Typography>
+          </AccordionDetails>
+        </Accordion>
+        <Accordion
+          expanded={expanded.includes('panel5')}
+          onChange={handleChange('panel5')}
+        >
+          <AccordionSummary
+            expandIcon={<ExpandMoreIcon />}
+            aria-controls="panel5d-content"
+            id="panel5d-header"
+          >
+            <Typography component="span" variant="subtitle2">
+              ❓האם השירות תומך באירועים באנגלית?
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Typography
+              variant="body2"
+              gutterBottom
+              sx={{ maxWidth: { sm: '100%', md: '70%' } }}
+            >
+              כן. ניתן להגדיר שפה של ההודעות, כולל אנגלית, רוסית, ערבית ועוד.
             </Typography>
           </AccordionDetails>
         </Accordion>

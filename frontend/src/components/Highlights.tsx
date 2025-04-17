@@ -5,113 +5,132 @@ import Container from '@mui/material/Container';
 import Grid from '@mui/material/Grid';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
-import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded';
-import ConstructionRoundedIcon from '@mui/icons-material/ConstructionRounded';
-import QueryStatsRoundedIcon from '@mui/icons-material/QueryStatsRounded';
-import SettingsSuggestRoundedIcon from '@mui/icons-material/SettingsSuggestRounded';
-import SupportAgentRoundedIcon from '@mui/icons-material/SupportAgentRounded';
-import ThumbUpAltRoundedIcon from '@mui/icons-material/ThumbUpAltRounded';
+import WhatsAppIcon from '@mui/icons-material/WhatsApp';
+import TrackChangesIcon from '@mui/icons-material/TrackChanges';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import ChatIcon from '@mui/icons-material/Chat';
+import EditIcon from '@mui/icons-material/Edit';
+import EventIcon from '@mui/icons-material/Event';
+import { styled } from '@mui/material/styles';
 
 const items = [
   {
-    icon: <SettingsSuggestRoundedIcon />,
-    title: 'Adaptable performance',
+    icon: <WhatsAppIcon />,
+    title: 'שליחת הודעות וואטסאפ אוטומטיות',
     description:
-      'Our product effortlessly adjusts to your needs, boosting efficiency and simplifying your tasks.',
+      'תזמון הודעות אישור הגעה ישירות לאורחים – בלי כאבי ראש, בלי לשכוח.',
+    color: '#4CAF50', // Green
   },
   {
-    icon: <ConstructionRoundedIcon />,
-    title: 'Built to last',
+    icon: <TrackChangesIcon />,
+    title: 'מעקב אחר אישורי הגעה בזמן אמת',
     description:
-      'Experience unmatched durability that goes above and beyond with lasting investment.',
+      'רואים מי קיבל, מי פתח, מי לחץ, ומי עדיין מתעלם 😉 – הכל בדשבורד פשוט.',
+    color: '#2196F3', // Blue
   },
   {
-    icon: <ThumbUpAltRoundedIcon />,
-    title: 'Great user experience',
+    icon: <CloudUploadIcon />,
+    title: 'ייבוא אורחים בקלות דרך אקסל או וואטסאפ',
     description:
-      'Integrate our product into your routine with an intuitive and easy-to-use interface.',
+      'מעלים קובץ או שולחים את אנשי הקשר לבוט שלנו – אנחנו כבר נוסיף אותם אוטומטית.',
+    color: '#FF9800', // Orange
   },
   {
-    icon: <AutoFixHighRoundedIcon />,
-    title: 'Innovative functionality',
+    icon: <ChatIcon />,
+    title: 'ניהול שיחה עם אורחים בצורת צ\'אט מרוכז',
     description:
-      'Stay ahead with features that set new standards, addressing your evolving needs better than the rest.',
+      'כל התשובות של האורחים – במקום אחד. בלי להסתובב בין הודעות.',
+    color: '#E91E63', // Pink
   },
   {
-    icon: <SupportAgentRoundedIcon />,
-    title: 'Reliable support',
+    icon: <EditIcon />,
+    title: 'התאמה אישית של הודעות ההזמנה',
     description:
-      'Count on our responsive customer support, offering assistance that goes beyond the purchase.',
+      'כותבים בדיוק מה שמתאים לכם – עם שם, פרטים, לינק ומיתוג אישי.',
+    color: '#673AB7', // Deep Purple
   },
   {
-    icon: <QueryStatsRoundedIcon />,
-    title: 'Precision in every detail',
+    icon: <EventIcon />,
+    title: 'מותאם לאירועים פרטיים ועסקיים',
     description:
-      'Enjoy a meticulously crafted product where small touches make a significant impact on your overall experience.',
+      'חתונות, בריתות, ימי הולדת, כנסים – תפעול חלק ונעים לכל סוג של אירוע.',
+    color: '#009688', // Teal
   },
 ];
+
+const StyledCard = styled(Card)(({ theme }) => ({
+  padding: theme.spacing(4),
+  display: 'flex',
+  flexDirection: 'column',
+  height: '100%',
+  transition: 'transform 0.2s',
+  transform: 'scale(0.98)',
+  '&:hover': {
+    transform: 'translateY(-8px) scale(0.98)',
+    boxShadow: theme.shadows[4],
+  },
+}));
+
+const FeatureIcon = styled(Box)(({ color }) => ({
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  marginBottom: '16px',
+  '& svg': {
+    fontSize: 40,
+    color: color,
+  },
+}));
 
 export default function Highlights() {
   return (
     <Box
       id="highlights"
       sx={{
-        pt: { xs: 4, sm: 12 },
+        pt: { xs: 6, sm: 12 },
         pb: { xs: 8, sm: 16 },
-        color: 'white',
-        bgcolor: 'grey.900',
+        color: 'text.primary',
+        bgcolor: 'background.paper',
       }}
     >
-      <Container
-        sx={{
-          position: 'relative',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: { xs: 3, sm: 6 },
-        }}
-      >
+      <Container maxWidth="lg">
         <Box
           sx={{
             width: { sm: '100%', md: '60%' },
-            textAlign: { sm: 'left', md: 'center' },
+            textAlign: 'center',
+            mx: 'auto',
+            mb: 6,
+            direction: 'rtl',
           }}
         >
-          <Typography component="h2" variant="h4" gutterBottom>
-            Highlights
+          <Typography component="h2" variant="h3" gutterBottom>
+            במה אנחנו מיוחדים?
           </Typography>
-          <Typography variant="body1" sx={{ color: 'grey.400' }}>
-            Explore why our product stands out: adaptability, durability,
-            user-friendly design, and innovation. Enjoy reliable customer support and
-            precision in every detail.
+          <Typography variant="h6" sx={{ color: 'text.secondary' }}>
+            לא משנה אם זה אירוע משפחתי קטן או כנס גדול – אצלנו תקבלו מערכת פשוטה, חכמה ויעילה שמרכזת את כל מה שצריך כדי לדאוג שכולם יגיעו – ויידעו על זה בזמן.
           </Typography>
         </Box>
-        <Grid container spacing={2}>
+        <Grid container spacing={5}>
           {items.map((item, index) => (
-            <Grid xs={12} sm={6} md={4} key={index}>
-              <Stack
-                direction="column"
-                component={Card}
-                spacing={1}
-                useFlexGap
-                sx={{
-                  color: 'inherit',
-                  p: 3,
-                  height: '100%',
-                  borderColor: 'hsla(220, 25%, 25%, 0.3)',
-                  backgroundColor: 'grey.800',
+            <Grid item xs={12} sm={6} md={4} key={index}>
+              <StyledCard
+                elevation={2}
+                sx={{ 
+                  direction: 'rtl',
+                  textAlign: 'right',
+                  borderTop: `4px solid ${item.color}`,
                 }}
               >
-                <Box sx={{ opacity: '50%' }}>{item.icon}</Box>
-                <div>
-                  <Typography gutterBottom sx={{ fontWeight: 'medium' }}>
-                    {item.title}
-                  </Typography>
-                  <Typography variant="body2" sx={{ color: 'grey.400' }}>
-                    {item.description}
-                  </Typography>
-                </div>
-              </Stack>
+                <FeatureIcon color={item.color}>
+                  {item.icon}
+                </FeatureIcon>
+                <Typography gutterBottom variant="h5" sx={{ fontWeight: 'medium', mb: 2 }}>
+                  {item.title}
+                </Typography>
+                <Typography variant="body1" sx={{ color: 'text.secondary', mb: 2 }}>
+                  {item.description}
+                </Typography>
+              </StyledCard>
             </Grid>
           ))}
         </Grid>
