@@ -11,21 +11,14 @@ import { useColorScheme } from '@mui/material/styles';
 
 interface ColorModeIconDropdownProps {
   size?: 'small' | 'medium' | 'large';
-  mode?: 'light' | 'dark' | 'system';
-  onChange?: (mode: 'light' | 'dark' | 'system') => void;
 }
 
 export default function ColorModeIconDropdown({ 
   size = 'medium',
-  mode: controlledMode,
-  onChange: controlledOnChange
 }: ColorModeIconDropdownProps) {
-  const { mode: contextMode, setMode: contextSetMode } = useColorScheme();
+  const { mode, setMode } = useColorScheme();
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
-
-  const mode = controlledMode ?? contextMode;
-  const setMode = controlledOnChange ?? contextSetMode;
 
   const handleClick = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -49,6 +42,7 @@ export default function ColorModeIconDropdown({
         aria-controls={open ? 'color-mode-menu' : undefined}
         aria-haspopup="true"
         aria-expanded={open ? 'true' : undefined}
+        color="inherit"
       >
         {mode === 'light' ? <LightModeIcon /> : mode === 'dark' ? <DarkModeIcon /> : <ComputerIcon />}
       </IconButton>
@@ -61,19 +55,19 @@ export default function ColorModeIconDropdown({
         transformOrigin={{ horizontal: 'right', vertical: 'top' }}
         anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
       >
-        <MenuItem onClick={() => handleModeChange('light')}>
+        <MenuItem onClick={() => handleModeChange('light')} selected={mode === 'light'}>
           <ListItemIcon>
             <LightModeIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>מצב בהיר</ListItemText>
         </MenuItem>
-        <MenuItem onClick={() => handleModeChange('dark')}>
+        <MenuItem onClick={() => handleModeChange('dark')} selected={mode === 'dark'}>
           <ListItemIcon>
             <DarkModeIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>מצב כהה</ListItemText>
         </MenuItem>
-        <MenuItem onClick={() => handleModeChange('system')}>
+        <MenuItem onClick={() => handleModeChange('system')} selected={mode === 'system'}>
           <ListItemIcon>
             <ComputerIcon fontSize="small" />
           </ListItemIcon>

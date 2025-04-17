@@ -12,8 +12,10 @@ import Drawer from '@mui/material/Drawer';
 import MenuIcon from '@mui/icons-material/Menu';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { useNavigate } from 'react-router-dom';
+import { useColorScheme } from '@mui/material/styles';
 import ColorModeIconDropdown from '../components/ColorModeIconDropdown';
 import Logo from './Logo';
+import Typography from '@mui/material/Typography';
 
 const StyledToolbar = styled(Toolbar)(({ theme }: { theme: Theme & { vars?: any } }) => ({
   display: 'flex',
@@ -39,8 +41,8 @@ const menuItems = [
 
 export default function AppAppBar() {
   const [open, setOpen] = React.useState(false);
-  const [mode, setMode] = React.useState<'light' | 'dark' | 'system'>('light');
   const navigate = useNavigate();
+  const { mode, setMode } = useColorScheme();
 
   const toggleDrawer = (newOpen: boolean) => () => {
     setOpen(newOpen);
@@ -107,7 +109,7 @@ export default function AppAppBar() {
             >
               הרשמה
             </Button>
-            <ColorModeIconDropdown mode={mode} onChange={setMode} size="small" />
+            <ColorModeIconDropdown size="small" />
           </Box>
           <Box sx={{ display: { xs: 'flex', md: 'none' }, gap: 1 }}>
             <ColorModeIconDropdown size="medium" />
@@ -182,6 +184,12 @@ export default function AppAppBar() {
                   >
                     הרשמה
                   </Button>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
+                    מצב תצוגה
+                  </Typography>
+                  <ColorModeIconDropdown size="small" />
                 </Box>
               </Box>
             </Drawer>

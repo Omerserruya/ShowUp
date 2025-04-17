@@ -19,11 +19,13 @@ import About from './pages/About';
 import Settings from './pages/Settings';
 import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
+import AccessibilityStatement from './pages/AccessibilityStatement';
 import Users from './pages/admin/Users';
 import Events from './pages/admin/Events';
 import Purchases from './pages/admin/Purchases';
 import AdminSettings from './pages/admin/AdminSettings';
 import { AccountProvider } from './contexts/AccountContext';
+import AccessibilityMenu from './components/AccessibilityMenu';
 
 function App() {
   useEffect(() => {
@@ -45,6 +47,7 @@ function App() {
                 <Route path="/" element={<MarketingPage />} />
                 <Route path="/terms" element={<Terms />} />
                 <Route path="/privacy" element={<Privacy />} />
+                <Route path="/accessibility" element={<AccessibilityStatement />} />
                 
                 {/* Main routes */}
                 <Route element={<Layout />}>
@@ -63,6 +66,7 @@ function App() {
                   <Route path="/admin/settings" element={<AdminSettings />} />
                 </Route>
               </Routes>
+              <AccessibilityMenu />
             </SearchProvider>
           </EventProvider>
         </UserProvider>

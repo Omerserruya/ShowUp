@@ -8,6 +8,7 @@ import LinkedInIcon from '@mui/icons-material/LinkedIn';
 import TwitterIcon from '@mui/icons-material/X';
 import { Link as RouterLink } from 'react-router-dom';
 import Logo from './Logo';
+import AccessibilityNewIcon from '@mui/icons-material/AccessibilityNew';
 
 function Copyright() {
   return (
@@ -158,6 +159,23 @@ export default function Footer() {
           >
             מדיניות פרטיות
           </Link>
+          <Link 
+            component={RouterLink} 
+            to="/accessibility" 
+            color="text.secondary" 
+            sx={{ 
+              textDecoration: 'none', 
+              '&:hover': { 
+                textDecoration: 'underline' 
+              },
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5
+            }}
+          >
+            <AccessibilityNewIcon fontSize="small" />
+            הצהרת נגישות
+          </Link>
         </Box>
       </Box>
       <Box
@@ -199,6 +217,24 @@ export default function Footer() {
             }}
           >
             מדיניות פרטיות
+          </Link>
+          <Link 
+            component={RouterLink} 
+            to="/accessibility" 
+            color="text.secondary" 
+            sx={{ 
+              fontSize: '0.875rem',
+              textDecoration: 'none', 
+              '&:hover': { 
+                textDecoration: 'underline' 
+              },
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5
+            }}
+          >
+            <AccessibilityNewIcon sx={{ fontSize: '1rem' }} />
+            הצהרת נגישות
           </Link>
         </Box>
       </Box>

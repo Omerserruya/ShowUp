@@ -53,13 +53,27 @@ const theme = extendTheme({
   },
 });
 
+// Add smooth transition for theme switching
+const themeWithTransitions = {
+  ...theme,
+  components: {
+    MuiCssBaseline: {
+      styleOverrides: {
+        body: {
+          transition: 'background-color 0.3s, color 0.3s',
+        },
+      },
+    },
+  },
+};
+
 interface ThemeProviderProps {
   children: React.ReactNode;
 }
 
 const ThemeProvider = ({ children }: ThemeProviderProps) => {
   return (
-    <CssVarsProvider theme={theme} defaultMode="system">
+    <CssVarsProvider theme={themeWithTransitions} defaultMode="light" modeStorageKey="show-up-color-scheme">
       <CssBaseline />
       {children}
     </CssVarsProvider>

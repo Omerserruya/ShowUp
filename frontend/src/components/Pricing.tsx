@@ -99,7 +99,9 @@ const FeaturesBox = styled(Box)(({ theme }) => ({
 
 export default function Pricing() {
   return (
-    <Box sx={{ py: 8, bgcolor: 'background.paper' }}>
+    <Box 
+    id="pricing"
+    sx={{ py: 8, bgcolor: 'background.paper' }}>
       <Container maxWidth="lg">
         <Typography variant="h3" align="center" gutterBottom>
           אז כמה זה בסך הכול?
