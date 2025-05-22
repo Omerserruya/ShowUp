@@ -42,7 +42,6 @@ function Layout() {
         {/* Page Content */}
         <Box sx={{ 
           flexGrow: 1,
-          maxWidth: '1100px',
           width: '100%',
           margin: '0',
           mt: 2,

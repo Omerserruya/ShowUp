@@ -54,7 +54,7 @@ export default function FAQ() {
             id="panel1d-header"
           >
             <Typography component="span" variant="subtitle2">
-              ❓האם אתם באמת שולחים הודעות בוואטסאפ ולא SMS?
+              האם אתם באמת שולחים הודעות בוואטסאפ ולא SMS?
             </Typography>
           </AccordionSummary>
           <AccordionDetails>
@@ -77,7 +77,7 @@ export default function FAQ() {
             id="panel2d-header"
           >
             <Typography component="span" variant="subtitle2">
-              ❓אני לא מבין בטכנולוגיה – איך מגדירים את האירוע?
+              אני לא מבין בטכנולוגיה – איך מגדירים את האירוע?
             </Typography>
           </AccordionSummary>
           <AccordionDetails>
@@ -100,7 +100,7 @@ export default function FAQ() {
             id="panel3d-header"
           >
             <Typography component="span" variant="subtitle2">
-              ❓אפשר לשנות את רשימת האורחים אחרי ההגדרה?
+              אפשר לשנות את רשימת האורחים אחרי ההגדרה?
             </Typography>
           </AccordionSummary>
           <AccordionDetails>
@@ -123,7 +123,7 @@ export default function FAQ() {
             id="panel4d-header"
           >
             <Typography component="span" variant="subtitle2">
-              ❓כמה הודעות נשלחות לאורח?
+              כמה הודעות נשלחות לאורח?
             </Typography>
           </AccordionSummary>
           <AccordionDetails>
@@ -146,7 +146,7 @@ export default function FAQ() {
             id="panel5d-header"
           >
             <Typography component="span" variant="subtitle2">
-              ❓האם השירות תומך באירועים באנגלית?
+              האם השירות תומך באירועים באנגלית?
             </Typography>
           </AccordionSummary>
           <AccordionDetails>

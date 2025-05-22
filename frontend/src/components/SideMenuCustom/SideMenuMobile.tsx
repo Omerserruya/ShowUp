@@ -15,7 +15,7 @@ interface SideMenuMobileProps {
 
 
 function SideMenuMobile({ open, toggleDrawer }: SideMenuMobileProps) {
-  const { setUser } = useUser();
+  const { setUser, user } = useUser();
 
 const handleLogout = async () => {
   try {
@@ -60,7 +60,7 @@ const handleLogout = async () => {
             direction="row"
             sx={{ gap: 1, alignItems: 'center', flexGrow: 1, p: 1 }}
           >
-            <UserAvatar />
+            <UserAvatar username={user?.username || 'Guest'} />
           </Stack>
         </Stack>
         <Divider />

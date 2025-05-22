@@ -1,9 +1,8 @@
 import React from 'react';
-import { Avatar, Stack, Typography, Box } from '@mui/material';
-import { useUser } from '../contexts/UserContext';
+import { Avatar, Box, Typography } from '@mui/material';
 
 interface UserAvatarProps {
-    username?: string;
+    username: string;
     avatarUrl?: string;
     size?: number;
     showUsername?: boolean;
@@ -11,67 +10,54 @@ interface UserAvatarProps {
 }
 
 export default function UserAvatar({ 
-    username: propUsername, 
-    avatarUrl: propAvatarUrl,
+    username, 
+    avatarUrl, 
     size = 40, 
     showUsername = true,
     userFromProps = false 
 }: UserAvatarProps) {
-    const { user } = useUser();
-    
-    // Use props if provided, otherwise use user from context
-    const username = userFromProps ? propUsername : user?.username;
-    const avatarUrl = userFromProps ? propAvatarUrl : user?.avatarUrl;
-
-    // Get initials from username
-    const getInitials = (name: string | undefined) => {
-        if (!name) return 'G';
-        
+    const getInitials = (name: string) => {
         return name
             .split(' ')
-            .map(word => word[0])
+            .map(part => part[0])
             .join('')
-            .toUpperCase();
+            .toUpperCase()
+            .slice(0, 2);
     };
 
-    // If not showing username, just render the Avatar
-    if (!showUsername) {
-        return (
-            <Avatar 
-                src={avatarUrl || ""}
-                sx={{ 
-                    width: size, 
-                    height: size,
-                    bgcolor: '#9e9e9e', // Consistent gray color
-                    fontSize: `${size * 0.4}px`,
-                    fontWeight: 'medium'
-                }}
-            >
-                {getInitials(username)}
-            </Avatar>
-        );
-    }
+    const getRandomColor = (name: string) => {
+        const colors = [
+            '#f44336', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5',
+            '#2196f3', '#03a9f4', '#00bcd4', '#009688', '#4caf50',
+            '#8bc34a', '#cddc39', '#ffc107', '#ff9800', '#ff5722'
+        ];
+        
+        let hash = 0;
+        for (let i = 0; i < name.length; i++) {
+            hash = name.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        
+        return colors[Math.abs(hash) % colors.length];
+    };
 
-    // If showing username, render Avatar with text
     return (
-        <Stack direction="row" spacing={2} alignItems="center" sx={{ width: 'fit-content' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Avatar 
-                src={avatarUrl || ""}
+                src={avatarUrl}
                 sx={{ 
                     width: size, 
                     height: size,
-                    bgcolor: '#9e9e9e', // Consistent gray color
-                    fontSize: `${size * 0.4}px`,
-                    fontWeight: 'medium'
+                    bgcolor: getRandomColor(username),
+                    fontSize: `${size * 0.4}px`
                 }}
             >
-                {getInitials(username)}
+                {!avatarUrl && getInitials(username)}
             </Avatar>
-            {(
-                <Box>
-                    <Typography variant="subtitle2">{username || 'Guest Name'}</Typography>
-                </Box>
+            {showUsername && (
+                <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                    {username}
+                </Typography>
             )}
-        </Stack>
+                </Box>
     );
 }

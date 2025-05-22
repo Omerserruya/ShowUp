@@ -1,22 +1,24 @@
-import Stack from '@mui/material/Stack';
-import OptionsMenu from '../OptionsMenu';
+import React from 'react';
+import { Box } from '@mui/material';
 import UserAvatar from '../UserAvatar';
-import Box from '@mui/material/Box';
+import OptionsMenu from '../OptionsMenu';
+import { useUser } from '../../contexts/UserContext';
 
-export default function UserCard(){
+export default function UserCard() {
+  const { user } = useUser();
+
     return (
-        <Stack
-        direction="row"
+    <Box
         sx={{
-          p: 2,
-          gap: 1,
+        display: 'flex',
           alignItems: 'center',
+        p: 2
         }}
       >
-       <UserAvatar />
+      <UserAvatar username={user?.username || 'Guest'} />
         <Box sx={{ ml: 'auto' }}>  {/* Box to push OptionsMenu to the right */}
           <OptionsMenu />
         </Box>
-      </Stack>
-    )
+    </Box>
+  );
 }

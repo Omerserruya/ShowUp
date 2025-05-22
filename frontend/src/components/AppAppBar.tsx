@@ -34,7 +34,7 @@ const StyledToolbar = styled(Toolbar)(({ theme }: { theme: Theme & { vars?: any 
 }));
 
 const menuItems = [
-  { title: 'תכונות', href: '#features' },
+  { title: 'תכונות', href: '#highlights' },
   { title: 'תעריפים', href: '#pricing' },
   { title: 'שאלות נפוצות', href: '#faq' },
 ];

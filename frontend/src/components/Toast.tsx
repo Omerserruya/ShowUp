@@ -1,31 +1,31 @@
 import React from 'react';
-import { Snackbar, Alert, AlertProps } from '@mui/material';
+import { Snackbar, Alert, AlertColor } from '@mui/material';
 
 interface ToastProps {
   open: boolean;
   message: string;
-  severity: AlertProps['severity'];
+  severity?: AlertColor;
   onClose: () => void;
+  autoHideDuration?: number;
 }
 
-const Toast: React.FC<ToastProps> = ({ open, message, severity, onClose }) => {
+export default function Toast({ 
+  open, 
+  message, 
+  severity = 'info', 
+  onClose,
+  autoHideDuration = 3000 
+}: ToastProps) {
   return (
     <Snackbar
       open={open}
-      autoHideDuration={6000}
+      autoHideDuration={autoHideDuration}
       onClose={onClose}
-      anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
     >
-      <Alert
-        onClose={onClose}
-        severity={severity}
-        variant="filled"
-        sx={{ width: '100%' }}
-      >
+      <Alert onClose={onClose} severity={severity} sx={{ width: '100%' }}>
         {message}
       </Alert>
     </Snackbar>
   );
-};
-
-export default Toast; 
+} 
