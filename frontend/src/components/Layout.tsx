@@ -44,10 +44,7 @@ function Layout() {
           flexGrow: 1,
           width: '100%',
           margin: '0',
-          mt: 2,
-          pl: 10,
-          pr: 3,
-          pb: 3
+
         }}>
           <Outlet />
         </Box>

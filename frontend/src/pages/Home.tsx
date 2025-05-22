@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Typography, Box, Grid, Button, CircularProgress } from '@mui/material';
+import React from 'react';
+import { Typography, Box, Button } from '@mui/material';
 import { useUser } from '../contexts/UserContext';
 import { useAccount } from '../contexts/AccountContext';
 import AddIcon from '@mui/icons-material/Add';
-
 
 const Home = () => {
   const { user } = useUser();
@@ -14,17 +13,14 @@ const Home = () => {
       {/* Welcome Section */}
       <Box sx={{ mb: 4 }}>
         <Typography variant="h4" gutterBottom>
-          Welcome back, {user?.username || 'User'}!
+          ברוך הבא, {user?.username || 'משתמש'}!
         </Typography>
         <Typography variant="subtitle1" color="text.secondary" gutterBottom>
-          Stay updated with the latest in tech
-        </Typography>
-        <Typography variant="subtitle1" color="text.secondary" gutterBottom>
-          Current account: {account?.name || 'No account selected'}
+          חשבון נוכחי: {account?.name || 'לא נבחר חשבון'}
         </Typography>
       </Box>
 
-      {/* Tech Talk Section */}
+      {/* Quick Actions Section */}
       <Box 
         sx={{ 
           mb: 4, 
@@ -38,10 +34,10 @@ const Home = () => {
         }}
       >
         <Typography variant="h5" gutterBottom>
-          Tech Talk
+          פעולות מהירות
         </Typography>
         <Typography variant="body1" paragraph>
-          Join the conversation about the latest technologies, share your insights, and learn from others.
+          ניהול אירועים, הזמנות אורחים, ושליחת הודעות - הכל במקום אחד.
         </Typography>
         <Button 
           variant="contained" 
@@ -53,15 +49,11 @@ const Home = () => {
             }
           }}
           startIcon={<AddIcon />}
-          onClick={() => alert('Coming soon!')}
+          onClick={() => window.location.href = '/events/new'}
         >
-          Create Post
+          צור אירוע חדש
         </Button>
       </Box>
-
-    
-
-
     </Box>
   );
 };

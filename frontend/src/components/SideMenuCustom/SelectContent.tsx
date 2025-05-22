@@ -12,9 +12,7 @@ import { styled } from '@mui/material/styles';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
-import { AddAccountDialog } from '../AccountConnection';
 import { AWSConnection } from '../../types/awsConnection';
-import api from '../../utils/api';
 import { useAccount } from '../../contexts/AccountContext';
 import { fetchAwsConnections as fetchAwsConnectionsApi, createAwsConnection } from '../../api/awsConnectionApi';
 
@@ -210,11 +208,7 @@ export default function SelectContent() {
         </Select>
       </Box>
 
-      <AddAccountDialog
-        open={isAddDialogOpen}
-        onClose={() => setIsAddDialogOpen(false)}
-        onSubmit={handleAddAccount}
-      />
+
     </>
   );
 }

@@ -15,8 +15,6 @@ import Guests from './pages/Guests';
 import Messages from './pages/Messages';
 import Seating from './pages/Seating';
 import Profile from './pages/Profile';
-import About from './pages/About';
-import Settings from './pages/Settings';
 import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
 import AccessibilityStatement from './pages/AccessibilityStatement';
@@ -57,8 +55,6 @@ function App() {
                   <Route path="/messages" element={<Messages />} />
                   <Route path="/seating" element={<Seating />} />
                   <Route path="/profile" element={<Profile />} />
-                  <Route path="/about" element={<About />} />
-                  <Route path="/settings" element={<Settings />} />
                   
                   {/* Admin routes */}
                   <Route path="/admin/users" element={<Users />} />

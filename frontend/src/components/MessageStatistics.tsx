@@ -1,3 +1,4 @@
+import React from 'react';
 import { Box, Typography, Card, CardContent } from '@mui/material';
 import { 
   BarChart, 
@@ -9,6 +10,7 @@ import {
   ResponsiveContainer,
   Legend
 } from 'recharts';
+import { MessageStats } from '../mocks/overviewData';
 
 interface MessageData {
   name: string;
@@ -18,10 +20,11 @@ interface MessageData {
 }
 
 interface MessageStatisticsProps {
+  stats: MessageStats;
   maxWidth?: string | number;
 }
 
-const MessageStatistics: React.FC<MessageStatisticsProps> = ({ maxWidth = '100%' }) => {
+const MessageStatistics: React.FC<MessageStatisticsProps> = ({ stats, maxWidth = '100%' }) => {
   // Mock data for the message statistics
   const messageStats: MessageData[] = [
     {
@@ -137,84 +140,119 @@ const MessageStatistics: React.FC<MessageStatisticsProps> = ({ maxWidth = '100%'
 
   return (
     <Box sx={{ width: '100%', maxWidth, mx: 'auto' }}>
-      <Card sx={{ 
-        boxShadow: '0 4px 20px rgba(0,0,0,0.03)', 
-        borderRadius: '16px',
-        overflow: 'hidden',
-        bgcolor: '#FCFCFC'
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="h6" gutterBottom>
+          סה"כ הודעות: {stats.total}
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          נשלחו: {stats.sent} | ממתינות: {stats.pending} | נכשלו: {stats.failed}
+        </Typography>
+      </Box>
+
+      <Box sx={{ 
+        display: 'flex', 
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        gap: 2
       }}>
-        <CardContent sx={{ p: { xs: 2, md: 3 } }}>
-          <Typography 
-            variant="subtitle1" 
-            component="h3" 
-            sx={{ 
-              mb: 3, 
-              fontWeight: 500, 
-              textAlign: 'center', 
-              color: '#777' 
-            }}
-          >
-            סטטיסטיקת הודעות
+        <Box sx={{ flex: 1 }}>
+          <Typography variant="subtitle2" gutterBottom>
+            סטטוס הודעות
           </Typography>
-          
-          <Box sx={{ width: '100%', height: 320 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={messageStats}
-                margin={{ top: 5, right: 30, left: 30, bottom: 40 }}
-                barSize={26}
-                barGap={4}
-              >
-                <CartesianGrid 
-                  strokeDasharray="3 3" 
-                  vertical={true} 
-                  horizontal={true} 
-                  stroke="rgba(0,0,0,0.04)" 
-                />
-                <XAxis 
-                  dataKey="name" 
-                  tick={{ fontSize: 12, fill: '#777' }}
-                  axisLine={{ stroke: 'rgba(0,0,0,0.07)' }}
-                  tickLine={{ stroke: 'rgba(0,0,0,0.07)' }}
-                  dy={10}
-                />
-                <YAxis 
-                  axisLine={{ stroke: 'rgba(0,0,0,0.07)' }}
-                  tickLine={{ stroke: 'rgba(0,0,0,0.07)' }}
-                  tick={{ fontSize: 12, fill: '#777' }}
-                />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend 
-                  content={<CustomLegend />} 
-                  verticalAlign="bottom" 
-                  height={50}
-                />
-                <Bar 
-                  dataKey="opened" 
-                  name="נפתחו" 
-                  fill={colors.opened}
-                  radius={[5, 5, 0, 0]} 
-                  stackId="a"
-                />
-                <Bar 
-                  dataKey="notOpened" 
-                  name="לא נפתחו" 
-                  fill={colors.notOpened}
-                  radius={[5, 5, 0, 0]} 
-                  stackId="a"
-                />
-                <Bar 
-                  dataKey="failed" 
-                  name="נכשלו בשליחה" 
-                  fill={colors.failed}
-                  radius={[5, 5, 0, 0]} 
-                  stackId="a"
-                />
-              </BarChart>
-            </ResponsiveContainer>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <Typography variant="body2">
+              נשלחו: {stats.sent}
+            </Typography>
+            <Typography variant="body2">
+              ממתינות: {stats.pending}
+            </Typography>
+            <Typography variant="body2">
+              נכשלו: {stats.failed}
+            </Typography>
           </Box>
-        </CardContent>
-      </Card>
+        </Box>
+      </Box>
+
+      <Box sx={{ width: '100%', maxWidth, mx: 'auto' }}>
+        <Card sx={{ 
+          boxShadow: '0 4px 20px rgba(0,0,0,0.03)', 
+          borderRadius: '16px',
+          overflow: 'hidden',
+          bgcolor: '#FCFCFC'
+        }}>
+          <CardContent sx={{ p: { xs: 2, md: 3 } }}>
+            <Typography 
+              variant="subtitle1" 
+              component="h3" 
+              sx={{ 
+                mb: 3, 
+                fontWeight: 500, 
+                textAlign: 'center', 
+                color: '#777' 
+              }}
+            >
+              סטטיסטיקת הודעות
+            </Typography>
+            
+            <Box sx={{ width: '100%', height: 320 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={messageStats}
+                  margin={{ top: 5, right: 30, left: 30, bottom: 40 }}
+                  barSize={26}
+                  barGap={4}
+                >
+                  <CartesianGrid 
+                    strokeDasharray="3 3" 
+                    vertical={true} 
+                    horizontal={true} 
+                    stroke="rgba(0,0,0,0.04)" 
+                  />
+                  <XAxis 
+                    dataKey="name" 
+                    tick={{ fontSize: 12, fill: '#777' }}
+                    axisLine={{ stroke: 'rgba(0,0,0,0.07)' }}
+                    tickLine={{ stroke: 'rgba(0,0,0,0.07)' }}
+                    dy={10}
+                  />
+                  <YAxis 
+                    axisLine={{ stroke: 'rgba(0,0,0,0.07)' }}
+                    tickLine={{ stroke: 'rgba(0,0,0,0.07)' }}
+                    tick={{ fontSize: 12, fill: '#777' }}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend 
+                    content={<CustomLegend />} 
+                    verticalAlign="bottom" 
+                    height={50}
+                  />
+                  <Bar 
+                    dataKey="opened" 
+                    name="נפתחו" 
+                    fill={colors.opened}
+                    radius={[5, 5, 0, 0]} 
+                    stackId="a"
+                  />
+                  <Bar 
+                    dataKey="notOpened" 
+                    name="לא נפתחו" 
+                    fill={colors.notOpened}
+                    radius={[5, 5, 0, 0]} 
+                    stackId="a"
+                  />
+                  <Bar 
+                    dataKey="failed" 
+                    name="נכשלו בשליחה" 
+                    fill={colors.failed}
+                    radius={[5, 5, 0, 0]} 
+                    stackId="a"
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </Box>
+          </CardContent>
+        </Card>
+      </Box>
     </Box>
   );
 };

@@ -36,7 +36,7 @@ import {
   Add as AddIcon,
   Save as SaveIcon,
   Cancel as CancelIcon,
-  ViewModule as ViewModuleIcon,
+  PictureAsPdf as PictureAsPdfIcon,
   Search as SearchIcon,
   FilterList as FilterListIcon,
   Edit as EditIcon,
@@ -56,93 +56,8 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-// Types
-interface Guest {
-  _id: string;
-  name: string;
-  status: 'pending' | 'confirmed' | 'declined' | 'maybe';
-  group?: string;
-  assignedSeat?: string;
-}
-
-interface Table {
-  id: string;
-  name: string;
-  seats: number;
-  style: 'round' | 'row' | 'square';
-  side: 'bride' | 'groom';
-  position: { x: number; y: number };
-  size: { width: number; height: number };
-  seatAssignments: { [key: string]: string }; // seat index -> guest id
-}
-
-// Mock data
-const mockGuests: Guest[] = [
-  { _id: '1', name: 'ישראל ישראלי', status: 'confirmed', group: 'משפחת כהן' },
-  { _id: '2', name: 'שרה כהן', status: 'pending', group: 'חברים' },
-  { _id: '3', name: 'דוד לוי', status: 'declined', group: 'משפחת כהן' },
-  { _id: '4', name: 'רחל אברהם', status: 'maybe', group: 'חברים' },
-  { _id: '5', name: 'יעקב יעקובי', status: 'confirmed', group: 'משפחת כהן' },
-  { _id: '6', name: 'מרים לוי', status: 'confirmed', group: 'משפחת כהן' },
-  { _id: '7', name: 'אברהם כהן', status: 'confirmed', group: 'חברים' },
-  { _id: '8', name: 'רחל יעקובי', status: 'pending', group: 'חברים' },
-  { _id: '9', name: 'משה לוי', status: 'confirmed', group: 'משפחת כהן' },
-  { _id: '10', name: 'שרה יעקובי', status: 'maybe', group: 'חברים' },
-  { _id: '11', name: 'דוד כהן', status: 'confirmed', group: 'משפחת כהן' },
-  { _id: '12', name: 'רחל לוי', status: 'pending', group: 'חברים' },
-  { _id: '13', name: 'יעקב כהן', status: 'confirmed', group: 'משפחת כהן' },
-  { _id: '14', name: 'מרים יעקובי', status: 'confirmed', group: 'חברים' },
-  { _id: '15', name: 'אברהם לוי', status: 'maybe', group: 'משפחת כהן' },
-];
-
-const mockTables: Table[] = [
-  {
-    id: '1',
-    name: 'שולחן 1',
-    seats: 8,
-    style: 'round',
-    side: 'bride',
-    position: { x: 100, y: 100 },
-    size: { width: 200, height: 200 },
-    seatAssignments: {},
-  },
-  {
-    id: '2',
-    name: 'שולחן 2',
-    seats: 8,
-    style: 'round',
-    side: 'groom',
-    position: { x: 400, y: 100 },
-    size: { width: 200, height: 200 },
-    seatAssignments: {},
-  },
-  {
-    id: '3',
-    name: 'שולחן 3',
-    seats: 8,
-    style: 'row',
-    side: 'bride',
-    position: { x: 100, y: 400 },
-    size: { width: 300, height: 150 },
-    seatAssignments: {},
-  },
-];
-
-// Status colors
-const statusColors = {
-  pending: '#f57c00',
-  confirmed: '#2e7d32',
-  declined: '#c62828',
-  maybe: '#1976d2',
-} as const;
-
-// Status labels
-const statusLabels = {
-  pending: 'ממתין',
-  confirmed: 'אישר',
-  declined: 'ביטל',
-  maybe: 'אולי',
-} as const;
+// Import types and mock data
+import { Guest, Table, mockGuests, mockTables, statusColors, statusLabels } from '../mocks/guestData';
 
 // Update DraggableGuest component
 const DraggableGuest = ({ guest }: { guest: Guest }) => {
@@ -329,7 +244,7 @@ const TableNode = ({ data }: { data: { table: Table; guests: Guest[]; onSeatClic
           <Tooltip title={assignedGuest.name}>
             <Typography variant="caption" sx={{ color: 'white' }}>
               {index + 1}
-      </Typography>
+            </Typography>
           </Tooltip>
         )}
       </Box>
@@ -656,130 +571,172 @@ export default function Seating() {
     }
   };
 
+  const handleExportPDF = () => {
+    // TODO: Implement PDF export
+    console.log('Exporting to PDF...');
+  };
+
   return (
-    <Box sx={{ p: 3, height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* Top Toolbar */}
-      <Stack 
-        direction="row" 
-        spacing={2} 
-        alignItems="center"
-        sx={{ mb: 3 }}
-      >
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={handleAddTable}
-        >
-          הוסף שולחן
-        </Button>
-        <Button
-          variant="contained"
-          startIcon={<SaveIcon />}
-          onClick={() => {/* TODO: Implement save */}}
-        >
-          שמור שינויים
-        </Button>
-        <Button
-          variant="outlined"
-          startIcon={<CancelIcon />}
-          onClick={() => {/* TODO: Implement cancel */}}
-        >
-          בטל
-        </Button>
-        <Button
-          variant="outlined"
-          startIcon={<ViewModuleIcon />}
-          onClick={() => setViewMode(prev => prev === 'edit' ? 'view' : 'edit')}
-        >
-          שנה תצוגה
-        </Button>
-      </Stack>
-
-      {/* Main Content */}
-      <Box sx={{ display: 'flex', flex: 1, gap: 2 }}>
-        {/* Canvas Area */}
-        <Paper 
-          sx={{ 
-            flex: 1, 
-            position: 'relative',
-            overflow: 'hidden',
-            backgroundColor: '#f5f5f5'
+    <Box sx={{ 
+      position: 'relative',
+      width: '100%',
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column'
+    }}>
+      {/* Canvas Area - Fill Available Space */}
+      <Box sx={{ 
+        flex: 1,
+        position: 'relative',
+        backgroundColor: '#f5f5f5',
+        minHeight: 0
+      }}>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeDragStop={onNodeDragStop}
+          nodeTypes={nodeTypes}
+          fitView
+          fitViewOptions={{
+            padding: 1.2,
+            minZoom: 0.3,
+            maxZoom: 2
           }}
+          style={{ width: '100%', height: '100%' }}
         >
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onNodeDragStop={onNodeDragStop}
-            nodeTypes={nodeTypes}
-            fitView
-          >
-            <Background />
-            <Controls />
-          </ReactFlow>
-        </Paper>
-
-        {/* Sidebar */}
-        <Paper sx={{ width: 300, p: 2 }}>
-          <Stack spacing={2}>
-            <TextField
-              fullWidth
-              placeholder="חיפוש אורחים..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon />
-                  </InputAdornment>
-                ),
-              }}
-              size="small"
-            />
-            
-            <FormControl fullWidth size="small">
-              <InputLabel>סטטוס</InputLabel>
-              <Select
-                value={statusFilter}
-                label="סטטוס"
-                onChange={(e) => setStatusFilter(e.target.value)}
-              >
-                <MenuItem value="all">הכל</MenuItem>
-                {Object.entries(statusLabels).map(([value, label]) => (
-                  <MenuItem key={value} value={value}>{label}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <FormControl fullWidth size="small">
-              <InputLabel>קבוצה</InputLabel>
-              <Select
-                value={groupFilter}
-                label="קבוצה"
-                onChange={(e) => setGroupFilter(e.target.value)}
-              >
-                <MenuItem value="all">הכל</MenuItem>
-                <MenuItem value="משפחת כהן">משפחת כהן</MenuItem>
-                <MenuItem value="חברים">חברים</MenuItem>
-              </Select>
-            </FormControl>
-
-            <Divider />
-
-            <Typography variant="subtitle2">אורחים ללא מקום ישיבה</Typography>
-            
-            <Box sx={{ 
-              maxHeight: 'calc(100vh - 300px)',
-              overflow: 'auto'
-            }}>
-              {unseatedGuests.map((guest) => (
-                <DraggableGuest key={guest._id} guest={guest} />
-              ))}
-            </Box>
-          </Stack>
-        </Paper>
+          <Background />
+          <Controls />
+        </ReactFlow>
       </Box>
+
+      {/* Overlay Controls */}
+      <Box sx={{
+        position: 'absolute',
+        top: 16,
+        left: 16,
+        zIndex: 1000,
+        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        backdropFilter: 'blur(8px)',
+        borderRadius: 2,
+        boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+        p: 1
+      }}>
+        <Stack 
+          direction="row" 
+          spacing={1} 
+          alignItems="center"
+        >
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={handleAddTable}
+            size="small"
+          >
+            הוסף שולחן
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<SaveIcon />}
+            onClick={() => {/* TODO: Implement save */}}
+            size="small"
+          >
+            שמור שינויים
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<CancelIcon />}
+            onClick={() => {/* TODO: Implement cancel */}}
+            size="small"
+          >
+            בטל
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<PictureAsPdfIcon />}
+            onClick={handleExportPDF}
+            size="small"
+          >
+            ייצוא ל-PDF
+          </Button>
+        </Stack>
+      </Box>
+
+      {/* Sidebar - Overlay */}
+      <Paper sx={{ 
+        position: 'absolute',
+        top: 16, // Align with top controls
+        right: 16,
+        width: 300,
+        p: 2,
+        zIndex: 1000,
+        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        backdropFilter: 'blur(8px)',
+        borderRadius: 2,
+        boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+        maxHeight: 'calc(100% - 32px)', // Account for top margin
+        display: 'flex',
+        flexDirection: 'column'
+      }}>
+        <Stack spacing={2} sx={{ flex: 1, minHeight: 0 }}>
+          <TextField
+            fullWidth
+            placeholder="חיפוש אורחים..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+            }}
+            size="small"
+          />
+          
+          <FormControl fullWidth size="small">
+            <InputLabel>סטטוס</InputLabel>
+            <Select
+              value={statusFilter}
+              label="סטטוס"
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <MenuItem value="all">הכל</MenuItem>
+              {Object.entries(statusLabels).map(([value, label]) => (
+                <MenuItem key={value} value={value}>{label}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl fullWidth size="small">
+            <InputLabel>קבוצה</InputLabel>
+            <Select
+              value={groupFilter}
+              label="קבוצה"
+              onChange={(e) => setGroupFilter(e.target.value)}
+            >
+              <MenuItem value="all">הכל</MenuItem>
+              <MenuItem value="משפחת כהן">משפחת כהן</MenuItem>
+              <MenuItem value="חברים">חברים</MenuItem>
+            </Select>
+          </FormControl>
+
+          <Divider />
+
+          <Typography variant="subtitle2">אורחים ללא מקום ישיבה</Typography>
+          
+          <Box sx={{ 
+            flex: 1,
+            overflow: 'auto',
+            minHeight: 0 // Important for flex child to respect parent height
+          }}>
+            {unseatedGuests.map((guest) => (
+              <DraggableGuest key={guest._id} guest={guest} />
+            ))}
+          </Box>
+        </Stack>
+      </Paper>
 
       {/* Add/Edit Table Modal */}
       <Dialog
@@ -1052,10 +1009,10 @@ export default function Seating() {
                 <Stack spacing={1}>
                   <Typography variant="body1">
                     {guests.find(g => g._id === tables.find(t => t.id === selectedSeat.tableId)?.seatAssignments[selectedSeat.seatIndex.toString()])?.name}
-        </Typography>
+                  </Typography>
                   <Typography variant="body2" color="text.secondary">
                     {guests.find(g => g._id === tables.find(t => t.id === selectedSeat.tableId)?.seatAssignments[selectedSeat.seatIndex.toString()])?.group}
-        </Typography>
+                  </Typography>
                   <Chip
                     label={statusLabels[guests.find(g => g._id === tables.find(t => t.id === selectedSeat.tableId)?.seatAssignments[selectedSeat.seatIndex.toString()])?.status || 'pending']}
                     size="small"
@@ -1065,7 +1022,7 @@ export default function Seating() {
                     }}
                   />
                 </Stack>
-      </Paper>
+              </Paper>
               <Stack direction="row" spacing={2}>
                 <Button
                   variant="outlined"
