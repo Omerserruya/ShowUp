@@ -33,42 +33,12 @@ function App() {
 
   return (
     <ThemeProvider>
-      <AccountProvider>
-        <UserProvider>
-          <EventProvider>
-            <SearchProvider>
-              <ScrollToTop />
-              <Routes>
-                {/* Auth routes */}
-                <Route path="/login" element={<Login />} />
-                <Route path="/register" element={<Register />} />
-                <Route path="/oauth/callback" element={<OAuthCallback />} />
+        <Routes>
                 <Route path="/" element={<MarketingPage />} />
                 <Route path="/terms" element={<Terms />} />
                 <Route path="/privacy" element={<Privacy />} />
                 <Route path="/accessibility" element={<AccessibilityStatement />} />
-                
-                {/* Main routes */}
-                <Route element={<Layout />}>
-                  <Route path="/overview" element={<Overview />} />
-                  <Route path="/guests" element={<Guests />} />
-                  <Route path="/messages" element={<Messages />} />
-                  <Route path="/seating" element={<Seating />} />
-                  <Route path="/profile" element={<Profile />} />
-                  
-                  {/* Admin routes */}
-                  <Route path="/admin/users" element={<Users />} />
-                  <Route path="/admin/events" element={<Events />} />
-                  <Route path="/admin/purchases" element={<Purchases />} />
-                  <Route path="/admin/settings" element={<AdminSettings />} />
-                </Route>
-              </Routes>
-              <AccessibilityMenu />
-              <CookieConsent />
-            </SearchProvider>
-          </EventProvider>
-        </UserProvider>
-      </AccountProvider>
+        </Routes>
     </ThemeProvider>
   );
 }

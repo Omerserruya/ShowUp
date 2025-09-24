@@ -62,6 +62,18 @@ export default function Hero() {
           position: 'relative',
         }}
       >
+        <Typography
+            variant="h2"
+            sx={{
+              fontSize: { xs: '2.5rem', sm: '3rem', md: '4rem' },
+              fontWeight: 700,
+              lineHeight: 1.2,
+              textAlign: 'center',
+              color: 'text.error',
+            }}
+          >
+            אתר דמו בפיתוח
+          </Typography>
         <Box
           sx={{
             display: 'flex',
@@ -71,6 +83,7 @@ export default function Hero() {
             width: '100%',
           }}
         >
+          
           <Box
             sx={{
               display: 'flex',
