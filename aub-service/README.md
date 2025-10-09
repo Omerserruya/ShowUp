@@ -1,6 +1,6 @@
 ## AUB Service
 
-User onboarding/auth via OTP. Persists users in Postgres, issues/verifies OTP with Redis, and publishes OTP messages to RabbitMQ for delivery (e.g., WhatsApp via `outpost-service`).
+User onboarding/auth via OTP. Persists users in Postgres, issues/verifies OTP with Redis, publishes OTP messages to RabbitMQ (e.g., WhatsApp via `outpost-service`), and issues a JWT on successful verification.
 
 ### Environment Variables
 
@@ -21,6 +21,9 @@ User onboarding/auth via OTP. Persists users in Postgres, issues/verifies OTP wi
   - `REDIS_PORT`
 - OTP
   - `OTP_TTL_SEC` (OTP expiration in seconds)
+- JWT
+  - `JWT_SECRET` (HMAC secret used to sign access tokens)
+  - `JWT_EXP_SECONDS` (JWT expiration in seconds)
 - Optional (template hints for message payload)
   - `WHATSAPP_OTP_TEMPLATE` (default template name if set)
   - `WHATSAPP_LANG` (e.g., `en_US`)
@@ -31,9 +34,10 @@ Table `users`:
 - `id` (UUID, PK)
 - `phone` (VARCHAR(20), unique)
 - `email` (VARCHAR(100), nullable)
-- `first_name` (VARCHAR(100), nullable)
-- `last_name` (VARCHAR(100), nullable)
+- `first_name` (VARCHAR(100), NOT NULL)
+- `last_name` (VARCHAR(100), NOT NULL)
 - `is_verified` (BOOLEAN, default false)
+- `last_login` (TIMESTAMP, nullable)
 - `created_at`, `updated_at` (TIMESTAMP)
 
 Table is ensured on demand. If you already have a `users` table without the new columns, migrate it accordingly.
@@ -51,6 +55,7 @@ Table is ensured on demand. If you already have a `users` table without the new 
 
 - POST `/register`
   - Creates a new user. If `phone` already exists → 409 and no OTP is generated.
+  - Requires `first_name` and `last_name`.
   - On success: generates OTP, stores in Redis with TTL=`OTP_TTL_SEC`, enqueues a WhatsApp template message to RabbitMQ.
   - Request example:
     ```json
@@ -76,7 +81,7 @@ Table is ensured on demand. If you already have a `users` table without the new 
     - 404: `{ "error": "user_not_found" }`
 
 - POST `/verify-otp`
-  - Verifies `code` for `phone`. Tracks attempts (max 5) with same TTL as OTP. On success sets `is_verified=true`.
+  - Verifies `code` for `phone`. Tracks attempts (max 5) with same TTL as OTP. On success sets `is_verified=true`, updates `last_login`, and issues a JWT that expires in `JWT_EXP_SECONDS`.
   - Request example:
     ```json
     {
@@ -85,7 +90,7 @@ Table is ensured on demand. If you already have a `users` table without the new 
     }
     ```
   - Responses:
-    - 200: `{ "status": "verified" }`
+    - 200: `{ "access_token": "<jwt>" }`
     - 400: `{ "error": "otp_expired_or_missing" }` or `{ "error": "invalid_code", "attempts": n }`
     - 429: `{ "error": "too_many_attempts" }`
 

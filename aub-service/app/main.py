@@ -5,6 +5,7 @@ import psycopg2
 import redis
 from fastapi import FastAPI, Body
 from fastapi.responses import JSONResponse
+from .token_utils import create_jwt
 
 
 def get_env():
@@ -22,6 +23,7 @@ def get_env():
         "REDIS_HOST": os.getenv("REDIS_HOST"),
         "REDIS_PORT": int(os.getenv("REDIS_PORT")),
         "OTP_TTL_SEC": int(os.getenv("OTP_TTL_SEC")),
+        "JWT_EXP_SECONDS": int(os.getenv("JWT_EXP_SECONDS")),
     }
 
 
@@ -75,9 +77,10 @@ def ensure_users_table(env):
         "id UUID PRIMARY KEY DEFAULT gen_random_uuid(),"
         "phone VARCHAR(20) NOT NULL UNIQUE,"
         "email VARCHAR(100),"
-        "first_name VARCHAR(100),"
-        "last_name VARCHAR(100),"
+        "first_name VARCHAR(100) NOT NULL,"
+        "last_name VARCHAR(100) NOT NULL,"
         "is_verified BOOLEAN NOT NULL DEFAULT FALSE,"
+        "last_login TIMESTAMP NULL,"
         "created_at TIMESTAMP NOT NULL DEFAULT NOW(),"
         "updated_at TIMESTAMP NOT NULL DEFAULT NOW()"
         ")"
@@ -149,6 +152,8 @@ def register(payload: dict = Body(...)):
     last_name = (payload or {}).get("last_name")
     if not phone:
         return JSONResponse(status_code=400, content={"error": "phone is required"})
+    if not first_name or not last_name:
+        return JSONResponse(status_code=400, content={"error": "first_name and last_name are required"})
 
     ensure_users_table(env)
     with psycopg2.connect(
@@ -212,11 +217,14 @@ def verify_otp(payload: dict = Body(...)):
     ) as conn:
         conn.autocommit = True
         with conn.cursor() as cur:
-            cur.execute("UPDATE users SET is_verified = TRUE, updated_at = NOW() WHERE phone = %s", (phone,))
+            cur.execute("UPDATE users SET is_verified = TRUE, last_login = NOW(), updated_at = NOW() WHERE phone = %s", (phone,))
 
     r.delete(_otp_key(phone))
     r.delete(attempts_key)
-    return JSONResponse(status_code=200, content={"status": "verified"})
+
+    # Issue JWT valid for 1 hour
+    token = create_jwt({"sub": phone}, env["JWT_EXP_SECONDS"])
+    return JSONResponse(status_code=200, content={"access_token": token})
 
 
 @app.post("/login")

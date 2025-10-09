@@ -81,6 +81,8 @@ services:
       - OUTPOST_QUEUE_NAME=${OUTPOST_QUEUE_NAME}
       - REDIS_HOST=redis
       - REDIS_PORT=${REDIS_PORT}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXP_SECONDS=${JWT_EXP_SECONDS}
       - OTP_TTL_SEC=${OTP_TTL_SEC}
     depends_on:
       - postgres
