@@ -4,15 +4,17 @@ services:
     image: nginx:alpine
     ports:
       - ${HTTP_PORT}:80  # HTTP port for local development
+    environment:
+      - CORE_SERVICE_URL=${BACKEND_PROTOCOL}://${CORE_SERVICE_HOST}:${CORE_SERVICE_PORT}
+      - AUB_SERVICE_URL=${BACKEND_PROTOCOL}://${AUB_SERVICE_HOST}:${AUB_SERVICE_PORT}/
+      - DOLLAR=$ # To escape $ in envsubst
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf.template
+    command: /bin/sh -c "envsubst < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'"
     depends_on:
       - aub-service
-    environment:
-      - AUB_SERVICE_HOST=${AUB_SERVICE_HOST}
-      - AUB_SERVICE_PORT=${AUB_SERVICE_PORT}
-      - BACKEND_PROTOCOL=${BACKEND_PROTOCOL}
+      - core-service
 
   postgres:
     image: postgres:15
@@ -41,25 +43,28 @@ services:
     volumes:
       - redis_data:/data
   
-  # core-service:
-  #   build:
-  #     context: ./core-service
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - ${CORE_SERVICE_PORT}:5000
-  #   environment:
-  #     - DB_HOST=postgres
-  #     - DB_PORT=${DB_PORT}
-  #     - DB_USER=${DB_USER}
-  #     - DB_PASSWORD=${DB_PASSWORD}
-  #     - DB_NAME=${DB_NAME}
-  #     - RABBITMQ_HOST=rabbitmq
-  #     - RABBITMQ_PORT=${RABBITMQ_PORT}
-  #     - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
-  #     - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
-  #   depends_on:
-  #     - postgres
-  #     - rabbitmq
+  core-service:
+    build:
+      context: .
+      dockerfile: core-service/Dockerfile
+    ports:
+      - ${CORE_SERVICE_PORT}:${CORE_SERVICE_PORT}
+    environment:
+      - PORT=${CORE_SERVICE_PORT}
+      - JWT_SECRET=${JWT_SECRET}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=${RABBITMQ_PORT}
+      - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
+
+    depends_on:
+      - postgres
+      - rabbitmq
 
   # aub-service:
   aub-service:
@@ -67,9 +72,10 @@ services:
       context: ./aub-service
       dockerfile: Dockerfile
     ports:
-      - ${AUB_SERVICE_PORT}:5001
+      - ${AUB_SERVICE_PORT}:${AUB_SERVICE_PORT}
     environment:
-      - DB_HOST=postgres
+      - PORT=${AUB_SERVICE_PORT}
+      - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
@@ -79,14 +85,17 @@ services:
       - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
       - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
       - OUTPOST_QUEUE_NAME=${OUTPOST_QUEUE_NAME}
-      - REDIS_HOST=redis
+      - REDIS_HOST=${REDIS_HOST}
       - REDIS_PORT=${REDIS_PORT}
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXP_SECONDS=${JWT_EXP_SECONDS}
       - OTP_TTL_SEC=${OTP_TTL_SEC}
+      - OTP_QUEUE_NAME=${OTP_QUEUE_NAME}
+
     depends_on:
       - postgres
       - rabbitmq
+      - redis
 
   # outpost-service:
   #   build:

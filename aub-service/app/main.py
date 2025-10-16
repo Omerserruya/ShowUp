@@ -20,6 +20,7 @@ def get_env():
         "RABBITMQ_USER": os.getenv("RABBITMQ_USER"),
         "RABBITMQ_PASSWORD": os.getenv("RABBITMQ_PASSWORD"),
         "RABBITMQ_QUEUE": os.getenv("OUTPOST_QUEUE_NAME"),
+        "OTP_QUEUE_NAME": os.getenv("OTP_QUEUE_NAME"),
         "REDIS_HOST": os.getenv("REDIS_HOST"),
         "REDIS_PORT": int(os.getenv("REDIS_PORT")),
         "OTP_TTL_SEC": int(os.getenv("OTP_TTL_SEC")),
@@ -127,20 +128,13 @@ def _issue_otp(phone: str, ttl_sec: int, env):
 
 
 def _enqueue_otp(phone: str, code: str, env):
+    # Simplified OTP message for OTP queue
     message = {
-        "platform": "WhatsApp",
+        "platform": "WA",
         "recipient": phone,
-        "content": {
-            "template": {
-                "name": os.getenv("WHATSAPP_OTP_TEMPLATE", "otp_template"),
-                "language": {"code": os.getenv("WHATSAPP_LANG", "en_US")},
-                "components": [
-                    {"type": "body", "parameters": [{"type": "text", "text": code}]}
-                ],
-            }
-        },
+        "code": code,
     }
-    publish_to_queue(message, env)
+    publish_to_otp_queue(message, env)
 
 
 @app.post("/register")
@@ -211,19 +205,25 @@ def verify_otp(payload: dict = Body(...)):
         r.setex(attempts_key, ttl, attempts)
         return JSONResponse(status_code=400, content={"error": "invalid_code", "attempts": attempts})
 
-    # success: mark user verified and cleanup keys
+    # success: mark user verified and fetch user_id, then cleanup keys
+    user_id = None
     with psycopg2.connect(
         host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"], password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
     ) as conn:
         conn.autocommit = True
         with conn.cursor() as cur:
             cur.execute("UPDATE users SET is_verified = TRUE, last_login = NOW(), updated_at = NOW() WHERE phone = %s", (phone,))
+            cur.execute("SELECT id FROM users WHERE phone = %s", (phone,))
+            row = cur.fetchone()
+            if row:
+                user_id = str(row[0])
 
     r.delete(_otp_key(phone))
     r.delete(attempts_key)
 
-    # Issue JWT valid for 1 hour
-    token = create_jwt({"sub": phone}, env["JWT_EXP_SECONDS"])
+    # Issue JWT valid for configured duration; include user_id and sub (phone)
+    jwt_payload = {"user_id": user_id, "sub": phone}
+    token = create_jwt(jwt_payload, env["JWT_EXP_SECONDS"])
     return JSONResponse(status_code=200, content={"access_token": token})
 
 
@@ -249,7 +249,7 @@ def login(payload: dict = Body(...)):
     return JSONResponse(status_code=200, content={"status": "otp_sent"})
 
 
-def publish_to_queue(message: dict, env):
+def publish_to_otp_queue(message: dict, env):
     params = pika.ConnectionParameters(
         host=env["RABBITMQ_HOST"],
         port=env["RABBITMQ_PORT"],
@@ -257,11 +257,12 @@ def publish_to_queue(message: dict, env):
     )
     connection = pika.BlockingConnection(params)
     channel = connection.channel()
-    channel.queue_declare(queue=env["RABBITMQ_QUEUE"], durable=True)
+    queue_name = env.get("OTP_QUEUE_NAME")
+    channel.queue_declare(queue=queue_name, durable=True)
     body = json.dumps(message).encode("utf-8")
     channel.basic_publish(
         exchange="",
-        routing_key=env["RABBITMQ_QUEUE"],
+        routing_key=queue_name,
         body=body,
         properties=pika.BasicProperties(delivery_mode=2),
     )
