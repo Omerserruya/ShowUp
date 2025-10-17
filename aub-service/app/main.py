@@ -19,7 +19,6 @@ def get_env():
         "RABBITMQ_PORT": int(os.getenv("RABBITMQ_PORT")),
         "RABBITMQ_USER": os.getenv("RABBITMQ_USER"),
         "RABBITMQ_PASSWORD": os.getenv("RABBITMQ_PASSWORD"),
-        "RABBITMQ_QUEUE": os.getenv("OUTPOST_QUEUE_NAME"),
         "OTP_QUEUE_NAME": os.getenv("OTP_QUEUE_NAME"),
         "REDIS_HOST": os.getenv("REDIS_HOST"),
         "REDIS_PORT": int(os.getenv("REDIS_PORT")),

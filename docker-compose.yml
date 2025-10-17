@@ -3,7 +3,7 @@ services:
   nginx:
     image: nginx:alpine
     ports:
-      - ${HTTP_PORT}:80  # HTTP port for local development
+      - ${HTTP_PORT}:${HTTP_PORT}  # HTTP port for local development
     environment:
       - CORE_SERVICE_URL=${BACKEND_PROTOCOL}://${CORE_SERVICE_HOST}:${CORE_SERVICE_PORT}
       - AUB_SERVICE_URL=${BACKEND_PROTOCOL}://${AUB_SERVICE_HOST}:${AUB_SERVICE_PORT}/
@@ -23,15 +23,15 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
     ports:
-      - ${DB_PORT}:5432
+      - ${DB_PORT}:${DB_PORT}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
 
   rabbitmq:
     image: rabbitmq:3-management
     ports:
-      - ${RABBITMQ_PORT}:5672
-      - ${RABBITMQ_MANAGEMENT_PORT}:15672
+      - ${RABBITMQ_PORT}:${RABBITMQ_PORT}
+      - ${RABBITMQ_MANAGEMENT_PORT}:${RABBITMQ_MANAGEMENT_PORT}
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
@@ -39,10 +39,10 @@ services:
   redis:
     image: redis:alpine
     ports:
-      - ${REDIS_PORT}:6379
+      - ${REDIS_PORT}:${REDIS_PORT}
     volumes:
-      - redis_data:/data
-  
+      - redisdata:/data
+
   core-service:
     build:
       context: .
@@ -57,11 +57,6 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME}
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_PORT=${RABBITMQ_PORT}
-      - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
-      - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
-
     depends_on:
       - postgres
       - rabbitmq
@@ -80,11 +75,10 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME}
-      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_HOST=${RABBITMQ_HOST}
       - RABBITMQ_PORT=${RABBITMQ_PORT}
       - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
       - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
-      - OUTPOST_QUEUE_NAME=${OUTPOST_QUEUE_NAME}
       - REDIS_HOST=${REDIS_HOST}
       - REDIS_PORT=${REDIS_PORT}
       - JWT_SECRET=${JWT_SECRET}
@@ -116,29 +110,28 @@ services:
   #     - rabbitmq
 
 
-  # schedule-service:
-  #   build:
-  #     context: ./schedule-service
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - ${SCHEDULE_SERVICE_PORT}:5004
-  #   environment:
-  #     - DB_HOST=postgres
-  #     - DB_PORT=${DB_PORT}
-  #     - DB_USER=${DB_USER}
-  #     - DB_PASSWORD=${DB_PASSWORD}
-  #     - DB_NAME=${DB_NAME}
-  #     - RABBITMQ_HOST=rabbitmq
-  #     - RABBITMQ_PORT=${RABBITMQ_PORT}
-  #     - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
-  #     - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
-  #   depends_on:
-  #     - postgres
-  #     - rabbitmq
-  #     - core-service
-  #     - aub-service
-  #     - campaign-service
-  #     - outpost-service
+  schedule-service:
+    build:
+      context: ./scheduler-service
+      dockerfile: Dockerfile
+    ports:
+      - ${SCHEDUALE_SERVICE_PORT}:${SCHEDUALE_SERVICE_PORT}
+    environment:
+      - PORT=${SCHEDUALE_SERVICE_PORT}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - RABBITMQ_HOST=${RABBITMQ_HOST}
+      - RABBITMQ_PORT=${RABBITMQ_PORT}
+      - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
+      - CAMPAIGNS_QUEUE=${CAMPAIGNS_QUEUE}
+    depends_on:
+      - postgres
+      - rabbitmq
+
       
   # campaign-worker:
   #   build:
@@ -216,5 +209,5 @@ networks:
   default:
     driver: bridge
 volumes:
-  postgres_data:
-  redis_data:
+  pgdata:
+  redisdata:
