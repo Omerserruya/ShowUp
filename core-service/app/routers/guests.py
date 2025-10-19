@@ -46,7 +46,7 @@ def get_guest(guest_id: uuid.UUID, db: Session = Depends(get_db)):
 
 @router.post("", response_model=Union[GuestOut, List[GuestOut]], status_code=201)
 def create_guests(
-    event_id: Optional[uuid.UUID] = Query(None),
+    event_id: uuid.UUID = Query(...),
     payload: Any = Body(...),
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
@@ -62,29 +62,8 @@ def create_guests(
     else:
         raise HTTPException(status_code=400, detail="Body must be an object or array of objects")
 
-    # Determine event for bulk/normalize
-    normalized_event_id: Optional[uuid.UUID] = event_id
-    if normalized_event_id is None:
-        # Try to infer from first item
-        maybe_id = (items_raw[0] or {}).get("event_id") if items_raw else None
-        if maybe_id:
-            try:
-                normalized_event_id = uuid.UUID(str(maybe_id))
-            except Exception:
-                pass
-
-    if normalized_event_id is None:
-        # For single item without query, require event_id in body
-        if len(items_raw) == 1 and items_raw[0].get("event_id"):
-            try:
-                normalized_event_id = uuid.UUID(str(items_raw[0]["event_id"]))
-            except Exception:
-                raise HTTPException(status_code=422, detail="Invalid event_id format")
-        else:
-            raise HTTPException(status_code=400, detail="event_id is required (query or in each item)")
-
     # AuthZ check once per request
-    event = event_crud.get_event(db, normalized_event_id)
+    event = event_crud.get_event(db, event_id)
     if not event or not event_crud.is_owner(event, user_id):
         raise HTTPException(status_code=404, detail="Event not found or not permitted")
 
@@ -92,7 +71,7 @@ def create_guests(
     valid_items: List[GuestCreate] = []
     for raw in items_raw:
         raw = dict(raw or {})
-        raw["event_id"] = str(normalized_event_id)
+        raw["event_id"] = str(event_id)
         phone = str(raw.get("phone", ""))
         if not validate_phone(phone):
             continue
@@ -107,8 +86,8 @@ def create_guests(
 
     # Decide single vs bulk persistence
     if len(valid_items) == 1:
-        return guest_crud.create_guests_bulk(db, event_id=normalized_event_id, items=valid_items)
-    return guest_crud.create_guests_bulk(db, event_id=normalized_event_id, items=valid_items)
+        return guest_crud.create_guests_bulk(db, event_id=event_id, items=valid_items)
+    return guest_crud.create_guests_bulk(db, event_id=event_id, items=valid_items)
 
 
 @router.post("/bulk", response_model=list[GuestOut])

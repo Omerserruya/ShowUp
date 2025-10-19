@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import uuid
 from typing import List, Optional, Tuple
 import datetime as dt
@@ -8,6 +9,9 @@ from sqlalchemy.orm import Session
 
 from app.models.models import Campaign, Event
 from app.schemas.schemas import CampaignCreate, CampaignUpdate
+
+# Configurable minimum gap between campaigns (in minutes)
+CAMPAIGN_MIN_GAP_MINUTES = int(os.getenv("CAMPAIGN_MIN_GAP_MINUTES"))  # 5 hours = 300 minutes
 
 
 def list_campaigns(
@@ -41,10 +45,10 @@ def create_campaign(db: Session, data: CampaignCreate) -> Campaign:
     if not event:
         raise ValueError("event_id does not exist")
 
-    # Enforce min 5 hours between campaigns for same event
+    # Enforce minimum gap between campaigns for same event
     if data.schedule_time is not None:
-        window_start = data.schedule_time - dt.timedelta(hours=5)
-        window_end = data.schedule_time + dt.timedelta(hours=5)
+        window_start = data.schedule_time - dt.timedelta(minutes=CAMPAIGN_MIN_GAP_MINUTES)
+        window_end = data.schedule_time + dt.timedelta(minutes=CAMPAIGN_MIN_GAP_MINUTES)
         conflict = (
             db.query(Campaign)
             .filter(
@@ -56,7 +60,7 @@ def create_campaign(db: Session, data: CampaignCreate) -> Campaign:
             .first()
         )
         if conflict:
-            raise ValueError("campaign schedule conflicts with another campaign (min 5 hours apart)")
+            raise ValueError(f"campaign schedule conflicts with another campaign (min {CAMPAIGN_MIN_GAP_MINUTES} minutes apart)")
 
     campaign = Campaign(
         event_id=str(data.event_id),
@@ -80,9 +84,9 @@ def update_campaign(db: Session, campaign: Campaign, data: CampaignUpdate) -> Ca
     if data.channel is not None:
         campaign.channel = data.channel
     if data.schedule_time is not None:
-        # enforce 5-hour spacing on update
-        window_start = data.schedule_time - dt.timedelta(hours=5)
-        window_end = data.schedule_time + dt.timedelta(hours=5)
+        # enforce minimum gap spacing on update
+        window_start = data.schedule_time - dt.timedelta(minutes=CAMPAIGN_MIN_GAP_MINUTES)
+        window_end = data.schedule_time + dt.timedelta(minutes=CAMPAIGN_MIN_GAP_MINUTES)
         conflict = (
             db.query(Campaign)
             .filter(
@@ -95,7 +99,7 @@ def update_campaign(db: Session, campaign: Campaign, data: CampaignUpdate) -> Ca
             .first()
         )
         if conflict:
-            raise ValueError("campaign schedule conflicts with another campaign (min 5 hours apart)")
+            raise ValueError(f"campaign schedule conflicts with another campaign (min {CAMPAIGN_MIN_GAP_MINUTES} minutes apart)")
         campaign.schedule_time = data.schedule_time
     if data.status is not None:
         campaign.status = data.status
@@ -134,8 +138,8 @@ def create_campaigns_bulk(db: Session, event_id: uuid.UUID, items: List[Campaign
         )
         # Enforce spacing: check conflicts within DB and within batch
         if c.schedule_time is not None:
-            window_start = c.schedule_time - dt.timedelta(hours=5)
-            window_end = c.schedule_time + dt.timedelta(hours=5)
+            window_start = c.schedule_time - dt.timedelta(minutes=CAMPAIGN_MIN_GAP_MINUTES)
+            window_end = c.schedule_time + dt.timedelta(minutes=CAMPAIGN_MIN_GAP_MINUTES)
             conflict_db = (
                 db.query(Campaign)
                 .filter(
