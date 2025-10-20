@@ -6,9 +6,10 @@ from typing import Dict, Any
 
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from db import connect as db_connect, fetch_guests_for_event, was_message_sent, mark_message_sent
+from db import connect as db_connect, fetch_campaign_by_id, was_message_sent, mark_message_sent
 from mq import connect as mq_connect, publish_outpost
-from templates import TemplateSpec, merge_params, build_whatsapp_template_payload
+from template_registry import get_template_handler
+from templates.handlers import build_params
 
 
 def configure_logging():
@@ -32,49 +33,56 @@ def log_json(logger: logging.Logger, level: int, message: str, **fields):
 OUTPOST_QUEUE = os.getenv("OUTPOST_QUEUE_NAME")
 
 
-def process_campaign(conn, channel, campaign: Dict[str, Any]):
+def process_campaign(conn, channel, campaign_id: str):
     logger = logging.getLogger("worker")
 
-    campaign_id = campaign.get("campaign_id")
-    event_id = campaign.get("event_id")
-    payload = campaign.get("payload", {})
-    template_name = payload.get("template_name") or payload.get("template")
-    template_params = payload.get("params", {})
+    # Fetch campaign data from database
+    campaign_data = fetch_campaign_by_id(conn, campaign_id)
+    if not campaign_data:
+        log_json(logger, logging.ERROR, "Campaign not found", campaign_id=campaign_id)
+        return
 
-    # Define template spec - could be fetched from DB/config later
-    spec = TemplateSpec(
-        name=template_name,
-        required_params=["name"],
-        defaults={}
-    )
+    event_id = str(campaign_data["event_id"])
+    template_name = campaign_data["template"]
 
-    guests = fetch_guests_for_event(conn, event_id)
+    # Get template handler
+    template_handler = get_template_handler(template_name)
+    if not template_handler:
+        log_json(logger, logging.ERROR, "Unknown template handler", campaign_id=campaign_id, template=template_name)
+        return
+
+    # Get guest list from template handler
+    try:
+        guests = template_handler(conn, event_id, campaign_data)
+        log_json(logger, logging.INFO, "Template handler selected guests", campaign_id=campaign_id, template=template_name, guest_count=len(guests))
+    except Exception as e:
+        log_json(logger, logging.ERROR, "Template handler failed", campaign_id=campaign_id, template=template_name, error=str(e))
+        return
+
     sent_count = 0
     failed_count = 0
+    
     for guest in guests:
         guest_id = str(guest["id"]) if isinstance(guest["id"], (str,)) else str(guest["id"])
+        
+        # Check idempotency
         if was_message_sent(conn, campaign_id, guest_id):
             continue
 
-        # Construct parameters per guest
-        params = {**template_params, "name": guest.get("name")}
+        # Build parameters using template-specific logic
         try:
-            merged = merge_params(spec, params)
+            params = build_params(template_name, guest, campaign_data)
         except Exception as e:
             failed_count += 1
-            log_json(logger, logging.ERROR, "Template validation failed", campaign_id=campaign_id, guest_id=guest_id, error=str(e))
+            log_json(logger, logging.ERROR, "Parameter building failed", campaign_id=campaign_id, guest_id=guest_id, error=str(e))
             continue
 
-        # Build outpost message payload (WhatsApp Cloud API)
+        # Build outpost message payload
         message = {
             "platform": "WA",
             "recipient": str(guest.get("phone")),
-            "content": build_whatsapp_template_payload(template_name, merged),
-            "metadata": {
-                "campaign_id": campaign_id,
-                "event_id": event_id,
-                "guest_id": guest_id,
-            },
+            "template": template_name,
+            "parameters": params,
         }
 
         try:
@@ -85,7 +93,7 @@ def process_campaign(conn, channel, campaign: Dict[str, Any]):
             failed_count += 1
             log_json(logger, logging.ERROR, "Failed to enqueue message", campaign_id=campaign_id, guest_id=guest_id, error=str(e))
 
-    log_json(logger, logging.INFO, "Campaign processed", campaign_id=campaign_id, sent=sent_count, failed=failed_count)
+    log_json(logger, logging.INFO, "Campaign processed", campaign_id=campaign_id, template=template_name, sent=sent_count, failed=failed_count)
 
 
 def main():
@@ -107,14 +115,19 @@ def main():
 
     def callback(ch, method, properties, body):
         try:
-            campaign = json.loads(body)
+            message = json.loads(body)
+            campaign_id = message.get("campaign_id")
+            if not campaign_id:
+                log_json(logger, logging.ERROR, "Missing campaign_id in message")
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                return
         except Exception as e:
-            log_json(logger, logging.ERROR, "Invalid campaign JSON", error=str(e))
+            log_json(logger, logging.ERROR, "Invalid message JSON", error=str(e))
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
 
         try:
-            process_campaign(conn, channel, campaign)
+            process_campaign(conn, channel, campaign_id)
             ch.basic_ack(delivery_tag=method.delivery_tag)
         except Exception as e:
             log_json(logger, logging.ERROR, "Campaign processing failed", error=str(e))

@@ -42,6 +42,20 @@ def ensure_schema(conn: psycopg2.extensions.connection):
         )
 
 
+def fetch_campaign_by_id(conn: psycopg2.extensions.connection, campaign_id: str) -> Optional[dict]:
+    """Fetch campaign data by ID."""
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT id, event_id, name, template, channel, schedule_time, status
+            FROM campaigns
+            WHERE id = %s
+            """,
+            (campaign_id,),
+        )
+        return cur.fetchone()
+
+
 def fetch_guests_for_event(conn: psycopg2.extensions.connection, event_id: str) -> Sequence[dict]:
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
