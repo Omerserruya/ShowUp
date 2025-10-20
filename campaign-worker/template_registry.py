@@ -12,7 +12,7 @@ TEMPLATE_HANDLERS = {
 }
 
 # Default handler for unknown templates
-def default_handler(conn, event_id: str, campaign_data: dict) -> list:
+def default_handler(conn, event_id: str, event_data: dict) -> list:
     """Default handler that sends to all guests with phone numbers."""
     from db import fetch_guests_for_event
     guests = fetch_guests_for_event(conn, event_id)

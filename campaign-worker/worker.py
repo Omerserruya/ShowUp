@@ -6,7 +6,7 @@ from typing import Dict, Any
 
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from db import connect as db_connect, fetch_campaign_by_id, was_message_sent, mark_message_sent
+from db import connect as db_connect, fetch_campaign_by_id, fetch_event_by_id, was_message_sent, mark_message_sent
 from mq import connect as mq_connect, publish_outpost
 from template_registry import get_template_handler
 from templates.handlers import build_params
@@ -45,6 +45,12 @@ def process_campaign(conn, channel, campaign_id: str):
     event_id = str(campaign_data["event_id"])
     template_name = campaign_data["template"]
 
+    # Fetch event data
+    event_data = fetch_event_by_id(conn, event_id)
+    if not event_data:
+        log_json(logger, logging.ERROR, "Event not found", campaign_id=campaign_id, event_id=event_id)
+        return
+
     # Get template handler
     template_handler = get_template_handler(template_name)
     if not template_handler:
@@ -53,7 +59,7 @@ def process_campaign(conn, channel, campaign_id: str):
 
     # Get guest list from template handler
     try:
-        guests = template_handler(conn, event_id, campaign_data)
+        guests = template_handler(conn, event_id, event_data)
         log_json(logger, logging.INFO, "Template handler selected guests", campaign_id=campaign_id, template=template_name, guest_count=len(guests))
     except Exception as e:
         log_json(logger, logging.ERROR, "Template handler failed", campaign_id=campaign_id, template=template_name, error=str(e))
@@ -71,7 +77,7 @@ def process_campaign(conn, channel, campaign_id: str):
 
         # Build parameters using template-specific logic
         try:
-            params = build_params(template_name, guest, campaign_data)
+            params = build_params(template_name, guest, event_data)
         except Exception as e:
             failed_count += 1
             log_json(logger, logging.ERROR, "Parameter building failed", campaign_id=campaign_id, guest_id=guest_id, error=str(e))

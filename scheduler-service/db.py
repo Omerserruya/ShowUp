@@ -25,7 +25,83 @@ def connect() -> psycopg2.extensions.connection:
     logger.info("Connecting to Postgres...")
     conn = psycopg2.connect(get_db_url())
     conn.autocommit = True
+    logger.info("Connected to Postgres")
+    
+    # Ensure required tables exist
+    ensure_tables(conn)
+    
     return conn
+
+
+def ensure_tables(conn: psycopg2.extensions.connection):
+    """Ensure required tables exist for scheduler operations."""
+    with conn.cursor() as cur:
+        # Create campaigns table if it doesn't exist
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS campaigns (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                event_id UUID NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                template TEXT NOT NULL,
+                channel VARCHAR(20) NOT NULL,
+                schedule_time TIMESTAMP,
+                status VARCHAR(20) DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
+            """
+        )
+        
+        # Create events table if it doesn't exist (needed for foreign key)
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS events (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                owners UUID[] DEFAULT '{}',
+                name VARCHAR(100) NOT NULL,
+                description TEXT,
+                event_date TIMESTAMP,
+                location VARCHAR(200),
+                active BOOLEAN DEFAULT true,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
+            """
+        )
+        
+        # Create guests table if it doesn't exist (needed for foreign key)
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS guests (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                event_id UUID NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                phone VARCHAR(20) NOT NULL,
+                email VARCHAR(100),
+                status VARCHAR(20) DEFAULT 'invited',
+                guest_count INTEGER DEFAULT 1 CHECK (guest_count >= 1),
+                table_number INTEGER CHECK (table_number >= 1 AND table_number <= 128),
+                notes TEXT,
+                last_response TIMESTAMP,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+            """
+        )
+        
+        # Create messages_sent table if it doesn't exist
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS messages_sent (
+                campaign_id UUID NOT NULL,
+                guest_id UUID NOT NULL,
+                sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (campaign_id, guest_id)
+            );
+            """
+        )
+        
+        logger.info("Ensured required tables exist")
 
 
 def fetch_and_mark_due(conn: psycopg2.extensions.connection) -> Sequence[Tuple]:

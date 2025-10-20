@@ -56,6 +56,20 @@ def fetch_campaign_by_id(conn: psycopg2.extensions.connection, campaign_id: str)
         return cur.fetchone()
 
 
+def fetch_event_by_id(conn: psycopg2.extensions.connection, event_id: str) -> Optional[dict]:
+    """Fetch event data by ID."""
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT id, name, description, event_date, location, active, created_at, updated_at
+            FROM events
+            WHERE id = %s
+            """,
+            (event_id,),
+        )
+        return cur.fetchone()
+
+
 def fetch_guests_for_event(conn: psycopg2.extensions.connection, event_id: str) -> Sequence[dict]:
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(

@@ -4,7 +4,7 @@ import string
 from datetime import datetime, timedelta, timezone
 
 BASE_URL = "http://localhost/api"
-TOKEN= "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiODc4NzgyZWItMmJmMi00NWViLTg0M2QtMTU0OTEzNDZiZjc5Iiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzYwODg0MjA4LCJleHAiOjE3NjA4ODc4MDh9.tShNaFaquK6fciRwarEy5HV_8ZxGGhwFVJ4dHgt7Xd0"
+TOKEN= "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMTk5MDJjOGMtMzZkNC00MDIxLWE3YWItNDdlMzgzNWU4ZjQ4Iiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzYwOTc0NDk4LCJleHAiOjE3NjA5NzgwOTh9.O3g1gsfSu2CcGwMFqT3o7Lt1Xr6LXbxCm4eoPJfbQ2I"
 
 def create_event(headers):
     payload = {
@@ -39,21 +39,21 @@ from datetime import datetime, timedelta, timezone
 
 def create_campaigns(event_id, headers):
     now = datetime.now(timezone.utc)
-    first_time = (now + timedelta(minutes=5)).isoformat().replace("+00:00", "Z")
-    second_time = (now + timedelta(minutes=7)).isoformat().replace("+00:00", "Z")
+    first_time = (now + timedelta(minutes=2)).isoformat().replace("+00:00", "Z")
+    second_time = (now + timedelta(minutes=4)).isoformat().replace("+00:00", "Z")
 
     payload = {
         "items": [
             {
                 "name": "Save the Date",
-                "template": "You are invited on 2025-12-31 at 18:00!",
+                "template": "save_the_date",
                 "channel": "whatsapp",
                 "schedule_time": first_time,
                 "status": "pending"
             },
             {
                 "name": "Reminder",
-                "template": "Don’t forget the event!",
+                "template": "reminder",
                 "channel": "whatsapp",
                 "schedule_time": second_time,
                 "status": "pending"
