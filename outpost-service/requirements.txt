@@ -1,0 +1,16 @@
+# Outpost Service Dependencies
+
+# Async RabbitMQ client
+aio-pika==9.3.1
+
+# HTTP client for WhatsApp API
+httpx==0.25.2
+
+# Retry logic with exponential backoff
+tenacity==8.2.3
+
+# Structured JSON logging
+python-json-logger==2.0.7
+
+# Environment variable management
+python-dotenv==1.0.0

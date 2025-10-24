@@ -1,0 +1,257 @@
+"""
+WhatsApp Business Cloud API Sender
+
+Handles sending messages via WhatsApp Business Cloud API using Facebook Graph API.
+"""
+
+import os
+import logging
+from typing import Dict, Any, List
+from datetime import datetime
+
+import httpx
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
+
+class WhatsAppSender:
+    """Handles WhatsApp message sending via Business Cloud API."""
+    
+    def __init__(self):
+        self.logger = logging.getLogger("whatsapp_sender")
+        self.api_token = os.getenv("WA_API_B")
+        self.phone_id = os.getenv("WA_PHONE_ID")
+        self.base_url = f"https://graph.facebook.com/v22.0/{self.phone_id}/messages"
+        
+        if not self.api_token or not self.phone_id:
+            raise ValueError("WA_API_B and WA_PHONE_ID environment variables are required")
+    
+    def _build_template_payload(self, recipient: str, template_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Build WhatsApp template message payload."""
+        
+        # Convert parameters dict to ordered list of text parameters
+        param_list = []
+        for key, value in parameters.items():
+            param_list.append({
+                "type": "text",
+                "text": str(value)
+            })
+        
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": recipient,
+            "type": "template",
+            "template": {
+                "name": template_name,
+                "language": {"code": "he"},  # Hebrew language code
+                "components": [
+                    {
+                        "type": "body",
+                        "parameters": param_list
+                    }
+                ]
+            }
+        }
+        
+        return payload
+    
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError))
+    )
+    async def send_message(self, recipient: str, template_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Send a WhatsApp template message.
+        
+        Args:
+            recipient: Phone number in international format
+            template_name: WhatsApp template name
+            parameters: Template parameters as key-value pairs
+            
+        Returns:
+            Response from WhatsApp API
+            
+        Raises:
+            httpx.HTTPStatusError: If API request fails
+            httpx.RequestError: If network error occurs
+        """
+        
+        payload = self._build_template_payload(recipient, template_name, parameters)
+        
+        headers = {
+            "Authorization": f"Bearer {self.api_token}",
+            "Content-Type": "application/json"
+        }
+        
+        self.logger.info(
+            "Sending WhatsApp message",
+            extra={
+                "recipient": recipient,
+                "template": template_name,
+                "parameter_count": len(parameters)
+            }
+        )
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                self.base_url,
+                json=payload,
+                headers=headers
+            )
+            
+            # Log the response for debugging - ALWAYS log errors
+            if response.status_code >= 400:
+                self.logger.error(
+                    "WhatsApp API Error Response",
+                    extra={
+                        "status_code": response.status_code,
+                        "url": str(response.url),
+                        "headers": dict(response.headers),
+                        "request_payload": payload,
+                        "response_text": response.text,
+                        "phone_id": self.phone_id
+                    }
+                )
+            else:
+                self.logger.debug(
+                    "WhatsApp API response",
+                    extra={
+                        "status_code": response.status_code,
+                        "response_text": response.text[:500]  # Limit log size
+                    }
+                )
+            
+            # Handle specific error cases
+            if response.status_code == 404:
+                self.logger.error(
+                    "WhatsApp API 404 Error - Phone Number ID not found",
+                    extra={
+                        "phone_id": self.phone_id,
+                        "url": self.base_url,
+                        "response": response.text[:500]
+                    }
+                )
+                raise httpx.HTTPStatusError(
+                    f"Phone Number ID {self.phone_id} not found. Please check WA_PHONE_ID environment variable.",
+                    request=response.request,
+                    response=response
+                )
+            elif response.status_code == 401:
+                self.logger.error(
+                    f"WhatsApp API 401 Error - Invalid access token {response.text }",
+                    extra={
+                        "phone_id": self.phone_id,
+                        "response": response.text[:500]
+                    }
+                )
+                raise httpx.HTTPStatusError(
+                    "Invalid WhatsApp Business API token. Please check WA_API_B environment variable.",
+                    request=response.request,
+                    response=response
+                )
+            
+            response.raise_for_status()
+            
+            response_data = response.json()
+            
+            self.logger.info(
+                "WhatsApp message sent successfully",
+                extra={
+                    "recipient": recipient,
+                    "template": template_name,
+                    "message_id": response_data.get("messages", [{}])[0].get("id", "unknown")
+                }
+            )
+            
+            return response_data
+    
+    async def send_batch(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Send multiple WhatsApp messages in batch.
+        
+        Args:
+            messages: List of message dicts with 'recipient', 'template', 'parameters'
+            
+        Returns:
+            List of response dicts
+        """
+        results = []
+        
+        for message in messages:
+            try:
+                result = await self.send_message(
+                    recipient=message["recipient"],
+                    template_name=message["template"],
+                    parameters=message["parameters"]
+                )
+                results.append({
+                    "success": True,
+                    "message": message,
+                    "response": result
+                })
+                
+            except Exception as e:
+                self.logger.error(
+                    "Failed to send WhatsApp message",
+                    extra={
+                        "recipient": message.get("recipient"),
+                        "template": message.get("template"),
+                        "error": str(e)
+                    }
+                )
+                results.append({
+                    "success": False,
+                    "message": message,
+                    "error": str(e)
+                })
+        
+        return results
+    
+    async def test_connection(self) -> Dict[str, Any]:
+        """
+        Test WhatsApp API connection and return detailed error information.
+        """
+        try:
+            # Test with a simple template message
+            test_payload = {
+                "messaging_product": "whatsapp",
+                "to": "+1234567890",  # Dummy number for testing
+                "type": "template",
+                "template": {
+                    "name": "hello_world",
+                    "language": {"code": "en_US"}
+                }
+            }
+            
+            headers = {
+                "Authorization": f"Bearer {self.api_token}",
+                "Content-Type": "application/json"
+            }
+            
+            self.logger.info(f"Testing WhatsApp API connection to: {self.base_url}")
+            self.logger.info(f"Using Phone ID: {self.phone_id}")
+            self.logger.info(f"Using API Token: {self.api_token[:10]}...")
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    self.base_url,
+                    json=test_payload,
+                    headers=headers
+                )
+                
+                return {
+                    "status_code": response.status_code,
+                    "url": str(response.url),
+                    "headers": dict(response.headers),
+                    "request_payload": test_payload,
+                    "response_text": response.text,
+                    "success": response.status_code < 400
+                }
+                
+        except Exception as e:
+            return {
+                "error": str(e),
+                "success": False,
+                "url": self.base_url,
+                "phone_id": self.phone_id
+            }

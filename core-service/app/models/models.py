@@ -27,7 +27,7 @@ class Event(Base):
         id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # Owners as JSON array of UUID strings for portability across DBs
-    owners = Column(JSON, nullable=False, default=list)
+    owners = Column(JSON, nullable=False, default=list, server_default='[]')
 
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)

@@ -91,23 +91,21 @@ services:
       - rabbitmq
       - redis
 
-  # outpost-service:
-  #   build:
-  #     context: ./outpost-service
-  #     dockerfile: Dockerfile
-  #   environment:
-  #     - QUEUE_HOST=rabbitmq
-  #     - QUEUE_PORT=${RABBITMQ_PORT}
-  #     - QUEUE_USER=${RABBITMQ_DEFAULT_USER}
-  #     - QUEUE_PASSWORD=${RABBITMQ_DEFAULT_PASS}
-  #     - QUEUE_NAME=${OUTPOST_QUEUE_NAME}
-  #     - QUEUE_PREFETCH=${OUTPOST_QUEUE_PREFETCH}
-  #     - HTTP_PORT=${OUTPOST_HTTP_PORT}
-  #     - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID}
-  #     - WHATSAPP_ACCESS_TOKEN=${WHATSAPP_ACCESS_TOKEN}
-  #     - WHATSAPP_API_BASE=${WHATSAPP_API_BASE}
-  #   depends_on:
-  #     - rabbitmq
+  outpost-service:
+    build:
+      context: ./outpost-service
+      dockerfile: Dockerfile
+    environment:
+      - WA_API_B=${WA_API_B}
+      - WA_PHONE_ID=${WA_PHONE_ID}
+      - RABBITMQ_HOST=${RABBITMQ_HOST}
+      - RABBITMQ_PORT=${RABBITMQ_PORT}
+      - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
+      - OUTPOST_QUEUE_NAME=${OUTPOST_QUEUE_NAME}
+      - LOG_LEVEL=${LOG_LEVEL}
+    depends_on:
+      - rabbitmq
 
 
   schedule-service:

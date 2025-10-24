@@ -4,7 +4,7 @@ import string
 from datetime import datetime, timedelta, timezone
 
 BASE_URL = "http://localhost/api"
-TOKEN= "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMTk5MDJjOGMtMzZkNC00MDIxLWE3YWItNDdlMzgzNWU4ZjQ4Iiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzYwOTc0NDk4LCJleHAiOjE3NjA5NzgwOTh9.O3g1gsfSu2CcGwMFqT3o7Lt1Xr6LXbxCm4eoPJfbQ2I"
+TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMmNmYmIzZWQtNjkwNy00MDBjLTg1MDAtNzdmN2ZjY2I4NjgxIiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzYxMTQwMDY0LCJleHAiOjE3NjExNDM2NjR9.p8RbJAUc62oURb_dzBh9fML2saKJMgpwdvp9TUqzKeM"
 
 def create_event(headers):
     payload = {
@@ -21,15 +21,16 @@ def create_event(headers):
 
 def create_guests(event_id, headers):
     items = []
-    for i in range(1, 101):
-        name = f"Guest {i}"
-        phone = f"+1{random.randint(1000000, 999999999)}"
-        guest_count = random.randint(1, 3)
-        items.append({
-            "name": name,
-            "phone": phone,
-            "guest_count": guest_count
-        })
+    items.append({
+        "name": "עומר צרויה",
+        "phone": "+972525401686",
+        "guest_count": 1
+    })
+    items.append({
+        "name": "שני יצחק",
+        "phone": "+972538852020",
+        "guest_count": 1
+    })
     payload = {"items": items}
     resp = requests.post(f"{BASE_URL}/guests?event_id={event_id}", json=payload, headers=headers)
     resp.raise_for_status()
@@ -46,7 +47,7 @@ def create_campaigns(event_id, headers):
         "items": [
             {
                 "name": "Save the Date",
-                "template": "save_the_date",
+                "template": "event_no_pic",
                 "channel": "whatsapp",
                 "schedule_time": first_time,
                 "status": "pending"

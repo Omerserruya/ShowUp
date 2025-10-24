@@ -58,7 +58,7 @@ def ensure_tables(conn: psycopg2.extensions.connection):
             """
             CREATE TABLE IF NOT EXISTS events (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                owners UUID[] DEFAULT '{}',
+                owners JSON DEFAULT '[]',
                 name VARCHAR(100) NOT NULL,
                 description TEXT,
                 event_date TIMESTAMP,

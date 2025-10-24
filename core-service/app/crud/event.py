@@ -41,8 +41,13 @@ def get_event(db: Session, event_id: uuid.UUID) -> Optional[Event]:
 
 
 def create_event(db: Session, data: EventCreate) -> Event:
+    # Ensure owners is a list of strings, not UUID objects
+    owners_list = []
+    if data.owners:
+        owners_list = [str(owner) for owner in data.owners]
+    
     event = Event(
-        owners=[str(o) for o in (data.owners or [])],
+        owners=owners_list,
         name=data.name,
         description=data.description,
         event_date=data.event_date,
@@ -56,7 +61,7 @@ def create_event(db: Session, data: EventCreate) -> Event:
 
 def update_event(db: Session, event: Event, data: EventUpdate) -> Event:
     if data.owners is not None:
-        event.owners = [str(o) for o in data.owners]
+        event.owners = [str(owner) for owner in data.owners]
     if data.name is not None:
         event.name = data.name
     if data.description is not None:

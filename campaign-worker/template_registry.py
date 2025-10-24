@@ -2,13 +2,13 @@
 Template registry mapping template names to handler functions.
 """
 
-from templates.handlers import save_the_date, reminder, rsvp_reminder, build_params
+from templates.handlers import save_the_date, rsvp_reminder, build_params
 
 # Registry of template handlers
 TEMPLATE_HANDLERS = {
     "save_the_date": save_the_date,
-    "reminder": reminder,
     "rsvp_reminder": rsvp_reminder,
+    "event_no_pic": save_the_date,
 }
 
 # Default handler for unknown templates
