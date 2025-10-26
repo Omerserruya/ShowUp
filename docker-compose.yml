@@ -7,6 +7,7 @@ services:
     environment:
       - CORE_SERVICE_URL=${BACKEND_PROTOCOL}://${CORE_SERVICE_HOST}:${CORE_SERVICE_PORT}
       - AUB_SERVICE_URL=${BACKEND_PROTOCOL}://${AUB_SERVICE_HOST}:${AUB_SERVICE_PORT}/
+      - WEBHOOK_HANDLER_URL=${BACKEND_PROTOCOL}://${WEBHOOK_HANDLER_HOST}:${WEBHOOK_HANDLER_PORT}/
       - DOLLAR=$ # To escape $ in envsubst
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
@@ -15,6 +16,7 @@ services:
     depends_on:
       - aub-service
       - core-service
+      - webhook-hendler
 
   postgres:
     image: postgres:15
@@ -153,29 +155,22 @@ services:
 
 
   # webhook-hendler:
-  #   build:
-  #     context: ./webhook-handler
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - ${WEBHOOK_HANDLER_SERVICE_PORT}:5005
-  #   environment:
-  #     - DB_HOST=postgres
-  #     - DB_PORT=${DB_PORT}
-  #     - DB_USER=${DB_USER}
-  #     - DB_PASSWORD=${DB_PASSWORD}
-  #     - DB_NAME=${DB_NAME}
-  #     - RABBITMQ_HOST=rabbitmq
-  #     - RABBITMQ_PORT=${RABBITMQ_PORT}
-  #     - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
-  #     - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
-  #   depends_on:
-  #     - postgres
-  #     - rabbitmq
-  #     - core-service
-  #     - aub-service
-  #     - campaign-service
-  #     - outpost-service
-  #     - schedule-service
+  webhook-hendler:
+    build:
+      context: ./webhook-hendler
+      dockerfile: Dockerfile
+    ports:
+      - ${WEBHOOK_HANDLER_PORT}:${WEBHOOK_HANDLER_PORT}
+    environment:
+      - PORT=${WEBHOOK_HANDLER_PORT}
+    depends_on:
+      - postgres
+      - rabbitmq
+      - core-service
+      - aub-service
+      - outpost-service
+      - schedule-service
+
     
   # webhook-worker:
   #   build:
