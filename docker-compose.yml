@@ -135,8 +135,6 @@ services:
     build:
       context: ./campaign-worker
       dockerfile: Dockerfile
-    ports:
-      - ${CAMPAIGN_SERVICE_PORT}:5002
     environment:
       - DB_HOST=postgres
       - DB_PORT=${DB_PORT}
