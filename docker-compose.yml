@@ -163,6 +163,7 @@ services:
       - ${WEBHOOK_HANDLER_PORT}:${WEBHOOK_HANDLER_PORT}
     environment:
       - PORT=${WEBHOOK_HANDLER_PORT}
+      - WEBHOOK_VERIFY_TOKEN=${WEBHOOK_VERIFY_TOKEN}
     depends_on:
       - postgres
       - rabbitmq

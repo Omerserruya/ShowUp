@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi import FastAPI, Request, HTTPException, Depends, Response
 from fastapi.responses import JSONResponse
 import uvicorn
 import logging
@@ -17,13 +17,24 @@ app = FastAPI(
     version="1.0.0"
 )
 
+VERIFY_TOKEN = os.getenv("WEBHOOK_VERIFY_TOKEN")
+
 # In-memory storage for webhook events (replace with database in production)
 webhook_events = []
 
 @app.get("/")
-async def root():
-    """Health check endpoint"""
-    return {"message": "Webhook Handler is running", "status": "healthy"}
+async def verify_webhook(request: Request):
+    mode = request.query_params.get("hub.mode")
+    token = request.query_params.get("hub.verify_token")
+    challenge = request.query_params.get("hub.challenge")
+
+    if mode == "subscribe" and token == VERIFY_TOKEN:
+        logger.info("Webhook verified successfully")
+        return Response(content=challenge, media_type="text/plain", status_code=200)
+        
+    else:
+        logger.warning("Webhook verification failed")
+        return "Forbidden", 403
 
 @app.get("/health")
 async def health_check():
