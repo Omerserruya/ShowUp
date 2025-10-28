@@ -64,6 +64,7 @@ class WebhookWorker:
             
             # Prepare message for outpost queue
             outpost_message = {
+                "platform": "WA",  # Add platform field
                 "recipient": message_data.get("recipient"),
                 "message_id": message_data.get("message_id"),
                 "text": summary_text,
@@ -100,6 +101,7 @@ class WebhookWorker:
             
             # Prepare message for outpost queue
             outpost_message = {
+                "platform": "WA",  # Add platform field
                 "recipient": message_data.get("recipient"),
                 "message_id": message_data.get("message_id"),
                 "text": response_text,
@@ -133,6 +135,7 @@ class WebhookWorker:
             
             # Prepare message for outpost queue
             outpost_message = {
+                "platform": "WA",  # Add platform field
                 "recipient": message_data.get("recipient"),
                 "message_id": message_data.get("message_id"),
                 "text": response_text,
