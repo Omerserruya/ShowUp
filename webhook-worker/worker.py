@@ -18,8 +18,8 @@ class WebhookWorker:
         self.port = int(os.getenv("RABBITMQ_PORT"))
         self.user = os.getenv("RABBITMQ_USER")
         self.password = os.getenv("RABBITMQ_PASSWORD")
-        self.webhook_queue = os.getenv("WEBHOOK_QUEUE", "webhook_queue")
-        self.outpost_queue = os.getenv("OUTPOST_QUEUE", "outpost_queue")
+        self.webhook_queue = os.getenv("WEBHOOK_QUEUE")
+        self.outpost_queue = os.getenv("OUTPOST_QUEUE")
         
         self.connection = None
         self.channel = None
