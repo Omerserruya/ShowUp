@@ -66,7 +66,7 @@ WHATSAPP_MESSAGE_SCHEMA = {
                                                     "id": {"type": "string"},
                                                     "from": {"type": "string"},
                                                     "timestamp": {"type": "string"},
-                                                    "type": {"type": "string", "enum": ["text", "image", "audio", "video", "document", "contacts", "interactive"]},
+                                                    "type": {"type": "string", "enum": ["text", "image", "audio", "video", "document", "contacts", "interactive", "button"]},
                                                     "text": {"type": "object"},
                                                     "interactive": {"type": "object"},
                                                     "contacts": {"type": "array"}
@@ -127,6 +127,8 @@ def categorize_message(message: Dict[str, Any]) -> str:
         if interactive.get("type") == "button_reply":
             return "quick_reply"
         return "message"
+    elif msg_type == "button":
+        return "quick_reply"
     elif msg_type == "contacts":
         return "contacts"
     else:
@@ -135,11 +137,21 @@ def categorize_message(message: Dict[str, Any]) -> str:
 def extract_message_data(message: Dict[str, Any], category: str) -> Dict[str, Any]:
     """Extract relevant data based on message category"""
     if category == "quick_reply":
+        # Handle both interactive button_reply and direct button type
         interactive = message.get("interactive", {})
-        return {
-            "button_id": interactive.get("button_reply", {}).get("id"),
-            "button_title": interactive.get("button_reply", {}).get("title")
-        }
+        if interactive.get("type") == "button_reply":
+            return {
+                "button_id": interactive.get("button_reply", {}).get("id"),
+                "button_title": interactive.get("button_reply", {}).get("title")
+            }
+        else:
+            # Handle direct button type
+            button = message.get("button", {})
+            return {
+                "button_id": button.get("id"),
+                "button_title": button.get("title"),
+                "button_text": button.get("text")
+            }
     elif category == "contacts":
         contacts = message.get("contacts", [])
         return {
