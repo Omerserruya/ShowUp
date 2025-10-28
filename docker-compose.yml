@@ -164,13 +164,15 @@ services:
     environment:
       - PORT=${WEBHOOK_HANDLER_PORT}
       - WEBHOOK_VERIFY_TOKEN=${WEBHOOK_VERIFY_TOKEN}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      - REDIS_URL=${REDIS_URL}
+      - WEBHOOK_QUEUE=${WEBHOOK_QUEUE}
+      - RABBITMQ_HOST=${RABBITMQ_HOST}
+      - RABBITMQ_PORT=${RABBITMQ_PORT}
+      - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
     depends_on:
-      - postgres
       - rabbitmq
-      - core-service
-      - aub-service
-      - outpost-service
-      - schedule-service
 
     
   # webhook-worker:
