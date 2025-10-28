@@ -89,6 +89,10 @@ def process_campaign(conn, channel, campaign_id: str):
             "recipient": str(guest.get("phone")),
             "template": template_name,
             "parameters": params,
+            "message_type": "template",  # Campaign messages are template-based
+            "source": "campaign_worker",
+            "campaign_id": campaign_id,
+            "guest_id": guest_id
         }
 
         try:

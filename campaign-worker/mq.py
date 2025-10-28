@@ -37,7 +37,19 @@ def connect() -> pika.BlockingConnection:
 def publish_outpost(channel: pika.adapters.blocking_connection.BlockingChannel, queue_name: str, message: dict):
     channel.queue_declare(queue=queue_name, durable=True)
     body = json.dumps(message).encode("utf-8")
-    channel.basic_publish(exchange="", routing_key=queue_name, body=body, properties=pika.BasicProperties(delivery_mode=2))
+    
+    # Add message_type as header for easy filtering
+    headers = {"message_type": message.get("message_type", "template")}
+    
+    channel.basic_publish(
+        exchange="", 
+        routing_key=queue_name, 
+        body=body, 
+        properties=pika.BasicProperties(
+            delivery_mode=2,
+            headers=headers
+        )
+    )
 
 
 

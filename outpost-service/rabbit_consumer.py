@@ -91,61 +91,123 @@ class RabbitMQConsumer:
                     }
                 )
                 
-                # Validate message format
-                required_fields = ["platform", "recipient", "template", "parameters"]
-                missing_fields = [field for field in required_fields if field not in message_data]
+                # Only process WhatsApp messages
+                if message_data.get("platform") != "WA":
+                    self.logger.warning(
+                        f"Unsupported platform: {message_data.get('platform')}, skipping",
+                        extra={"platform": message_data.get("platform")}
+                    )
+                    return
                 
-                if missing_fields:
+                # Determine message type and validate accordingly
+                message_type = message_data.get("message_type", "template")
+                
+                if message_type == "template":
+                    # Validate template message format
+                    required_fields = ["platform", "recipient", "template", "parameters"]
+                    missing_fields = [field for field in required_fields if field not in message_data]
+                    
+                    if missing_fields:
+                        self.logger.error(
+                            f"Invalid template message format, missing fields: {missing_fields}",
+                            extra={"message_data": message_data}
+                        )
+                        return
+                    
+                    # Send template message
+                    try:
+                        await self.whatsapp_sender.send_template_message(
+                            recipient=message_data["recipient"],
+                            template_name=message_data["template"],
+                            parameters=message_data["parameters"]
+                        )
+                        
+                        self.logger.info(
+                            "Template message processed successfully",
+                            extra={
+                                "recipient": message_data["recipient"],
+                                "template": message_data["template"],
+                                "source": message_data.get("source", "unknown")
+                            }
+                        )
+                    except httpx.HTTPStatusError as e:
+                        self.logger.error(
+                            "WhatsApp API error - template message not sent",
+                            extra={
+                                "recipient": message_data.get("recipient"),
+                                "template": message_data.get("template"),
+                                "status_code": e.response.status_code,
+                                "error": str(e)
+                            }
+                        )
+                    except Exception as e:
+                        self.logger.error(
+                            f"Unexpected error sending template message: {str(e)}",
+                            extra={
+                                "recipient": message_data.get("recipient"),
+                                "template": message_data.get("template"),
+                                "error": str(e),
+                                "error_type": type(e).__name__
+                            },
+                            exc_info=True
+                        )
+                        
+                elif message_type == "free_text":
+                    # Validate free text message format
+                    required_fields = ["platform", "recipient", "text"]
+                    missing_fields = [field for field in required_fields if field not in message_data]
+                    
+                    if missing_fields:
+                        self.logger.error(
+                            f"Invalid free text message format, missing fields: {missing_fields}",
+                            extra={"message_data": message_data}
+                        )
+                        return
+                    
+                    # Send text message
+                    try:
+                        await self.whatsapp_sender.send_text_message(
+                            recipient=message_data["recipient"],
+                            text=message_data["text"]
+                        )
+                        
+                        self.logger.info(
+                            "Free text message processed successfully",
+                            extra={
+                                "recipient": message_data["recipient"],
+                                "text_length": len(message_data["text"]),
+                                "source": message_data.get("source", "unknown"),
+                                "original_type": message_data.get("original_type", "unknown")
+                            }
+                        )
+                    except httpx.HTTPStatusError as e:
+                        self.logger.error(
+                            "WhatsApp API error - free text message not sent",
+                            extra={
+                                "recipient": message_data.get("recipient"),
+                                "text_length": len(message_data.get("text", "")),
+                                "status_code": e.response.status_code,
+                                "error": str(e)
+                            }
+                        )
+                    except Exception as e:
+                        self.logger.error(
+                            f"Unexpected error sending free text message: {str(e)}",
+                            extra={
+                                "recipient": message_data.get("recipient"),
+                                "text_length": len(message_data.get("text", "")),
+                                "error": str(e),
+                                "error_type": type(e).__name__
+                            },
+                            exc_info=True
+                        )
+                        
+                else:
                     self.logger.error(
-                        f"Invalid message format, missing fields: {missing_fields}",
+                        f"Unknown message type: {message_type}",
                         extra={"message_data": message_data}
                     )
                     return
-                
-                # Only process WhatsApp messages
-                if message_data["platform"] != "WA":
-                    self.logger.warning(
-                        f"Unsupported platform: {message_data['platform']}, skipping",
-                        extra={"platform": message_data["platform"]}
-                    )
-                    return
-                
-                # Send WhatsApp message
-                try:
-                    await self.whatsapp_sender.send_message(
-                        recipient=message_data["recipient"],
-                        template_name=message_data["template"],
-                        parameters=message_data["parameters"]
-                    )
-                    
-                    self.logger.info(
-                        "Message processed successfully",
-                        extra={
-                            "recipient": message_data["recipient"],
-                            "template": message_data["template"]
-                        }
-                    )
-                except httpx.HTTPStatusError as e:
-                    self.logger.error(
-                        "WhatsApp API error - message not sent",
-                        extra={
-                            "recipient": message_data["recipient"],
-                            "template": message_data["template"],
-                            "status_code": e.response.status_code,
-                            "error": str(e)
-                        }
-                    )
-                    # Don't re-raise to prevent message requeue
-                except Exception as e:
-                    self.logger.error(
-                        "Unexpected error sending WhatsApp message",
-                        extra={
-                            "recipient": message_data["recipient"],
-                            "template": message_data["template"],
-                            "error": str(e)
-                        }
-                    )
-                    # Don't re-raise to prevent message requeue
                 
             except json.JSONDecodeError as e:
                 self.logger.error(f"Failed to parse message JSON: {e}")

@@ -3,8 +3,8 @@ import random
 import string
 from datetime import datetime, timedelta, timezone
 
-BASE_URL = "https://dev.28042000.xyz/api"
-TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMTEyMjQ4MDgtMTBjYi00Mzk4LWExZjktY2U3OTlhNWM3ZGZlIiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzYxNTc3NzczLCJleHAiOjE3NjE1ODEzNzN9.L2BwnHdLLr8WRxxzC3CAIkXRwvLWpILbW3CEXOyGH4c"
+BASE_URL = "http://localhost/api"
+TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiM2M5OTgxMDgtZTc4YS00ZTlmLTk4NzgtYzEwN2RjNjEyZDBiIiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzYxNjg1NzMzLCJleHAiOjE3NjE2ODkzMzN9.aVS96naqWpNgsBzYTpk65QjN7N4UyX_Aq5NeVqnW0uU"
 
 def create_event(headers):
     payload = {
@@ -26,11 +26,7 @@ def create_guests(event_id, headers):
         "phone": "+972525401686",
         "guest_count": 1
     })
-    items.append({
-        "name": "שני יצחק",
-        "phone": "+972538852020",
-        "guest_count": 1
-    })
+
     payload = {"items": items}
     resp = requests.post(f"{BASE_URL}/guests?event_id={event_id}", json=payload, headers=headers)
     resp.raise_for_status()
