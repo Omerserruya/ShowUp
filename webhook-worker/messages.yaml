@@ -13,12 +13,12 @@ rsvp_invite:
     - "{{event.location}}"
     - "{{guest.name}}"
   buttons:
-    - title: "ברור שנגיע !"
-      payload:  "ברור שנגיע !"
-    - title: "לצערי לא אוכל"
-      payload: "לצערי לא אוכל"
-    - title: "עוד מתלבט/ת, תחזרו אלי?"
-      payload: "עוד מתלבט/ת, תחזרו אלי?"
+    - title: ״ברור שאני בא!״
+      payload:  "ברור שאני בא!"
+    - title: "לצערי לא אוכל להגיע ):"
+      payload: "לצערי לא אוכל להגיע ):"
+    - title: "עוד מתלבט, תחזרו אלי?"
+      payload: "עוד מתלבט, תחזרו אלי?"
 
 rsvp_count:
   type: text
