@@ -1,13 +1,13 @@
 # webhook-worker/conversation_flow.yaml
 rsvp_invite:
   next:
-    ״ברור שאני בא!״: rsvp_food_question
+    ״ברור שאני בא!״: rsvp_count
     "לצערי לא אוכל להגיע ):": rsvp_decline
     "עוד מתלבט, תחזרו אלי?": rsvp_decline
 
 rsvp_count:
   next:
-    "*": rsvp_food_question
+    "*": rsvp_info_question
 
 rsvp_info_question:
   next:
@@ -31,7 +31,7 @@ rsvp_update:
 # rsvp_decline is a terminal state, but allow users to restart if they change their mind
 rsvp_decline:
   next:
-    "*": rsvp_invite  # Allow any input to restart the flow
+    "*": rsvp_update  # Allow any input to restart the flow
 
 # מיפוי סטטוס לפי state
 state_status_mapping:

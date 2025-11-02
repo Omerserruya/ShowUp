@@ -62,8 +62,12 @@ rsvp_update:
       payload: "נגיע כמות אחרת משציפינו"
 
 rsvp_decline:
-  type: text
+  type: interactive
   text: "חבל {{guest.name}} 😢 עדכנו שלא תגיע. אם תתחרט תמיד אפשר לכתוב לנו שוב!"
+  buttons:
+    - type: reply
+      title: "לעדכן הגעה"
+      payload: "לעדכן הגעה"
 
 didnt_understand:
   type: text
