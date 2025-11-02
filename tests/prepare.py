@@ -42,14 +42,14 @@ def create_campaigns(event_id, headers):
         "items": [
             {
                 "name": "Save the Date",
-                "template": "event_no_pic",
+                "template": "general_rsvp",
                 "channel": "whatsapp",
                 "schedule_time": first_time,
                 "status": "pending"
             },
             {
                 "name": "Reminder",
-                "template": "event_no_pic",
+                "template": "general_rsvp",
                 "channel": "whatsapp",
                 "schedule_time": second_time,
                 "status": "pending"

@@ -62,13 +62,21 @@ def rsvp_reminder(conn, event_id: str, event_data: Dict[str, Any]) -> List[Dict[
 def build_params(template_name: str, guest: Dict[str, Any], event_data: Dict[str, Any]) -> Dict[str, Any]:
     """Build template parameters based on template name and guest data."""
     base_params = {"name": guest.get("name", "")}
-  
     if template_name == "event_no_pic":
         return {
             "1": _format_event_date(_serialize_datetime(event_data.get("event_date", ""))),
             "2": _format_event_time(_serialize_datetime(event_data.get("event_date", ""))),
             "3":  event_data.get("location", ""),
             "4":"inviters"
+        }
+    if template_name == "general_rsvp":
+        return {
+            "1": "event type",
+            "2": "inviters",
+            "3": _format_event_date(_serialize_datetime(event_data.get("event_date", ""))),
+            "4":_format_event_time(_serialize_datetime(event_data.get("event_date", ""))),
+            "5":  event_data.get("location", ""),
+            "6": guest.get("name", "testname")
         }
     elif template_name == "reminder":
         return {
