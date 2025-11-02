@@ -1,0 +1,35 @@
+# webhook-worker/conversation_flow.yaml
+rsvp_invite:
+  next:
+    "ברור שנגיע !": rsvp_food_question
+    "לצערי לא אוכל": rsvp_decline
+    "עוד מתלבט/ת, תחזרו אלי?": rsvp_decline
+
+rsvp_count:
+  next:
+    "*": rsvp_food_question
+
+rsvp_info_question:
+  next:
+    "אין שום דבר מיוחד": rsvp_done
+    "לכתוב לנו הערה": note_info
+
+note_info:
+  next:
+    "*": rsvp_done
+
+rsvp_done:
+  next:
+    "לעדכן הגעה": rsvp_update
+
+rsvp_update:
+  next:
+    "יש הערה שלא ציינו": note_info
+    "בסוף לא נוכל להגיע": rsvp_decline
+    "נגיע כמות אחרת משציפינו": rsvp_count
+
+# מיפוי סטטוס לפי state
+state_status_mapping:
+  rsvp_thank_you: attending
+  rsvp_decline: declined
+  rsvp_no_food: attending

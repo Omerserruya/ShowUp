@@ -70,6 +70,18 @@ class WhatsAppSender:
         
         return payload
     
+    def _build_interactive_payload(self, recipient: str, interactive: Dict[str, Any]) -> Dict[str, Any]:
+        """Build WhatsApp interactive message payload."""
+        
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": recipient,
+            "type": "interactive",
+            "interactive": interactive
+        }
+        
+        return payload
+    
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -281,6 +293,115 @@ class WhatsAppSender:
             
             self.logger.info(
                 "WhatsApp text message sent successfully",
+                extra={
+                    "recipient": recipient,
+                    "message_id": response_data.get("messages", [{}])[0].get("id", "unknown")
+                }
+            )
+            
+            return response_data
+    
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError))
+    )
+    async def send_interactive_message(self, recipient: str, interactive: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Send a WhatsApp interactive message.
+        
+        Args:
+            recipient: Phone number in international format
+            interactive: Interactive message structure with type, body, and action
+            
+        Returns:
+            Response from WhatsApp API
+            
+        Raises:
+            httpx.HTTPStatusError: If API request fails
+            httpx.RequestError: If network error occurs
+        """
+        
+        payload = self._build_interactive_payload(recipient, interactive)
+        
+        headers = {
+            "Authorization": f"Bearer {self.api_token}",
+            "Content-Type": "application/json"
+        }
+        
+        self.logger.info(
+            "Sending WhatsApp interactive message",
+            extra={
+                "recipient": recipient,
+                "interactive_type": interactive.get("type"),
+                "button_count": len(interactive.get("action", {}).get("buttons", []))
+            }
+        )
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                self.base_url,
+                json=payload,
+                headers=headers
+            )
+            
+            # Log the response for debugging - ALWAYS log errors
+            if response.status_code >= 400:
+                self.logger.error(
+                    "WhatsApp API Error Response",
+                    extra={
+                        "status_code": response.status_code,
+                        "url": str(response.url),
+                        "headers": dict(response.headers),
+                        "request_payload": payload,
+                        "response_text": response.text,
+                        "phone_id": self.phone_id
+                    }
+                )
+            else:
+                self.logger.debug(
+                    "WhatsApp API response",
+                    extra={
+                        "status_code": response.status_code,
+                        "response_text": response.text[:500]  # Limit log size
+                    }
+                )
+            
+            # Handle specific error cases
+            if response.status_code == 404:
+                self.logger.error(
+                    "WhatsApp API 404 Error - Phone Number ID not found",
+                    extra={
+                        "phone_id": self.phone_id,
+                        "url": self.base_url,
+                        "response": response.text[:500]
+                    }
+                )
+                raise httpx.HTTPStatusError(
+                    f"Phone Number ID {self.phone_id} not found. Please check WA_PHONE_ID environment variable.",
+                    request=response.request,
+                    response=response
+                )
+            elif response.status_code == 401:
+                self.logger.error(
+                    f"WhatsApp API 401 Error - Invalid access token {response.text }",
+                    extra={
+                        "phone_id": self.phone_id,
+                        "response": response.text[:500]
+                    }
+                )
+                raise httpx.HTTPStatusError(
+                    "Invalid WhatsApp Business API token. Please check WA_API_B environment variable.",
+                    request=response.request,
+                    response=response
+                )
+            
+            response.raise_for_status()
+            
+            response_data = response.json()
+            
+            self.logger.info(
+                "WhatsApp interactive message sent successfully",
                 extra={
                     "recipient": recipient,
                     "message_id": response_data.get("messages", [{}])[0].get("id", "unknown")

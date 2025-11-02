@@ -6,6 +6,7 @@ from typing import Dict, Any, List
 from datetime import datetime
 import aio_pika
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from flow_manager import ConversationFlowManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -23,6 +24,7 @@ class WebhookWorker:
         
         self.connection = None
         self.channel = None
+        self.flow_manager = ConversationFlowManager()
     
     @retry(
         stop=stop_after_attempt(5),
@@ -84,36 +86,30 @@ class WebhookWorker:
             raise
 
     async def process_message(self, message_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process regular messages - return as text"""
+        """Process free text via conversation flow manager -> produce template to send."""
         try:
             payload = message_data.get("payload", {})
-            extracted_data = payload.get("extracted_data", {})
-            
-            # Extract text content
-            text_content = extracted_data.get("text", "")
-            media_type = extracted_data.get("media_type")
-            
-            # Prepare response text
-            if media_type:
-                response_text = f"Received {media_type}: {text_content}" if text_content else f"Received {media_type}"
-            else:
-                response_text = text_content if text_content else "Message received"
-            
-            # Prepare message for outpost queue
-            outpost_message = {
-                "platform": "WA",  # Add platform field
-                "recipient": message_data.get("recipient"),
-                "message_id": message_data.get("message_id"),
-                "text": response_text,
-                "message_type": "free_text",  # Regular messages are free text
-                "template_id": None,
-                "template_params": None,
-                "processed_at": datetime.utcnow().isoformat(),
-                "source": "webhook_worker",
-                "original_type": "message"
-            }
-            
-            logger.info(f"Processed message: {response_text[:50]}...")
+            extracted = payload.get("extracted_data", {})
+            text_body = extracted.get("text", "")
+            guest_phone = message_data.get("recipient")
+            event_id = (payload.get("event_id") or message_data.get("event_id") or "")
+            message_id = message_data.get("message_id")
+
+            outpost_message, prev_state, next_state = await self.flow_manager.handle_incoming(
+                msg_type="free_text",
+                guest_phone=guest_phone,
+                event_id=event_id,
+                text=text_body,
+                message_id=message_id,
+                template_parameters=payload.get("template_parameters") or {},
+                guest={"phone": guest_phone},
+                event={"id": event_id}
+            )
+
+            logger.info(
+                f"Flow transition (free_text): {prev_state} -> {next_state}",
+                extra={"guest": guest_phone, "event": event_id}
+            )
             return outpost_message
             
         except Exception as e:
@@ -121,35 +117,31 @@ class WebhookWorker:
             raise
 
     async def process_quick_reply(self, message_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process quick reply messages - reply with yes"""
+        """Process quick_reply via conversation flow manager -> produce template to send."""
         try:
             payload = message_data.get("payload", {})
-            extracted_data = payload.get("extracted_data", {})
-            
-            # Extract button information
-            button_id = extracted_data.get("button_id", "")
-            button_title = extracted_data.get("button_title", "")
-            
-            # Prepare response text
-            response_text = "Yes"
-            
-            # Prepare message for outpost queue
-            outpost_message = {
-                "platform": "WA",  # Add platform field
-                "recipient": message_data.get("recipient"),
-                "message_id": message_data.get("message_id"),
-                "text": response_text,
-                "message_type": "free_text",  # Quick replies are free text
-                "template_id": None,
-                "template_params": None,
-                "processed_at": datetime.utcnow().isoformat(),
-                "source": "webhook_worker",
-                "original_type": "quick_reply",
-                "button_id": button_id,
-                "button_title": button_title
-            }
-            
-            logger.info(f"Processed quick reply: {button_title} -> {response_text}")
+            extracted = payload.get("extracted_data", {})
+            # Use button title as the user's selection text when present
+            selection_text = extracted.get("button_title") or extracted.get("button_text") or ""
+            guest_phone = message_data.get("recipient")
+            event_id = (payload.get("event_id") or message_data.get("event_id") or "")
+            message_id = message_data.get("message_id")
+
+            outpost_message, prev_state, next_state = await self.flow_manager.handle_incoming(
+                msg_type="quick_reply",
+                guest_phone=guest_phone,
+                event_id=event_id,
+                text=selection_text,
+                message_id=message_id,
+                template_parameters=payload.get("template_parameters") or {},
+                guest={"phone": guest_phone},
+                event={"id": event_id}
+            )
+
+            logger.info(
+                f"Flow transition (quick_reply): {prev_state} -> {next_state}",
+                extra={"guest": guest_phone, "event": event_id}
+            )
             return outpost_message
             
         except Exception as e:
@@ -157,7 +149,7 @@ class WebhookWorker:
             raise
 
     async def send_to_outpost(self, message: Dict[str, Any]):
-        """Send processed message to outpost queue"""
+        """Send processed message to outpost queue (template or free_text)."""
         try:
             # Declare outpost queue
             queue = await self.channel.declare_queue(self.outpost_queue, durable=True)
@@ -167,12 +159,18 @@ class WebhookWorker:
                 aio_pika.Message(
                     body=json.dumps(message).encode(),
                     delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-                    headers={"message_type": message.get("message_type", "free_text")}
+                    headers={"message_type": message.get("message_type", "template")}
                 ),
                 routing_key=self.outpost_queue
             )
             
-            logger.info(f"Sent message to outpost queue: {message.get('text', '')[:50]}...")
+            if message.get("message_type") == "template":
+                logger.info(
+                    "Sent template to outpost",
+                    extra={"template": message.get("template"), "recipient": message.get("recipient")}
+                )
+            else:
+                logger.info(f"Sent message to outpost queue: {message.get('text', '')[:50]}...")
             
         except Exception as e:
             logger.error(f"Error sending to outpost queue: {e}")

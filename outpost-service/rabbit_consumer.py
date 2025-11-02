@@ -202,6 +202,56 @@ class RabbitMQConsumer:
                             exc_info=True
                         )
                         
+                elif message_type == "interactive":
+                    # Validate interactive message format
+                    required_fields = ["platform", "recipient", "interactive"]
+                    missing_fields = [field for field in required_fields if field not in message_data]
+                    
+                    if missing_fields:
+                        self.logger.error(
+                            f"Invalid interactive message format, missing fields: {missing_fields}",
+                            extra={"message_data": message_data}
+                        )
+                        return
+                    
+                    # Send interactive message
+                    try:
+                        await self.whatsapp_sender.send_interactive_message(
+                            recipient=message_data["recipient"],
+                            interactive=message_data["interactive"]
+                        )
+                        
+                        self.logger.info(
+                            "Interactive message processed successfully",
+                            extra={
+                                "recipient": message_data["recipient"],
+                                "interactive_type": message_data.get("interactive", {}).get("type"),
+                                "button_count": len(message_data.get("interactive", {}).get("action", {}).get("buttons", [])),
+                                "source": message_data.get("source", "unknown")
+                            }
+                        )
+                    except httpx.HTTPStatusError as e:
+                        self.logger.error(
+                            "WhatsApp API error - interactive message not sent",
+                            extra={
+                                "recipient": message_data.get("recipient"),
+                                "interactive_type": message_data.get("interactive", {}).get("type"),
+                                "status_code": e.response.status_code,
+                                "error": str(e)
+                            }
+                        )
+                    except Exception as e:
+                        self.logger.error(
+                            f"Unexpected error sending interactive message: {str(e)}",
+                            extra={
+                                "recipient": message_data.get("recipient"),
+                                "interactive_type": message_data.get("interactive", {}).get("type"),
+                                "error": str(e),
+                                "error_type": type(e).__name__
+                            },
+                            exc_info=True
+                        )
+                        
                 else:
                     self.logger.error(
                         f"Unknown message type: {message_type}",

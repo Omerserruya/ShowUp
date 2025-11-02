@@ -191,9 +191,16 @@ services:
       - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
       - WEBHOOK_QUEUE=${WEBHOOK_QUEUE_NAME}
       - OUTPOST_QUEUE=${OUTPOST_QUEUE_NAME}
+      - CONVERSATION_FLOW_PATH=${CONVERSATION_FLOW_PATH}
+      - MESSAGES_CONFIG_PATH=${MESSAGES_CONFIG_PATH}
+      - CONVERSATION_INITIAL_STATE=${CONVERSATION_INITIAL_STATE}
+      - FALLBACK_TEMPLATE=${FALLBACK_TEMPLATE}
+      - REDIS_URL=redis://redis:${REDIS_PORT}/0
     depends_on:
       - postgres
       - rabbitmq  
+      - redis
+      - core-service
 
 
 networks:
