@@ -3,7 +3,7 @@
 
 rsvp_invite:
   type: template
-  template_name: general_rsvp
+  template_name: "event_no_pic"
   language: he
   parameters:
     - "{{event.name}}"
