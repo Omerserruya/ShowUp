@@ -9,7 +9,11 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from flow_manager import ConversationFlowManager
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 logger = logging.getLogger(__name__)
 
 class WebhookWorker:
@@ -98,17 +102,24 @@ class WebhookWorker:
             outpost_message, prev_state, next_state = await self.flow_manager.handle_incoming(
                 msg_type="free_text",
                 guest_phone=guest_phone,
-                event_id=event_id,
+                event_id=event_id if event_id and not event_id.startswith("wamid.") else None,  # Skip WhatsApp message IDs
                 text=text_body,
                 message_id=message_id,
                 template_parameters=payload.get("template_parameters") or {},
                 guest={"phone": guest_phone},
-                event={"id": event_id}
+                event={"id": event_id if event_id and not event_id.startswith("wamid.") else None}
             )
 
+            if outpost_message is None:
+                logger.warning(
+                    f"Skipping message processing for {guest_phone} - no event found",
+                    extra={"guest": guest_phone, "message_id": message_id}
+                )
+                return None
+            
             logger.info(
                 f"Flow transition (free_text): {prev_state} -> {next_state}",
-                extra={"guest": guest_phone, "event": event_id}
+                extra={"guest": guest_phone}
             )
             return outpost_message
             
@@ -130,17 +141,24 @@ class WebhookWorker:
             outpost_message, prev_state, next_state = await self.flow_manager.handle_incoming(
                 msg_type="quick_reply",
                 guest_phone=guest_phone,
-                event_id=event_id,
+                event_id=event_id if event_id and not event_id.startswith("wamid.") else None,  # Skip WhatsApp message IDs
                 text=selection_text,
                 message_id=message_id,
                 template_parameters=payload.get("template_parameters") or {},
                 guest={"phone": guest_phone},
-                event={"id": event_id}
+                event={"id": event_id if event_id and not event_id.startswith("wamid.") else None}
             )
 
+            if outpost_message is None:
+                logger.warning(
+                    f"Skipping quick_reply processing for {guest_phone} - no event found",
+                    extra={"guest": guest_phone, "message_id": message_id}
+                )
+                return None
+            
             logger.info(
                 f"Flow transition (quick_reply): {prev_state} -> {next_state}",
-                extra={"guest": guest_phone, "event": event_id}
+                extra={"guest": guest_phone}
             )
             return outpost_message
             
@@ -191,8 +209,14 @@ class WebhookWorker:
                     processed_message = await self.process_contacts(message_data)
                 elif topic == "message":
                     processed_message = await self.process_message(message_data)
+                    if processed_message is None:
+                        logger.info(f"Skipped processing message - no event found")
+                        return
                 elif topic == "quick_reply":
                     processed_message = await self.process_quick_reply(message_data)
+                    if processed_message is None:
+                        logger.info(f"Skipped processing quick_reply - no event found")
+                        return
                 else:
                     logger.warning(f"Unknown topic: {topic}")
                     return

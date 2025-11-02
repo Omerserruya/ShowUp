@@ -3,9 +3,8 @@ import random
 import string
 from datetime import datetime, timedelta, timezone
 
-BASE_URL = "http://localhost/api"
-TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiM2M5OTgxMDgtZTc4YS00ZTlmLTk4NzgtYzEwN2RjNjEyZDBiIiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzYxNjg1NzMzLCJleHAiOjE3NjE2ODkzMzN9.aVS96naqWpNgsBzYTpk65QjN7N4UyX_Aq5NeVqnW0uU"
-
+BASE_URL = "https://dev.28042000.xyz/api"
+TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiOGNiOTc3YzAtNmE3Yi00MTNmLWJiZGItNjU5YThlNjZkMjUwIiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzYyMTEwODEyLCJleHAiOjE3NjIxMTQ0MTJ9.Zfe706AhiDSOGvzoJX7-5VjX3htun4DlMjRUhDzRYeU"
 def create_event(headers):
     payload = {
         "name": "Tested Event",

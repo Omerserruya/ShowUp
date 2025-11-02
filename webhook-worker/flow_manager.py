@@ -75,8 +75,8 @@ class ConversationFlowManager:
         ddl = """
         CREATE TABLE IF NOT EXISTS messages_log (
             id SERIAL PRIMARY KEY,
-            guest_id INTEGER NULL,
-            event_id VARCHAR(64) NOT NULL,
+            guest_id UUID NULL,
+            event_id UUID NOT NULL,
             direction VARCHAR(16) NOT NULL, -- incoming | outgoing
             type VARCHAR(32) NOT NULL,       -- quick_reply | free_text | template
             content TEXT NULL,
@@ -87,6 +87,23 @@ class ConversationFlowManager:
         """
         with self.pg_conn.cursor() as cur:
             cur.execute(ddl)
+            # Also add foreign key if possible (don't fail if it exists)
+            try:
+                cur.execute("""
+                    DO $$ 
+                    BEGIN
+                        IF NOT EXISTS (
+                            SELECT 1 FROM pg_constraint 
+                            WHERE conname = 'messages_log_guest_id_fkey'
+                        ) THEN
+                            ALTER TABLE messages_log 
+                            ADD CONSTRAINT messages_log_guest_id_fkey 
+                            FOREIGN KEY (guest_id) REFERENCES guests(id);
+                        END IF;
+                    END $$;
+                """)
+            except Exception as e:
+                logger.warning(f"Could not add foreign key constraint: {e}")
 
     @staticmethod
     def _state_key(guest_phone: str, event_id: str) -> str:
@@ -108,17 +125,49 @@ class ConversationFlowManager:
     async def set_state(self, guest_phone: str, event_id: str, state: Dict[str, Any]):
         await self.redis.set(self._state_key(guest_phone, event_id), json.dumps(state, ensure_ascii=False))
 
-    def _find_guest_id(self, guest_phone: str, event_id: str) -> Optional[int]:
+    def _find_guest_and_event(self, guest_phone: str) -> Tuple[Optional[str], Optional[str]]:
+        """Find guest_id and event_id by phone number.
+        
+        Returns:
+            (guest_id, event_id) as strings, or (None, None) if not found
+        """
+        # Normalize phone: remove + and any spaces, try multiple formats
+        normalized_phone = guest_phone.replace("+", "").replace(" ", "").replace("-", "")
+        
+        # Try multiple phone formats: original, without +, with country code variations
         sql = """
-        SELECT id FROM guests WHERE phone = %s AND event_id = %s LIMIT 1;
+        SELECT id, event_id FROM guests 
+        WHERE phone = %s 
+           OR phone = %s
+           OR phone LIKE %s
+           OR phone LIKE %s
+        ORDER BY created_at DESC 
+        LIMIT 1;
         """
         with self.pg_conn.cursor() as cur:
-            cur.execute(sql, (guest_phone, event_id))
+            # Try exact matches and variations
+            cur.execute(sql, (
+                guest_phone,                    # Original format
+                normalized_phone,               # Without + and spaces
+                f"%{normalized_phone}",         # Ends with normalized
+                f"{normalized_phone}%"          # Starts with normalized
+            ))
             row = cur.fetchone()
-            return row[0] if row else None
+            if row:
+                logger.info(
+                    f"Found guest for phone {guest_phone}",
+                    extra={"guest_id": str(row[0]), "event_id": str(row[1])}
+                )
+                return (str(row[0]), str(row[1]))
+            else:
+                logger.warning(
+                    f"No guest found for phone {guest_phone}",
+                    extra={"tried_formats": [guest_phone, normalized_phone]}
+                )
+            return (None, None)
 
     def _log_message(self,
-                      guest_id: Optional[int],
+                      guest_id: Optional[str],
                       event_id: str,
                       direction: str,
                       msg_type: str,
@@ -130,6 +179,7 @@ class ConversationFlowManager:
         VALUES (%s, %s, %s, %s, %s, %s, %s);
         """
         with self.pg_conn.cursor() as cur:
+            # guest_id and event_id are now UUIDs (strings)
             cur.execute(sql, (guest_id, event_id, direction, msg_type, content, state_before, state_after))
 
     def _update_guest_status(self, guest_phone: str, event_id: str, next_state: str):
@@ -154,7 +204,7 @@ class ConversationFlowManager:
     async def handle_incoming(self,
                               msg_type: str,           # quick_reply | free_text
                               guest_phone: str,
-                              event_id: str,
+                              event_id: Optional[str] = None,  # Optional - will be looked up if not provided
                               text: str,
                               message_id: Optional[str] = None,
                               template_parameters: Optional[Dict[str, Any]] = None,
@@ -167,12 +217,25 @@ class ConversationFlowManager:
         Returns:
           (outpost_template_message | None, previous_state, next_state)
         """
-        state_obj = await self.get_state(guest_phone, event_id)
+        # Look up guest and event_id from database by phone number
+        guest_id, actual_event_id = self._find_guest_and_event(guest_phone)
+        
+        # Use provided event_id or the one from database lookup
+        final_event_id = event_id or actual_event_id
+        
+        if not final_event_id:
+            logger.warning(
+                f"No event found for phone {guest_phone}, cannot process conversation flow",
+                extra={"phone": guest_phone, "message_id": message_id}
+            )
+            # Return None message to skip processing
+            return None, "", ""
+        
+        state_obj = await self.get_state(guest_phone, final_event_id)
         prev_state = state_obj.get("state", self.initial_state)
 
         # Log incoming
-        guest_id = self._find_guest_id(guest_phone, event_id)
-        self._log_message(guest_id, event_id, "incoming", msg_type, text, prev_state, prev_state)
+        self._log_message(guest_id, final_event_id, "incoming", msg_type, text, prev_state, prev_state)
 
         # Resolve next state
         next_state = self._resolve_next(prev_state, text)
@@ -204,7 +267,7 @@ class ConversationFlowManager:
             else:
                 outpost_message["message_type"] = "template"
             outpost_message["source"] = "webhook_worker"
-            outpost_message["event_id"] = event_id
+            outpost_message["event_id"] = final_event_id
             outpost_message.setdefault("recipient", guest_phone)
 
             # Update state in Redis
@@ -213,13 +276,13 @@ class ConversationFlowManager:
                 "last_message_id": message_id,
                 "last_interaction_at": datetime.now(timezone.utc).isoformat(),
             }
-            await self.set_state(guest_phone, event_id, new_state_obj)
+            await self.set_state(guest_phone, final_event_id, new_state_obj)
 
             # Guest updates (status, last_response)
-            self._update_guest_status(guest_phone, event_id, next_state)
+            self._update_guest_status(guest_phone, final_event_id, next_state)
 
             # Log outgoing template
-            self._log_message(guest_id, event_id, "outgoing", "template", next_state, prev_state, next_state)
+            self._log_message(guest_id, final_event_id, "outgoing", "template", next_state, prev_state, next_state)
 
             return outpost_message, prev_state, next_state
 
@@ -247,16 +310,16 @@ class ConversationFlowManager:
         else:
             outpost_message["message_type"] = "template"
         outpost_message["source"] = "webhook_worker"
-        outpost_message["event_id"] = event_id
+        outpost_message["event_id"] = final_event_id
         outpost_message.setdefault("recipient", guest_phone)
 
         # Keep state the same but update timestamps
         state_obj["last_message_id"] = message_id
         state_obj["last_interaction_at"] = datetime.now(timezone.utc).isoformat()
-        await self.set_state(guest_phone, event_id, state_obj)
+        await self.set_state(guest_phone, final_event_id, state_obj)
 
         # Log outgoing fallback
-        self._log_message(guest_id, event_id, "outgoing", "template", fallback_template, prev_state, prev_state)
+        self._log_message(guest_id, final_event_id, "outgoing", "template", fallback_template, prev_state, prev_state)
 
         return outpost_message, prev_state, prev_state
 
