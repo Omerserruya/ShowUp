@@ -132,8 +132,24 @@ class WebhookWorker:
         try:
             payload = message_data.get("payload", {})
             extracted = payload.get("extracted_data", {})
-            # Use button title as the user's selection text when present
-            selection_text = extracted.get("button_title") or extracted.get("button_text") or ""
+            # Extract button text - try title first, then text, then id
+            # Also log what we're extracting for debugging
+            button_title = extracted.get("button_title") or ""
+            button_text = extracted.get("button_text") or ""
+            button_id = extracted.get("button_id") or ""
+            
+            selection_text = button_title or button_text or button_id
+            
+            logger.info(
+                f"Extracting quick_reply data",
+                extra={
+                    "button_title": button_title,
+                    "button_text": button_text,
+                    "button_id": button_id,
+                    "selected_text": selection_text,
+                    "extracted_data": extracted
+                }
+            )
             guest_phone = message_data.get("recipient")
             event_id = (payload.get("event_id") or message_data.get("event_id") or "")
             message_id = message_data.get("message_id")

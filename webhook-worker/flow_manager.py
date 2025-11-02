@@ -203,11 +203,76 @@ class ConversationFlowManager:
         with self.pg_conn.cursor() as cur:
             cur.execute(sql, (status, guest_phone, event_id))
 
+    def _normalize_text(self, text: str) -> str:
+        """Normalize text for matching: strip whitespace, normalize quotes."""
+        if not text:
+            return ""
+        # Strip leading/trailing whitespace
+        normalized = text.strip()
+        # Normalize different quote types to standard quotes
+        # Replace curly quotes and other Unicode quotes with straight quotes
+        normalized = normalized.replace('״', '"').replace('״', '"').replace('"', '"').replace('"', '"')
+        normalized = normalized.replace(''', "'").replace(''', "'")
+        return normalized
+    
     def _resolve_next(self, current_state: str, user_text: str) -> Optional[str]:
         state_def = (self.flow or {}).get(current_state, {})
         next_map: Dict[str, str] = state_def.get("next", {})
-        # Exact match on text (case sensitive for Hebrew); fallback to None
-        return next_map.get(user_text)
+        
+        # Normalize user text
+        normalized_user_text = self._normalize_text(user_text)
+        
+        # Log for debugging
+        logger.info(
+            f"Resolving next state from '{current_state}'",
+            extra={
+                "current_state": current_state,
+                "user_text": user_text,
+                "normalized_user_text": normalized_user_text,
+                "user_text_length": len(user_text),
+                "user_text_bytes": user_text.encode('utf-8').hex(),
+                "available_transitions": list(next_map.keys()),
+                "available_transitions_count": len(next_map)
+            }
+        )
+        
+        # Check for wildcard match first
+        if "*" in next_map:
+            logger.info(f"Wildcard match found in state '{current_state}', transitioning to '{next_map['*']}'")
+            return next_map["*"]
+        
+        # Try exact match first
+        result = next_map.get(user_text)
+        if result:
+            logger.info(f"Exact match found: '{user_text}' -> '{result}'")
+            return result
+        
+        # Try normalized match
+        result = next_map.get(normalized_user_text)
+        if result:
+            logger.info(f"Normalized match found: '{normalized_user_text}' -> '{result}'")
+            return result
+        
+        # Try matching each key after normalization
+        for key, value in next_map.items():
+            normalized_key = self._normalize_text(key)
+            if normalized_key == normalized_user_text:
+                logger.info(f"Normalized key match found: '{key}' (normalized: '{normalized_key}') -> '{value}'")
+                return value
+        
+        # No match found
+        logger.warning(
+            f"No transition found for text '{user_text}' (normalized: '{normalized_user_text}') in state '{current_state}'",
+            extra={
+                "current_state": current_state,
+                "user_text": user_text,
+                "normalized_user_text": normalized_user_text,
+                "available_options": list(next_map.keys()),
+                "available_options_normalized": [self._normalize_text(k) for k in next_map.keys()]
+            }
+        )
+        
+        return None
 
     async def handle_incoming(self,
                               msg_type: str,           # quick_reply | free_text
@@ -242,7 +307,18 @@ class ConversationFlowManager:
         state_obj = await self.get_state(guest_phone, final_event_id)
         prev_state = state_obj.get("state", self.initial_state)
 
-        # Log incoming
+        # Log incoming with detailed info
+        logger.info(
+            f"Processing incoming {msg_type} message",
+            extra={
+                "guest_phone": guest_phone,
+                "event_id": final_event_id,
+                "prev_state": prev_state,
+                "text": text,
+                "message_id": message_id
+            }
+        )
+        
         self._log_message(guest_id, final_event_id, "incoming", msg_type, text, prev_state, prev_state)
 
         # Resolve next state

@@ -61,6 +61,10 @@ rsvp_update:
       title: "נגיע כמות אחרת משציפינו"
       payload: "נגיע כמות אחרת משציפינו"
 
+rsvp_decline:
+  type: text
+  text: "חבל {{guest.name}} 😢 עדכנו שלא תגיע. אם תתחרט תמיד אפשר לכתוב לנו שוב!"
+
 didnt_understand:
   type: text
   text: "לא כל כך הבנו את התשובה 😅 נסה לבחור אחת מהאפשרויות למעלה או כתוב 'עזרה'."

@@ -28,6 +28,11 @@ rsvp_update:
     "בסוף לא נוכל להגיע": rsvp_decline
     "נגיע כמות אחרת משציפינו": rsvp_count
 
+# rsvp_decline is a terminal state, but allow users to restart if they change their mind
+rsvp_decline:
+  next:
+    "*": rsvp_invite  # Allow any input to restart the flow
+
 # מיפוי סטטוס לפי state
 state_status_mapping:
   rsvp_thank_you: attending

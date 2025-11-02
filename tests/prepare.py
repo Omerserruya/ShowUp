@@ -4,7 +4,8 @@ import string
 from datetime import datetime, timedelta, timezone
 
 BASE_URL = "https://dev.28042000.xyz/api"
-TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiOGNiOTc3YzAtNmE3Yi00MTNmLWJiZGItNjU5YThlNjZkMjUwIiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzYyMTEwODEyLCJleHAiOjE3NjIxMTQ0MTJ9.Zfe706AhiDSOGvzoJX7-5VjX3htun4DlMjRUhDzRYeU"
+TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMzRjYzE4MjgtOGRmMi00YTg0LWE2ZjMtOTk4OTcyOTY1NGU3Iiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzYyMTE0OTI0LCJleHAiOjE3NjIxMTg1MjR9.wQpBo8sBiddvSLkewi7m49Sx6bK5wAP1IZTX_GPYKwI"
+
 def create_event(headers):
     payload = {
         "name": "Tested Event",
