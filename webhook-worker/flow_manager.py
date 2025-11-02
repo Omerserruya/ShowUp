@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
@@ -204,7 +205,7 @@ class ConversationFlowManager:
             cur.execute(sql, (status, guest_phone, event_id))
 
     def _normalize_text(self, text: str) -> str:
-        """Normalize text for matching: strip whitespace, normalize quotes."""
+        """Normalize text for matching: strip whitespace, normalize quotes, remove extra spaces."""
         if not text:
             return ""
         # Strip leading/trailing whitespace
@@ -213,6 +214,9 @@ class ConversationFlowManager:
         # Replace curly quotes and other Unicode quotes with straight quotes
         normalized = normalized.replace('״', '"').replace('״', '"').replace('"', '"').replace('"', '"')
         normalized = normalized.replace(''', "'").replace(''', "'")
+        # Remove extra whitespace (multiple spaces, tabs, newlines)
+        normalized = re.sub(r'\s+', ' ', normalized)
+        normalized = normalized.strip()
         return normalized
     
     def _resolve_next(self, current_state: str, user_text: str) -> Optional[str]:
@@ -260,15 +264,27 @@ class ConversationFlowManager:
                 logger.info(f"Normalized key match found: '{key}' (normalized: '{normalized_key}') -> '{value}'")
                 return value
         
-        # No match found
+        # Last resort: try case-insensitive matching (if all else fails)
+        normalized_user_text_lower = normalized_user_text.lower()
+        for key, value in next_map.items():
+            normalized_key = self._normalize_text(key)
+            if normalized_key.lower() == normalized_user_text_lower:
+                logger.info(f"Case-insensitive normalized match found: '{key}' -> '{value}'")
+                return value
+        
+        # No match found - log detailed comparison
         logger.warning(
             f"No transition found for text '{user_text}' (normalized: '{normalized_user_text}') in state '{current_state}'",
             extra={
                 "current_state": current_state,
                 "user_text": user_text,
                 "normalized_user_text": normalized_user_text,
+                "user_text_hex": user_text.encode('utf-8').hex(),
+                "normalized_user_text_hex": normalized_user_text.encode('utf-8').hex(),
                 "available_options": list(next_map.keys()),
-                "available_options_normalized": [self._normalize_text(k) for k in next_map.keys()]
+                "available_options_normalized": [self._normalize_text(k) for k in next_map.keys()],
+                "available_options_hex": [k.encode('utf-8').hex() for k in next_map.keys()],
+                "available_options_normalized_hex": [self._normalize_text(k).encode('utf-8').hex() for k in next_map.keys()]
             }
         )
         
