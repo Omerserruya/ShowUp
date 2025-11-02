@@ -1,7 +1,7 @@
 # webhook-worker/conversation_flow.yaml
 rsvp_invite:
   next:
-    ״ברור שאני בא!״: rsvp_count
+    "ברור שאני בא!": rsvp_count
     "לצערי לא אוכל להגיע ):": rsvp_decline
     "עוד מתלבט, תחזרו אלי?": rsvp_decline
 

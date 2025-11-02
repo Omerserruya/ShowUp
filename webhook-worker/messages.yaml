@@ -13,7 +13,7 @@ rsvp_invite:
     - "{{event.location}}"
     - "{{guest.name}}"
   buttons:
-    - title: ״ברור שאני בא!״
+    - title: "ברור שאני בא!"
       payload:  "ברור שאני בא!"
     - title: "לצערי לא אוכל להגיע ):"
       payload: "לצערי לא אוכל להגיע ):"
