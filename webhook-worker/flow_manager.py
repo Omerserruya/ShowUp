@@ -8,6 +8,7 @@ import psycopg2
 import psycopg2.extras
 import yaml
 from redis import asyncio as aioredis
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from message_builder import MessageBuilder
 
 
@@ -65,9 +66,16 @@ class ConversationFlowManager:
         name = os.getenv("DB_NAME", "showup")
         return f"postgresql://{user}:{password}@{host}:{port}/{name}"
 
+    @retry(
+        stop=stop_after_attempt(20),
+        wait=wait_exponential(multiplier=1, min=1, max=30),
+        retry=retry_if_exception_type((psycopg2.OperationalError, psycopg2.InterfaceError))
+    )
     def _connect_pg(self):
+        logger.info("Connecting to Postgres...")
         conn = psycopg2.connect(self._pg_url())
         conn.autocommit = True
+        logger.info("Connected to Postgres")
         return conn
 
     def _ensure_tables(self):
