@@ -204,8 +204,8 @@ class ConversationFlowManager:
     async def handle_incoming(self,
                               msg_type: str,           # quick_reply | free_text
                               guest_phone: str,
-                              event_id: Optional[str] = None,  # Optional - will be looked up if not provided
                               text: str,
+                              event_id: Optional[str] = None,  # Optional - will be looked up if not provided
                               message_id: Optional[str] = None,
                               template_parameters: Optional[Dict[str, Any]] = None,
                               guest: Optional[Dict[str, Any]] = None,

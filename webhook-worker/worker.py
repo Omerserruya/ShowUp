@@ -102,8 +102,8 @@ class WebhookWorker:
             outpost_message, prev_state, next_state = await self.flow_manager.handle_incoming(
                 msg_type="free_text",
                 guest_phone=guest_phone,
-                event_id=event_id if event_id and not event_id.startswith("wamid.") else None,  # Skip WhatsApp message IDs
                 text=text_body,
+                event_id=event_id if event_id and not event_id.startswith("wamid.") else None,  # Skip WhatsApp message IDs
                 message_id=message_id,
                 template_parameters=payload.get("template_parameters") or {},
                 guest={"phone": guest_phone},
@@ -141,8 +141,8 @@ class WebhookWorker:
             outpost_message, prev_state, next_state = await self.flow_manager.handle_incoming(
                 msg_type="quick_reply",
                 guest_phone=guest_phone,
-                event_id=event_id if event_id and not event_id.startswith("wamid.") else None,  # Skip WhatsApp message IDs
                 text=selection_text,
+                event_id=event_id if event_id and not event_id.startswith("wamid.") else None,  # Skip WhatsApp message IDs
                 message_id=message_id,
                 template_parameters=payload.get("template_parameters") or {},
                 guest={"phone": guest_phone},
