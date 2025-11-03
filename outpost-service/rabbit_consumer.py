@@ -17,6 +17,8 @@ from aio_pika.abc import AbstractIncomingMessage
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from whatsapp_sender import WhatsAppSender
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 
 class RabbitMQConsumer:
@@ -36,6 +38,34 @@ class RabbitMQConsumer:
         self.user = os.getenv("RABBITMQ_USER")
         self.password = os.getenv("RABBITMQ_PASSWORD")
         self.queue_name = os.getenv("OUTPOST_QUEUE_NAME")
+
+        # Postgres for logging WhatsApp message IDs
+        self.db_url = os.getenv("DATABASE_URL") or (
+            f"postgresql://{os.getenv('DB_USER','postgres')}:"
+            f"{os.getenv('DB_PASSWORD','postgres')}@{os.getenv('DB_HOST','postgres')}:"
+            f"{os.getenv('DB_PORT','5432')}/{os.getenv('DB_NAME','showup')}"
+        )
+        self.pg_conn = None
+        try:
+            self.pg_conn = psycopg2.connect(self.db_url)
+            self.pg_conn.autocommit = True
+        except Exception as e:
+            self.logger.warning(f"Outpost could not connect to Postgres for logging: {e}")
+
+    def _log_outgoing_whatsapp_id(self, event_id: str, message_type: str, content: str, whatsapp_message_id: str):
+        if not self.pg_conn:
+            return
+        try:
+            with self.pg_conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO messages_log (guest_id, event_id, direction, type, content, state_before, state_after, whatsapp_message_id)
+                    VALUES (NULL, %s, 'outgoing', %s, %s, NULL, %s, %s)
+                    """,
+                    (event_id, message_type, content, content, whatsapp_message_id)
+                )
+        except Exception as e:
+            self.logger.warning(f"Failed to log WhatsApp message id: {e}")
     
     @retry(
         stop=stop_after_attempt(5),
@@ -116,11 +146,19 @@ class RabbitMQConsumer:
                     
                     # Send template message
                     try:
-                        await self.whatsapp_sender.send_template_message(
+                        wa_resp = await self.whatsapp_sender.send_template_message(
                             recipient=message_data["recipient"],
                             template_name=message_data["template"],
                             parameters=message_data["parameters"]
                         )
+                        wa_id = (wa_resp or {}).get("messages", [{}])[0].get("id")
+                        if wa_id and message_data.get("event_id"):
+                            self._log_outgoing_whatsapp_id(
+                                event_id=str(message_data.get("event_id")),
+                                message_type="template",
+                                content=str(message_data.get("state") or message_data.get("template")),
+                                whatsapp_message_id=wa_id,
+                            )
                         
                         self.logger.info(
                             "Template message processed successfully",
@@ -166,10 +204,18 @@ class RabbitMQConsumer:
                     
                     # Send text message
                     try:
-                        await self.whatsapp_sender.send_text_message(
+                        wa_resp = await self.whatsapp_sender.send_text_message(
                             recipient=message_data["recipient"],
                             text=message_data["text"]
                         )
+                        wa_id = (wa_resp or {}).get("messages", [{}])[0].get("id")
+                        if wa_id and message_data.get("event_id"):
+                            self._log_outgoing_whatsapp_id(
+                                event_id=str(message_data.get("event_id")),
+                                message_type="free_text",
+                                content=str(message_data.get("state") or message_data.get("text") or "free_text"),
+                                whatsapp_message_id=wa_id,
+                            )
                         
                         self.logger.info(
                             "Free text message processed successfully",
@@ -216,10 +262,18 @@ class RabbitMQConsumer:
                     
                     # Send interactive message
                     try:
-                        await self.whatsapp_sender.send_interactive_message(
+                        wa_resp = await self.whatsapp_sender.send_interactive_message(
                             recipient=message_data["recipient"],
                             interactive=message_data["interactive"]
                         )
+                        wa_id = (wa_resp or {}).get("messages", [{}])[0].get("id")
+                        if wa_id and message_data.get("event_id"):
+                            self._log_outgoing_whatsapp_id(
+                                event_id=str(message_data.get("event_id")),
+                                message_type="interactive",
+                                content=str(message_data.get("state") or "interactive"),
+                                whatsapp_message_id=wa_id,
+                            )
                         
                         self.logger.info(
                             "Interactive message processed successfully",

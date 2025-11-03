@@ -113,6 +113,15 @@ class ConversationFlowManager:
                 """)
             except Exception as e:
                 logger.warning(f"Could not add foreign key constraint: {e}")
+            # Ensure columns for WhatsApp message id and reply reference exist
+            try:
+                cur.execute("""
+                    ALTER TABLE messages_log 
+                    ADD COLUMN IF NOT EXISTS whatsapp_message_id TEXT NULL,
+                    ADD COLUMN IF NOT EXISTS reply_to_message_id TEXT NULL;
+                """)
+            except Exception as e:
+                logger.warning(f"Could not ensure whatsapp/reply columns: {e}")
 
     @staticmethod
     def _state_key(guest_phone: str, event_id: str) -> str:
@@ -182,14 +191,25 @@ class ConversationFlowManager:
                       msg_type: str,
                       content: Optional[str],
                       state_before: Optional[str],
-                      state_after: Optional[str]):
+                      state_after: Optional[str],
+                      whatsapp_message_id: Optional[str] = None,
+                      reply_to_message_id: Optional[str] = None):
         sql = """
-        INSERT INTO messages_log (guest_id, event_id, direction, type, content, state_before, state_after)
-        VALUES (%s, %s, %s, %s, %s, %s, %s);
+        INSERT INTO messages_log (guest_id, event_id, direction, type, content, state_before, state_after, whatsapp_message_id, reply_to_message_id)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
         """
         with self.pg_conn.cursor() as cur:
-            # guest_id and event_id are now UUIDs (strings)
-            cur.execute(sql, (guest_id, event_id, direction, msg_type, content, state_before, state_after))
+            cur.execute(sql, (
+                guest_id,
+                event_id,
+                direction,
+                msg_type,
+                content,
+                state_before,
+                state_after,
+                whatsapp_message_id,
+                reply_to_message_id,
+            ))
 
     def _update_guest_status(self, guest_phone: str, event_id: str, next_state: str):
         status = self.state_status_mapping.get(next_state)
@@ -296,6 +316,7 @@ class ConversationFlowManager:
                               text: str,
                               event_id: Optional[str] = None,  # Optional - will be looked up if not provided
                               message_id: Optional[str] = None,
+                              reply_to_message_id: Optional[str] = None,
                               template_parameters: Optional[Dict[str, Any]] = None,
                               guest: Optional[Dict[str, Any]] = None,
                               event: Optional[Dict[str, Any]] = None
@@ -323,6 +344,32 @@ class ConversationFlowManager:
         state_obj = await self.get_state(guest_phone, final_event_id)
         prev_state = state_obj.get("state", self.initial_state)
 
+        # If this is a reply to a specific WhatsApp message, try to resolve the state
+        if reply_to_message_id:
+            try:
+                with self.pg_conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT state_after
+                        FROM messages_log
+                        WHERE event_id = %s
+                          AND direction = 'outgoing'
+                          AND whatsapp_message_id = %s
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                        """,
+                        (final_event_id, reply_to_message_id)
+                    )
+                    row = cur.fetchone()
+                    if row and row[0]:
+                        prev_state = row[0]
+                        logger.info(
+                            "Resolved prev_state from reply_to_message_id",
+                            extra={"resolved_prev_state": prev_state, "reply_to_message_id": reply_to_message_id}
+                        )
+            except Exception as e:
+                logger.warning(f"Failed to resolve state from reply_to_message_id: {e}")
+
         # Log incoming with detailed info
         logger.info(
             f"Processing incoming {msg_type} message",
@@ -335,7 +382,7 @@ class ConversationFlowManager:
             }
         )
         
-        self._log_message(guest_id, final_event_id, "incoming", msg_type, text, prev_state, prev_state)
+        self._log_message(guest_id, final_event_id, "incoming", msg_type, text, prev_state, prev_state, whatsapp_message_id=message_id, reply_to_message_id=reply_to_message_id)
 
         # Resolve next state
         next_state = self._resolve_next(prev_state, text)
@@ -368,6 +415,7 @@ class ConversationFlowManager:
                 outpost_message["message_type"] = "template"
             outpost_message["source"] = "webhook_worker"
             outpost_message["event_id"] = final_event_id
+            outpost_message["state"] = next_state
             outpost_message.setdefault("recipient", guest_phone)
 
             # Update state in Redis
@@ -381,7 +429,7 @@ class ConversationFlowManager:
             # Guest updates (status, last_response)
             self._update_guest_status(guest_phone, final_event_id, next_state)
 
-            # Log outgoing template
+            # Log outgoing template (whatsapp_message_id will be populated by outpost-service log)
             self._log_message(guest_id, final_event_id, "outgoing", "template", next_state, prev_state, next_state)
 
             return outpost_message, prev_state, next_state

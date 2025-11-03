@@ -129,24 +129,15 @@ class MessageBuilder:
                 raise ValueError(f"Button {idx} must be a dictionary")
             
             btn_type = btn.get("type")
+            # For interactive (non-template) messages, WhatsApp only supports reply buttons
             if btn_type == "reply":
                 if not btn.get("title"):
                     raise ValueError(f"Reply button {idx} must have 'title'")
                 if not btn.get("payload"):
                     raise ValueError(f"Reply button {idx} must have 'payload'")
             elif btn_type == "url":
-                if not btn.get("title"):
-                    raise ValueError(f"URL button {idx} must have 'title'")
-                url = btn.get("url")
-                if not url:
-                    raise ValueError(f"URL button {idx} must have 'url'")
-                # Basic URL validation
-                try:
-                    parsed = urlparse(str(url))
-                    if not parsed.scheme or not parsed.netloc:
-                        raise ValueError(f"URL button {idx} has invalid URL format: {url}")
-                except Exception as e:
-                    raise ValueError(f"URL button {idx} has invalid URL: {str(e)}")
+                # Not supported for interactive messages (only reply). Suggest converting to template CTA or plain text link.
+                raise ValueError("Interactive messages support only 'reply' buttons; use template CTA for URL buttons")
             else:
                 raise ValueError(f"Button {idx} has invalid type '{btn_type}'. Must be 'reply' or 'url'")
 
@@ -179,13 +170,7 @@ class MessageBuilder:
                         "title": title
                     }
                 })
-            elif btn_type == "url":
-                url = self._render_placeholders(str(btn_cfg.get("url", "")), event, guest)
-                action_buttons.append({
-                    "type": "url",
-                    "url": url,
-                    "title": title
-                })
+            # 'url' buttons are not allowed for interactive messages in Cloud API
         
         # Build WhatsApp API payload structure
         interactive_payload = {

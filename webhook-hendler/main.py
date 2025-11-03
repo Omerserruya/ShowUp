@@ -263,6 +263,8 @@ async def handle_whatsapp_webhook(request: Request):
                 for message in messages:
                     message_id = message.get("id")
                     sender = message.get("from")
+                    # WhatsApp includes reply context when a user replies to a specific message
+                    reply_to_message_id = (message.get("context") or {}).get("id")
                     
                     # Categorize message
                     category = categorize_message(message)
@@ -275,6 +277,7 @@ async def handle_whatsapp_webhook(request: Request):
                         "event_id": message_id,
                         "recipient": sender,
                         "message_id": message_id,
+                        "reply_to_message_id": reply_to_message_id,
                         "type": category,
                         "payload": {
                             **message,
