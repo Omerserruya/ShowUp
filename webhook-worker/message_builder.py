@@ -16,6 +16,16 @@ class MessageBuilder:
         if not isinstance(config, dict):
             raise ValueError("messages config must be a dict")
         self.config = config
+        # WhatsApp interactive constraints
+        self.MAX_BUTTONS = 3
+        self.MAX_BUTTON_TITLE = 20
+        self.MAX_BODY_LEN = 1024
+        self.MAX_REPLY_ID = 256
+
+    def _truncate(self, text: str, max_len: int) -> str:
+        if not isinstance(text, str):
+            return text
+        return text if len(text) <= max_len else text[:max_len]
 
     def _render_placeholders(self, text: str, event: Optional[dict], guest: Optional[dict]) -> str:
         """Render {{guest.field}} and {{event.field}} placeholders in a string.
@@ -121,7 +131,7 @@ class MessageBuilder:
             raise ValueError("Interactive messages must have at least one button")
         
         # WhatsApp allows max 3 buttons
-        if len(buttons) > 3:
+        if len(buttons) > self.MAX_BUTTONS:
             raise ValueError("Interactive messages support maximum 3 buttons")
         
         for idx, btn in enumerate(buttons, start=1):
@@ -135,6 +145,9 @@ class MessageBuilder:
                     raise ValueError(f"Reply button {idx} must have 'title'")
                 if not btn.get("payload"):
                     raise ValueError(f"Reply button {idx} must have 'payload'")
+                if len(str(btn.get("title", ""))) > self.MAX_BUTTON_TITLE:
+                    # We'll truncate in build step, but validation helps surface issues early
+                    pass
             elif btn_type == "url":
                 # Not supported for interactive messages (only reply). Suggest converting to template CTA or plain text link.
                 raise ValueError("Interactive messages support only 'reply' buttons; use template CTA for URL buttons")
@@ -149,6 +162,7 @@ class MessageBuilder:
         # Get text body
         raw_text = definition.get("text") or definition.get("message") or ""
         rendered_text = self._render_placeholders(raw_text, event, guest)
+        rendered_text = self._truncate(rendered_text, self.MAX_BODY_LEN)
         
         if not rendered_text:
             raise ValueError("Interactive messages must have a text body")
@@ -157,17 +171,18 @@ class MessageBuilder:
         buttons_cfg = definition.get("buttons") or []
         action_buttons = []
         
-        for idx, btn_cfg in enumerate(buttons_cfg, start=1):
+        for idx, btn_cfg in enumerate(buttons_cfg[: self.MAX_BUTTONS], start=1):
             btn_type = btn_cfg.get("type")
             title = self._render_placeholders(btn_cfg.get("title", ""), event, guest)
+            title = self._truncate(title, self.MAX_BUTTON_TITLE)
             
             if btn_type == "reply":
                 payload = btn_cfg.get("payload", title)
                 action_buttons.append({
                     "type": "reply",
                     "reply": {
-                        # Encode the originating state (message_id) in the reply id for stateless resolution
-                        "id": f"{message_id}__BTN_{idx}",
+                        # Encode the originating state (message_id) in the reply id for stateless resolution (cap to MAX_REPLY_ID)
+                        "id": self._truncate(f"{message_id}__BTN_{idx}", self.MAX_REPLY_ID),
                         "title": title
                     }
                 })
