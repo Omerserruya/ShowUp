@@ -141,7 +141,7 @@ class MessageBuilder:
             else:
                 raise ValueError(f"Button {idx} has invalid type '{btn_type}'. Must be 'reply' or 'url'")
 
-    def _build_interactive(self, definition: Dict[str, Any], event: Optional[dict], guest: Optional[dict]) -> Dict[str, Any]:
+    def _build_interactive(self, message_id: str, definition: Dict[str, Any], event: Optional[dict], guest: Optional[dict]) -> Dict[str, Any]:
         """Build WhatsApp interactive message payload."""
         # Validate first
         self._validate_interactive(definition)
@@ -166,7 +166,8 @@ class MessageBuilder:
                 action_buttons.append({
                     "type": "reply",
                     "reply": {
-                        "id": f"BTN_{idx}",
+                        # Encode the originating state (message_id) in the reply id for stateless resolution
+                        "id": f"{message_id}__BTN_{idx}",
                         "title": title
                     }
                 })
@@ -215,7 +216,7 @@ class MessageBuilder:
         if msg_type == "message" or msg_type == "text":
             return self._build_text(definition, event, guest)
         if msg_type == "interactive":
-            return self._build_interactive(definition, event, guest)
+            return self._build_interactive(message_id, definition, event, guest)
 
         raise ValueError(f"Invalid message type for '{message_id}': {msg_type}. Must be 'template', 'message'/'text', or 'interactive'")
 
