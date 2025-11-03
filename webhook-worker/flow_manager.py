@@ -47,6 +47,9 @@ class ConversationFlowManager:
             decode_responses=True,
         )
 
+        # Message context TTL (24 hours default)
+        self.message_context_ttl = int(os.getenv("MESSAGE_CONTEXT_TTL", "86400"))
+
         # Postgres (sync driver; small queries only)
         self.pg_conn = self._connect_pg()
         self._ensure_tables()
@@ -127,6 +130,10 @@ class ConversationFlowManager:
     def _state_key(guest_phone: str, event_id: str) -> str:
         return f"conversation:{guest_phone}:{event_id}"
 
+    @staticmethod
+    def _message_context_key(message_id: str) -> str:
+        return f"message_context:{message_id}"
+
     async def get_state(self, guest_phone: str, event_id: str) -> Dict[str, Any]:
         raw = await self.redis.get(self._state_key(guest_phone, event_id))
         if not raw:
@@ -142,6 +149,70 @@ class ConversationFlowManager:
 
     async def set_state(self, guest_phone: str, event_id: str, state: Dict[str, Any]):
         await self.redis.set(self._state_key(guest_phone, event_id), json.dumps(state, ensure_ascii=False))
+
+    async def store_message_context(self, message_id: str, state: str, event_id: str, guest_phone: str):
+        """Store message context in Redis with TTL.
+        
+        Args:
+            message_id: WhatsApp message ID (wamid...)
+            state: State name when message was sent
+            event_id: Event ID
+            guest_phone: Guest phone number
+        """
+        context = {
+            "message_id": message_id,
+            "state": state,
+            "event_id": event_id,
+            "guest_phone": guest_phone,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        key = self._message_context_key(message_id)
+        await self.redis.setex(
+            key,
+            self.message_context_ttl,
+            json.dumps(context, ensure_ascii=False)
+        )
+        logger.debug(
+            f"Stored message context for {message_id}",
+            extra={"message_id": message_id, "state": state, "ttl": self.message_context_ttl}
+        )
+
+    async def resolve_state_from_context(self, context_id: str) -> Optional[Dict[str, Any]]:
+        """Resolve state from message context by WhatsApp message_id.
+        
+        Args:
+            context_id: WhatsApp message_id from context.id in webhook
+            
+        Returns:
+            Dict with state info if found, None otherwise
+        """
+        if not context_id:
+            return None
+        
+        key = self._message_context_key(context_id)
+        raw = await self.redis.get(key)
+        
+        if not raw:
+            logger.info(
+                f"Message context not found or expired for {context_id}",
+                extra={"context_id": context_id}
+            )
+            return None
+        
+        try:
+            context = json.loads(raw)
+            logger.info(
+                f"Resolved state from message context",
+                extra={
+                    "context_id": context_id,
+                    "resolved_state": context.get("state"),
+                    "event_id": context.get("event_id")
+                }
+            )
+            return context
+        except Exception as e:
+            logger.warning(f"Failed to parse message context for {context_id}: {e}")
+            return None
 
     def _find_guest_and_event(self, guest_phone: str) -> Tuple[Optional[str], Optional[str]]:
         """Find guest_id and event_id by phone number.
@@ -342,11 +413,40 @@ class ConversationFlowManager:
             # Return None message to skip processing
             return None, "", ""
         
+        # PRIMARY: If this is a reply to a specific WhatsApp message, resolve state from message context
+        context_resolved_state = None
+        if reply_to_message_id:
+            message_context = await self.resolve_state_from_context(reply_to_message_id)
+            if message_context:
+                context_resolved_state = message_context.get("state")
+                # Use the event_id from context if different (for cross-event scenarios)
+                context_event_id = message_context.get("event_id")
+                if context_event_id and context_event_id != final_event_id:
+                    logger.info(
+                        f"Reply context event_id differs from current; using context event_id",
+                        extra={"context_event_id": context_event_id, "current_event_id": final_event_id}
+                    )
+                    final_event_id = context_event_id
+                    # Re-fetch guest_id if needed
+                    guest_id, _ = self._find_guest_and_event(guest_phone)
+
+        # Get current conversation state (fallback if context not found)
         state_obj = await self.get_state(guest_phone, final_event_id)
         prev_state = state_obj.get("state", self.initial_state)
 
-        # If this is a reply to a specific WhatsApp message, try to resolve the state
-        if reply_to_message_id:
+        # Use context-resolved state if available (this is the primary method)
+        if context_resolved_state:
+            prev_state = context_resolved_state
+            logger.info(
+                f"Using state resolved from message context",
+                extra={
+                    "resolved_state": prev_state,
+                    "reply_to_message_id": reply_to_message_id,
+                    "guest_phone": guest_phone
+                }
+            )
+        # FALLBACK 1: If context not found, try database lookup
+        elif reply_to_message_id:
             try:
                 with self.pg_conn.cursor() as cur:
                     cur.execute(
@@ -365,21 +465,21 @@ class ConversationFlowManager:
                     if row and row[0]:
                         prev_state = row[0]
                         logger.info(
-                            "Resolved prev_state from reply_to_message_id",
+                            "Resolved prev_state from database (fallback)",
                             extra={"resolved_prev_state": prev_state, "reply_to_message_id": reply_to_message_id}
                         )
             except Exception as e:
-                logger.warning(f"Failed to resolve state from reply_to_message_id: {e}")
+                logger.warning(f"Failed to resolve state from database: {e}")
 
-        # Prefer button_id hint to override current Redis state when user clicks an older message's button
-        if msg_type == "quick_reply" and button_id:
+        # FALLBACK 2: Prefer button_id hint to override current Redis state when user clicks an older message's button
+        if msg_type == "quick_reply" and button_id and not context_resolved_state:
             try:
                 if "__BTN_" in button_id:
                     hinted_state = button_id.split("__BTN_", 1)[0]
                     if hinted_state in (self.flow or {}).keys():
                         prev_state = hinted_state
                         logger.info(
-                            "Resolved prev_state from button_id hint",
+                            "Resolved prev_state from button_id hint (fallback)",
                             extra={"resolved_prev_state": prev_state, "button_id": button_id}
                         )
             except Exception as e:
@@ -445,6 +545,7 @@ class ConversationFlowManager:
             self._update_guest_status(guest_phone, final_event_id, next_state)
 
             # Log outgoing template (whatsapp_message_id will be populated by outpost-service log)
+            # Note: message_context will be stored by outpost-service after WhatsApp message_id is received
             self._log_message(guest_id, final_event_id, "outgoing", "template", next_state, prev_state, next_state)
 
             return outpost_message, prev_state, next_state

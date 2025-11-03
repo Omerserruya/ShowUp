@@ -8,13 +8,15 @@ import asyncio
 import json
 import logging
 import os
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+from datetime import datetime, timezone
 
 import aio_pika
 import httpx
 from aio_pika import Message, DeliveryMode
 from aio_pika.abc import AbstractIncomingMessage
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from redis import asyncio as aioredis
 
 from whatsapp_sender import WhatsAppSender
 import psycopg2
@@ -52,6 +54,19 @@ class RabbitMQConsumer:
         except Exception as e:
             self.logger.warning(f"Outpost could not connect to Postgres for logging: {e}")
 
+        # Redis for storing message context (same Redis as webhook-worker)
+        self.redis = None
+        self.message_context_ttl = int(os.getenv("MESSAGE_CONTEXT_TTL", "86400"))
+        try:
+            redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+            self.redis = aioredis.from_url(
+                redis_url,
+                encoding="utf-8",
+                decode_responses=True,
+            )
+        except Exception as e:
+            self.logger.warning(f"Outpost could not connect to Redis for message context: {e}")
+
     def _log_outgoing_whatsapp_id(self, event_id: str, message_type: str, content: str, whatsapp_message_id: str):
         if not self.pg_conn:
             return
@@ -66,6 +81,39 @@ class RabbitMQConsumer:
                 )
         except Exception as e:
             self.logger.warning(f"Failed to log WhatsApp message id: {e}")
+
+    async def _store_message_context(self, message_id: str, state: str, event_id: str, guest_phone: str):
+        """Store message context in Redis for reply resolution.
+        
+        This allows users to reply to old messages and resume the correct flow state.
+        """
+        if not self.redis:
+            return
+        
+        if not message_id or not state or not event_id or not guest_phone:
+            self.logger.debug("Skipping message context storage - missing required fields")
+            return
+        
+        try:
+            context = {
+                "message_id": message_id,
+                "state": state,
+                "event_id": event_id,
+                "guest_phone": guest_phone,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            key = f"message_context:{message_id}"
+            await self.redis.setex(
+                key,
+                self.message_context_ttl,
+                json.dumps(context, ensure_ascii=False)
+            )
+            self.logger.debug(
+                f"Stored message context for {message_id}",
+                extra={"message_id": message_id, "state": state, "ttl": self.message_context_ttl}
+            )
+        except Exception as e:
+            self.logger.warning(f"Failed to store message context: {e}")
     
     @retry(
         stop=stop_after_attempt(5),
@@ -159,6 +207,14 @@ class RabbitMQConsumer:
                                 content=str(message_data.get("state") or message_data.get("template")),
                                 whatsapp_message_id=wa_id,
                             )
+                            # Store message context for reply resolution
+                            if message_data.get("state") and message_data.get("recipient"):
+                                await self._store_message_context(
+                                    message_id=wa_id,
+                                    state=str(message_data.get("state")),
+                                    event_id=str(message_data.get("event_id")),
+                                    guest_phone=str(message_data.get("recipient"))
+                                )
                         
                         self.logger.info(
                             "Template message processed successfully",
@@ -216,6 +272,14 @@ class RabbitMQConsumer:
                                 content=str(message_data.get("state") or message_data.get("text") or "free_text"),
                                 whatsapp_message_id=wa_id,
                             )
+                            # Store message context for reply resolution
+                            if message_data.get("state") and message_data.get("recipient"):
+                                await self._store_message_context(
+                                    message_id=wa_id,
+                                    state=str(message_data.get("state")),
+                                    event_id=str(message_data.get("event_id")),
+                                    guest_phone=str(message_data.get("recipient"))
+                                )
                         
                         self.logger.info(
                             "Free text message processed successfully",
@@ -274,6 +338,14 @@ class RabbitMQConsumer:
                                 content=str(message_data.get("state") or "interactive"),
                                 whatsapp_message_id=wa_id,
                             )
+                            # Store message context for reply resolution
+                            if message_data.get("state") and message_data.get("recipient"):
+                                await self._store_message_context(
+                                    message_id=wa_id,
+                                    state=str(message_data.get("state")),
+                                    event_id=str(message_data.get("event_id")),
+                                    guest_phone=str(message_data.get("recipient"))
+                                )
                         
                         self.logger.info(
                             "Interactive message processed successfully",
