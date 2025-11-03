@@ -26,7 +26,7 @@ rsvp_update:
   next:
     "יש הערה שלא ציינו": note_info
     "בסוף לא נוכל להגיע": rsvp_decline
-    "נגיע כמות אחרת משציפינו": rsvp_count
+    "נגיע כמות אחרת בסוף": rsvp_count
 
 # rsvp_decline is a terminal state, but allow users to restart if they change their mind
 rsvp_decline:

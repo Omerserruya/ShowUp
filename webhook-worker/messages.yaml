@@ -58,8 +58,8 @@ rsvp_update:
       title: "בסוף לא נוכל להגיע"
       payload: "בסוף לא נוכל להגיע"
     - type: reply
-      title: "נגיע כמות אחרת משציפינו"
-      payload: "נגיע כמות אחרת משציפינו"
+      title: "נגיע כמות אחרת בסוף"
+      payload: "נגיע כמות אחרת בסוף"
 
 rsvp_decline:
   type: interactive
