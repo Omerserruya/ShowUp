@@ -371,8 +371,8 @@ class ConversationFlowManager:
             except Exception as e:
                 logger.warning(f"Failed to resolve state from reply_to_message_id: {e}")
 
-        # If we still have the default prev_state and a button_id hint encoded with state, use it
-        if msg_type == "quick_reply" and button_id and prev_state == self.initial_state:
+        # Prefer button_id hint to override current Redis state when user clicks an older message's button
+        if msg_type == "quick_reply" and button_id:
             try:
                 if "__BTN_" in button_id:
                     hinted_state = button_id.split("__BTN_", 1)[0]
