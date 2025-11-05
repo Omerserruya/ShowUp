@@ -236,13 +236,9 @@ async def handle_whatsapp_webhook(request: Request):
         # Get raw body for signature verification and logging
         body = await request.body()
         try:
-            logger.info(
-                "Webhook received - raw body",
-                extra={
-                    "raw_body": body.decode("utf-8", errors="replace"),
-                    "headers": dict(request.headers)
-                }
-            )
+            raw_str = body.decode("utf-8", errors="replace")
+            logger.info(f"Webhook received - raw body: {raw_str}")
+            logger.info(f"Webhook received - headers: {json.dumps(dict(request.headers))}")
         except Exception:
             pass
         
@@ -260,10 +256,7 @@ async def handle_whatsapp_webhook(request: Request):
             raise HTTPException(status_code=400, detail="Invalid JSON")
         # Log full parsed JSON for debugging/traceability
         try:
-            logger.info(
-                "Webhook parsed JSON",
-                extra={"json": data}
-            )
+            logger.info(f"Webhook parsed JSON: {json.dumps(data, ensure_ascii=False)}")
         except Exception:
             pass
         
@@ -279,7 +272,7 @@ async def handle_whatsapp_webhook(request: Request):
                 value = change.get("value", {})
                 # Log entire 'value' object (contains messages/statuses/metadata)
                 try:
-                    logger.info("Webhook change value", extra={"value": value})
+                    logger.info(f"Webhook change value: {json.dumps(value, ensure_ascii=False)}")
                 except Exception:
                     pass
                 # If Meta sends delivery/status updates, log them fully as well
@@ -287,7 +280,7 @@ async def handle_whatsapp_webhook(request: Request):
                 if statuses:
                     for status in statuses:
                         try:
-                            logger.info("Webhook status update", extra={"status": status})
+                            logger.info(f"Webhook status update: {json.dumps(status, ensure_ascii=False)}")
                         except Exception:
                             pass
                 messages = value.get("messages", [])
@@ -295,7 +288,7 @@ async def handle_whatsapp_webhook(request: Request):
                 for message in messages:
                     # Log each message record completely
                     try:
-                        logger.info("Webhook inbound message", extra={"message": message})
+                        logger.info(f"Webhook inbound message: {json.dumps(message, ensure_ascii=False)}")
                     except Exception:
                         pass
                     message_id = message.get("id")
