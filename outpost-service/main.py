@@ -52,16 +52,7 @@ class OutpostService:
         self.logger.info(f"Using WhatsApp Phone ID: {wa_phone_id}")
         self.logger.info(f"Using WhatsApp API Token: {wa_api_b[:10]}...")
         
-        # Test WhatsApp API connection
-        from whatsapp_sender import WhatsAppSender
-        test_sender = WhatsAppSender()
-        test_result = await test_sender.test_connection()
-        
-        if test_result.get("success"):
-            self.logger.info("✅ WhatsApp API connection test successful")
-        else:
-            self.logger.error("❌ WhatsApp API connection test failed")
-            self.logger.error(f"Test result: {test_result}")
+        # Removed startup WhatsApp API test to avoid unintended hello_world sends
         
         # Initialize RabbitMQ consumer
         self.consumer = RabbitMQConsumer()

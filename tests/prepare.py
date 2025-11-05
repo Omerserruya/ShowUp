@@ -4,8 +4,7 @@ import string
 from datetime import datetime, timedelta, timezone
 
 BASE_URL = "https://dev.28042000.xyz/api"
-TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiOGU5Yzg5NTAtMDg0Ny00NjlkLWEyNGItMWI3ZDgzNWFhZGYwIiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzYyMTk0OTE1LCJleHAiOjE3NjIyODEzMTV9.le35ppvbrwUJyNKdkdwKBsRJFYtSxZBN0yGNpEvFPQI"
-
+TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMjdmMDVhYTgtZTYzMi00MjQ0LWJlOTktZWQ2ODNmZTJlNjVlIiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzYyMzM3MTUyLCJleHAiOjE3NjI0MjM1NTJ9.P_t9XDNyWV3jFEI8J5-bn2r9pTmkqBfypqJcWMOct-8"
 def create_event(headers):
     payload = {
         "name": "Tested Event",
@@ -37,7 +36,7 @@ from datetime import datetime, timedelta, timezone
 def create_campaigns(event_id, headers):
     now = datetime.now(timezone.utc)
     first_time = (now + timedelta(minutes=2)).isoformat().replace("+00:00", "Z")
-    second_time = (now + timedelta(hours=16)).isoformat().replace("+00:00", "Z")
+    second_time = (now + timedelta(minutes=16)).isoformat().replace("+00:00", "Z")
 
     payload = {
         "items": [
