@@ -16,6 +16,6 @@ class NoteInfoState(BaseState):
         return None
 
     async def send(self, session: AsyncSession, conversation: Any) -> Dict[str, Any]:
-        return self.build_text(conversation, "בוודאי 😊 נשמח אם תכתוב לנו את ההערה כאן 👇")
+        return await self.build_text(session, conversation, "בוודאי 😊 נשמח אם תכתוב לנו את ההערה כאן 👇")
 
 

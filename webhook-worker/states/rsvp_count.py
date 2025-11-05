@@ -16,7 +16,8 @@ class RsvpCountState(BaseState):
         return None
 
     async def send(self, session: AsyncSession, conversation: Any) -> Optional[Dict[str, Any]]:
-        return self.build_text(
+        return await self.build_text(
+            session,
             conversation,
             "יופי! שמחים לדעת שתוכל להגיע ל{{event.name}} של {{event.inviters}} 🥳\nרק כדי שנוכל להתכונן כמו שצריך – כמה אנשים יגיעו איתך? 😊\n הגב בבקשה במספר בלבד",
         )

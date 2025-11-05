@@ -70,8 +70,20 @@ class Worker:
 
         # Extract text/button for message types
         extracted = payload.get("extracted_data", {}) if isinstance(payload, dict) else {}
+        # For buttons, prefer button_title (the display text), fallback to button_text or button_id
         button_text = extracted.get("button_title") or extracted.get("button_text") or extracted.get("button_id")
+        # For regular messages, use text; for buttons, use button text
         text = extracted.get("text") or button_text or ""
+        
+        logger.info(
+            "Extracted message data",
+            extra={
+                "message_type": message_type,
+                "extracted": extracted,
+                "button_text": button_text,
+                "final_text": text,
+            },
+        )
 
         # WhatsApp reply context id
         context_id = None

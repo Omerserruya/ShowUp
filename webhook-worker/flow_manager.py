@@ -204,11 +204,27 @@ class FlowManager:
             # process
             await handler.process_incoming(session, {"text": text, "raw": raw}, conv)
             next_state_id = handler.get_next_state({"text": text, "raw": raw})
+            logger.info(
+                "State transition",
+                extra={
+                    "current_state": conv.current_state,
+                    "input_text": text,
+                    "next_state": next_state_id,
+                    "handler_next_states": handler.next_states,
+                },
+            )
             await self.update_conversation(session, conv, next_state_id)
             conv = await self.load_conversation(session, guest_phone, event_id)
 
             # send via next state's send
             next_handler = self.state_handlers.get(next_state_id, FreeTextState)(self)
+            logger.info(
+                "Sending message from next state",
+                extra={
+                    "next_state_id": next_state_id,
+                    "next_handler_id": next_handler.id,
+                },
+            )
             outgoing = await next_handler.send(session, conv)
             if outgoing:
                 await self.log_message(
