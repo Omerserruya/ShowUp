@@ -41,18 +41,24 @@ class RabbitMQConsumer:
         self.password = os.getenv("RABBITMQ_PASSWORD")
         self.queue_name = os.getenv("OUTPOST_QUEUE_NAME")
 
-        # Postgres for logging WhatsApp message IDs
-        self.db_url = os.getenv("DATABASE_URL") or (
-            f"postgresql://{os.getenv('DB_USER')}:"
-            f"{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:"
-            f"{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
-        )
+        # Postgres for logging WhatsApp message IDs (use separate envs only)
+        db_user = os.getenv('DB_USER')
+        db_password = os.getenv('DB_PASSWORD')
+        db_host = os.getenv('DB_HOST')
+        db_port = os.getenv('DB_PORT')
+        db_name = os.getenv('DB_NAME')
+
+        self.db_url = None
+        if all([db_user, db_password, db_host, db_port, db_name]):
+            self.db_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+
         self.pg_conn = None
-        try:
-            self.pg_conn = psycopg2.connect(self.db_url)
-            self.pg_conn.autocommit = True
-        except Exception as e:
-            self.logger.warning(f"Outpost could not connect to Postgres for logging: {e}")
+        if self.db_url:
+            try:
+                self.pg_conn = psycopg2.connect(self.db_url)
+                self.pg_conn.autocommit = True
+            except Exception as e:
+                self.logger.warning(f"Outpost could not connect to Postgres for logging: {e}")
 
         # Redis for storing message context (same Redis as webhook-worker)
         self.redis = None
