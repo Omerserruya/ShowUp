@@ -36,7 +36,7 @@ class BaseState:
         return {
             "platform": "WA",
             "recipient": conversation.guest_phone,
-            "message_type": "text",
+            "message_type": "free_text",
             "text": "",
             "event_id": str(conversation.event_id),
             "state": self.id,
@@ -64,7 +64,7 @@ class BaseState:
         return {
             "platform": "WA",
             "recipient": conversation.guest_phone,
-            "message_type": "text",
+            "message_type": "free_text",
             "text": text,
             "event_id": str(conversation.event_id),
             "state": self.id,
