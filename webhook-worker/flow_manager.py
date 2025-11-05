@@ -188,6 +188,17 @@ class FlowManager:
             # Select handler by current conversation state (class-based FSM)
             handler_cls = self.state_handlers.get(conv.current_state, FreeTextState)
             handler = handler_cls(self)
+            
+            logger.info(
+                "Processing message",
+                extra={
+                    "conversation_state": conv.current_state,
+                    "handler_id": handler.id,
+                    "handler_next_states": handler.next_states,
+                    "input_text": text,
+                    "context_id": context_id,
+                },
+            )
 
             # log incoming
             await self.log_message(
@@ -208,13 +219,37 @@ class FlowManager:
                 "State transition",
                 extra={
                     "current_state": conv.current_state,
-                    "input_text": text,
+                    "handler_id": handler.id,
+                    "input_text": repr(text),  # Use repr to see whitespace
+                    "input_text_len": len(text),
                     "next_state": next_state_id,
                     "handler_next_states": handler.next_states,
+                    "matched_key": text if text in handler.next_states else ("*" if "*" in handler.next_states else None),
                 },
             )
+            
+            # Validate next_state_id exists
+            if next_state_id not in self.state_handlers:
+                logger.error(
+                    f"Next state {next_state_id} not found in state_handlers, falling back to {self.fallback_state_id}",
+                    extra={"available_states": list(self.state_handlers.keys())},
+                )
+                next_state_id = self.fallback_state_id
+            
             await self.update_conversation(session, conv, next_state_id)
+            # Reload conversation to get updated state
+            await session.refresh(conv)
+            # Also reload from DB to be sure
             conv = await self.load_conversation(session, guest_phone, event_id)
+            
+            logger.info(
+                "Conversation updated",
+                extra={
+                    "new_state": conv.current_state,
+                    "expected_next_state": next_state_id,
+                    "states_match": conv.current_state == next_state_id,
+                },
+            )
 
             # send via next state's send
             next_handler = self.state_handlers.get(next_state_id, FreeTextState)(self)
@@ -223,6 +258,7 @@ class FlowManager:
                 extra={
                     "next_state_id": next_state_id,
                     "next_handler_id": next_handler.id,
+                    "next_handler_type": type(next_handler).__name__,
                 },
             )
             outgoing = await next_handler.send(session, conv)
