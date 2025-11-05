@@ -43,9 +43,9 @@ class RabbitMQConsumer:
 
         # Postgres for logging WhatsApp message IDs
         self.db_url = os.getenv("DATABASE_URL") or (
-            f"postgresql://{os.getenv('DB_USER','postgres')}:"
-            f"{os.getenv('DB_PASSWORD','postgres')}@{os.getenv('DB_HOST','postgres')}:"
-            f"{os.getenv('DB_PORT','5432')}/{os.getenv('DB_NAME','showup')}"
+            f"postgresql://{os.getenv('DB_USER')}:"
+            f"{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:"
+            f"{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
         )
         self.pg_conn = None
         try:
