@@ -29,7 +29,7 @@ class BaseState:
         # wildcard
         if "*" in self.next_states:
             return self.next_states["*"]
-        return self.flow.initial_state
+        return getattr(self.flow, "fallback_state_id", self.flow.initial_state)
 
     async def send(self, session: AsyncSession, conversation: Any) -> Optional[Dict[str, Any]]:
         # Default: plain text noop

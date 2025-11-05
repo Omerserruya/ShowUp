@@ -2,7 +2,7 @@ from typing import Any, Dict, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .base_state import BaseState
+from states.base_state import BaseState
 
 
 class RsvpInviteState(BaseState):
