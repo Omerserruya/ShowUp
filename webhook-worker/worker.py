@@ -26,7 +26,8 @@ class WebhookWorker:
         self.rabbit_user = os.getenv("RABBITMQ_USER")
         self.rabbit_password = os.getenv("RABBITMQ_PASSWORD")
         self.webhook_queue = os.getenv("WEBHOOK_QUEUE")
-        self.outpost_queue = os.getenv("OUTPOST_QUEUE")
+        # Prefer OUTPOST_QUEUE_NAME (used across other services); fallback to OUTPOST_QUEUE
+        self.outpost_queue = os.getenv("OUTPOST_QUEUE_NAME") or os.getenv("OUTPOST_QUEUE")
         self.redis_url = os.getenv("REDIS_URL")
 
         # Connections
@@ -48,6 +49,10 @@ class WebhookWorker:
         self.out_channel = await self.connection.channel()
 
         # Declare queues
+        if not self.webhook_queue:
+            raise RuntimeError("WEBHOOK_QUEUE env is not set")
+        if not self.outpost_queue:
+            raise RuntimeError("OUTPOST_QUEUE_NAME/OUTPOST_QUEUE env is not set")
         await self.channel.declare_queue(self.webhook_queue, durable=True)
         await self.out_channel.declare_queue(self.outpost_queue, durable=True)
         logger.info("Connected to RabbitMQ and declared queues", extra={"webhook_queue": self.webhook_queue, "outpost_queue": self.outpost_queue})
@@ -58,7 +63,7 @@ class WebhookWorker:
             aio_pika.Message(body=body, delivery_mode=aio_pika.DeliveryMode.PERSISTENT),
             routing_key=self.outpost_queue,
         )
-        logger.info("Published next message to outpost_queue")
+        logger.info("Published next message to outpost_queue", extra={"routing_key": self.outpost_queue, "recipient": message.get("recipient"), "type": message.get("message_type"), "state": message.get("state")})
 
         # Generate temp id and store message context so reply context can find the correct state even before WA id exists
         try:

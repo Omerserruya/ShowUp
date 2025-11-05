@@ -41,24 +41,26 @@ class RabbitMQConsumer:
         self.password = os.getenv("RABBITMQ_PASSWORD")
         self.queue_name = os.getenv("OUTPOST_QUEUE_NAME")
 
-        # Postgres for logging WhatsApp message IDs (use separate envs only)
-        db_user = os.getenv('DB_USER')
-        db_password = os.getenv('DB_PASSWORD')
-        db_host = os.getenv('DB_HOST')
-        db_port = os.getenv('DB_PORT')
-        db_name = os.getenv('DB_NAME')
-
-        self.db_url = None
-        if all([db_user, db_password, db_host, db_port, db_name]):
-            self.db_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-
+        # Postgres for logging WhatsApp message IDs (opt-in via OUTPOST_ENABLE_DB_LOGGING)
+        enable_db_logging = (os.getenv('OUTPOST_ENABLE_DB_LOGGING', 'false').lower() == 'true')
         self.pg_conn = None
-        if self.db_url:
-            try:
-                self.pg_conn = psycopg2.connect(self.db_url)
-                self.pg_conn.autocommit = True
-            except Exception as e:
-                self.logger.warning(f"Outpost could not connect to Postgres for logging: {e}")
+        self.db_url = None
+        if enable_db_logging:
+            db_user = os.getenv('DB_USER')
+            db_password = os.getenv('DB_PASSWORD')
+            db_host = os.getenv('DB_HOST')
+            db_port = os.getenv('DB_PORT')
+            db_name = os.getenv('DB_NAME')
+
+            if all([db_user, db_password, db_host, db_port, db_name]):
+                self.db_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+                try:
+                    self.pg_conn = psycopg2.connect(self.db_url)
+                    self.pg_conn.autocommit = True
+                except Exception as e:
+                    self.logger.warning(f"Outpost could not connect to Postgres for logging: {e}")
+            else:
+                self.logger.info("DB logging disabled: missing DB_* envs")
 
         # Redis for storing message context (same Redis as webhook-worker)
         self.redis = None
@@ -205,6 +207,18 @@ class RabbitMQConsumer:
                             template_name=message_data["template"],
                             parameters=message_data["parameters"]
                         )
+                        # Log full WhatsApp API response (truncated)
+                        try:
+                            self.logger.info(
+                                "WA response (template)",
+                                extra={
+                                    "recipient": message_data.get("recipient"),
+                                    "template": message_data.get("template"),
+                                    "wa_response": wa_resp
+                                }
+                            )
+                        except Exception:
+                            pass
                         wa_id = (wa_resp or {}).get("messages", [{}])[0].get("id")
                         if wa_id and message_data.get("event_id"):
                             self._log_outgoing_whatsapp_id(
@@ -270,6 +284,18 @@ class RabbitMQConsumer:
                             recipient=message_data["recipient"],
                             text=message_data["text"]
                         )
+                        # Log full WhatsApp API response (truncated)
+                        try:
+                            self.logger.info(
+                                "WA response (text)",
+                                extra={
+                                    "recipient": message_data.get("recipient"),
+                                    "text_len": len(message_data.get("text", "")),
+                                    "wa_response": wa_resp
+                                }
+                            )
+                        except Exception:
+                            pass
                         wa_id = (wa_resp or {}).get("messages", [{}])[0].get("id")
                         if wa_id and message_data.get("event_id"):
                             self._log_outgoing_whatsapp_id(
@@ -336,6 +362,18 @@ class RabbitMQConsumer:
                             recipient=message_data["recipient"],
                             interactive=message_data["interactive"]
                         )
+                        # Log full WhatsApp API response (truncated)
+                        try:
+                            self.logger.info(
+                                "WA response (interactive)",
+                                extra={
+                                    "recipient": message_data.get("recipient"),
+                                    "interactive_type": message_data.get("interactive", {}).get("type"),
+                                    "wa_response": wa_resp
+                                }
+                            )
+                        except Exception:
+                            pass
                         wa_id = (wa_resp or {}).get("messages", [{}])[0].get("id")
                         if wa_id and message_data.get("event_id"):
                             self._log_outgoing_whatsapp_id(

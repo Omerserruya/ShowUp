@@ -52,7 +52,6 @@ class OutpostService:
         self.logger.info(f"Using WhatsApp Phone ID: {wa_phone_id}")
         self.logger.info(f"Using WhatsApp API Token: {wa_api_b[:10]}...")
         
-        # Removed startup WhatsApp API test to avoid unintended hello_world sends
         
         # Initialize RabbitMQ consumer
         self.consumer = RabbitMQConsumer()
