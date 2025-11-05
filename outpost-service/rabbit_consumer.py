@@ -165,6 +165,20 @@ class RabbitMQConsumer:
         """Process a single message from the queue."""
         async with message.process():
             try:
+                # Log basic AMQP delivery info
+                try:
+                    self.logger.info(
+                        "Consumed message from outpost queue",
+                        extra={
+                            "routing_key": getattr(message, "routing_key", None),
+                            "delivery_tag": getattr(message, "delivery_tag", None),
+                            "headers": dict(getattr(message, "headers", {}) or {}),
+                            "body_preview": message.body.decode(errors="ignore")[:500]
+                        }
+                    )
+                except Exception:
+                    pass
+
                 # Parse message body
                 message_data = json.loads(message.body.decode())
                 
@@ -189,6 +203,18 @@ class RabbitMQConsumer:
                 message_type = message_data.get("message_type", "template")
                 
                 if message_type == "template":
+                    # Pre-send log
+                    try:
+                        self.logger.info(
+                            "Sending WA template",
+                            extra={
+                                "recipient": message_data.get("recipient"),
+                                "template": message_data.get("template"),
+                                "parameters": message_data.get("parameters")
+                            }
+                        )
+                    except Exception:
+                        pass
                     # Validate template message format
                     required_fields = ["platform", "recipient", "template", "parameters"]
                     missing_fields = [field for field in required_fields if field not in message_data]
@@ -241,6 +267,7 @@ class RabbitMQConsumer:
                             extra={
                                 "recipient": message_data["recipient"],
                                 "template": message_data["template"],
+                                "wa_message_id": (wa_resp or {}).get("messages", [{}])[0].get("id"),
                                 "source": message_data.get("source", "unknown")
                             }
                         )
@@ -267,6 +294,17 @@ class RabbitMQConsumer:
                         )
                         
                 elif message_type == "free_text":
+                    # Pre-send log
+                    try:
+                        self.logger.info(
+                            "Sending WA text",
+                            extra={
+                                "recipient": message_data.get("recipient"),
+                                "text_len": len(message_data.get("text", ""))
+                            }
+                        )
+                    except Exception:
+                        pass
                     # Validate free text message format
                     required_fields = ["platform", "recipient", "text"]
                     missing_fields = [field for field in required_fields if field not in message_data]
@@ -318,6 +356,7 @@ class RabbitMQConsumer:
                             extra={
                                 "recipient": message_data["recipient"],
                                 "text_length": len(message_data["text"]),
+                                "wa_message_id": (wa_resp or {}).get("messages", [{}])[0].get("id"),
                                 "source": message_data.get("source", "unknown"),
                                 "original_type": message_data.get("original_type", "unknown")
                             }
@@ -345,6 +384,17 @@ class RabbitMQConsumer:
                         )
                         
                 elif message_type == "interactive":
+                    # Pre-send log
+                    try:
+                        self.logger.info(
+                            "Sending WA interactive",
+                            extra={
+                                "recipient": message_data.get("recipient"),
+                                "interactive_type": message_data.get("interactive", {}).get("type")
+                            }
+                        )
+                    except Exception:
+                        pass
                     # Validate interactive message format
                     required_fields = ["platform", "recipient", "interactive"]
                     missing_fields = [field for field in required_fields if field not in message_data]
@@ -397,6 +447,7 @@ class RabbitMQConsumer:
                                 "recipient": message_data["recipient"],
                                 "interactive_type": message_data.get("interactive", {}).get("type"),
                                 "button_count": len(message_data.get("interactive", {}).get("action", {}).get("buttons", [])),
+                                "wa_message_id": (wa_resp or {}).get("messages", [{}])[0].get("id"),
                                 "source": message_data.get("source", "unknown")
                             }
                         )

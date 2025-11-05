@@ -233,8 +233,18 @@ async def handle_whatsapp_webhook(request: Request):
     WhatsApp webhook handler that validates, categorizes, and enqueues messages
     """
     try:
-        # Get raw body for signature verification
+        # Get raw body for signature verification and logging
         body = await request.body()
+        try:
+            logger.info(
+                "Webhook received - raw body",
+                extra={
+                    "raw_body": body.decode("utf-8", errors="replace"),
+                    "headers": dict(request.headers)
+                }
+            )
+        except Exception:
+            pass
         
         # Verify HMAC signature
         signature = request.headers.get("X-Hub-Signature-256", "")
@@ -248,6 +258,14 @@ async def handle_whatsapp_webhook(request: Request):
         except json.JSONDecodeError:
             logger.error("Invalid JSON payload")
             raise HTTPException(status_code=400, detail="Invalid JSON")
+        # Log full parsed JSON for debugging/traceability
+        try:
+            logger.info(
+                "Webhook parsed JSON",
+                extra={"json": data}
+            )
+        except Exception:
+            pass
         
         # Validate schema
         if not validate_whatsapp_message(data):
@@ -258,9 +276,28 @@ async def handle_whatsapp_webhook(request: Request):
         processed_count = 0
         for entry in data.get("entry", []):
             for change in entry.get("changes", []):
-                messages = change.get("value", {}).get("messages", [])
+                value = change.get("value", {})
+                # Log entire 'value' object (contains messages/statuses/metadata)
+                try:
+                    logger.info("Webhook change value", extra={"value": value})
+                except Exception:
+                    pass
+                # If Meta sends delivery/status updates, log them fully as well
+                statuses = value.get("statuses", [])
+                if statuses:
+                    for status in statuses:
+                        try:
+                            logger.info("Webhook status update", extra={"status": status})
+                        except Exception:
+                            pass
+                messages = value.get("messages", [])
                 
                 for message in messages:
+                    # Log each message record completely
+                    try:
+                        logger.info("Webhook inbound message", extra={"message": message})
+                    except Exception:
+                        pass
                     message_id = message.get("id")
                     sender = message.get("from")
                     # WhatsApp includes reply context when a user replies to a specific message
