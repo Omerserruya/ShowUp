@@ -2,293 +2,182 @@ import asyncio
 import json
 import logging
 import os
-from typing import Dict, Any, List
-from datetime import datetime
+import signal
+import uuid
+from typing import Any, Dict, Optional
+
 import aio_pika
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from aio_pika.abc import AbstractIncomingMessage
+from redis import asyncio as aioredis
+
 from flow_manager import ConversationFlowManager
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+
 logger = logging.getLogger(__name__)
 
+
 class WebhookWorker:
+    """Consumes webhook messages and produces outpost messages."""
+
     def __init__(self):
-        # RabbitMQ connection parameters
-        self.host = os.getenv("RABBITMQ_HOST")
-        self.port = int(os.getenv("RABBITMQ_PORT"))
-        self.user = os.getenv("RABBITMQ_USER")
-        self.password = os.getenv("RABBITMQ_PASSWORD")
+        # Env
+        self.rabbit_host = os.getenv("RABBITMQ_HOST")
+        self.rabbit_port = int(os.getenv("RABBITMQ_PORT"))
+        self.rabbit_user = os.getenv("RABBITMQ_USER")
+        self.rabbit_password = os.getenv("RABBITMQ_PASSWORD")
         self.webhook_queue = os.getenv("WEBHOOK_QUEUE")
         self.outpost_queue = os.getenv("OUTPOST_QUEUE")
-        
-        self.connection = None
-        self.channel = None
-        self.flow_manager = ConversationFlowManager()
-    
-    @retry(
-        stop=stop_after_attempt(5),
-        wait=wait_exponential(multiplier=1, min=2, max=30),
-        retry=retry_if_exception_type((aio_pika.exceptions.AMQPConnectionError, ConnectionError, OSError))
-    )
+        self.redis_url = os.getenv("REDIS_URL")
+
+        # Connections
+        self.connection: Optional[aio_pika.RobustConnection] = None
+        self.channel: Optional[aio_pika.abc.AbstractChannel] = None
+        self.out_channel: Optional[aio_pika.abc.AbstractChannel] = None
+        self.consumer_tag: Optional[str] = None
+
+        # Flow manager
+        self.flow = ConversationFlowManager(redis_url=self.redis_url)
+
     async def connect(self):
-        """Establish connection to RabbitMQ with retry logic."""
+        connection_url = f"amqp://{self.rabbit_user}:{self.rabbit_password}@{self.rabbit_host}:{self.rabbit_port}/"
+        self.connection = await aio_pika.connect_robust(connection_url, heartbeat=60, blocked_connection_timeout=300)
+        self.channel = await self.connection.channel()
+        await self.channel.set_qos(prefetch_count=4)
+
+        # Dedicated channel for publishing to outpost
+        self.out_channel = await self.connection.channel()
+
+        # Declare queues
+        await self.channel.declare_queue(self.webhook_queue, durable=True)
+        await self.out_channel.declare_queue(self.outpost_queue, durable=True)
+        logger.info("Connected to RabbitMQ and declared queues", extra={"webhook_queue": self.webhook_queue, "outpost_queue": self.outpost_queue})
+
+    async def _publish_outpost(self, message: Dict[str, Any]) -> None:
+        body = json.dumps(message, ensure_ascii=False).encode("utf-8")
+        await self.out_channel.default_exchange.publish(
+            aio_pika.Message(body=body, delivery_mode=aio_pika.DeliveryMode.PERSISTENT),
+            routing_key=self.outpost_queue,
+        )
+        logger.info("Published next message to outpost_queue")
+
+        # Generate temp id and store message context so reply context can find the correct state even before WA id exists
         try:
-            # Create connection URL
-            connection_url = f"amqp://{self.user}:{self.password}@{self.host}:{self.port}/"
-            
-            self.connection = await aio_pika.connect_robust(connection_url)
-            self.channel = await self.connection.channel()
-            
-            # Set QoS to process one message at a time
-            await self.channel.set_qos(prefetch_count=1)
-            
-            logger.info(f"Connected to RabbitMQ at {self.host}:{self.port}")
-            
+            temp_id = f"temp-{uuid.uuid4()}"
+            await self.flow.store_message_context(
+                message_id=temp_id,
+                state=str(message.get("state")),
+                event_id=str(message.get("event_id")),
+                guest_phone=str(message.get("recipient")),
+            )
+            logger.debug("Stored temp message_context", extra={"temp_id": temp_id, "state": message.get("state")})
         except Exception as e:
-            logger.error(f"Failed to connect to RabbitMQ: {e}")
-            raise
+            logger.warning(f"Failed storing temp message context: {e}")
 
-    async def process_contacts(self, message_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process contact messages - create summary and send to outpost queue"""
+    @staticmethod
+    def _extract_incoming(msg: Dict[str, Any]) -> Dict[str, Any]:
+        # Normalize incoming payload
+        payload = msg.get("payload", {})
+        message_type = msg.get("message_type") or msg.get("type") or "message"
+        guest_phone = msg.get("guest_phone") or msg.get("recipient") or msg.get("phone")
+        event_id = msg.get("event_id") or payload.get("event_id")
+
+        # For quick_reply, extract button text/title if present
+        extracted = payload.get("extracted_data", {})
+        button_title = extracted.get("button_title") or extracted.get("button_text") or ""
+        text = extracted.get("text") or button_title or ""
+
+        # WhatsApp reply context id
+        context_id = None
+        if isinstance(payload, dict):
+            ctx = payload.get("context") or {}
+            context_id = ctx.get("id") or msg.get("reply_to_message_id")
+
+        return {
+            "message_type": "quick_reply" if message_type == "quick_reply" else ("free_text" if message_type in ("message", "free_text", "text") else message_type),
+            "guest_phone": guest_phone,
+            "event_id": event_id,
+            "text": text,
+            "context_id": context_id,
+            "template_parameters": payload.get("template_parameters") or {},
+        }
+
+    async def _handle_message(self, message_body: bytes) -> None:
         try:
-            payload = message_data.get("payload", {})
-            extracted_data = payload.get("extracted_data", {})
-            contact = extracted_data.get("contact", {})
-            
-            # Extract contact information
-            name = contact.get("name", "Unknown")
-            phones = contact.get("phones", [])
-            
-            # Create summary text
-            phone_text = ", ".join(phones) if phones else "No phone"
-            summary_text = f"Contact shared: {name} - {phone_text}"
-            
-            # Prepare message for outpost queue
-            outpost_message = {
-                "platform": "WA",  # Add platform field
-                "recipient": message_data.get("recipient"),
-                "message_id": message_data.get("message_id"),
-                "text": summary_text,
-                "message_type": "free_text",  # Contact summaries are free text
-                "template_id": None,
-                "template_params": None,
-                "processed_at": datetime.utcnow().isoformat(),
-                "source": "webhook_worker",
-                "original_type": "contacts"
-            }
-            
-            logger.info(f"Processed contact: {name} - {phone_text}")
-            return outpost_message
-            
-        except Exception as e:
-            logger.error(f"Error processing contact: {e}")
-            raise
+            msg = json.loads(message_body.decode("utf-8"))
+        except Exception:
+            logger.error("Invalid JSON message from webhook_queue")
+            return
 
-    async def process_message(self, message_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process free text via conversation flow manager -> produce template to send."""
-        try:
-            payload = message_data.get("payload", {})
-            extracted = payload.get("extracted_data", {})
-            text_body = extracted.get("text", "")
-            guest_phone = message_data.get("recipient")
-            event_id = (payload.get("event_id") or message_data.get("event_id") or "")
-            message_id = message_data.get("message_id")
-            reply_to_message_id = message_data.get("reply_to_message_id") or (payload.get("context") or {}).get("id")
-            button_id_hint = extracted.get("button_id")
+        normalized = self._extract_incoming(msg)
+        guest_phone = normalized.get("guest_phone")
+        event_id = normalized.get("event_id")
+        if not guest_phone or not event_id:
+            logger.error("Missing guest_phone or event_id in incoming message")
+            return
 
-            outpost_message, prev_state, next_state = await self.flow_manager.handle_incoming(
-                msg_type="free_text",
-                guest_phone=guest_phone,
-                text=text_body,
-                event_id=event_id if event_id and not event_id.startswith("wamid.") else None,  # Skip WhatsApp message IDs
-                message_id=message_id,
-                reply_to_message_id=reply_to_message_id,
-                button_id=button_id_hint,
-                template_parameters=payload.get("template_parameters") or {},
-                guest={"phone": guest_phone},
-                event={"id": event_id if event_id and not event_id.startswith("wamid.") else None}
-            )
+        logger.info("Consumed message from webhook_queue", extra={"guest": guest_phone, "type": normalized.get("message_type")})
 
-            if outpost_message is None:
-                logger.warning(
-                    f"Skipping message processing for {guest_phone} - no event found",
-                    extra={"guest": guest_phone, "message_id": message_id}
-                )
-                return None
-            
-            logger.info(
-                f"Flow transition (free_text): {prev_state} -> {next_state}",
-                extra={"guest": guest_phone}
-            )
-            return outpost_message
-            
-        except Exception as e:
-            logger.error(f"Error processing message: {e}")
-            raise
+        outgoing, prev_state, next_state = await self.flow.process_incoming(
+            message_type=normalized.get("message_type"),
+            guest_phone=guest_phone,
+            text=normalized.get("text") or "",
+            event_id=event_id,
+            context_id=normalized.get("context_id"),
+            template_parameters=normalized.get("template_parameters")
+        )
 
-    async def process_quick_reply(self, message_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Process quick_reply via conversation flow manager -> produce template to send."""
-        try:
-            payload = message_data.get("payload", {})
-            extracted = payload.get("extracted_data", {})
-            # Extract button text - try title first, then text, then id
-            # Also log what we're extracting for debugging
-            button_title = extracted.get("button_title") or ""
-            button_text = extracted.get("button_text") or ""
-            button_id = extracted.get("button_id") or ""
-            
-            selection_text = button_title or button_text or button_id
-            
-            logger.info(
-                f"Extracting quick_reply data",
-                extra={
-                    "button_title": button_title,
-                    "button_text": button_text,
-                    "button_id": button_id,
-                    "selected_text": selection_text,
-                    "extracted_data": extracted
-                }
-            )
-            guest_phone = message_data.get("recipient")
-            event_id = (payload.get("event_id") or message_data.get("event_id") or "")
-            message_id = message_data.get("message_id")
-            reply_to_message_id = message_data.get("reply_to_message_id") or (payload.get("context") or {}).get("id")
+        logger.info("Current state resolved", extra={"prev": prev_state, "next": next_state})
+        await self._publish_outpost(outgoing)
 
-            outpost_message, prev_state, next_state = await self.flow_manager.handle_incoming(
-                msg_type="quick_reply",
-                guest_phone=guest_phone,
-                text=selection_text,
-                event_id=event_id if event_id and not event_id.startswith("wamid.") else None,  # Skip WhatsApp message IDs
-                message_id=message_id,
-                reply_to_message_id=reply_to_message_id,
-                button_id=button_id,
-                template_parameters=payload.get("template_parameters") or {},
-                guest={"phone": guest_phone},
-                event={"id": event_id if event_id and not event_id.startswith("wamid.") else None}
-            )
-
-            if outpost_message is None:
-                logger.warning(
-                    f"Skipping quick_reply processing for {guest_phone} - no event found",
-                    extra={"guest": guest_phone, "message_id": message_id}
-                )
-                return None
-            
-            logger.info(
-                f"Flow transition (quick_reply): {prev_state} -> {next_state}",
-                extra={"guest": guest_phone}
-            )
-            return outpost_message
-            
-        except Exception as e:
-            logger.error(f"Error processing quick reply: {e}")
-            raise
-
-    async def send_to_outpost(self, message: Dict[str, Any]):
-        """Send processed message to outpost queue (template or free_text)."""
-        try:
-            # Declare outpost queue
-            queue = await self.channel.declare_queue(self.outpost_queue, durable=True)
-            
-            # Publish message
-            await self.channel.default_exchange.publish(
-                aio_pika.Message(
-                    body=json.dumps(message).encode(),
-                    delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-                    headers={"message_type": message.get("message_type", "template")}
-                ),
-                routing_key=self.outpost_queue
-            )
-            
-            if message.get("message_type") == "template":
-                logger.info(
-                    "Sent template to outpost",
-                    extra={"template": message.get("template"), "recipient": message.get("recipient")}
-                )
-            else:
-                logger.info(f"Sent message to outpost queue: {message.get('text', '')[:50]}...")
-            
-        except Exception as e:
-            logger.error(f"Error sending to outpost queue: {e}")
-            raise
-
-    async def process_webhook_message(self, message: aio_pika.IncomingMessage):
-        """Process incoming webhook message based on topic"""
+    async def _on_message(self, message: AbstractIncomingMessage) -> None:
         async with message.process():
-            try:
-                # Parse message
-                message_data = json.loads(message.body.decode())
-                topic = message_data.get("topic")
-                
-                logger.info(f"Processing webhook message with topic: {topic}")
-                
-                # Process based on topic
-                if topic == "contacts":
-                    processed_message = await self.process_contacts(message_data)
-                elif topic == "message":
-                    processed_message = await self.process_message(message_data)
-                    if processed_message is None:
-                        logger.info(f"Skipped processing message - no event found")
-                        return
-                elif topic == "quick_reply":
-                    processed_message = await self.process_quick_reply(message_data)
-                    if processed_message is None:
-                        logger.info(f"Skipped processing quick_reply - no event found")
-                        return
-                else:
-                    logger.warning(f"Unknown topic: {topic}")
-                    return
-                
-                # Send to outpost queue
-                await self.send_to_outpost(processed_message)
-                
-                logger.info(f"Successfully processed {topic} message")
-                
-            except Exception as e:
-                logger.error(f"Error processing webhook message: {e}")
-                # Message will be requeued due to async with message.process()
+            await self._handle_message(message.body)
 
-    async def start_consuming(self):
-        """Start consuming messages from webhook queue"""
-        try:
-            # Declare webhook queue
-            queue = await self.channel.declare_queue(self.webhook_queue, durable=True)
-            
-            # Start consuming
-            await queue.consume(self.process_webhook_message)
-            
-            logger.info(f"Started consuming from {self.webhook_queue}")
-            
-            # Keep the consumer running
-            try:
-                await asyncio.Future()  # Run forever
-            except KeyboardInterrupt:
-                logger.info("Received interrupt signal")
-                
-        except Exception as e:
-            logger.error(f"Error in consuming: {e}")
-            raise
+    async def start(self) -> None:
+        await self.connect()
+        queue = await self.channel.declare_queue(self.webhook_queue, durable=True)
+        await queue.consume(self._on_message)
+        logger.info("Webhook-worker started consuming", extra={"queue": self.webhook_queue})
 
-    async def run(self):
-        """Main run method"""
+    async def close(self) -> None:
         try:
-            await self.connect()
-            await self.start_consuming()
-        except KeyboardInterrupt:
-            logger.info("Shutting down webhook worker...")
-        finally:
-            if self.connection:
+            if self.channel and not self.channel.is_closed:
+                await self.channel.close()
+            if self.out_channel and not self.out_channel.is_closed:
+                await self.out_channel.close()
+            if self.connection and not self.connection.is_closed:
                 await self.connection.close()
+        finally:
+            logger.info("Webhook-worker shutdown complete")
 
-async def main():
-    """Main entry point"""
+
+async def _run():
+    logging.basicConfig(level=logging.INFO)
     worker = WebhookWorker()
-    await worker.run()
+    stop = asyncio.Event()
+
+    def _signal_handler():
+        stop.set()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, _signal_handler)
+
+    # retry connect loop
+    while not stop.is_set():
+        try:
+            await worker.start()
+            break
+        except Exception as e:
+            logger.error(f"Failed to start worker: {e}")
+            await asyncio.sleep(5)
+
+    try:
+        while not stop.is_set():
+            await asyncio.sleep(1)
+    finally:
+        await worker.close()
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(_run())

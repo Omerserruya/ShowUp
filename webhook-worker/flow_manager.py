@@ -1,15 +1,12 @@
 import os
 import json
 import logging
-import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Optional, Tuple
 
-import psycopg2
-import psycopg2.extras
 import yaml
 from redis import asyncio as aioredis
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
 from message_builder import MessageBuilder
 
 
@@ -17,125 +14,64 @@ logger = logging.getLogger(__name__)
 
 
 class ConversationFlowManager:
-    """Manages WhatsApp conversation flow using YAML config, Redis state, and Postgres history."""
+    """Async conversation flow engine with Redis context resolution.
+
+    Responsibilities:
+    - Load conversation_flow.yaml and messages.yaml
+    - Resolve current state from Redis conversation key
+    - On incoming reply with context.id: resolve state from message_context in Redis
+    - Resolve next_state from conversation_flow.yaml
+    - Build outgoing payload via MessageBuilder
+    - Update conversation and store message_context
+    """
 
     def __init__(self,
                  flow_path: Optional[str] = None,
-                 initial_state: Optional[str] = None):
+                 messages_path: Optional[str] = None,
+                 initial_state: Optional[str] = None,
+                 redis_url: Optional[str] = None):
         # Load flow config
-        self.flow_path = flow_path or os.getenv("CONVERSATION_FLOW_PATH", 
-                                                os.path.join(os.path.dirname(__file__), "conversation_flow.yaml"))
-        self.flow: Dict[str, Any] = self._load_flow(self.flow_path)
+        self.flow_path = flow_path or os.getenv("CONVERSATION_FLOW_PATH", os.path.join(os.path.dirname(__file__), "conversation_flow.yaml"))
+        self.flow: Dict[str, Any] = self._load_yaml(self.flow_path)
         self.initial_state = initial_state or os.getenv("CONVERSATION_INITIAL_STATE", "rsvp_invite")
         self.state_status_mapping: Dict[str, str] = self.flow.get("state_status_mapping", {})
 
-        # Messages config for MessageBuilder (optional)
-        self.messages_path = os.getenv("MESSAGES_CONFIG_PATH", os.path.join(os.path.dirname(__file__), "messages.yaml"))
-        self.message_builder = None
-        try:
-            if os.path.exists(self.messages_path):
-                with open(self.messages_path, "r", encoding="utf-8") as f:
-                    messages_config = yaml.safe_load(f) or {}
-                self.message_builder = MessageBuilder(messages_config)
-        except Exception as e:
-            logger.warning(f"Failed to load messages config: {e}")
+        # Messages config
+        self.messages_path = messages_path or os.getenv("MESSAGES_CONFIG_PATH", os.path.join(os.path.dirname(__file__), "messages.yaml"))
+        messages_config = self._load_yaml(self.messages_path)
+        self.message_builder = MessageBuilder(messages_config) if messages_config else None
 
         # Redis
         self.redis = aioredis.from_url(
-            os.getenv("REDIS_URL", "redis://redis:6379/0"),
+            redis_url or os.getenv("REDIS_URL", "redis://redis:6379/0"),
             encoding="utf-8",
             decode_responses=True,
         )
 
-        # Message context TTL (24 hours default)
-        self.message_context_ttl = int(os.getenv("MESSAGE_CONTEXT_TTL", "86400"))
+        # TTLs
+        self.message_context_ttl_seconds: int = int(os.getenv("MESSAGE_CONTEXT_TTL", "86400"))
+        self.conversation_ttl_seconds: int = int(os.getenv("CONVERSATION_TTL", str(7 * 24 * 3600)))
 
-        # Postgres (sync driver; small queries only)
-        self.pg_conn = self._connect_pg()
-        self._ensure_tables()
-
-    def _load_flow(self, path: str) -> Dict[str, Any]:
-        with open(path, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
-
-    def _pg_url(self) -> str:
-        # Prefer DATABASE_URL if present (as used by core-service)
-        url = os.getenv("DATABASE_URL")
-        if url:
-            return url
-        host = os.getenv("DB_HOST", "postgres")
-        port = os.getenv("DB_PORT", "5432")
-        user = os.getenv("DB_USER", "postgres")
-        password = os.getenv("DB_PASSWORD", "postgres")
-        name = os.getenv("DB_NAME", "showup")
-        return f"postgresql://{user}:{password}@{host}:{port}/{name}"
-
-    @retry(
-        stop=stop_after_attempt(20),
-        wait=wait_exponential(multiplier=1, min=1, max=30),
-        retry=retry_if_exception_type((psycopg2.OperationalError, psycopg2.InterfaceError))
-    )
-    def _connect_pg(self):
-        logger.info("Connecting to Postgres...")
-        conn = psycopg2.connect(self._pg_url())
-        conn.autocommit = True
-        logger.info("Connected to Postgres")
-        return conn
-
-    def _ensure_tables(self):
-        """Create messages_log if not exists. Assumes guests table already exists in main DB."""
-        ddl = """
-        CREATE TABLE IF NOT EXISTS messages_log (
-            id SERIAL PRIMARY KEY,
-            guest_id UUID NULL,
-            event_id UUID NOT NULL,
-            direction VARCHAR(16) NOT NULL, -- incoming | outgoing
-            type VARCHAR(32) NOT NULL,       -- quick_reply | free_text | template
-            content TEXT NULL,
-            state_before VARCHAR(64) NULL,
-            state_after VARCHAR(64) NULL,
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
-        );
-        """
-        with self.pg_conn.cursor() as cur:
-            cur.execute(ddl)
-            # Also add foreign key if possible (don't fail if it exists)
-            try:
-                cur.execute("""
-                    DO $$ 
-                    BEGIN
-                        IF NOT EXISTS (
-                            SELECT 1 FROM pg_constraint 
-                            WHERE conname = 'messages_log_guest_id_fkey'
-                        ) THEN
-                            ALTER TABLE messages_log 
-                            ADD CONSTRAINT messages_log_guest_id_fkey 
-                            FOREIGN KEY (guest_id) REFERENCES guests(id);
-                        END IF;
-                    END $$;
-                """)
-            except Exception as e:
-                logger.warning(f"Could not add foreign key constraint: {e}")
-            # Ensure columns for WhatsApp message id and reply reference exist
-            try:
-                cur.execute("""
-                    ALTER TABLE messages_log 
-                    ADD COLUMN IF NOT EXISTS whatsapp_message_id TEXT NULL,
-                    ADD COLUMN IF NOT EXISTS reply_to_message_id TEXT NULL;
-                """)
-            except Exception as e:
-                logger.warning(f"Could not ensure whatsapp/reply columns: {e}")
+    def _load_yaml(self, path: str) -> Dict[str, Any]:
+        try:
+            if not os.path.exists(path):
+                return {}
+            with open(path, "r", encoding="utf-8") as f:
+                return yaml.safe_load(f) or {}
+        except Exception as e:
+            logger.warning(f"Failed to load yaml {path}: {e}")
+            return {}
 
     @staticmethod
-    def _state_key(guest_phone: str, event_id: str) -> str:
+    def _conversation_key(guest_phone: str, event_id: str) -> str:
         return f"conversation:{guest_phone}:{event_id}"
 
     @staticmethod
     def _message_context_key(message_id: str) -> str:
         return f"message_context:{message_id}"
 
-    async def get_state(self, guest_phone: str, event_id: str) -> Dict[str, Any]:
-        raw = await self.redis.get(self._state_key(guest_phone, event_id))
+    async def get_conversation_state(self, guest_phone: str, event_id: str) -> Dict[str, Any]:
+        raw = await self.redis.get(self._conversation_key(guest_phone, event_id))
         if not raw:
             return {
                 "state": self.initial_state,
@@ -147,444 +83,140 @@ class ConversationFlowManager:
         except Exception:
             return {"state": self.initial_state}
 
-    async def set_state(self, guest_phone: str, event_id: str, state: Dict[str, Any]):
-        await self.redis.set(self._state_key(guest_phone, event_id), json.dumps(state, ensure_ascii=False))
+    async def set_conversation_state(self, guest_phone: str, event_id: str, state_obj: Dict[str, Any]) -> None:
+        await self.redis.setex(
+            self._conversation_key(guest_phone, event_id),
+            self.conversation_ttl_seconds,
+            json.dumps(state_obj, ensure_ascii=False)
+        )
 
-    async def store_message_context(self, message_id: str, state: str, event_id: str, guest_phone: str):
-        """Store message context in Redis with TTL.
-        
-        Args:
-            message_id: WhatsApp message ID (wamid...)
-            state: State name when message was sent
-            event_id: Event ID
-            guest_phone: Guest phone number
-        """
-        context = {
+    async def store_message_context(self, message_id: str, state: str, event_id: str, guest_phone: str) -> None:
+        if not message_id:
+            return
+        payload = {
             "message_id": message_id,
             "state": state,
             "event_id": event_id,
             "guest_phone": guest_phone,
-            "created_at": datetime.now(timezone.utc).isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
-        key = self._message_context_key(message_id)
         await self.redis.setex(
-            key,
-            self.message_context_ttl,
-            json.dumps(context, ensure_ascii=False)
-        )
-        logger.debug(
-            f"Stored message context for {message_id}",
-            extra={"message_id": message_id, "state": state, "ttl": self.message_context_ttl}
+            self._message_context_key(message_id),
+            self.message_context_ttl_seconds,
+            json.dumps(payload, ensure_ascii=False)
         )
 
-    async def resolve_state_from_context(self, context_id: str) -> Optional[Dict[str, Any]]:
-        """Resolve state from message context by WhatsApp message_id.
-        
-        Args:
-            context_id: WhatsApp message_id from context.id in webhook
-            
-        Returns:
-            Dict with state info if found, None otherwise
-        """
+    async def resolve_state_from_context(self, context_id: Optional[str]) -> Optional[Dict[str, Any]]:
         if not context_id:
             return None
-        
-        key = self._message_context_key(context_id)
-        raw = await self.redis.get(key)
-        
+        raw = await self.redis.get(self._message_context_key(context_id))
         if not raw:
-            logger.info(
-                f"Message context not found or expired for {context_id}",
-                extra={"context_id": context_id}
-            )
+            logger.info("Message context not found or expired", extra={"context_id": context_id})
             return None
-        
         try:
-            context = json.loads(raw)
-            logger.info(
-                f"Resolved state from message context",
-                extra={
-                    "context_id": context_id,
-                    "resolved_state": context.get("state"),
-                    "event_id": context.get("event_id")
-                }
-            )
-            return context
+            data = json.loads(raw)
+            return data
         except Exception as e:
-            logger.warning(f"Failed to parse message context for {context_id}: {e}")
+            logger.warning(f"Invalid message context for {context_id}: {e}")
             return None
 
-    def _find_guest_and_event(self, guest_phone: str) -> Tuple[Optional[str], Optional[str]]:
-        """Find guest_id and event_id by phone number.
-        
-        Returns:
-            (guest_id, event_id) as strings, or (None, None) if not found
-        """
-        # Normalize phone: remove + and any spaces, try multiple formats
-        normalized_phone = guest_phone.replace("+", "").replace(" ", "").replace("-", "")
-        
-        # Try multiple phone formats: original, without +, with country code variations
-        sql = """
-        SELECT id, event_id FROM guests 
-        WHERE phone = %s 
-           OR phone = %s
-           OR phone LIKE %s
-           OR phone LIKE %s
-        ORDER BY created_at DESC 
-        LIMIT 1;
-        """
-        with self.pg_conn.cursor() as cur:
-            # Try exact matches and variations
-            cur.execute(sql, (
-                guest_phone,                    # Original format
-                normalized_phone,               # Without + and spaces
-                f"%{normalized_phone}",         # Ends with normalized
-                f"{normalized_phone}%"          # Starts with normalized
-            ))
-            row = cur.fetchone()
-            if row:
-                logger.info(
-                    f"Found guest for phone {guest_phone}",
-                    extra={"guest_id": str(row[0]), "event_id": str(row[1])}
-                )
-                return (str(row[0]), str(row[1]))
-            else:
-                logger.warning(
-                    f"No guest found for phone {guest_phone}",
-                    extra={"tried_formats": [guest_phone, normalized_phone]}
-                )
-            return (None, None)
-
-    def _log_message(self,
-                      guest_id: Optional[str],
-                      event_id: str,
-                      direction: str,
-                      msg_type: str,
-                      content: Optional[str],
-                      state_before: Optional[str],
-                      state_after: Optional[str],
-                      whatsapp_message_id: Optional[str] = None,
-                      reply_to_message_id: Optional[str] = None):
-        sql = """
-        INSERT INTO messages_log (guest_id, event_id, direction, type, content, state_before, state_after, whatsapp_message_id, reply_to_message_id)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
-        """
-        with self.pg_conn.cursor() as cur:
-            cur.execute(sql, (
-                guest_id,
-                event_id,
-                direction,
-                msg_type,
-                content,
-                state_before,
-                state_after,
-                whatsapp_message_id,
-                reply_to_message_id,
-            ))
-
-    def _update_guest_status(self, guest_phone: str, event_id: str, next_state: str):
-        status = self.state_status_mapping.get(next_state)
-        if not status:
-            return
-        sql = """
-        UPDATE guests
-        SET status = %s,
-            last_response = NOW()
-        WHERE phone = %s AND event_id = %s;
-        """
-        with self.pg_conn.cursor() as cur:
-            cur.execute(sql, (status, guest_phone, event_id))
-
-    def _normalize_text(self, text: str) -> str:
-        """Normalize text for matching: strip whitespace, normalize quotes, remove extra spaces."""
-        if not text:
-            return ""
-        # Strip leading/trailing whitespace
-        normalized = text.strip()
-        # Normalize different quote types to standard quotes
-        # Replace curly quotes and other Unicode quotes with straight quotes
-        normalized = normalized.replace('״', '"').replace('״', '"').replace('"', '"').replace('"', '"')
-        normalized = normalized.replace(''', "'").replace(''', "'")
-        # Remove extra whitespace (multiple spaces, tabs, newlines)
-        normalized = re.sub(r'\s+', ' ', normalized)
-        normalized = normalized.strip()
-        return normalized
-    
-    def _resolve_next(self, current_state: str, user_text: str) -> Optional[str]:
-        state_def = (self.flow or {}).get(current_state, {})
+    def _resolve_next_state(self, current_state: str, user_text: str) -> Optional[str]:
+        state_def: Dict[str, Any] = (self.flow or {}).get(current_state, {})
         next_map: Dict[str, str] = state_def.get("next", {})
-        
-        # Normalize user text
-        normalized_user_text = self._normalize_text(user_text)
-        
-        # Log for debugging
-        logger.info(
-            f"Resolving next state from '{current_state}'",
-            extra={
-                "current_state": current_state,
-                "user_text": user_text,
-                "normalized_user_text": normalized_user_text,
-                "user_text_length": len(user_text),
-                "user_text_bytes": user_text.encode('utf-8').hex(),
-                "available_transitions": list(next_map.keys()),
-                "available_transitions_count": len(next_map)
-            }
-        )
-        
-        # Check for wildcard match first
+        if not isinstance(next_map, dict):
+            return None
+
+        # Match order: wildcard, exact, normalized exact, case-insensitive
+        normalized = (user_text or "").strip()
+
         if "*" in next_map:
-            logger.info(f"Wildcard match found in state '{current_state}', transitioning to '{next_map['*']}'")
             return next_map["*"]
-        
-        # Try exact match first
-        result = next_map.get(user_text)
-        if result:
-            logger.info(f"Exact match found: '{user_text}' -> '{result}'")
-            return result
-        
-        # Try normalized match
-        result = next_map.get(normalized_user_text)
-        if result:
-            logger.info(f"Normalized match found: '{normalized_user_text}' -> '{result}'")
-            return result
-        
-        # Try matching each key after normalization
+        if user_text in next_map:
+            return next_map[user_text]
+        if normalized in next_map:
+            return next_map[normalized]
+        # case-insensitive compare against normalized keys
+        lower_norm = normalized.lower()
         for key, value in next_map.items():
-            normalized_key = self._normalize_text(key)
-            if normalized_key == normalized_user_text:
-                logger.info(f"Normalized key match found: '{key}' (normalized: '{normalized_key}') -> '{value}'")
+            if isinstance(key, str) and key.strip().lower() == lower_norm:
                 return value
-        
-        # Last resort: try case-insensitive matching (if all else fails)
-        normalized_user_text_lower = normalized_user_text.lower()
-        for key, value in next_map.items():
-            normalized_key = self._normalize_text(key)
-            if normalized_key.lower() == normalized_user_text_lower:
-                logger.info(f"Case-insensitive normalized match found: '{key}' -> '{value}'")
-                return value
-        
-        # No match found - log detailed comparison
-        logger.warning(
-            f"No transition found for text '{user_text}' (normalized: '{normalized_user_text}') in state '{current_state}'",
-            extra={
-                "current_state": current_state,
-                "user_text": user_text,
-                "normalized_user_text": normalized_user_text,
-                "user_text_hex": user_text.encode('utf-8').hex(),
-                "normalized_user_text_hex": normalized_user_text.encode('utf-8').hex(),
-                "available_options": list(next_map.keys()),
-                "available_options_normalized": [self._normalize_text(k) for k in next_map.keys()],
-                "available_options_hex": [k.encode('utf-8').hex() for k in next_map.keys()],
-                "available_options_normalized_hex": [self._normalize_text(k).encode('utf-8').hex() for k in next_map.keys()]
-            }
-        )
-        
         return None
 
-    async def handle_incoming(self,
-                              msg_type: str,           # quick_reply | free_text
-                              guest_phone: str,
-                              text: str,
-                              event_id: Optional[str] = None,  # Optional - will be looked up if not provided
-                              message_id: Optional[str] = None,
-                              reply_to_message_id: Optional[str] = None,
-                              button_id: Optional[str] = None,
-                              template_parameters: Optional[Dict[str, Any]] = None,
-                              guest: Optional[Dict[str, Any]] = None,
-                              event: Optional[Dict[str, Any]] = None
-                              ) -> Tuple[Optional[Dict[str, Any]], str, str]:
-        """
-        Process incoming user text, decide next template or fallback.
-
-        Returns:
-          (outpost_template_message | None, previous_state, next_state)
-        """
-        # Look up guest and event_id from database by phone number
-        guest_id, actual_event_id = self._find_guest_and_event(guest_phone)
-        
-        # Use provided event_id or the one from database lookup
-        final_event_id = event_id or actual_event_id
-        
-        if not final_event_id:
-            logger.warning(
-                f"No event found for phone {guest_phone}, cannot process conversation flow",
-                extra={"phone": guest_phone, "message_id": message_id}
-            )
-            # Return None message to skip processing
-            return None, "", ""
-        
-        # PRIMARY: If this is a reply to a specific WhatsApp message, resolve state from message context
-        context_resolved_state = None
-        if reply_to_message_id:
-            message_context = await self.resolve_state_from_context(reply_to_message_id)
-            if message_context:
-                context_resolved_state = message_context.get("state")
-                # Use the event_id from context if different (for cross-event scenarios)
-                context_event_id = message_context.get("event_id")
-                if context_event_id and context_event_id != final_event_id:
-                    logger.info(
-                        f"Reply context event_id differs from current; using context event_id",
-                        extra={"context_event_id": context_event_id, "current_event_id": final_event_id}
-                    )
-                    final_event_id = context_event_id
-                    # Re-fetch guest_id if needed
-                    guest_id, _ = self._find_guest_and_event(guest_phone)
-
-        # Get current conversation state (fallback if context not found)
-        state_obj = await self.get_state(guest_phone, final_event_id)
-        prev_state = state_obj.get("state", self.initial_state)
-
-        # Use context-resolved state if available (this is the primary method)
-        if context_resolved_state:
-            prev_state = context_resolved_state
-            logger.info(
-                f"Using state resolved from message context",
-                extra={
-                    "resolved_state": prev_state,
-                    "reply_to_message_id": reply_to_message_id,
-                    "guest_phone": guest_phone
-                }
-            )
-        # FALLBACK 1: If context not found, try database lookup
-        elif reply_to_message_id:
+    def _build_outgoing(self, next_state: str, guest_phone: str, event_id: str, template_parameters: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        # Try MessageBuilder config first
+        if self.message_builder is not None:
             try:
-                with self.pg_conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        SELECT state_after
-                        FROM messages_log
-                        WHERE event_id = %s
-                          AND direction = 'outgoing'
-                          AND whatsapp_message_id = %s
-                        ORDER BY created_at DESC
-                        LIMIT 1
-                        """,
-                        (final_event_id, reply_to_message_id)
-                    )
-                    row = cur.fetchone()
-                    if row and row[0]:
-                        prev_state = row[0]
-                        logger.info(
-                            "Resolved prev_state from database (fallback)",
-                            extra={"resolved_prev_state": prev_state, "reply_to_message_id": reply_to_message_id}
-                        )
-            except Exception as e:
-                logger.warning(f"Failed to resolve state from database: {e}")
-
-        # FALLBACK 2: Prefer button_id hint to override current Redis state when user clicks an older message's button
-        if msg_type == "quick_reply" and button_id and not context_resolved_state:
-            try:
-                if "__BTN_" in button_id:
-                    hinted_state = button_id.split("__BTN_", 1)[0]
-                    if hinted_state in (self.flow or {}).keys():
-                        prev_state = hinted_state
-                        logger.info(
-                            "Resolved prev_state from button_id hint (fallback)",
-                            extra={"resolved_prev_state": prev_state, "button_id": button_id}
-                        )
-            except Exception as e:
-                logger.warning(f"Failed to resolve state from button_id: {e}")
-
-        # Log incoming with detailed info
-        logger.info(
-            f"Processing incoming {msg_type} message",
-            extra={
-                "guest_phone": guest_phone,
-                "event_id": final_event_id,
-                "prev_state": prev_state,
-                "text": text,
-                "message_id": message_id
-            }
-        )
-        
-        self._log_message(guest_id, final_event_id, "incoming", msg_type, text, prev_state, prev_state, whatsapp_message_id=message_id, reply_to_message_id=reply_to_message_id)
-
-        # Resolve next state
-        next_state = self._resolve_next(prev_state, text)
-
-        if next_state:
-            # Build outpost message via MessageBuilder when available; otherwise fallback to simple template
-            outpost_message: Dict[str, Any]
-            try:
-                if self.message_builder is not None:
-                    guest_ctx = guest or {"phone": guest_phone}
-                    event_ctx = event or {"id": event_id}
-                    outpost_message = self.message_builder.build(next_state, event=event_ctx, guest=guest_ctx)
+                message = self.message_builder.build(next_state, event={"id": event_id}, guest={"phone": guest_phone})
+                # message_builder returns a structure that may include interactive/text/template shapes
+                # Normalize metadata for outpost
+                if message.get("interactive"):
+                    message["message_type"] = "interactive"
+                elif message.get("type") == "text" or message.get("message_type") == "text":
+                    message["message_type"] = "text"
                 else:
-                    raise RuntimeError("MessageBuilder not available")
+                    message["message_type"] = "template"
+                message.setdefault("platform", "WA")
+                message.setdefault("recipient", guest_phone)
+                message["event_id"] = event_id
+                message["state"] = next_state
+                return message
             except Exception:
-                params = template_parameters or {}
-                outpost_message = {
-                    "platform": "WA",
-                    "recipient": guest_phone,
-                    "template": next_state,  # template name == next_state
-                    "parameters": params,
-                }
+                pass
 
-            # Ensure message metadata - detect interactive messages
-            if outpost_message.get("interactive"):
-                outpost_message["message_type"] = "interactive"
-            elif outpost_message.get("type") == "text" or outpost_message.get("message_type") == "free_text":
-                outpost_message["message_type"] = "free_text"
-            else:
-                outpost_message["message_type"] = "template"
-            outpost_message["source"] = "webhook_worker"
-            outpost_message["event_id"] = final_event_id
-            outpost_message["state"] = next_state
-            outpost_message.setdefault("recipient", guest_phone)
+        # Fallback to simple template reference
+        return {
+            "platform": "WA",
+            "recipient": guest_phone,
+            "message_type": "template",
+            "template": next_state,
+            "parameters": (template_parameters or {}),
+            "event_id": event_id,
+            "state": next_state,
+        }
 
-            # Update state in Redis
-            new_state_obj = {
-                "state": next_state,
-                "last_message_id": message_id,
-                "last_interaction_at": datetime.now(timezone.utc).isoformat(),
-            }
-            await self.set_state(guest_phone, final_event_id, new_state_obj)
+    async def process_incoming(self,
+                               message_type: str,
+                               guest_phone: str,
+                               text: str,
+                               event_id: str,
+                               context_id: Optional[str],
+                               template_parameters: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], str, str]:
+        """Resolve next message given an incoming event.
 
-            # Guest updates (status, last_response)
-            self._update_guest_status(guest_phone, final_event_id, next_state)
-
-            # Log outgoing template (whatsapp_message_id will be populated by outpost-service log)
-            # Note: message_context will be stored by outpost-service after WhatsApp message_id is received
-            self._log_message(guest_id, final_event_id, "outgoing", "template", next_state, prev_state, next_state)
-
-            return outpost_message, prev_state, next_state
-
-        # Fallback: didn't understand. Try MessageBuilder with fallback id; else build template
-        fallback_template = os.getenv("FALLBACK_TEMPLATE", "didnt_understand")
-        try:
-            if self.message_builder is not None:
-                guest_ctx = guest or {"phone": guest_phone}
-                event_ctx = event or {"id": event_id}
-                outpost_message = self.message_builder.build(fallback_template, event=event_ctx, guest=guest_ctx)
-            else:
-                raise RuntimeError("MessageBuilder not available")
-        except Exception:
-            outpost_message = {
-                "platform": "WA",
-                "recipient": guest_phone,
-                "template": fallback_template,
-                "parameters": template_parameters or {},
-            }
-        # Ensure message metadata - detect interactive messages
-        if outpost_message.get("interactive"):
-            outpost_message["message_type"] = "interactive"
-        elif outpost_message.get("type") == "text" or outpost_message.get("message_type") == "free_text":
-            outpost_message["message_type"] = "free_text"
+        Returns (outgoing_payload, prev_state, next_state)
+        """
+        # 1) Try resolve from context
+        prev_state = self.initial_state
+        context = await self.resolve_state_from_context(context_id) if context_id else None
+        if context and context.get("state"):
+            prev_state = context["state"]
+            # override event if provided by context
+            if context.get("event_id"):
+                event_id = context["event_id"]
+            logger.info("Using state resolved from message context", extra={"state": prev_state, "context_id": context_id})
         else:
-            outpost_message["message_type"] = "template"
-        outpost_message["source"] = "webhook_worker"
-        outpost_message["event_id"] = final_event_id
-        outpost_message.setdefault("recipient", guest_phone)
+            # 2) Fallback to conversation state
+            conv = await self.get_conversation_state(guest_phone, event_id)
+            prev_state = conv.get("state", self.initial_state)
+            logger.info("Using state from conversation", extra={"state": prev_state})
 
-        # Keep state the same but update timestamps
-        state_obj["last_message_id"] = message_id
-        state_obj["last_interaction_at"] = datetime.now(timezone.utc).isoformat()
-        await self.set_state(guest_phone, final_event_id, state_obj)
+        # 3) Resolve next
+        next_state = self._resolve_next_state(prev_state, text or "")
+        if not next_state:
+            fallback_state = os.getenv("FALLBACK_TEMPLATE", "didnt_understand")
+            next_state = fallback_state
 
-        # Log outgoing fallback
-        self._log_message(guest_id, final_event_id, "outgoing", "template", fallback_template, prev_state, prev_state)
+        # 4) Build message
+        outgoing = self._build_outgoing(next_state, guest_phone=guest_phone, event_id=event_id, template_parameters=template_parameters)
 
-        return outpost_message, prev_state, prev_state
+        # 5) Update conversation immediately (we will store message_context later when we have a temp id)
+        new_state_obj = {
+            "state": next_state,
+            "last_message_id": context_id,  # not the real WA id, but we keep the last inbound for trace
+            "last_interaction_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await self.set_conversation_state(guest_phone, event_id, new_state_obj)
+
+        return outgoing, prev_state, next_state
 
 
