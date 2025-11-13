@@ -329,10 +329,13 @@ class FlowManager:
         event_id: Optional[str],
     ) -> None:
         status_value = status_payload.get("status")
+        status_wa_id = status_payload.get("id")
+
         async for session in get_session():
             conversation: Optional[Conversation] = None
             message_entry: Optional[MessageLog] = None
 
+            # 1) Try to locate message by explicit WA id (context id)
             if wa_message_id:
                 res = await session.execute(
                     select(MessageLog).where(MessageLog.wa_message_id == wa_message_id).order_by(MessageLog.created_at.desc()).limit(1)
@@ -345,24 +348,36 @@ class FlowManager:
                     conversation = conv_res.scalars().first()
 
             if not conversation and guest_phone:
-                conv_res = await session.execute(
-                    select(Conversation)
-                    .where(Conversation.guest_phone == guest_phone)
-                    .order_by(Conversation.updated_at.desc())
-                    .limit(1)
-                )
-                conversation = conv_res.scalars().first()
+                conversation = await self._get_latest_conversation(session, guest_phone)
 
             if not conversation:
                 logger.warning(
                     "Status update received but conversation not found",
-                    extra={"wa_message_id": wa_message_id, "guest_phone": guest_phone, "status": status_value},
+                    extra={"wa_message_id": wa_message_id or status_wa_id, "guest_phone": guest_phone, "status": status_value},
                 )
                 return
 
-            # Update existing message entry with latest status if available
+            # 2) If we found conversation but not specific message, try to link to latest outgoing without WA id yet
+            if not message_entry:
+                res = await session.execute(
+                    select(MessageLog)
+                    .where(
+                        MessageLog.conversation_id == conversation.id,
+                        MessageLog.direction == "outgoing",
+                    )
+                    .order_by(MessageLog.created_at.desc())
+                    .limit(1)
+                )
+                message_entry = res.scalars().first()
+                # attach WA id if missing
+                if message_entry and not message_entry.wa_message_id and status_wa_id:
+                    message_entry.wa_message_id = status_wa_id
+
             if message_entry:
-                message_entry.status = status_value
+                if status_value:
+                    message_entry.status = status_value
+                if status_wa_id and not message_entry.wa_message_id:
+                    message_entry.wa_message_id = status_wa_id
                 await session.commit()
 
             state_for_status = (
