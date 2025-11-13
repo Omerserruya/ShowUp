@@ -75,7 +75,8 @@ class BaseState:
         event_id = str(conversation.event_id)
         try:
             # Check if event_id is a UUID (36 chars with dashes)
-            if len(event_id) == 36 and '-' in event_id:
+            is_uuid = len(event_id) == 36 and '-' in event_id
+            if is_uuid:
                 # Fetch event
                 result = await session.execute(
                     text("SELECT id, name, date, location, inviters FROM events WHERE id = :event_id"),
@@ -90,14 +91,15 @@ class BaseState:
                     replacements['event.inviters'] = event_data.get('inviters', 'המארחים')
             
             # Fetch guest data
-            result = await session.execute(
-                text("SELECT id, name FROM guests WHERE phone = :phone AND event_id = :event_id LIMIT 1"),
-                {"phone": conversation.guest_phone, "event_id": event_id}
-            )
-            guest_row = result.first()
-            if guest_row:
-                guest_data = dict(guest_row._mapping) if hasattr(guest_row, '_mapping') else dict(guest_row)
-                replacements['guest.name'] = guest_data.get('name', 'אורח/ת יקר/ה')
+            if is_uuid:
+                result = await session.execute(
+                    text("SELECT id, name FROM guests WHERE phone = :phone AND event_id = :event_id LIMIT 1"),
+                    {"phone": conversation.guest_phone, "event_id": event_id}
+                )
+                guest_row = result.first()
+                if guest_row:
+                    guest_data = dict(guest_row._mapping) if hasattr(guest_row, '_mapping') else dict(guest_row)
+                    replacements['guest.name'] = guest_data.get('name', 'אורח/ת יקר/ה')
         except Exception as e:
             # If database fetch fails, use defaults
             logger = __import__('logging').getLogger(__name__)

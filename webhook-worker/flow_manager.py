@@ -124,14 +124,25 @@ class FlowManager:
         await session.refresh(entry)
         return entry
 
-    async def resolve_state_from_context(self, session: AsyncSession, context_id: Optional[str]) -> Optional[str]:
+    async def _get_latest_conversation(self, session: AsyncSession, guest_phone: str) -> Optional[Conversation]:
+        res = await session.execute(
+            select(Conversation)
+            .where(Conversation.guest_phone == guest_phone)
+            .order_by(Conversation.updated_at.desc())
+            .limit(1)
+        )
+        return res.scalars().first()
+
+    async def resolve_message_from_context(self, session: AsyncSession, context_id: Optional[str]) -> Optional[MessageLog]:
         if not context_id:
             return None
         res = await session.execute(
-            select(MessageLog.state).where(MessageLog.wa_message_id == context_id).order_by(MessageLog.created_at.desc()).limit(1)
+            select(MessageLog)
+            .where(MessageLog.wa_message_id == context_id)
+            .order_by(MessageLog.created_at.desc())
+            .limit(1)
         )
-        row = res.first()
-        return row[0] if row else None
+        return res.scalars().first()
 
     # ---------- Flow resolution & building ----------
 
@@ -173,26 +184,61 @@ class FlowManager:
         context_id: Optional[str],
         template_parameters: Optional[Dict[str, Any]] = None,
     ) -> None:
-        if not guest_phone or not event_id:
-            logger.warning("Missing guest_phone or event_id; skipping")
+        if not guest_phone:
+            logger.warning("Missing guest_phone; skipping")
             return
 
         async for session in get_session():
-            # load or create conversation
-            conv = await self.load_conversation(session, guest_phone, event_id)
+            context_entry = await self.resolve_message_from_context(session, context_id)
+            conv: Optional[Conversation] = None
+            effective_event_id = event_id
 
-            # resolve from context (old reply)
-            context_state = await self.resolve_state_from_context(session, context_id)
-            if context_state:
-                logger.info("Resuming from context state", extra={"context_id": context_id, "state": context_state})
-                await self.update_conversation(session, conv, context_state)
-                # refresh
-                conv = await self.load_conversation(session, guest_phone, event_id)
+            if context_entry:
+                conv = await session.get(Conversation, context_entry.conversation_id)
+                if conv:
+                    if context_entry.state and conv.current_state != context_entry.state:
+                        await self.update_conversation(session, conv, context_entry.state)
+                        await session.refresh(conv)
+                    effective_event_id = conv.event_id
+                    logger.info(
+                        "Resolved conversation from context",
+                        extra={
+                            "context_id": context_id,
+                            "conversation_id": conv.id,
+                            "state": conv.current_state,
+                            "event_id": effective_event_id,
+                        },
+                    )
 
-            # Select handler by current conversation state (class-based FSM)
+            if not conv and not effective_event_id:
+                latest_conv = await self._get_latest_conversation(session, guest_phone)
+                if latest_conv:
+                    conv = latest_conv
+                    effective_event_id = latest_conv.event_id
+                    logger.info(
+                        "Resolved missing event_id from latest conversation",
+                        extra={
+                            "guest_phone": guest_phone,
+                            "event_id": effective_event_id,
+                            "state": conv.current_state,
+                        },
+                    )
+
+            if not conv and not effective_event_id:
+                logger.warning(
+                    "Could not resolve event_id for incoming message; skipping",
+                    extra={"guest_phone": guest_phone, "context_id": context_id},
+                )
+                return
+
+            if not conv:
+                conv = await self.load_conversation(session, guest_phone, effective_event_id)
+            else:
+                self.current_state = conv.current_state
+
             handler_cls = self.state_handlers.get(conv.current_state, FreeTextState)
             handler = handler_cls(self)
-            
+
             logger.info(
                 "Processing message",
                 extra={
@@ -201,10 +247,10 @@ class FlowManager:
                     "handler_next_states": handler.next_states,
                     "input_text": text,
                     "context_id": context_id,
+                    "event_id": effective_event_id,
                 },
             )
 
-            # log incoming
             await self.log_message(
                 session,
                 conversation_id=conv.id,
@@ -216,36 +262,32 @@ class FlowManager:
                 state=conv.current_state,
             )
 
-            # process
             await handler.process_incoming(session, {"text": text, "raw": raw}, conv)
             next_state_id = handler.get_next_state({"text": text, "raw": raw})
+
             logger.info(
                 "State transition",
                 extra={
                     "current_state": conv.current_state,
                     "handler_id": handler.id,
-                    "input_text": repr(text),  # Use repr to see whitespace
+                    "input_text": repr(text),
                     "input_text_len": len(text),
                     "next_state": next_state_id,
                     "handler_next_states": handler.next_states,
                     "matched_key": text if text in handler.next_states else ("*" if "*" in handler.next_states else None),
                 },
             )
-            
-            # Validate next_state_id exists
+
             if next_state_id not in self.state_handlers:
                 logger.error(
                     f"Next state {next_state_id} not found in state_handlers, falling back to {self.fallback_state_id}",
                     extra={"available_states": list(self.state_handlers.keys())},
                 )
                 next_state_id = self.fallback_state_id
-            
+
             await self.update_conversation(session, conv, next_state_id)
-            # Reload conversation to get updated state
             await session.refresh(conv)
-            # Also reload from DB to be sure
-            conv = await self.load_conversation(session, guest_phone, event_id)
-            
+
             logger.info(
                 "Conversation updated",
                 extra={
@@ -255,7 +297,6 @@ class FlowManager:
                 },
             )
 
-            # send via next state's send
             next_handler = self.state_handlers.get(next_state_id, FreeTextState)(self)
             logger.info(
                 "Sending message from next state",
