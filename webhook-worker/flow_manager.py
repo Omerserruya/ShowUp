@@ -205,7 +205,7 @@ class FlowManager:
             )
 
             # log incoming
-                await self.log_message(
+            await self.log_message(
                 session,
                 conversation_id=conv.id,
                 wa_message_id=raw.get("message_id"),
