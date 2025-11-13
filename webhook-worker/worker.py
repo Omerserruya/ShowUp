@@ -57,7 +57,10 @@ class Worker:
 
     def _extract_incoming(self, msg: Dict[str, Any]) -> Dict[str, Any]:
         payload = msg.get("payload") if isinstance(msg.get("payload"), dict) else {}
-        event_id = msg.get("event_id") or (payload.get("event_id") if payload else None)
+        raw_event_id = msg.get("event_id") or (payload.get("event_id") if payload else None)
+        event_id = raw_event_id
+        if isinstance(event_id, str) and event_id.startswith("wamid."):
+            event_id = None
         guest_phone = (
             msg.get("guest_phone")
             or msg.get("recipient")

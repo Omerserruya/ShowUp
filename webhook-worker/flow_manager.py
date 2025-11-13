@@ -210,6 +210,20 @@ class FlowManager:
                         },
                     )
 
+            if not conv:
+                latest_conv = await self._get_latest_conversation(session, guest_phone)
+                if latest_conv:
+                    conv = latest_conv
+                    effective_event_id = latest_conv.event_id
+                    logger.info(
+                        "Resolved missing event_id from latest conversation",
+                        extra={
+                            "guest_phone": guest_phone,
+                            "event_id": effective_event_id,
+                            "state": conv.current_state,
+                        },
+                    )
+
             if not conv and not effective_event_id:
                 latest_conv = await self._get_latest_conversation(session, guest_phone)
                 if latest_conv:
