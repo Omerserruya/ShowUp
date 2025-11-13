@@ -144,6 +144,10 @@ class Worker:
             },
         )
 
+        logger.info(
+            f"Dispatching message type={msg_type} guest={guest_phone} event_id={event_id} context={normalized.get('context_id')}"
+        )
+
         if msg_type == "status.update":
             await self.flow_manager.handle_status_update(
                 wa_message_id=normalized.get("wa_message_id"),

@@ -189,6 +189,9 @@ class FlowManager:
             return
 
         async for session in get_session():
+            logger.info(
+                f"handle_event start: type={message_type} guest={guest_phone} event_id={event_id} context={context_id}",
+            )
             context_entry = await self.resolve_message_from_context(session, context_id)
             conv: Optional[Conversation] = None
             effective_event_id = event_id
@@ -247,6 +250,15 @@ class FlowManager:
 
             if not conv:
                 conv = await self.load_conversation(session, guest_phone, effective_event_id)
+                logger.info(
+                    "Created/loaded conversation",
+                    extra={
+                        "conversation_id": conv.id,
+                        "guest_phone": guest_phone,
+                        "event_id": effective_event_id,
+                        "state": conv.current_state,
+                    },
+                )
             else:
                 self.current_state = conv.current_state
 
