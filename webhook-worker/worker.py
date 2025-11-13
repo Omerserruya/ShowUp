@@ -99,6 +99,13 @@ class Worker:
             ctx = payload.get("context") or {}
             context_id = ctx.get("id") or msg.get("reply_to_message_id")
 
+        if not event_id and context_id:
+            event_id = context_id
+            logger.info(
+                "Using context_id as fallback event_id",
+                extra={"context_id": context_id, "message_type": normalized_type},
+            )
+
         template_params = payload.get("template_parameters") if payload else {}
 
         status_payload = payload if normalized_type == "status.update" and payload else {}
