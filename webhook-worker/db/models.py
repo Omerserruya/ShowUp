@@ -34,6 +34,7 @@ class MessageLog(Base):
     reply_to_id = Column(String(128), nullable=True)
     payload = Column(Text, nullable=True)
     state = Column(String(128), nullable=True)
+    status = Column(String(32), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 

@@ -283,6 +283,16 @@ async def handle_whatsapp_webhook(request: Request):
                             logger.info(f"Webhook status update: {json.dumps(status, ensure_ascii=False)}")
                         except Exception:
                             pass
+                        status_payload = {
+                            "event_id": status.get("event_id"),
+                            "recipient": status.get("recipient_id"),
+                            "guest_phone": status.get("recipient_id"),
+                            "message_type": "status.update",
+                            "payload": status,
+                            "wa_message_id": status.get("id"),
+                            "received_at": datetime.utcnow().isoformat()
+                        }
+                        enqueue_to_rabbitmq("status.update", status_payload)
                 messages = value.get("messages", [])
                 
                 for message in messages:

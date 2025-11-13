@@ -108,7 +108,7 @@ class FlowManager:
         await session.commit()
         self.current_state = new_state
 
-    async def log_message(self, session: AsyncSession, *, conversation_id, wa_message_id, direction, message_type, reply_to_id, payload, state) -> None:
+    async def log_message(self, session: AsyncSession, *, conversation_id, wa_message_id, direction, message_type, reply_to_id, payload, state, status: Optional[str] = None) -> MessageLog:
         entry = MessageLog(
             conversation_id=conversation_id,
             wa_message_id=wa_message_id,
@@ -117,9 +117,12 @@ class FlowManager:
             reply_to_id=reply_to_id,
             payload=payload,
             state=state,
+            status=status,
         )
         session.add(entry)
         await session.commit()
+        await session.refresh(entry)
+        return entry
 
     async def resolve_state_from_context(self, session: AsyncSession, context_id: Optional[str]) -> Optional[str]:
         if not context_id:
@@ -168,6 +171,7 @@ class FlowManager:
         text: str,
         raw: Dict[str, Any],
         context_id: Optional[str],
+        template_parameters: Optional[Dict[str, Any]] = None,
     ) -> None:
         if not guest_phone or not event_id:
             logger.warning("Missing guest_phone or event_id; skipping")
@@ -201,7 +205,7 @@ class FlowManager:
             )
 
             # log incoming
-            await self.log_message(
+                await self.log_message(
                 session,
                 conversation_id=conv.id,
                 wa_message_id=raw.get("message_id"),
@@ -274,4 +278,65 @@ class FlowManager:
                     state=next_state_id,
                 )
                 await self.publish_outgoing(outgoing)
+
+    async def handle_status_update(
+        self,
+        *,
+        wa_message_id: Optional[str],
+        status_payload: Dict[str, Any],
+        guest_phone: Optional[str],
+        event_id: Optional[str],
+    ) -> None:
+        status_value = status_payload.get("status")
+        async for session in get_session():
+            conversation: Optional[Conversation] = None
+            message_entry: Optional[MessageLog] = None
+
+            if wa_message_id:
+                res = await session.execute(
+                    select(MessageLog).where(MessageLog.wa_message_id == wa_message_id).order_by(MessageLog.created_at.desc()).limit(1)
+                )
+                message_entry = res.scalars().first()
+                if message_entry:
+                    conv_res = await session.execute(
+                        select(Conversation).where(Conversation.id == message_entry.conversation_id)
+                    )
+                    conversation = conv_res.scalars().first()
+
+            if not conversation and guest_phone:
+                conv_res = await session.execute(
+                    select(Conversation)
+                    .where(Conversation.guest_phone == guest_phone)
+                    .order_by(Conversation.updated_at.desc())
+                    .limit(1)
+                )
+                conversation = conv_res.scalars().first()
+
+            if not conversation:
+                logger.warning(
+                    "Status update received but conversation not found",
+                    extra={"wa_message_id": wa_message_id, "guest_phone": guest_phone, "status": status_value},
+                )
+                return
+
+            # Update existing message entry with latest status if available
+            if message_entry:
+                message_entry.status = status_value
+                await session.commit()
+
+            state_for_status = (
+                message_entry.state if message_entry and message_entry.state else conversation.current_state
+            )
+
+            await self.log_message(
+                session,
+                conversation_id=conversation.id,
+                wa_message_id=wa_message_id,
+                direction="status",
+                message_type="status",
+                reply_to_id=wa_message_id,
+                payload=json.dumps(status_payload, ensure_ascii=False),
+                state=state_for_status,
+                status=status_value,
+            )
 

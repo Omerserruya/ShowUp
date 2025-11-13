@@ -55,6 +55,63 @@ class Worker:
             extra={"webhook_queue": self.webhook_queue, "outpost_queue": self.outpost_queue},
         )
 
+    def _extract_incoming(self, msg: Dict[str, Any]) -> Dict[str, Any]:
+        payload = msg.get("payload") if isinstance(msg.get("payload"), dict) else {}
+        event_id = msg.get("event_id") or (payload.get("event_id") if payload else None)
+        guest_phone = (
+            msg.get("guest_phone")
+            or msg.get("recipient")
+            or msg.get("from")
+            or (payload.get("recipient") if payload else None)
+        )
+        message_type = msg.get("message_type") or msg.get("type") or msg.get("topic") or "message"
+
+        normalized_type = (
+            "quick_reply"
+            if message_type == "quick_reply"
+            else "free_text"
+            if message_type in ("message", "free_text", "text")
+            else "status.update"
+            if message_type == "status.update"
+            else message_type
+        )
+
+        extracted = payload.get("extracted_data", {}) if payload else {}
+        button_text = extracted.get("button_title") or extracted.get("button_text") or extracted.get("button_id")
+        text_value = extracted.get("text") or button_text or msg.get("text") or (payload.get("text") if payload else None) or ""
+
+        logger.info(
+            "Extracted message data",
+            extra={
+                "message_type": message_type,
+                "normalized_type": normalized_type,
+                "extracted": extracted,
+                "button_text": button_text,
+                "final_text": text_value,
+            },
+        )
+
+        context_id = None
+        if payload:
+            ctx = payload.get("context") or {}
+            context_id = ctx.get("id") or msg.get("reply_to_message_id")
+
+        template_params = payload.get("template_parameters") if payload else {}
+
+        status_payload = payload if normalized_type == "status.update" and payload else {}
+        wa_message_id = msg.get("wa_message_id") or (payload.get("id") if payload else None)
+
+        return {
+            "message_type": normalized_type,
+            "guest_phone": str(guest_phone) if guest_phone else None,
+            "event_id": str(event_id) if event_id else None,
+            "text": text_value,
+            "context_id": context_id,
+            "template_parameters": template_params or {},
+            "status_payload": status_payload or {},
+            "wa_message_id": wa_message_id,
+        }
+
     async def _handle(self, body: bytes) -> None:
         try:
             msg = json.loads(body.decode("utf-8"))
@@ -62,47 +119,38 @@ class Worker:
             logger.error(f"Invalid JSON in webhook message: {e}")
             return
 
-        # Normalize incoming
-        payload: Dict[str, Any] = msg.get("payload", {})
-        event_id = msg.get("event_id") or payload.get("event_id")
-        guest_phone = msg.get("guest_phone") or msg.get("recipient") or msg.get("from")
-        message_type = msg.get("message_type") or msg.get("type") or msg.get("topic") or "message"
-
-        # Extract text/button for message types
-        extracted = payload.get("extracted_data", {}) if isinstance(payload, dict) else {}
-        # For buttons, prefer button_title (the display text), fallback to button_text or button_id
-        button_text = extracted.get("button_title") or extracted.get("button_text") or extracted.get("button_id")
-        # For regular messages, use text; for buttons, use button text
-        text = extracted.get("text") or button_text or ""
-        
-        logger.info(
-            "Extracted message data",
-            extra={
-                "message_type": message_type,
-                "extracted": extracted,
-                "button_text": button_text,
-                "final_text": text,
-            },
-        )
-
-        # WhatsApp reply context id
-        context_id = None
-        if isinstance(payload, dict):
-            ctx = payload.get("context") or {}
-            context_id = ctx.get("id") or msg.get("reply_to_message_id")
+        normalized = self._extract_incoming(msg)
+        msg_type = normalized.get("message_type")
+        guest_phone = normalized.get("guest_phone")
+        event_id = normalized.get("event_id")
 
         logger.info(
             "Consumed webhook event",
-            extra={"guest": guest_phone, "event_id": event_id, "type": message_type, "context_id": context_id},
+            extra={
+                "guest": guest_phone,
+                "event_id": event_id,
+                "type": msg_type,
+                "context_id": normalized.get("context_id"),
+            },
         )
 
+        if msg_type == "status.update":
+            await self.flow_manager.handle_status_update(
+                wa_message_id=normalized.get("wa_message_id"),
+                status_payload=normalized.get("status_payload") or {},
+                guest_phone=guest_phone,
+                event_id=event_id,
+            )
+            return
+
         await self.flow_manager.handle_event(
-            message_type=message_type,
-            guest_phone=str(guest_phone) if guest_phone else None,
-            event_id=str(event_id) if event_id else None,
-            text=text,
+            message_type=msg_type,
+            guest_phone=guest_phone,
+            text=normalized.get("text") or "",
+            event_id=event_id,
+            context_id=normalized.get("context_id"),
             raw=msg,
-            context_id=context_id,
+            template_parameters=normalized.get("template_parameters"),
         )
 
     async def _on_message(self, message: aio_pika.IncomingMessage) -> None:
