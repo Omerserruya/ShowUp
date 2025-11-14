@@ -271,6 +271,7 @@ class FlowManager:
                 effective_event_id: Optional[str] = None
 
                 # Step 1: Try to resolve from context_id (quick_reply to old message)
+                context_state: Optional[str] = None  # State from the original message
                 if context_id:
                     context_entry = await self.resolve_message_from_context(session, context_id)
                     if context_entry:
@@ -282,15 +283,21 @@ class FlowManager:
                                 import uuid
                                 uuid.UUID(conv.event_id)
                                 effective_event_id = conv.event_id
-                                if context_entry.state and conv.current_state != context_entry.state:
-                                    await self.update_conversation(session, conv, context_entry.state)
-                                    await session.refresh(conv)
+                                # Use the state from the original message (context_entry.state)
+                                # This allows replying to old messages and resuming from that state
+                                if context_entry.state:
+                                    context_state = context_entry.state
+                                    # Update conversation state to match the original message state
+                                    if conv.current_state != context_entry.state:
+                                        await self.update_conversation(session, conv, context_entry.state)
+                                        await session.refresh(conv)
                                 logger.info(
                                     "Resolved conversation from context",
                                     extra={
                                         "context_id": context_id,
                                         "conversation_id": conv.id,
-                                        "state": conv.current_state,
+                                        "original_state": context_entry.state,
+                                        "conversation_state": conv.current_state,
                                         "event_id": effective_event_id,
                                     },
                                 )
@@ -301,6 +308,7 @@ class FlowManager:
                                 )
                                 conv = None
                                 effective_event_id = None
+                                context_state = None
                 
                     # If Redis context exists but MessageLog not found, try to get event_id from Redis
                     if not conv and self.redis:
@@ -369,12 +377,25 @@ class FlowManager:
                 else:
                     self.current_state = conv.current_state
 
-                handler_cls = self.state_handlers.get(conv.current_state, FreeTextState)
+                # Use context_state if available (from old message), otherwise use conversation.current_state
+                effective_state = context_state if context_state else conv.current_state
+                handler_cls = self.state_handlers.get(effective_state, FreeTextState)
                 handler = handler_cls(self)
+                
+                logger.info(
+                    "State resolution",
+                    extra={
+                        "context_state": context_state,
+                        "conversation_state": conv.current_state,
+                        "effective_state": effective_state,
+                        "handler_id": handler.id,
+                    },
+                )
 
                 logger.info(
                     "Processing message",
                     extra={
+                        "effective_state": effective_state,
                         "conversation_state": conv.current_state,
                         "handler_id": handler.id,
                         "handler_next_states": handler.next_states,
@@ -392,7 +413,7 @@ class FlowManager:
                     message_type=message_type,
                     reply_to_id=(raw.get("payload", {}).get("context", {}).get("id") if isinstance(raw.get("payload"), dict) else None),
                     payload=json.dumps(raw, ensure_ascii=False)[:4000],
-                    state=conv.current_state,
+                    state=effective_state,
                 )
 
                 await handler.process_incoming(session, {"text": text, "raw": raw}, conv)

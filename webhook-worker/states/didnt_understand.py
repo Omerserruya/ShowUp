@@ -15,6 +15,6 @@ class DidntUnderstandState(BaseState):
         return None
 
     async def send(self, session: AsyncSession, conversation: Any) -> Dict[str, Any]:
-        return self.build_text(conversation, "לא כל כך הבנו את התשובה 😅 נסה לבחור אחת מהאפשרויות למעלה או כתוב 'עזרה'.")
+        return await self.build_text(session, conversation, "לא כל כך הבנו את התשובה 😅 נסה לבחור אחת מהאפשרויות למעלה או כתוב 'עזרה'.")
 
 
