@@ -330,14 +330,16 @@ class FlowManager:
                 if context_id:
                     context_entry = await self.resolve_message_from_context(session, context_id)
                     if context_entry:
+                        # Check if context_entry has an id (it might be a TempMessageLog)
+                        entry_id = getattr(context_entry, 'id', None)
                         logger.info(
                             "Found context entry",
                             extra={
                                 "context_id": context_id,
-                                "message_log_id": context_entry.id,
+                                "message_log_id": entry_id,
                                 "message_log_state": context_entry.state,
-                                "message_log_direction": context_entry.direction,
-                                "message_log_type": context_entry.message_type,
+                                "message_log_direction": getattr(context_entry, 'direction', None),
+                                "message_log_type": getattr(context_entry, 'message_type', None),
                                 "conversation_id": str(context_entry.conversation_id),
                             },
                         )
@@ -376,7 +378,7 @@ class FlowManager:
                                         "Context entry has no state",
                                         extra={
                                             "context_id": context_id,
-                                            "message_log_id": context_entry.id,
+                                            "message_log_id": entry_id,
                                             "conversation_id": conv.id,
                                         },
                                     )
@@ -400,7 +402,7 @@ class FlowManager:
                                 effective_event_id = None
                                 context_state = None
                 
-                    # If Redis context exists but MessageLog not found, try to get event_id from Redis
+                    # If Redis context exists but MessageLog not found, try to get event_id and state from Redis
                     if not conv and self.redis:
                         try:
                             redis_key = f"message_context:{context_id}"
@@ -408,20 +410,44 @@ class FlowManager:
                             if raw_ctx:
                                 context_data = json.loads(raw_ctx)
                                 redis_event_id = context_data.get("event_id")
-                                if redis_event_id:
+                                redis_state = context_data.get("state")
+                                redis_guest_phone = context_data.get("guest_phone")
+                                if redis_event_id and redis_guest_phone:
                                     # Validate it's a UUID
                                     try:
                                         import uuid
                                         uuid.UUID(redis_event_id)
                                         effective_event_id = redis_event_id
+                                        # Also get the state from Redis if available
+                                        if redis_state:
+                                            context_state = redis_state
+                                        # Try to load the conversation by guest_phone and event_id
+                                        conv = await self.load_conversation(session, redis_guest_phone, redis_event_id)
+                                        if conv and redis_state:
+                                            # Update conversation state to match Redis state
+                                            if conv.current_state != redis_state:
+                                                logger.info(
+                                                    "Updating conversation state to match Redis context",
+                                                    extra={
+                                                        "old_state": conv.current_state,
+                                                        "new_state": redis_state,
+                                                    },
+                                                )
+                                                await self.update_conversation(session, conv, redis_state)
+                                                await session.refresh(conv)
                                         logger.info(
-                                            "Resolved event_id from Redis context",
-                                            extra={"context_id": context_id, "event_id": effective_event_id}
+                                            "Resolved event_id and state from Redis context",
+                                            extra={
+                                                "context_id": context_id,
+                                                "event_id": effective_event_id,
+                                                "state": context_state,
+                                                "conversation_id": conv.id if conv else None,
+                                            }
                                         )
                                     except (ValueError, AttributeError):
                                         logger.warning(f"Redis event_id is not a valid UUID: {redis_event_id}")
                         except Exception as e:
-                            logger.warning(f"Failed to get event_id from Redis context: {e}")
+                            logger.warning(f"Failed to get event_id/state from Redis context: {e}")
 
                 # Step 2: If no context resolution, try latest conversation (free_text)
                 if not conv and not effective_event_id:
