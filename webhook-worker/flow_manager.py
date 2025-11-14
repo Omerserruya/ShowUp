@@ -148,7 +148,11 @@ class FlowManager:
         return res.scalars().first()
 
     async def resolve_message_from_context(self, session: AsyncSession, context_id: Optional[str]) -> Optional[MessageLog]:
-        """Resolve message from context_id (wamid). Tries Redis first, then MessageLog."""
+        """Resolve message from context_id (wamid). Tries Redis first, then MessageLog.
+        
+        Returns a MessageLog object with state from Redis or Postgres.
+        If found in Redis but not in Postgres, creates a temporary MessageLog-like object.
+        """
         if not context_id:
             return None
         
@@ -160,6 +164,7 @@ class FlowManager:
                 if raw:
                     context_data = json.loads(raw)
                     event_id = context_data.get("event_id")
+                    redis_state = context_data.get("state")
                     if event_id:
                         # Find conversation by event_id and guest_phone
                         guest_phone = context_data.get("guest_phone")
@@ -174,7 +179,8 @@ class FlowManager:
                             )
                             conv = res.scalars().first()
                             if conv:
-                                # Find the message log entry
+                                # Try to find the message log entry in Postgres
+                                # First try by wa_message_id (most accurate)
                                 res = await session.execute(
                                     select(MessageLog)
                                     .where(
@@ -185,16 +191,65 @@ class FlowManager:
                                     .limit(1)
                                 )
                                 msg_log = res.scalars().first()
+                                
+                                # If not found by wa_message_id, try by conversation_id and state from Redis
+                                # (wa_message_id might not be updated yet by status update)
+                                if not msg_log and redis_state:
+                                    res = await session.execute(
+                                        select(MessageLog)
+                                        .where(
+                                            MessageLog.conversation_id == conv.id,
+                                            MessageLog.state == redis_state,
+                                            MessageLog.direction == "outgoing",
+                                            MessageLog.wa_message_id.is_(None)  # Not updated yet
+                                        )
+                                        .order_by(MessageLog.created_at.desc())
+                                        .limit(1)
+                                    )
+                                    msg_log = res.scalars().first()
+                                
+                                # If found in Postgres, use it (it has the correct state)
                                 if msg_log:
                                     logger.info(
-                                        "Resolved message from Redis context",
-                                        extra={"context_id": context_id, "event_id": event_id, "conversation_id": conv.id}
+                                        "Resolved message from Redis context (found in Postgres)",
+                                        extra={
+                                            "context_id": context_id,
+                                            "event_id": event_id,
+                                            "conversation_id": conv.id,
+                                            "message_log_state": msg_log.state,
+                                            "redis_state": redis_state,
+                                        }
                                     )
                                     return msg_log
+                                
+                                # If not found in Postgres but we have state from Redis,
+                                # create a temporary MessageLog-like object
+                                if redis_state:
+                                    # Create a minimal MessageLog object with state from Redis
+                                    # We'll use a simple object that has the required attributes
+                                    class TempMessageLog:
+                                        def __init__(self, conversation_id, state, wa_message_id):
+                                            self.conversation_id = conversation_id
+                                            self.state = state
+                                            self.wa_message_id = wa_message_id
+                                            self.direction = "outgoing"
+                                            self.message_type = "template"
+                                    
+                                    temp_log = TempMessageLog(conv.id, redis_state, context_id)
+                                    logger.info(
+                                        "Resolved message from Redis context (using Redis state, not in Postgres yet)",
+                                        extra={
+                                            "context_id": context_id,
+                                            "event_id": event_id,
+                                            "conversation_id": conv.id,
+                                            "redis_state": redis_state,
+                                        }
+                                    )
+                                    return temp_log
             except Exception as e:
                 logger.warning(f"Failed to resolve from Redis context: {e}")
         
-        # Fallback to MessageLog lookup
+        # Fallback to MessageLog lookup in Postgres
         res = await session.execute(
             select(MessageLog)
             .where(MessageLog.wa_message_id == context_id)
