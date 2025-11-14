@@ -275,6 +275,17 @@ class FlowManager:
                 if context_id:
                     context_entry = await self.resolve_message_from_context(session, context_id)
                     if context_entry:
+                        logger.info(
+                            "Found context entry",
+                            extra={
+                                "context_id": context_id,
+                                "message_log_id": context_entry.id,
+                                "message_log_state": context_entry.state,
+                                "message_log_direction": context_entry.direction,
+                                "message_log_type": context_entry.message_type,
+                                "conversation_id": str(context_entry.conversation_id),
+                            },
+                        )
                         conv = await session.get(Conversation, context_entry.conversation_id)
                         if conv:
                             # Validate that event_id is a UUID (not wamid)
@@ -287,16 +298,40 @@ class FlowManager:
                                 # This allows replying to old messages and resuming from that state
                                 if context_entry.state:
                                     context_state = context_entry.state
+                                    logger.info(
+                                        "Using state from context entry",
+                                        extra={
+                                            "context_state": context_state,
+                                            "conversation_current_state": conv.current_state,
+                                        },
+                                    )
                                     # Update conversation state to match the original message state
                                     if conv.current_state != context_entry.state:
+                                        logger.info(
+                                            "Updating conversation state to match context",
+                                            extra={
+                                                "old_state": conv.current_state,
+                                                "new_state": context_entry.state,
+                                            },
+                                        )
                                         await self.update_conversation(session, conv, context_entry.state)
                                         await session.refresh(conv)
+                                else:
+                                    logger.warning(
+                                        "Context entry has no state",
+                                        extra={
+                                            "context_id": context_id,
+                                            "message_log_id": context_entry.id,
+                                            "conversation_id": conv.id,
+                                        },
+                                    )
                                 logger.info(
                                     "Resolved conversation from context",
                                     extra={
                                         "context_id": context_id,
                                         "conversation_id": conv.id,
                                         "original_state": context_entry.state,
+                                        "context_state": context_state,
                                         "conversation_state": conv.current_state,
                                         "event_id": effective_event_id,
                                     },
@@ -462,15 +497,18 @@ class FlowManager:
                 )
                 outgoing = await next_handler.send(session, conv)
                 if outgoing:
+                    # Save outgoing message with the state it was sent FROM (effective_state),
+                    # not the state it transitions TO (next_state_id).
+                    # This allows context resolution to find the correct state when user replies.
                     await self.log_message(
                         session,
                         conversation_id=conv.id,
-                        wa_message_id=None,
+                        wa_message_id=None,  # Will be updated when status update arrives
                         direction="outgoing",
                         message_type=outgoing.get("message_type", "template"),
                         reply_to_id=None,
                         payload=json.dumps(outgoing, ensure_ascii=False)[:4000],
-                        state=next_state_id,
+                        state=effective_state,  # State FROM which message was sent
                     )
                     await self.publish_outgoing(outgoing)
             except Exception as e:
