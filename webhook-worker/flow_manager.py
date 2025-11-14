@@ -133,12 +133,16 @@ class FlowManager:
         )
         return res.scalars().first()
 
-    async def resolve_message_from_context(self, session: AsyncSession, context_id: Optional[str]) -> Optional[MessageLog]:
-        """Resolve message from context_id (wamid) by looking up in MessageLog table."""
+    async def resolve_message_from_context(self, session: AsyncSession, context_id: Optional[str], guest_phone: Optional[str] = None) -> Optional[MessageLog]:
+        """Resolve message from context_id (wamid) by looking up in MessageLog table.
+        
+        First tries to find by wa_message_id. If not found, tries to find the most recent
+        outgoing message for the guest (if guest_phone is provided) as a fallback.
+        """
         if not context_id:
             return None
         
-        # Look up in MessageLog by wa_message_id
+        # First try: Look up in MessageLog by wa_message_id (most accurate)
         res = await session.execute(
             select(MessageLog)
             .where(MessageLog.wa_message_id == context_id)
@@ -149,7 +153,7 @@ class FlowManager:
         
         if msg_log:
             logger.info(
-                "Resolved message from context",
+                "Resolved message from context by wa_message_id",
                 extra={
                     "context_id": context_id,
                     "message_log_id": msg_log.id,
@@ -157,8 +161,48 @@ class FlowManager:
                     "conversation_id": str(msg_log.conversation_id),
                 }
             )
+            return msg_log
         
-        return msg_log
+        # Fallback: If wa_message_id not found yet (status update hasn't arrived),
+        # try to find the most recent outgoing message for this guest
+        if guest_phone:
+            # Find the latest conversation for this guest
+            latest_conv = await self._get_latest_conversation(session, guest_phone)
+            if latest_conv:
+                # Find the most recent outgoing message for this conversation
+                res = await session.execute(
+                    select(MessageLog)
+                    .where(
+                        MessageLog.conversation_id == latest_conv.id,
+                        MessageLog.direction == "outgoing",
+                        MessageLog.wa_message_id.is_(None)  # Not updated yet
+                    )
+                    .order_by(MessageLog.created_at.desc())
+                    .limit(1)
+                )
+                msg_log = res.scalars().first()
+                
+                if msg_log:
+                    logger.info(
+                        "Resolved message from context by fallback (latest outgoing message)",
+                        extra={
+                            "context_id": context_id,
+                            "message_log_id": msg_log.id,
+                            "message_log_state": msg_log.state,
+                            "conversation_id": str(msg_log.conversation_id),
+                            "guest_phone": guest_phone,
+                        }
+                    )
+                    return msg_log
+        
+        logger.warning(
+            "Could not resolve message from context",
+            extra={
+                "context_id": context_id,
+                "guest_phone": guest_phone,
+            }
+        )
+        return None
 
     # ---------- Flow resolution & building ----------
 
@@ -230,7 +274,7 @@ class FlowManager:
                 # Step 1: Try to resolve from context_id (quick_reply to old message)
                 context_state: Optional[str] = None  # State from the original message
                 if context_id:
-                    context_entry = await self.resolve_message_from_context(session, context_id)
+                    context_entry = await self.resolve_message_from_context(session, context_id, guest_phone)
                     if context_entry:
                         # Check if context_entry has an id (it might be a TempMessageLog)
                         entry_id = getattr(context_entry, 'id', None)
