@@ -79,17 +79,16 @@ class BaseState:
             if is_uuid:
                 # Fetch event
                 result = await session.execute(
-                    text("SELECT id, name, event_date, location FROM events WHERE id = :event_id"),
+                    text("SELECT id, name, date, location, inviters FROM events WHERE id = :event_id"),
                     {"event_id": event_id}
                 )
                 event_row = result.first()
                 if event_row:
                     event_data = dict(event_row._mapping) if hasattr(event_row, '_mapping') else dict(event_row)
                     replacements['event.name'] = event_data.get('name', 'האירוע')
-                    replacements['event.date'] = str(event_data.get('event_date', 'התאריך')) if event_data.get('event_date') else 'התאריך'
+                    replacements['event.date'] = str(event_data.get('date', 'התאריך')) if event_data.get('date') else 'התאריך'
                     replacements['event.location'] = event_data.get('location', 'המיקום')
-                    # Note: inviters is not in events table - would need to be fetched from owners or another source
-                    replacements['event.inviters'] = 'המארחים'  # Default value
+                    replacements['event.inviters'] = event_data.get('inviters', 'המארחים')
             
             # Fetch guest data
             if is_uuid:
