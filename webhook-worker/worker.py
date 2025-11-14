@@ -56,11 +56,18 @@ class Worker:
         )
 
     def _extract_incoming(self, msg: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Extract incoming message data.
+        
+        Note: event_id from webhook is always a wamid (WhatsApp message ID), not the real event UUID.
+        The real event_id will be resolved by FlowManager from Redis context or MessageLog.
+        """
         payload = msg.get("payload") if isinstance(msg.get("payload"), dict) else {}
-        raw_event_id = msg.get("event_id") or (payload.get("event_id") if payload else None)
-        event_id = raw_event_id
-        if isinstance(event_id, str) and event_id.startswith("wamid."):
-            event_id = None
+        
+        # Don't extract event_id from webhook - it's always a wamid, not the real event UUID
+        # FlowManager will resolve the real event_id from Redis context or MessageLog
+        event_id = None
+        
         guest_phone = (
             msg.get("guest_phone")
             or msg.get("recipient")
@@ -94,17 +101,11 @@ class Worker:
             },
         )
 
+        # Extract context_id (wamid of the message being replied to)
         context_id = None
         if payload:
             ctx = payload.get("context") or {}
             context_id = ctx.get("id") or msg.get("reply_to_message_id")
-
-        if not event_id and context_id:
-            event_id = context_id
-            logger.info(
-                "Using context_id as fallback event_id",
-                extra={"context_id": context_id, "message_type": normalized_type},
-            )
 
         template_params = payload.get("template_parameters") if payload else {}
 
@@ -114,7 +115,7 @@ class Worker:
         return {
             "message_type": normalized_type,
             "guest_phone": str(guest_phone) if guest_phone else None,
-            "event_id": str(event_id) if event_id else None,
+            "event_id": None,  # Always None - will be resolved by FlowManager
             "text": text_value,
             "context_id": context_id,
             "template_parameters": template_params or {},

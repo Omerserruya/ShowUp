@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional, Tuple, Type
 import aio_pika
 from sqlalchemy import select, insert, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from redis import asyncio as aioredis
 
 from db.session import get_session
 from db.models import Conversation, MessageLog
@@ -57,6 +58,19 @@ class FlowManager:
         self.publisher_channel: Optional[aio_pika.abc.AbstractChannel] = None
         self.publisher_routing_key: Optional[str] = None
         # No external YAML message builder; states construct messages directly
+
+        # Redis for message context lookup
+        self.redis: Optional[aioredis.Redis] = None
+        try:
+            redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+            self.redis = aioredis.from_url(
+                redis_url,
+                encoding="utf-8",
+                decode_responses=True,
+            )
+            logger.info("FlowManager connected to Redis for message context")
+        except Exception as e:
+            logger.warning(f"FlowManager could not connect to Redis: {e}")
 
         # State registry
         self.state_handlers: Dict[str, Type[BaseState]] = {
@@ -134,8 +148,53 @@ class FlowManager:
         return res.scalars().first()
 
     async def resolve_message_from_context(self, session: AsyncSession, context_id: Optional[str]) -> Optional[MessageLog]:
+        """Resolve message from context_id (wamid). Tries Redis first, then MessageLog."""
         if not context_id:
             return None
+        
+        # First try Redis (faster, set by outpost-service)
+        if self.redis:
+            try:
+                redis_key = f"message_context:{context_id}"
+                raw = await self.redis.get(redis_key)
+                if raw:
+                    context_data = json.loads(raw)
+                    event_id = context_data.get("event_id")
+                    if event_id:
+                        # Find conversation by event_id and guest_phone
+                        guest_phone = context_data.get("guest_phone")
+                        if guest_phone:
+                            res = await session.execute(
+                                select(Conversation)
+                                .where(
+                                    Conversation.guest_phone == guest_phone,
+                                    Conversation.event_id == event_id
+                                )
+                                .limit(1)
+                            )
+                            conv = res.scalars().first()
+                            if conv:
+                                # Find the message log entry
+                                res = await session.execute(
+                                    select(MessageLog)
+                                    .where(
+                                        MessageLog.conversation_id == conv.id,
+                                        MessageLog.wa_message_id == context_id
+                                    )
+                                    .order_by(MessageLog.created_at.desc())
+                                    .limit(1)
+                                )
+                                msg_log = res.scalars().first()
+                                if msg_log:
+                                    logger.info(
+                                        "Resolved message from Redis context",
+                                        extra={"context_id": context_id, "event_id": event_id, "conversation_id": conv.id}
+                                    )
+                                    return msg_log
+            except Exception as e:
+                logger.warning(f"Failed to resolve from Redis context: {e}")
+        
+        # Fallback to MessageLog lookup
         res = await session.execute(
             select(MessageLog)
             .where(MessageLog.wa_message_id == context_id)
@@ -184,6 +243,21 @@ class FlowManager:
         context_id: Optional[str],
         template_parameters: Optional[Dict[str, Any]] = None,
     ) -> None:
+        """
+        Handle incoming webhook event.
+        
+        Resolution logic:
+        1. If context_id exists (quick_reply to old message):
+           - Find MessageLog by wa_message_id (from Redis or DB)
+           - Get conversation_id from MessageLog
+           - Get event_id from Conversation (this is the real event UUID)
+        2. If no context_id (free_text):
+           - Find latest conversation by guest_phone
+           - Use its event_id
+        3. If no conversation found and no event_id:
+           - Try to get event_id from Redis context if context_id exists
+           - Otherwise, skip (cannot create conversation without event_id)
+        """
         if not guest_phone:
             logger.warning("Missing guest_phone; skipping")
             return
@@ -192,62 +266,94 @@ class FlowManager:
             logger.info(
                 f"handle_event start: type={message_type} guest={guest_phone} event_id={event_id} context={context_id}",
             )
-            context_entry = await self.resolve_message_from_context(session, context_id)
             conv: Optional[Conversation] = None
-            effective_event_id = event_id
+            effective_event_id: Optional[str] = None
 
-            if context_entry:
-                conv = await session.get(Conversation, context_entry.conversation_id)
-                if conv:
-                    if context_entry.state and conv.current_state != context_entry.state:
-                        await self.update_conversation(session, conv, context_entry.state)
-                        await session.refresh(conv)
-                    effective_event_id = conv.event_id
-                    logger.info(
-                        "Resolved conversation from context",
-                        extra={
-                            "context_id": context_id,
-                            "conversation_id": conv.id,
-                            "state": conv.current_state,
-                            "event_id": effective_event_id,
-                        },
-                    )
+            # Step 1: Try to resolve from context_id (quick_reply to old message)
+            if context_id:
+                context_entry = await self.resolve_message_from_context(session, context_id)
+                if context_entry:
+                    conv = await session.get(Conversation, context_entry.conversation_id)
+                    if conv:
+                        # Validate that event_id is a UUID (not wamid)
+                        # If it's a UUID, use it; otherwise, it's invalid
+                        try:
+                            import uuid
+                            uuid.UUID(conv.event_id)
+                            effective_event_id = conv.event_id
+                            if context_entry.state and conv.current_state != context_entry.state:
+                                await self.update_conversation(session, conv, context_entry.state)
+                                await session.refresh(conv)
+                            logger.info(
+                                "Resolved conversation from context",
+                                extra={
+                                    "context_id": context_id,
+                                    "conversation_id": conv.id,
+                                    "state": conv.current_state,
+                                    "event_id": effective_event_id,
+                                },
+                            )
+                        except (ValueError, AttributeError):
+                            logger.warning(
+                                f"Conversation.event_id is not a valid UUID: {conv.event_id}, skipping",
+                                extra={"conversation_id": conv.id, "context_id": context_id}
+                            )
+                            conv = None
+                            effective_event_id = None
+                
+                # If Redis context exists but MessageLog not found, try to get event_id from Redis
+                if not conv and self.redis:
+                    try:
+                        redis_key = f"message_context:{context_id}"
+                        raw_ctx = await self.redis.get(redis_key)
+                        if raw_ctx:
+                            context_data = json.loads(raw_ctx)
+                            redis_event_id = context_data.get("event_id")
+                            if redis_event_id:
+                                # Validate it's a UUID
+                                try:
+                                    import uuid
+                                    uuid.UUID(redis_event_id)
+                                    effective_event_id = redis_event_id
+                                    logger.info(
+                                        "Resolved event_id from Redis context",
+                                        extra={"context_id": context_id, "event_id": effective_event_id}
+                                    )
+                                except (ValueError, AttributeError):
+                                    logger.warning(f"Redis event_id is not a valid UUID: {redis_event_id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to get event_id from Redis context: {e}")
 
-            if not conv:
-                latest_conv = await self._get_latest_conversation(session, guest_phone)
-                if latest_conv:
-                    conv = latest_conv
-                    effective_event_id = latest_conv.event_id
-                    logger.info(
-                        "Resolved missing event_id from latest conversation",
-                        extra={
-                            "guest_phone": guest_phone,
-                            "event_id": effective_event_id,
-                            "state": conv.current_state,
-                        },
-                    )
-
+            # Step 2: If no context resolution, try latest conversation (free_text)
             if not conv and not effective_event_id:
                 latest_conv = await self._get_latest_conversation(session, guest_phone)
                 if latest_conv:
-                    conv = latest_conv
-                    effective_event_id = latest_conv.event_id
-                    logger.info(
-                        "Resolved missing event_id from latest conversation",
-                        extra={
-                            "guest_phone": guest_phone,
-                            "event_id": effective_event_id,
-                            "state": conv.current_state,
-                        },
-                    )
+                    # Validate event_id is UUID
+                    try:
+                        import uuid
+                        uuid.UUID(latest_conv.event_id)
+                        conv = latest_conv
+                        effective_event_id = latest_conv.event_id
+                        logger.info(
+                            "Resolved from latest conversation",
+                            extra={
+                                "guest_phone": guest_phone,
+                                "event_id": effective_event_id,
+                                "state": conv.current_state,
+                            },
+                        )
+                    except (ValueError, AttributeError):
+                        logger.warning(f"Latest conversation has invalid event_id: {latest_conv.event_id}")
 
-            if not conv and not effective_event_id:
+            # Step 3: If still no event_id, cannot proceed
+            if not effective_event_id:
                 logger.warning(
-                    "Could not resolve event_id for incoming message; skipping",
-                    extra={"guest_phone": guest_phone, "context_id": context_id},
+                    "Could not resolve event_id (UUID) for incoming message; skipping",
+                    extra={"guest_phone": guest_phone, "context_id": context_id, "provided_event_id": event_id},
                 )
                 return
 
+            # Step 4: Load or create conversation
             if not conv:
                 conv = await self.load_conversation(session, guest_phone, effective_event_id)
                 logger.info(
