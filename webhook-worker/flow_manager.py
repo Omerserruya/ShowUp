@@ -347,9 +347,20 @@ class FlowManager:
                                 conv = None
                                 effective_event_id = None
                                 context_state = None
+                    else:
+                        # Context entry not found - try to find latest conversation as fallback
+                        # This handles the case where the first message was sent by campaign-worker
+                        # and not logged in MessageLog by webhook-worker
+                        logger.info(
+                            "Context entry not found, trying latest conversation as fallback",
+                            extra={
+                                "context_id": context_id,
+                                "guest_phone": guest_phone,
+                            },
+                        )
                 
 
-                # Step 2: If no context resolution, try latest conversation (free_text)
+                # Step 2: If no context resolution, try latest conversation (free_text or fallback for quick_reply)
                 if not conv and not effective_event_id:
                     latest_conv = await self._get_latest_conversation(session, guest_phone)
                     if latest_conv:

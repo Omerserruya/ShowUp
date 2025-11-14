@@ -75,20 +75,75 @@ class RabbitMQConsumer:
         except Exception as e:
             self.logger.warning(f"Outpost could not connect to Redis for message context: {e}")
 
-    def _log_outgoing_whatsapp_id(self, event_id: str, message_type: str, content: str, whatsapp_message_id: str):
+    def _log_outgoing_whatsapp_id(self, event_id: str, message_type: str, content: str, whatsapp_message_id: str, guest_phone: str, state: Optional[str] = None):
+        """Log outgoing message to messages_log table.
+        
+        Creates or finds conversation first, then logs the message.
+        Uses the correct schema: conversation_id, wa_message_id, direction, message_type, payload, state.
+        """
         if not self.pg_conn:
             return
         try:
             with self.pg_conn.cursor() as cur:
+                # First, find or create conversation
+                # Look for existing conversation by guest_phone and event_id
                 cur.execute(
                     """
-                    INSERT INTO messages_log (guest_id, event_id, direction, type, content, state_before, state_after, whatsapp_message_id)
-                    VALUES (NULL, %s, 'outgoing', %s, %s, NULL, %s, %s)
+                    SELECT id, current_state FROM conversations 
+                    WHERE guest_phone = %s AND event_id = %s AND active = true
+                    ORDER BY updated_at DESC
+                    LIMIT 1
                     """,
-                    (event_id, message_type, content, content, whatsapp_message_id)
+                    (guest_phone, event_id)
+                )
+                conv_row = cur.fetchone()
+                
+                if conv_row:
+                    conversation_id = conv_row[0]
+                    # Use state from message if provided, otherwise use conversation's current_state
+                    effective_state = state if state else conv_row[1]
+                else:
+                    # Create new conversation
+                    import uuid
+                    conversation_id = uuid.uuid4()
+                    initial_state = state if state else "rsvp_invite"
+                    cur.execute(
+                        """
+                        INSERT INTO conversations (id, guest_phone, event_id, current_state, active)
+                        VALUES (%s, %s, %s, %s, true)
+                        """,
+                        (conversation_id, guest_phone, event_id, initial_state)
+                    )
+                    effective_state = initial_state
+                    self.logger.info(
+                        f"Created new conversation for logging",
+                        extra={
+                            "conversation_id": str(conversation_id),
+                            "guest_phone": guest_phone,
+                            "event_id": event_id,
+                            "state": effective_state,
+                        }
+                    )
+                
+                # Now log the message with correct schema
+                payload = json.dumps({"message_type": message_type, "content": content}, ensure_ascii=False)[:4000]
+                cur.execute(
+                    """
+                    INSERT INTO messages_log (conversation_id, wa_message_id, direction, message_type, reply_to_id, payload, state)
+                    VALUES (%s, %s, 'outgoing', %s, NULL, %s, %s)
+                    """,
+                    (conversation_id, whatsapp_message_id, message_type, payload, effective_state)
+                )
+                self.logger.info(
+                    f"Logged outgoing message to MessageLog",
+                    extra={
+                        "conversation_id": str(conversation_id),
+                        "wa_message_id": whatsapp_message_id,
+                        "state": effective_state,
+                    }
                 )
         except Exception as e:
-            self.logger.warning(f"Failed to log WhatsApp message id: {e}")
+            self.logger.warning(f"Failed to log WhatsApp message id: {e}", exc_info=True)
 
     async def _store_message_context(self, message_id: str, state: str, event_id: str, guest_phone: str):
         """Store message context in Redis for reply resolution.
@@ -246,12 +301,14 @@ class RabbitMQConsumer:
                         except Exception:
                             pass
                         wa_id = (wa_resp or {}).get("messages", [{}])[0].get("id")
-                        if wa_id and message_data.get("event_id"):
+                        if wa_id and message_data.get("event_id") and message_data.get("recipient"):
                             self._log_outgoing_whatsapp_id(
                                 event_id=str(message_data.get("event_id")),
                                 message_type="template",
                                 content=str(message_data.get("state") or message_data.get("template")),
                                 whatsapp_message_id=wa_id,
+                                guest_phone=str(message_data.get("recipient")),
+                                state=message_data.get("state"),
                             )
                             # Store message context for reply resolution
                             if message_data.get("state") and message_data.get("recipient"):
@@ -335,12 +392,14 @@ class RabbitMQConsumer:
                         except Exception:
                             pass
                         wa_id = (wa_resp or {}).get("messages", [{}])[0].get("id")
-                        if wa_id and message_data.get("event_id"):
+                        if wa_id and message_data.get("event_id") and message_data.get("recipient"):
                             self._log_outgoing_whatsapp_id(
                                 event_id=str(message_data.get("event_id")),
                                 message_type="free_text",
                                 content=str(message_data.get("state") or message_data.get("text") or "free_text"),
                                 whatsapp_message_id=wa_id,
+                                guest_phone=str(message_data.get("recipient")),
+                                state=message_data.get("state"),
                             )
                             # Store message context for reply resolution
                             if message_data.get("state") and message_data.get("recipient"):
@@ -425,12 +484,14 @@ class RabbitMQConsumer:
                         except Exception:
                             pass
                         wa_id = (wa_resp or {}).get("messages", [{}])[0].get("id")
-                        if wa_id and message_data.get("event_id"):
+                        if wa_id and message_data.get("event_id") and message_data.get("recipient"):
                             self._log_outgoing_whatsapp_id(
                                 event_id=str(message_data.get("event_id")),
                                 message_type="interactive",
                                 content=str(message_data.get("state") or "interactive"),
                                 whatsapp_message_id=wa_id,
+                                guest_phone=str(message_data.get("recipient")),
+                                state=message_data.get("state"),
                             )
                             # Store message context for reply resolution
                             if message_data.get("state") and message_data.get("recipient"):
