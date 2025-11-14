@@ -263,194 +263,209 @@ class FlowManager:
             return
 
         async for session in get_session():
-            logger.info(
-                f"handle_event start: type={message_type} guest={guest_phone} event_id={event_id} context={context_id}",
-            )
-            conv: Optional[Conversation] = None
-            effective_event_id: Optional[str] = None
+            try:
+                logger.info(
+                    f"handle_event start: type={message_type} guest={guest_phone} event_id={event_id} context={context_id}",
+                )
+                conv: Optional[Conversation] = None
+                effective_event_id: Optional[str] = None
 
-            # Step 1: Try to resolve from context_id (quick_reply to old message)
-            if context_id:
-                context_entry = await self.resolve_message_from_context(session, context_id)
-                if context_entry:
-                    conv = await session.get(Conversation, context_entry.conversation_id)
-                    if conv:
-                        # Validate that event_id is a UUID (not wamid)
-                        # If it's a UUID, use it; otherwise, it's invalid
+                # Step 1: Try to resolve from context_id (quick_reply to old message)
+                if context_id:
+                    context_entry = await self.resolve_message_from_context(session, context_id)
+                    if context_entry:
+                        conv = await session.get(Conversation, context_entry.conversation_id)
+                        if conv:
+                            # Validate that event_id is a UUID (not wamid)
+                            # If it's a UUID, use it; otherwise, it's invalid
+                            try:
+                                import uuid
+                                uuid.UUID(conv.event_id)
+                                effective_event_id = conv.event_id
+                                if context_entry.state and conv.current_state != context_entry.state:
+                                    await self.update_conversation(session, conv, context_entry.state)
+                                    await session.refresh(conv)
+                                logger.info(
+                                    "Resolved conversation from context",
+                                    extra={
+                                        "context_id": context_id,
+                                        "conversation_id": conv.id,
+                                        "state": conv.current_state,
+                                        "event_id": effective_event_id,
+                                    },
+                                )
+                            except (ValueError, AttributeError):
+                                logger.warning(
+                                    f"Conversation.event_id is not a valid UUID: {conv.event_id}, skipping",
+                                    extra={"conversation_id": conv.id, "context_id": context_id}
+                                )
+                                conv = None
+                                effective_event_id = None
+                
+                    # If Redis context exists but MessageLog not found, try to get event_id from Redis
+                    if not conv and self.redis:
+                        try:
+                            redis_key = f"message_context:{context_id}"
+                            raw_ctx = await self.redis.get(redis_key)
+                            if raw_ctx:
+                                context_data = json.loads(raw_ctx)
+                                redis_event_id = context_data.get("event_id")
+                                if redis_event_id:
+                                    # Validate it's a UUID
+                                    try:
+                                        import uuid
+                                        uuid.UUID(redis_event_id)
+                                        effective_event_id = redis_event_id
+                                        logger.info(
+                                            "Resolved event_id from Redis context",
+                                            extra={"context_id": context_id, "event_id": effective_event_id}
+                                        )
+                                    except (ValueError, AttributeError):
+                                        logger.warning(f"Redis event_id is not a valid UUID: {redis_event_id}")
+                        except Exception as e:
+                            logger.warning(f"Failed to get event_id from Redis context: {e}")
+
+                # Step 2: If no context resolution, try latest conversation (free_text)
+                if not conv and not effective_event_id:
+                    latest_conv = await self._get_latest_conversation(session, guest_phone)
+                    if latest_conv:
+                        # Validate event_id is UUID
                         try:
                             import uuid
-                            uuid.UUID(conv.event_id)
-                            effective_event_id = conv.event_id
-                            if context_entry.state and conv.current_state != context_entry.state:
-                                await self.update_conversation(session, conv, context_entry.state)
-                                await session.refresh(conv)
+                            uuid.UUID(latest_conv.event_id)
+                            conv = latest_conv
+                            effective_event_id = latest_conv.event_id
                             logger.info(
-                                "Resolved conversation from context",
+                                "Resolved from latest conversation",
                                 extra={
-                                    "context_id": context_id,
-                                    "conversation_id": conv.id,
-                                    "state": conv.current_state,
+                                    "guest_phone": guest_phone,
                                     "event_id": effective_event_id,
+                                    "state": conv.current_state,
                                 },
                             )
                         except (ValueError, AttributeError):
-                            logger.warning(
-                                f"Conversation.event_id is not a valid UUID: {conv.event_id}, skipping",
-                                extra={"conversation_id": conv.id, "context_id": context_id}
-                            )
-                            conv = None
-                            effective_event_id = None
-                
-                # If Redis context exists but MessageLog not found, try to get event_id from Redis
-                if not conv and self.redis:
-                    try:
-                        redis_key = f"message_context:{context_id}"
-                        raw_ctx = await self.redis.get(redis_key)
-                        if raw_ctx:
-                            context_data = json.loads(raw_ctx)
-                            redis_event_id = context_data.get("event_id")
-                            if redis_event_id:
-                                # Validate it's a UUID
-                                try:
-                                    import uuid
-                                    uuid.UUID(redis_event_id)
-                                    effective_event_id = redis_event_id
-                                    logger.info(
-                                        "Resolved event_id from Redis context",
-                                        extra={"context_id": context_id, "event_id": effective_event_id}
-                                    )
-                                except (ValueError, AttributeError):
-                                    logger.warning(f"Redis event_id is not a valid UUID: {redis_event_id}")
-                    except Exception as e:
-                        logger.warning(f"Failed to get event_id from Redis context: {e}")
+                            logger.warning(f"Latest conversation has invalid event_id: {latest_conv.event_id}")
 
-            # Step 2: If no context resolution, try latest conversation (free_text)
-            if not conv and not effective_event_id:
-                latest_conv = await self._get_latest_conversation(session, guest_phone)
-                if latest_conv:
-                    # Validate event_id is UUID
-                    try:
-                        import uuid
-                        uuid.UUID(latest_conv.event_id)
-                        conv = latest_conv
-                        effective_event_id = latest_conv.event_id
-                        logger.info(
-                            "Resolved from latest conversation",
-                            extra={
-                                "guest_phone": guest_phone,
-                                "event_id": effective_event_id,
-                                "state": conv.current_state,
-                            },
-                        )
-                    except (ValueError, AttributeError):
-                        logger.warning(f"Latest conversation has invalid event_id: {latest_conv.event_id}")
+                # Step 3: If still no event_id, cannot proceed
+                if not effective_event_id:
+                    logger.warning(
+                        "Could not resolve event_id (UUID) for incoming message; skipping",
+                        extra={"guest_phone": guest_phone, "context_id": context_id, "provided_event_id": event_id},
+                    )
+                    return
 
-            # Step 3: If still no event_id, cannot proceed
-            if not effective_event_id:
-                logger.warning(
-                    "Could not resolve event_id (UUID) for incoming message; skipping",
-                    extra={"guest_phone": guest_phone, "context_id": context_id, "provided_event_id": event_id},
-                )
-                return
+                # Step 4: Load or create conversation
+                if not conv:
+                    conv = await self.load_conversation(session, guest_phone, effective_event_id)
+                    logger.info(
+                        "Created/loaded conversation",
+                        extra={
+                            "conversation_id": conv.id,
+                            "guest_phone": guest_phone,
+                            "event_id": effective_event_id,
+                            "state": conv.current_state,
+                        },
+                    )
+                else:
+                    self.current_state = conv.current_state
 
-            # Step 4: Load or create conversation
-            if not conv:
-                conv = await self.load_conversation(session, guest_phone, effective_event_id)
+                handler_cls = self.state_handlers.get(conv.current_state, FreeTextState)
+                handler = handler_cls(self)
+
                 logger.info(
-                    "Created/loaded conversation",
+                    "Processing message",
                     extra={
-                        "conversation_id": conv.id,
-                        "guest_phone": guest_phone,
+                        "conversation_state": conv.current_state,
+                        "handler_id": handler.id,
+                        "handler_next_states": handler.next_states,
+                        "input_text": text,
+                        "context_id": context_id,
                         "event_id": effective_event_id,
-                        "state": conv.current_state,
                     },
                 )
-            else:
-                self.current_state = conv.current_state
 
-            handler_cls = self.state_handlers.get(conv.current_state, FreeTextState)
-            handler = handler_cls(self)
-
-            logger.info(
-                "Processing message",
-                extra={
-                    "conversation_state": conv.current_state,
-                    "handler_id": handler.id,
-                    "handler_next_states": handler.next_states,
-                    "input_text": text,
-                    "context_id": context_id,
-                    "event_id": effective_event_id,
-                },
-            )
-
-            await self.log_message(
-                session,
-                conversation_id=conv.id,
-                wa_message_id=raw.get("message_id"),
-                direction="incoming",
-                message_type=message_type,
-                reply_to_id=(raw.get("payload", {}).get("context", {}).get("id") if isinstance(raw.get("payload"), dict) else None),
-                payload=json.dumps(raw, ensure_ascii=False)[:4000],
-                state=conv.current_state,
-            )
-
-            await handler.process_incoming(session, {"text": text, "raw": raw}, conv)
-            next_state_id = handler.get_next_state({"text": text, "raw": raw})
-
-            logger.info(
-                "State transition",
-                extra={
-                    "current_state": conv.current_state,
-                    "handler_id": handler.id,
-                    "input_text": repr(text),
-                    "input_text_len": len(text),
-                    "next_state": next_state_id,
-                    "handler_next_states": handler.next_states,
-                    "matched_key": text if text in handler.next_states else ("*" if "*" in handler.next_states else None),
-                },
-            )
-
-            if next_state_id not in self.state_handlers:
-                logger.error(
-                    f"Next state {next_state_id} not found in state_handlers, falling back to {self.fallback_state_id}",
-                    extra={"available_states": list(self.state_handlers.keys())},
-                )
-                next_state_id = self.fallback_state_id
-
-            await self.update_conversation(session, conv, next_state_id)
-            await session.refresh(conv)
-
-            logger.info(
-                "Conversation updated",
-                extra={
-                    "new_state": conv.current_state,
-                    "expected_next_state": next_state_id,
-                    "states_match": conv.current_state == next_state_id,
-                },
-            )
-
-            next_handler = self.state_handlers.get(next_state_id, FreeTextState)(self)
-            logger.info(
-                "Sending message from next state",
-                extra={
-                    "next_state_id": next_state_id,
-                    "next_handler_id": next_handler.id,
-                    "next_handler_type": type(next_handler).__name__,
-                },
-            )
-            outgoing = await next_handler.send(session, conv)
-            if outgoing:
                 await self.log_message(
                     session,
                     conversation_id=conv.id,
-                    wa_message_id=None,
-                    direction="outgoing",
-                    message_type=outgoing.get("message_type", "template"),
-                    reply_to_id=None,
-                    payload=json.dumps(outgoing, ensure_ascii=False)[:4000],
-                    state=next_state_id,
+                    wa_message_id=raw.get("message_id"),
+                    direction="incoming",
+                    message_type=message_type,
+                    reply_to_id=(raw.get("payload", {}).get("context", {}).get("id") if isinstance(raw.get("payload"), dict) else None),
+                    payload=json.dumps(raw, ensure_ascii=False)[:4000],
+                    state=conv.current_state,
                 )
-                await self.publish_outgoing(outgoing)
+
+                await handler.process_incoming(session, {"text": text, "raw": raw}, conv)
+                next_state_id = handler.get_next_state({"text": text, "raw": raw})
+
+                logger.info(
+                    "State transition",
+                    extra={
+                        "current_state": conv.current_state,
+                        "handler_id": handler.id,
+                        "input_text": repr(text),
+                        "input_text_len": len(text),
+                        "next_state": next_state_id,
+                        "handler_next_states": handler.next_states,
+                        "matched_key": text if text in handler.next_states else ("*" if "*" in handler.next_states else None),
+                    },
+                )
+
+                if next_state_id not in self.state_handlers:
+                    logger.error(
+                        f"Next state {next_state_id} not found in state_handlers, falling back to {self.fallback_state_id}",
+                        extra={"available_states": list(self.state_handlers.keys())},
+                    )
+                    next_state_id = self.fallback_state_id
+
+                await self.update_conversation(session, conv, next_state_id)
+                await session.refresh(conv)
+
+                logger.info(
+                    "Conversation updated",
+                    extra={
+                        "new_state": conv.current_state,
+                        "expected_next_state": next_state_id,
+                        "states_match": conv.current_state == next_state_id,
+                    },
+                )
+
+                next_handler = self.state_handlers.get(next_state_id, FreeTextState)(self)
+                logger.info(
+                    "Sending message from next state",
+                    extra={
+                        "next_state_id": next_state_id,
+                        "next_handler_id": next_handler.id,
+                        "next_handler_type": type(next_handler).__name__,
+                    },
+                )
+                outgoing = await next_handler.send(session, conv)
+                if outgoing:
+                    await self.log_message(
+                        session,
+                        conversation_id=conv.id,
+                        wa_message_id=None,
+                        direction="outgoing",
+                        message_type=outgoing.get("message_type", "template"),
+                        reply_to_id=None,
+                        payload=json.dumps(outgoing, ensure_ascii=False)[:4000],
+                        state=next_state_id,
+                    )
+                    await self.publish_outgoing(outgoing)
+            except Exception as e:
+                # Rollback transaction on error
+                await session.rollback()
+                logger.error(
+                    f"Error handling event: {e}",
+                    extra={
+                        "message_type": message_type,
+                        "guest_phone": guest_phone,
+                        "context_id": context_id,
+                        "error": str(e),
+                    },
+                    exc_info=True,
+                )
+                raise
 
     async def handle_status_update(
         self,
