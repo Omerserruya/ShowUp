@@ -21,7 +21,8 @@ class RsvpInviteState(BaseState):
 
     async def send(self, session: AsyncSession, conversation: Any) -> Optional[Dict[str, Any]]:
         # Template per original spec: event_no_pic with 6 params
-        return self.build_template(
+        return await self.build_template(
+            session,
             conversation,
             template_name="event_no_pic",
             language="he",

@@ -16,7 +16,8 @@ class RsvpInfoQuestionState(BaseState):
         return None
 
     async def send(self, session: AsyncSession, conversation: Any) -> Dict[str, Any]:
-        return self.build_interactive(
+        return await self.build_interactive(
+            session,
             conversation,
             "תודה על העדכון! האם יש משהו שחשוב שנדע? למשל מנה צמחונית/טבעונית או כל הערה מיוחדת – נשמח אם תעדכן כאן ❤️",
             ["אין שום דבר מיוחד", "לכתוב לנו הערה"],

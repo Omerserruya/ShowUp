@@ -45,10 +45,12 @@ class BaseState:
         }
 
     # Helpers for building outpost payloads
-    def build_template(self, conversation: Any, template_name: str, language: str, params: List[str]) -> Dict[str, Any]:
+    async def build_template(self, session: AsyncSession, conversation: Any, template_name: str, language: str, params: List[str]) -> Dict[str, Any]:
         parameters: Dict[str, str] = {}
         for idx, val in enumerate(params, start=1):
-            parameters[str(idx)] = str(val)
+            # Render placeholders in each parameter
+            rendered_val = await self._render_text(session, conversation, val)
+            parameters[str(idx)] = rendered_val
         return {
             "platform": "WA",
             "recipient": conversation.guest_phone,
@@ -127,7 +129,10 @@ class BaseState:
             "source": "webhook_worker",
         }
 
-    def build_interactive(self, conversation: Any, text: str, buttons: List[str]) -> Dict[str, Any]:
+    async def build_interactive(self, session: AsyncSession, conversation: Any, text: str, buttons: List[str]) -> Dict[str, Any]:
+        # Render placeholders in text
+        rendered_text = await self._render_text(session, conversation, text)
+        
         action_buttons = []
         for idx, title in enumerate(buttons[:3], start=1):
             action_buttons.append({
@@ -136,7 +141,7 @@ class BaseState:
             })
         interactive = {
             "type": "button",
-            "body": {"text": text},
+            "body": {"text": rendered_text},
             "action": {"buttons": action_buttons}
         }
         return {

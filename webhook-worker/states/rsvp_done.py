@@ -15,7 +15,8 @@ class RsvpDoneState(BaseState):
         return None
 
     async def send(self, session: AsyncSession, conversation: Any) -> Dict[str, Any]:
-        return self.build_interactive(
+        return await self.build_interactive(
+            session,
             conversation,
             "מעולה! רשמנו לפנינו שתגיעו ✨  \nאם יהיו שינויים, נשמח אם תעדכן כאן או תענה על ההודעה ❤️",
             ["לעדכן הגעה"],

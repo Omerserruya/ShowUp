@@ -15,7 +15,8 @@ class RsvpDeclineState(BaseState):
         return None
 
     async def send(self, session: AsyncSession, conversation: Any) -> Dict[str, Any]:
-        return self.build_interactive(
+        return await self.build_interactive(
+            session,
             conversation,
             "חבל {{guest.name}} 😢 עדכנו שלא תגיע. אם תתחרט תמיד אפשר לכתוב לנו שוב!",
             ["לעדכן הגעה"],
