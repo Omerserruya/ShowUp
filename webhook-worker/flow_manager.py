@@ -407,8 +407,13 @@ class FlowManager:
                     "handler_id": handler.id,
                     "handler_next_states": handler.next_states,
                     "input_text": text,
+                    "input_text_repr": repr(text),
+                    "input_text_bytes": text.encode('utf-8') if text else b'',
+                    "input_text_len": len(text) if text else 0,
                     "context_id": context_id,
                     "event_id": effective_event_id,
+                    "text_in_next_states": text in handler.next_states if text else False,
+                    "wildcard_in_next_states": "*" in handler.next_states,
                 },
             )
 

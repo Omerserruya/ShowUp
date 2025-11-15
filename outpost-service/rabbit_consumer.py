@@ -186,6 +186,22 @@ class RabbitMQConsumer:
             self.logger.warning(f"Failed to ensure/get conversation: {e}", exc_info=True)
             return None
 
+    def _get_conversation_state(self, conversation_id: str) -> Optional[str]:
+        """Get the current_state of a conversation from the database."""
+        if not self._ensure_pg_connection():
+            return None
+        try:
+            with self.pg_conn.cursor() as cur:
+                cur.execute(
+                    "SELECT current_state FROM conversations WHERE id = %s::uuid LIMIT 1",
+                    (conversation_id,)
+                )
+                row = cur.fetchone()
+                return row[0] if row else None
+        except Exception as e:
+            self.logger.warning(f"Failed to get conversation state: {e}", exc_info=True)
+            return None
+
     def _log_outgoing_whatsapp_id(self, conversation_id: Optional[str], message_type: str, state: Optional[str], whatsapp_message_id: str, payload: Optional[str] = None):
         """Log outgoing message to messages_log table with conversation_id."""
         # Ensure Postgres connection
@@ -355,12 +371,14 @@ class RabbitMQConsumer:
                                         "state": message_data.get("state", "rsvp_invite")
                                     }
                                 )
-                                conversation_id = self._ensure_or_get_conversation(
-                                    event_id=message_data.get("event_id"),
-                                    guest_phone=message_data.get("recipient"),
-                                    guest_id=message_data.get("guest_id"),
-                                    initial_state=message_data.get("state", "rsvp_invite")
-                                )
+                # Always use "rsvp_invite" as initial state for new conversations
+                # The "state" field in message_data is the template name, not the conversation state
+                conversation_id = self._ensure_or_get_conversation(
+                    event_id=message_data.get("event_id"),
+                    guest_phone=message_data.get("recipient"),
+                    guest_id=message_data.get("guest_id"),
+                    initial_state="rsvp_invite"
+                )
                                 if conversation_id:
                                     self.logger.info(
                                         "Conversation created/retrieved",
@@ -376,12 +394,15 @@ class RabbitMQConsumer:
                                     )
                             
                             if conversation_id:
-                                state = message_data.get("state")
+                                # Get the actual conversation state from the database
+                                # For template messages (campaigns), the state should be "rsvp_invite"
+                                # The "state" field in message_data is the template name, not the conversation state
+                                actual_state = self._get_conversation_state(conversation_id) or "rsvp_invite"
                                 payload_json = json.dumps(message_data, ensure_ascii=False)[:4000]
                                 self._log_outgoing_whatsapp_id(
                                     conversation_id=conversation_id,
                                     message_type="template",
-                                    state=state,
+                                    state=actual_state,
                                     whatsapp_message_id=wa_id,
                                     payload=payload_json,
                                 )
@@ -483,20 +504,23 @@ class RabbitMQConsumer:
                             # Ensure conversation exists before logging
                             conversation_id = message_data.get("conversation_id")
                             if not conversation_id:
-                                conversation_id = self._ensure_or_get_conversation(
-                                    event_id=message_data.get("event_id"),
-                                    guest_phone=message_data.get("recipient"),
-                                    guest_id=message_data.get("guest_id"),
-                                    initial_state=message_data.get("state", "rsvp_invite")
-                                )
+                # Always use "rsvp_invite" as initial state for new conversations
+                # The "state" field in message_data is the template name, not the conversation state
+                conversation_id = self._ensure_or_get_conversation(
+                    event_id=message_data.get("event_id"),
+                    guest_phone=message_data.get("recipient"),
+                    guest_id=message_data.get("guest_id"),
+                    initial_state="rsvp_invite"
+                )
                             
                             if conversation_id:
-                                state = message_data.get("state")
+                                # Get the actual conversation state from the database
+                                actual_state = self._get_conversation_state(conversation_id) or message_data.get("state", "rsvp_invite")
                                 payload_json = json.dumps(message_data, ensure_ascii=False)[:4000]
                                 self._log_outgoing_whatsapp_id(
                                     conversation_id=conversation_id,
                                     message_type="free_text",
-                                    state=state,
+                                    state=actual_state,
                                     whatsapp_message_id=wa_id,
                                     payload=payload_json,
                                 )
@@ -591,20 +615,23 @@ class RabbitMQConsumer:
                             # Ensure conversation exists before logging
                             conversation_id = message_data.get("conversation_id")
                             if not conversation_id:
-                                conversation_id = self._ensure_or_get_conversation(
-                                    event_id=message_data.get("event_id"),
-                                    guest_phone=message_data.get("recipient"),
-                                    guest_id=message_data.get("guest_id"),
-                                    initial_state=message_data.get("state", "rsvp_invite")
-                                )
+                # Always use "rsvp_invite" as initial state for new conversations
+                # The "state" field in message_data is the template name, not the conversation state
+                conversation_id = self._ensure_or_get_conversation(
+                    event_id=message_data.get("event_id"),
+                    guest_phone=message_data.get("recipient"),
+                    guest_id=message_data.get("guest_id"),
+                    initial_state="rsvp_invite"
+                )
                             
                             if conversation_id:
-                                state = message_data.get("state")
+                                # Get the actual conversation state from the database
+                                actual_state = self._get_conversation_state(conversation_id) or message_data.get("state", "rsvp_invite")
                                 payload_json = json.dumps(message_data, ensure_ascii=False)[:4000]
                                 self._log_outgoing_whatsapp_id(
                                     conversation_id=conversation_id,
                                     message_type="interactive",
-                                    state=state,
+                                    state=actual_state,
                                     whatsapp_message_id=wa_id,
                                     payload=payload_json,
                                 )
