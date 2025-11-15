@@ -84,6 +84,7 @@ def process_campaign(conn, channel, campaign_id: str):
             continue
 
         # Build outpost message payload
+        # outpost-service will create Conversation when sending the message
         message = {
             "platform": "WA",
             "recipient": str(guest.get("phone")),
@@ -91,7 +92,7 @@ def process_campaign(conn, channel, campaign_id: str):
             "parameters": params,
             "message_type": "template",  # Campaign messages are template-based
             "source": "campaign_worker",
-            "event_id": event_id,
+            "event_id": event_id,  # Real event UUID, not wamid
             # Use template name as a logical state marker for logging/traceability
             "state": template_name,
             "campaign_id": campaign_id,
