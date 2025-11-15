@@ -45,6 +45,8 @@ class RabbitMQConsumer:
         enable_db_logging = (os.getenv('OUTPOST_ENABLE_DB_LOGGING', 'false').lower() == 'true')
         self.pg_conn = None
         self.db_url = None
+        self.db_config = {}
+        
         if enable_db_logging:
             db_user = os.getenv('DB_USER')
             db_password = os.getenv('DB_PASSWORD')
@@ -53,7 +55,7 @@ class RabbitMQConsumer:
             db_name = os.getenv('DB_NAME')
 
             self.logger.info(
-                "DB logging enabled, attempting to connect to Postgres",
+                "DB logging enabled, will attempt to connect to Postgres",
                 extra={
                     "db_host": db_host,
                     "db_port": db_port,
@@ -64,12 +66,15 @@ class RabbitMQConsumer:
 
             if all([db_user, db_password, db_host, db_port, db_name]):
                 self.db_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-                try:
-                    self.pg_conn = psycopg2.connect(self.db_url)
-                    self.pg_conn.autocommit = True
-                    self.logger.info("Successfully connected to Postgres for message logging")
-                except Exception as e:
-                    self.logger.error(f"Outpost could not connect to Postgres for logging: {e}", exc_info=True)
+                self.db_config = {
+                    'user': db_user,
+                    'password': db_password,
+                    'host': db_host,
+                    'port': db_port,
+                    'database': db_name
+                }
+                # Don't connect immediately - Postgres might not be ready yet
+                # Will connect on first use with retry logic
             else:
                 missing = [k for k, v in {'DB_USER': db_user, 'DB_PASSWORD': db_password, 'DB_HOST': db_host, 'DB_PORT': db_port, 'DB_NAME': db_name}.items() if not v]
                 self.logger.warning(f"DB logging disabled: missing DB_* envs: {missing}")
@@ -78,9 +83,46 @@ class RabbitMQConsumer:
 
         # Redis removed - all message context is stored in Postgres messages_log table
 
+    def _ensure_pg_connection(self) -> bool:
+        """Ensure Postgres connection is established. Returns True if connected."""
+        if self.pg_conn and not self.pg_conn.closed:
+            return True
+        
+        if not self.db_url:
+            return False
+        
+        try:
+            self.pg_conn = psycopg2.connect(self.db_url)
+            self.pg_conn.autocommit = True
+            self.logger.info("Successfully connected to Postgres for message logging")
+            return True
+        except Exception as e:
+            self.logger.warning(f"Could not connect to Postgres for logging: {e}")
+            self.pg_conn = None
+            return False
+    
     def _ensure_or_get_conversation(self, event_id: Optional[str], guest_phone: Optional[str], guest_id: Optional[str] = None, initial_state: str = "rsvp_invite") -> Optional[str]:
         """Ensure a Conversation exists for guest_phone + event_id. Returns conversation_id UUID."""
-        if not self.pg_conn or not event_id or not guest_phone:
+        self.logger.info(
+            "Attempting to ensure/get conversation",
+            extra={
+                "event_id": event_id,
+                "guest_phone": guest_phone,
+                "guest_id": guest_id,
+                "initial_state": initial_state
+            }
+        )
+        
+        # Ensure Postgres connection
+        if not self._ensure_pg_connection():
+            self.logger.warning("Postgres connection not available for conversation creation")
+            return None
+        
+        if not event_id or not guest_phone:
+            self.logger.warning(
+                "Missing required params for conversation",
+                extra={"event_id": event_id, "guest_phone": guest_phone}
+            )
             return None
         
         # Validate event_id is a UUID (not wamid)
@@ -88,7 +130,10 @@ class RabbitMQConsumer:
             import uuid
             uuid.UUID(event_id)  # Will raise ValueError if not a valid UUID
         except (ValueError, AttributeError):
-            self.logger.debug(f"event_id is not a valid UUID, skipping conversation creation: {event_id}")
+            self.logger.warning(
+                "event_id is not a valid UUID, skipping conversation creation",
+                extra={"event_id": event_id, "event_id_type": type(event_id).__name__}
+            )
             return None
         
         try:
@@ -107,14 +152,25 @@ class RabbitMQConsumer:
                     return str(row[0])
                 
                 # Create new conversation
-                cur.execute(
-                    """
-                    INSERT INTO conversations (guest_id, guest_phone, event_id, current_state, active)
-                    VALUES (%s::uuid, %s, %s, %s, true)
-                    RETURNING id
-                    """,
-                    (guest_id, guest_phone, event_id, initial_state),
-                )
+                # guest_id can be None, so handle it properly
+                if guest_id:
+                    cur.execute(
+                        """
+                        INSERT INTO conversations (guest_id, guest_phone, event_id, current_state, active)
+                        VALUES (%s::uuid, %s, %s, %s, true)
+                        RETURNING id
+                        """,
+                        (guest_id, guest_phone, event_id, initial_state),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        INSERT INTO conversations (guest_phone, event_id, current_state, active)
+                        VALUES (%s, %s, %s, true)
+                        RETURNING id
+                        """,
+                        (guest_phone, event_id, initial_state),
+                    )
                 row = cur.fetchone()
                 if row:
                     self.logger.info(
@@ -128,7 +184,8 @@ class RabbitMQConsumer:
 
     def _log_outgoing_whatsapp_id(self, conversation_id: Optional[str], message_type: str, state: Optional[str], whatsapp_message_id: str, payload: Optional[str] = None):
         """Log outgoing message to messages_log table with conversation_id."""
-        if not self.pg_conn:
+        # Ensure Postgres connection
+        if not self._ensure_pg_connection():
             self.logger.warning("Postgres connection not available, cannot log to messages_log")
             return
         if not conversation_id:
