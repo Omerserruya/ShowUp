@@ -52,15 +52,29 @@ class RabbitMQConsumer:
             db_port = os.getenv('DB_PORT')
             db_name = os.getenv('DB_NAME')
 
+            self.logger.info(
+                "DB logging enabled, attempting to connect to Postgres",
+                extra={
+                    "db_host": db_host,
+                    "db_port": db_port,
+                    "db_name": db_name,
+                    "db_user": db_user if db_user else None
+                }
+            )
+
             if all([db_user, db_password, db_host, db_port, db_name]):
                 self.db_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
                 try:
                     self.pg_conn = psycopg2.connect(self.db_url)
                     self.pg_conn.autocommit = True
+                    self.logger.info("Successfully connected to Postgres for message logging")
                 except Exception as e:
-                    self.logger.warning(f"Outpost could not connect to Postgres for logging: {e}")
+                    self.logger.error(f"Outpost could not connect to Postgres for logging: {e}", exc_info=True)
             else:
-                self.logger.info("DB logging disabled: missing DB_* envs")
+                missing = [k for k, v in {'DB_USER': db_user, 'DB_PASSWORD': db_password, 'DB_HOST': db_host, 'DB_PORT': db_port, 'DB_NAME': db_name}.items() if not v]
+                self.logger.warning(f"DB logging disabled: missing DB_* envs: {missing}")
+        else:
+            self.logger.info("DB logging disabled: OUTPOST_ENABLE_DB_LOGGING is not 'true'")
 
         # Redis removed - all message context is stored in Postgres messages_log table
 
@@ -115,9 +129,10 @@ class RabbitMQConsumer:
     def _log_outgoing_whatsapp_id(self, conversation_id: Optional[str], message_type: str, state: Optional[str], whatsapp_message_id: str, payload: Optional[str] = None):
         """Log outgoing message to messages_log table with conversation_id."""
         if not self.pg_conn:
+            self.logger.warning("Postgres connection not available, cannot log to messages_log")
             return
         if not conversation_id:
-            self.logger.debug("Skipping message log - no conversation_id provided")
+            self.logger.warning("Skipping message log - no conversation_id provided")
             return
         try:
             with self.pg_conn.cursor() as cur:
@@ -128,12 +143,17 @@ class RabbitMQConsumer:
                     """,
                     (conversation_id, whatsapp_message_id, message_type, payload, state)
                 )
-                self.logger.debug(
-                    f"Logged outgoing message to messages_log",
-                    extra={"conversation_id": conversation_id, "wa_message_id": whatsapp_message_id, "state": state}
+                self.logger.info(
+                    "Logged outgoing message to messages_log",
+                    extra={
+                        "conversation_id": conversation_id,
+                        "wa_message_id": whatsapp_message_id,
+                        "message_type": message_type,
+                        "state": state
+                    }
                 )
         except Exception as e:
-            self.logger.warning(f"Failed to log WhatsApp message id: {e}", exc_info=True)
+            self.logger.error(f"Failed to log WhatsApp message id: {e}", exc_info=True)
 
     # Redis removed - message context is stored in Postgres messages_log table
     # No need for separate Redis storage since all data is in messages_log with wa_message_id, state, conversation_id
@@ -265,24 +285,65 @@ class RabbitMQConsumer:
                             # Ensure conversation exists before logging
                             conversation_id = message_data.get("conversation_id")
                             if not conversation_id:
+                                self.logger.info(
+                                    "No conversation_id in message, creating/retrieving conversation",
+                                    extra={
+                                        "event_id": message_data.get("event_id"),
+                                        "recipient": message_data.get("recipient"),
+                                        "guest_id": message_data.get("guest_id"),
+                                        "state": message_data.get("state", "rsvp_invite")
+                                    }
+                                )
                                 conversation_id = self._ensure_or_get_conversation(
                                     event_id=message_data.get("event_id"),
                                     guest_phone=message_data.get("recipient"),
                                     guest_id=message_data.get("guest_id"),
                                     initial_state=message_data.get("state", "rsvp_invite")
                                 )
+                                if conversation_id:
+                                    self.logger.info(
+                                        "Conversation created/retrieved",
+                                        extra={"conversation_id": conversation_id}
+                                    )
+                                else:
+                                    self.logger.warning(
+                                        "Failed to create/retrieve conversation, will not log to messages_log",
+                                        extra={
+                                            "event_id": message_data.get("event_id"),
+                                            "recipient": message_data.get("recipient")
+                                        }
+                                    )
                             
-                            state = message_data.get("state")
-                            payload_json = json.dumps(message_data, ensure_ascii=False)[:4000]
-                            self._log_outgoing_whatsapp_id(
-                                conversation_id=conversation_id,
-                                message_type="template",
-                                state=state,
-                                whatsapp_message_id=wa_id,
-                                payload=payload_json,
-                            )
+                            if conversation_id:
+                                state = message_data.get("state")
+                                payload_json = json.dumps(message_data, ensure_ascii=False)[:4000]
+                                self._log_outgoing_whatsapp_id(
+                                    conversation_id=conversation_id,
+                                    message_type="template",
+                                    state=state,
+                                    whatsapp_message_id=wa_id,
+                                    payload=payload_json,
+                                )
+                                self.logger.info(
+                                    "Logged outgoing template message to messages_log",
+                                    extra={
+                                        "conversation_id": conversation_id,
+                                        "wa_message_id": wa_id,
+                                        "state": state
+                                    }
+                                )
+                            else:
+                                self.logger.warning(
+                                    "Cannot log message to messages_log - no conversation_id",
+                                    extra={"wa_message_id": wa_id}
+                                )
                             # Message context is already stored in messages_log table above
                             # No need for separate Redis storage
+                        else:
+                            self.logger.warning(
+                                "No WhatsApp message ID in response, cannot log to messages_log",
+                                extra={"wa_response": wa_resp}
+                            )
                         
                         self.logger.info(
                             "Template message processed successfully",
@@ -368,17 +429,28 @@ class RabbitMQConsumer:
                                     initial_state=message_data.get("state", "rsvp_invite")
                                 )
                             
-                            state = message_data.get("state")
-                            payload_json = json.dumps(message_data, ensure_ascii=False)[:4000]
-                            self._log_outgoing_whatsapp_id(
-                                conversation_id=conversation_id,
-                                message_type="free_text",
-                                state=state,
-                                whatsapp_message_id=wa_id,
-                                payload=payload_json,
-                            )
+                            if conversation_id:
+                                state = message_data.get("state")
+                                payload_json = json.dumps(message_data, ensure_ascii=False)[:4000]
+                                self._log_outgoing_whatsapp_id(
+                                    conversation_id=conversation_id,
+                                    message_type="free_text",
+                                    state=state,
+                                    whatsapp_message_id=wa_id,
+                                    payload=payload_json,
+                                )
+                            else:
+                                self.logger.warning(
+                                    "Cannot log free_text message to messages_log - no conversation_id",
+                                    extra={"wa_message_id": wa_id}
+                                )
                             # Message context is already stored in messages_log table above
                             # No need for separate Redis storage
+                        else:
+                            self.logger.warning(
+                                "No WhatsApp message ID in response, cannot log to messages_log",
+                                extra={"wa_response": wa_resp}
+                            )
                         
                         self.logger.info(
                             "Free text message processed successfully",
@@ -465,17 +537,28 @@ class RabbitMQConsumer:
                                     initial_state=message_data.get("state", "rsvp_invite")
                                 )
                             
-                            state = message_data.get("state")
-                            payload_json = json.dumps(message_data, ensure_ascii=False)[:4000]
-                            self._log_outgoing_whatsapp_id(
-                                conversation_id=conversation_id,
-                                message_type="interactive",
-                                state=state,
-                                whatsapp_message_id=wa_id,
-                                payload=payload_json,
-                            )
+                            if conversation_id:
+                                state = message_data.get("state")
+                                payload_json = json.dumps(message_data, ensure_ascii=False)[:4000]
+                                self._log_outgoing_whatsapp_id(
+                                    conversation_id=conversation_id,
+                                    message_type="interactive",
+                                    state=state,
+                                    whatsapp_message_id=wa_id,
+                                    payload=payload_json,
+                                )
+                            else:
+                                self.logger.warning(
+                                    "Cannot log interactive message to messages_log - no conversation_id",
+                                    extra={"wa_message_id": wa_id}
+                                )
                             # Message context is already stored in messages_log table above
                             # No need for separate Redis storage
+                        else:
+                            self.logger.warning(
+                                "No WhatsApp message ID in response, cannot log to messages_log",
+                                extra={"wa_response": wa_resp}
+                            )
                         
                         self.logger.info(
                             "Interactive message processed successfully",
