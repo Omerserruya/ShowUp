@@ -152,24 +152,28 @@ class RabbitMQConsumer:
                     return str(row[0])
                 
                 # Create new conversation
+                # Generate UUID for id (Postgres doesn't auto-generate UUIDs without extension)
+                import uuid
+                conversation_id = str(uuid.uuid4())
+                
                 # guest_id can be None, so handle it properly
                 if guest_id:
                     cur.execute(
                         """
-                        INSERT INTO conversations (guest_id, guest_phone, event_id, current_state, active)
-                        VALUES (%s::uuid, %s, %s, %s, true)
+                        INSERT INTO conversations (id, guest_id, guest_phone, event_id, current_state, active)
+                        VALUES (%s::uuid, %s::uuid, %s, %s, %s, true)
                         RETURNING id
                         """,
-                        (guest_id, guest_phone, event_id, initial_state),
+                        (conversation_id, guest_id, guest_phone, event_id, initial_state),
                     )
                 else:
                     cur.execute(
                         """
-                        INSERT INTO conversations (guest_phone, event_id, current_state, active)
-                        VALUES (%s, %s, %s, true)
+                        INSERT INTO conversations (id, guest_phone, event_id, current_state, active)
+                        VALUES (%s::uuid, %s, %s, %s, true)
                         RETURNING id
                         """,
-                        (guest_phone, event_id, initial_state),
+                        (conversation_id, guest_phone, event_id, initial_state),
                     )
                 row = cur.fetchone()
                 if row:
