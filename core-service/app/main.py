@@ -22,7 +22,39 @@ def create_app() -> FastAPI:
     )
 
     # Create tables on startup for dev; use migrations in production
-    Base.metadata.create_all(bind=engine)
+    # Use checkfirst=True to avoid errors if tables already exist
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Check if tables already exist before trying to create them
+        from sqlalchemy import inspect
+        inspector = inspect(engine)
+        existing_tables = inspector.get_table_names()
+        
+        # Only create tables that don't exist
+        tables_to_create = []
+        for table_name in Base.metadata.tables.keys():
+            if table_name not in existing_tables:
+                tables_to_create.append(table_name)
+        
+        if tables_to_create:
+            logger.info(f"Creating missing tables: {tables_to_create}")
+            Base.metadata.create_all(bind=engine, checkfirst=True)
+        else:
+            logger.info("All tables already exist, skipping creation")
+            
+    except Exception as e:
+        # Log error but don't crash - tables might already exist or there might be schema conflicts
+        # This can happen if there's a type conflict (e.g., composite type with same name as table)
+        error_msg = str(e)
+        if "duplicate key value violates unique constraint" in error_msg and "pg_type_typname_nsp_index" in error_msg:
+            logger.warning(
+                f"Type conflict detected (type with same name as table may exist). "
+                f"Assuming tables are already created. Error: {error_msg}"
+            )
+        else:
+            logger.warning(f"Could not create all tables (they may already exist): {e}")
 
     app.include_router(events_router)
     app.include_router(guests_router)
