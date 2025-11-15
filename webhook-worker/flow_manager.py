@@ -238,6 +238,41 @@ class FlowManager:
                             "event_id": effective_event_id,
                         },
                     )
+                else:
+                    logger.warning(
+                        "Context entry found but conversation not found",
+                        extra={
+                            "context_id": context_id,
+                            "message_log_id": context_entry.id if context_entry else None,
+                            "conversation_id": context_entry.conversation_id if context_entry else None,
+                        },
+                    )
+            elif context_id:
+                # context_id provided but message not found in messages_log yet
+                # Try to find the latest outgoing message as fallback
+                logger.info(
+                    "Context ID provided but message not found in messages_log, trying latest message fallback",
+                    extra={"context_id": context_id, "guest_phone": guest_phone},
+                )
+                latest_message = await self.get_latest_outgoing_message(session, guest_phone, None)
+                if latest_message:
+                    conv = await session.get(Conversation, latest_message.conversation_id)
+                    if conv:
+                        effective_state = latest_message.state
+                        effective_event_id = conv.event_id
+                        if effective_state and conv.current_state != effective_state:
+                            await self.update_conversation(session, conv, effective_state)
+                            await session.refresh(conv)
+                        logger.info(
+                            "Resolved conversation from latest message (context_id not found in messages_log)",
+                            extra={
+                                "context_id": context_id,
+                                "guest_phone": guest_phone,
+                                "conversation_id": conv.id,
+                                "latest_message_state": effective_state,
+                                "event_id": effective_event_id,
+                            },
+                        )
 
             # Step 2: If no context_id (free_text), always find the latest outgoing message for this phone number
             # Use the state from the latest outgoing message, not the current_state in conversations table

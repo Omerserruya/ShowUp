@@ -115,9 +115,11 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME}
       - OUTPOST_QUEUE_NAME=${OUTPOST_QUEUE_NAME}
+      - OUTPOST_ENABLE_DB_LOGGING=true
       - LOG_LEVEL=${LOG_LEVEL}
     depends_on:
       - rabbitmq
+      - postgres
 
 
   schedule-service:

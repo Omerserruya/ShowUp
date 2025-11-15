@@ -16,7 +16,7 @@ import httpx
 from aio_pika import Message, DeliveryMode
 from aio_pika.abc import AbstractIncomingMessage
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-from redis import asyncio as aioredis
+# Redis removed - using Postgres messages_log instead
 
 from whatsapp_sender import WhatsAppSender
 import psycopg2
@@ -62,18 +62,7 @@ class RabbitMQConsumer:
             else:
                 self.logger.info("DB logging disabled: missing DB_* envs")
 
-        # Redis for storing message context (same Redis as webhook-worker)
-        self.redis = None
-        self.message_context_ttl = int(os.getenv("MESSAGE_CONTEXT_TTL", "86400"))
-        try:
-            redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
-            self.redis = aioredis.from_url(
-                redis_url,
-                encoding="utf-8",
-                decode_responses=True,
-            )
-        except Exception as e:
-            self.logger.warning(f"Outpost could not connect to Redis for message context: {e}")
+        # Redis removed - all message context is stored in Postgres messages_log table
 
     def _ensure_or_get_conversation(self, event_id: Optional[str], guest_phone: Optional[str], guest_id: Optional[str] = None, initial_state: str = "rsvp_invite") -> Optional[str]:
         """Ensure a Conversation exists for guest_phone + event_id. Returns conversation_id UUID."""
@@ -146,38 +135,8 @@ class RabbitMQConsumer:
         except Exception as e:
             self.logger.warning(f"Failed to log WhatsApp message id: {e}", exc_info=True)
 
-    async def _store_message_context(self, message_id: str, state: str, event_id: str, guest_phone: str):
-        """Store message context in Redis for reply resolution.
-        
-        This allows users to reply to old messages and resume the correct flow state.
-        """
-        if not self.redis:
-            return
-        
-        if not message_id or not state or not event_id or not guest_phone:
-            self.logger.debug("Skipping message context storage - missing required fields")
-            return
-        
-        try:
-            context = {
-                "message_id": message_id,
-                "state": state,
-                "event_id": event_id,
-                "guest_phone": guest_phone,
-                "created_at": datetime.now(timezone.utc).isoformat()
-            }
-            key = f"message_context:{message_id}"
-            await self.redis.setex(
-                key,
-                self.message_context_ttl,
-                json.dumps(context, ensure_ascii=False)
-            )
-            self.logger.debug(
-                f"Stored message context for {message_id}",
-                extra={"message_id": message_id, "state": state, "ttl": self.message_context_ttl}
-            )
-        except Exception as e:
-            self.logger.warning(f"Failed to store message context: {e}")
+    # Redis removed - message context is stored in Postgres messages_log table
+    # No need for separate Redis storage since all data is in messages_log with wa_message_id, state, conversation_id
     
     @retry(
         stop=stop_after_attempt(5),
@@ -322,14 +281,8 @@ class RabbitMQConsumer:
                                 whatsapp_message_id=wa_id,
                                 payload=payload_json,
                             )
-                            # Store message context for reply resolution (Redis)
-                            if state and message_data.get("recipient"):
-                                await self._store_message_context(
-                                    message_id=wa_id,
-                                    state=str(state),
-                                    event_id=str(message_data.get("event_id", "")),
-                                    guest_phone=str(message_data.get("recipient"))
-                                )
+                            # Message context is already stored in messages_log table above
+                            # No need for separate Redis storage
                         
                         self.logger.info(
                             "Template message processed successfully",
@@ -424,14 +377,8 @@ class RabbitMQConsumer:
                                 whatsapp_message_id=wa_id,
                                 payload=payload_json,
                             )
-                            # Store message context for reply resolution (Redis)
-                            if state and message_data.get("recipient"):
-                                await self._store_message_context(
-                                    message_id=wa_id,
-                                    state=str(state),
-                                    event_id=str(message_data.get("event_id", "")),
-                                    guest_phone=str(message_data.get("recipient"))
-                                )
+                            # Message context is already stored in messages_log table above
+                            # No need for separate Redis storage
                         
                         self.logger.info(
                             "Free text message processed successfully",
@@ -527,14 +474,8 @@ class RabbitMQConsumer:
                                 whatsapp_message_id=wa_id,
                                 payload=payload_json,
                             )
-                            # Store message context for reply resolution (Redis)
-                            if state and message_data.get("recipient"):
-                                await self._store_message_context(
-                                    message_id=wa_id,
-                                    state=str(state),
-                                    event_id=str(message_data.get("event_id", "")),
-                                    guest_phone=str(message_data.get("recipient"))
-                                )
+                            # Message context is already stored in messages_log table above
+                            # No need for separate Redis storage
                         
                         self.logger.info(
                             "Interactive message processed successfully",

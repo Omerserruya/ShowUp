@@ -17,6 +17,3 @@ python-dotenv==1.0.0
 
 # Postgres driver (binary distribution to avoid build deps)
 psycopg2-binary==2.9.9
-
-# Redis client for message context storage
-redis==5.0.1

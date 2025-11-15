@@ -99,12 +99,8 @@ class Worker:
             ctx = payload.get("context") or {}
             context_id = ctx.get("id") or msg.get("reply_to_message_id")
 
-        if not event_id and context_id:
-            event_id = context_id
-            logger.info(
-                "Using context_id as fallback event_id",
-                extra={"context_id": context_id, "message_type": normalized_type},
-            )
+        # Note: context_id is a wamid (WhatsApp message ID), not an event UUID
+        # Don't use it as event_id - event_id should be a UUID from the events table
 
         template_params = payload.get("template_parameters") if payload else {}
 
