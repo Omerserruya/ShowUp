@@ -1,9 +1,56 @@
 from __future__ import annotations
 import re
 from typing import Any, Dict, Optional, Tuple, List
+from datetime import datetime
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+# מיפוי של שמות הימים באנגלית לעברית
+WEEKDAY_HEBREW = {
+    0: "יום שני",
+    1: "יום שלישי",
+    2: "יום רביעי",
+    3: "יום חמישי",
+    4: "יום שישי",
+    5: "יום שבת",
+    6: "יום ראשון"
+}
+
+
+def _format_event_date(event_date_str: str) -> str:
+    """Format date string (ISO format) to 'יום שלישי, ה־3.12.25' style."""
+    if not event_date_str:
+        return ""
+    if isinstance(event_date_str, datetime):
+        dt = event_date_str
+    else:
+        dt = datetime.fromisoformat(str(event_date_str).replace('Z', '+00:00'))
+    weekday = WEEKDAY_HEBREW.get(dt.weekday(), "יום")  # weekday() returns 0=Monday, 6=Sunday
+    day = dt.day
+    month = dt.month
+    year = str(dt.year)[-2:]
+    return f"{weekday}, ה־{day}.{month}.{year}"
+
+
+def _format_event_time(event_date_str: str) -> str:
+    """Extract just the time (HH:MM) from an ISO datetime string."""
+    if not event_date_str:
+        return ""
+    if isinstance(event_date_str, datetime):
+        dt = event_date_str
+    else:
+        dt = datetime.fromisoformat(str(event_date_str).replace('Z', '+00:00'))
+    return dt.strftime("%H:%M")
+
+
+def _format_inviters(inviters: List[Dict[str, str]]) -> str:
+    """Format inviters list as 'fn ln ו fn ln' (Hebrew format)."""
+    if not inviters:
+        return " "  # Return space instead of empty string for WhatsApp API compatibility
+    
+    formatted_names = [f"{inviter.get('fn', '')} {inviter.get('ln', '')}" for inviter in inviters]
+    return " ו ".join(formatted_names)
 
 
 class BaseState:
@@ -79,19 +126,44 @@ class BaseState:
             # Check if event_id is a UUID (36 chars with dashes)
             is_uuid = len(event_id) == 36 and '-' in event_id
             if is_uuid:
-                # Fetch event
+                # Fetch event including inviters
                 result = await session.execute(
-                    text("SELECT id, name, event_date, location FROM events WHERE id = :event_id"),
+                    text("SELECT id, name, event_date, location, inviters FROM events WHERE id = :event_id"),
                     {"event_id": event_id}
                 )
                 event_row = result.first()
                 if event_row:
                     event_data = dict(event_row._mapping) if hasattr(event_row, '_mapping') else dict(event_row)
                     replacements['event.name'] = event_data.get('name', 'האירוע')
-                    replacements['event.date'] = str(event_data.get('event_date', 'התאריך')) if event_data.get('event_date') else 'התאריך'
+                    
+                    # Format date like handlers.py
+                    event_date = event_data.get('event_date')
+                    if event_date:
+                        replacements['event.date'] = _format_event_date(str(event_date))
+                    else:
+                        replacements['event.date'] = 'התאריך'
+                    
+                    # Format time like handlers.py
+                    if event_date:
+                        replacements['event.time'] = _format_event_time(str(event_date))
+                    else:
+                        replacements['event.time'] = 'השעה'
+                    
                     replacements['event.location'] = event_data.get('location', 'המיקום')
-                    # Note: inviters is not in events table - would need to be fetched from owners or another source
-                    replacements['event.inviters'] = 'המארחים'  # Default value
+                    
+                    # Format inviters like handlers.py
+                    inviters = event_data.get('inviters', [])
+                    if inviters:
+                        # Handle both JSON string and already parsed list
+                        if isinstance(inviters, str):
+                            import json
+                            try:
+                                inviters = json.loads(inviters)
+                            except:
+                                inviters = []
+                        replacements['event.inviters'] = _format_inviters(inviters if isinstance(inviters, list) else [])
+                    else:
+                        replacements['event.inviters'] = ' '  # Space for WhatsApp API compatibility
             
             # Fetch guest data
             if is_uuid:

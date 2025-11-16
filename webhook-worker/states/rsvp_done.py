@@ -18,7 +18,7 @@ class RsvpDoneState(BaseState):
         return await self.build_interactive(
             session,
             conversation,
-            "מעולה! רשמנו לפנינו שתגיעו ✨  \nאם יהיו שינויים, נשמח אם תעדכן כאן או תענה על ההודעה ❤️",
+            "מעולה! רשמנו לפנינו  ✨  \nאם יהיו שינויים, נשמח אם תעדכן כאן או תענה על ההודעה ❤️",
             ["לעדכן הגעה"],
         )
 
