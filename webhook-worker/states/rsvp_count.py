@@ -19,7 +19,7 @@ class RsvpCountState(BaseState):
         return await self.build_text(
             session,
             conversation,
-            "יופי! שמחים לדעת שתוכל להגיע ל{{event.name}} של {{event.inviters}} 🥳\nרק כדי שנוכל להתכונן כמו שצריך – כמה אנשים יגיעו איתך? 😊\n הגב בבקשה במספר בלבד",
+            "יופי! שמחים לדעת שתוכל להגיע ל{{event.name}} של {{event.inviters}} 🥳\nרק כדי שנוכל להתכונן כמו שצריך – כמה אנשים תגיעו? 😊\n\n *הגב בבקשה במספר בלבד*",
         )
 
 

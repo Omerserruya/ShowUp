@@ -8,7 +8,7 @@ from states.base_state import BaseState
 class RsvpDeclineState(BaseState):
     id = "rsvp_decline"
     next_states = {
-        "*": "rsvp_update",
+        "בסוף נוכל להגיע": "rsvp_count",
     }
 
     async def process_incoming(self, session: AsyncSession, message: Dict[str, Any], conversation: Any) -> None:
@@ -18,8 +18,8 @@ class RsvpDeclineState(BaseState):
         return await self.build_interactive(
             session,
             conversation,
-            "חבל {{guest.name}} 😢 עדכנו שלא תגיע. אם תתחרט תמיד אפשר לכתוב לנו שוב!",
-            ["לעדכן הגעה"],
+            "חבל 😢 עדכנו שלא תגיע. אם תתחרט תמיד אפשר לכתוב לנו שוב!",
+            ["בסוף נוכל להגיע"],
         )
 
 
