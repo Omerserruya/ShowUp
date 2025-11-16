@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.session import get_session
 from db.models import Conversation, MessageLog
 from states.base_state import BaseState
+from utils.phone import normalize_phone
 from states.rsvp_invite import RsvpInviteState
 from states.rsvp_count import RsvpCountState
 from states.rsvp_info_question import RsvpInfoQuestionState
@@ -85,14 +86,32 @@ class FlowManager:
     # ---------- Conversation/Message persistence ----------
 
     async def load_conversation(self, session: AsyncSession, guest_phone: str, event_id: str) -> Conversation:
+        """
+        Load or create a conversation for the given guest_phone and event_id.
+        
+        The guest_phone is normalized to canonical format before lookup/creation.
+        """
+        # Normalize guest_phone to ensure consistent lookups
+        normalized_guest_phone = normalize_phone(guest_phone)
+        if not normalized_guest_phone:
+            raise ValueError(f"Cannot load conversation: invalid guest_phone: {guest_phone}")
+        
         res = await session.execute(
-            select(Conversation).where(Conversation.guest_phone == guest_phone, Conversation.event_id == event_id)
+            select(Conversation).where(
+                Conversation.guest_phone == normalized_guest_phone,
+                Conversation.event_id == event_id
+            )
         )
         conv = res.scalars().first()
         if conv:
             self.current_state = conv.current_state
             return conv
-        conv = Conversation(guest_phone=guest_phone, event_id=event_id, current_state=self.initial_state)
+        # Create new conversation with normalized phone
+        conv = Conversation(
+            guest_phone=normalized_guest_phone,
+            event_id=event_id,
+            current_state=self.initial_state
+        )
         session.add(conv)
         await session.commit()
         await session.refresh(conv)
@@ -126,7 +145,8 @@ class FlowManager:
         Log a message to messages_log.
         
         If guest_phone is not provided, it will be fetched from the conversation.
-        This ensures guest_phone is always populated for efficient queries.
+        The guest_phone is always normalized to canonical format (digits only, no +, no 00 prefix)
+        to ensure consistent lookups.
         """
         # If guest_phone not provided, fetch it from the conversation
         if not guest_phone and conversation_id:
@@ -134,9 +154,13 @@ class FlowManager:
             if conv:
                 guest_phone = conv.guest_phone
         
+        # Normalize guest_phone to canonical format (digits only)
+        # This ensures consistent lookups regardless of how the phone was originally stored
+        normalized_guest_phone = normalize_phone(guest_phone)
+        
         entry = MessageLog(
             conversation_id=conversation_id,
-            guest_phone=guest_phone,  # Denormalized for efficient queries
+            guest_phone=normalized_guest_phone,  # Denormalized and normalized for efficient queries
             wa_message_id=wa_message_id,
             direction=direction,
             message_type=message_type,
@@ -157,11 +181,18 @@ class FlowManager:
         This is used as a fallback when no context_id is provided, to determine
         which conversation is "current" for free-text messages when multiple
         conversations exist for the same phone number (different events).
+        
+        The guest_phone should already be normalized before calling this method.
         """
+        # Ensure guest_phone is normalized (defensive check)
+        normalized_guest_phone = normalize_phone(guest_phone)
+        if not normalized_guest_phone:
+            return None
+        
         res = await session.execute(
             select(Conversation)
             .where(
-                Conversation.guest_phone == guest_phone,
+                Conversation.guest_phone == normalized_guest_phone,
                 Conversation.active == True
             )
             .order_by(Conversation.updated_at.desc())
@@ -207,7 +238,7 @@ class FlowManager:
         2. **Fallback Resolution (by guest_phone via last outgoing message)**: If no context_id or step 1 fails:
            - CRITICAL: Query messages_log directly by guest_phone (denormalized field) for efficiency
            - Find the most recent outgoing message (system → guest) where:
-             * guest_phone = :guest_phone
+             * guest_phone = :guest_phone (normalized, digits only)
              * direction = 'outgoing'
              * Ordered by created_at DESC, limit 1
            - From that message, get:
@@ -225,7 +256,7 @@ class FlowManager:
         
         Args:
             session: Database session
-            guest_phone: Phone number of the guest
+            guest_phone: Phone number of the guest (will be normalized to canonical format)
             context_id: WhatsApp message ID (wamid) of the message being replied to (if any)
             provided_event_id: Optional event_id from webhook (may be None or invalid)
         
@@ -235,8 +266,11 @@ class FlowManager:
             - event_id: The event_id (UUID string) associated with the conversation
             - effective_state: The state to use (from original message if context_id, else from last outgoing message)
         """
-        if not guest_phone:
-            logger.warning("Cannot resolve conversation: guest_phone is required")
+        # Normalize guest_phone to canonical format (digits only, no +, no 00 prefix)
+        # This ensures consistent lookups regardless of how the phone was originally stored
+        normalized_guest_phone = normalize_phone(guest_phone)
+        if not normalized_guest_phone:
+            logger.warning("Cannot resolve conversation: guest_phone is required and must be valid")
             return None, None, None
         
         conversation: Optional[Conversation] = None
@@ -247,7 +281,7 @@ class FlowManager:
         if context_id:
             logger.info(
                 "Attempting to resolve conversation by context_id",
-                extra={"context_id": context_id, "guest_phone": guest_phone}
+                extra={"context_id": context_id, "guest_phone": normalized_guest_phone}
             )
             
             # Find the original outgoing message that this is a reply to
@@ -292,7 +326,7 @@ class FlowManager:
             else:
                 logger.info(
                     "Context_id provided but message not found in messages_log",
-                    extra={"context_id": context_id, "guest_phone": guest_phone}
+                    extra={"context_id": context_id, "guest_phone": normalized_guest_phone}
                 )
         
         # Step 2: Fallback - resolve by guest_phone using most recent outgoing message
@@ -307,15 +341,16 @@ class FlowManager:
         # This is the PRIMARY rule for free-text resolution, not a recovery fallback.
         logger.info(
             "Falling back to resolve conversation by guest_phone (using most recent outgoing message from messages_log)",
-            extra={"guest_phone": guest_phone, "context_id": context_id}
+            extra={"guest_phone": normalized_guest_phone, "context_id": context_id}
         )
         
-        # Query messages_log directly by guest_phone (denormalized field for efficiency)
+        # Query messages_log directly by normalized guest_phone (denormalized field for efficiency)
         # This is the primary free-text resolution path
+        # CRITICAL: Use normalized_guest_phone to ensure we match the canonical format stored in DB
         res = await session.execute(
             select(MessageLog)
             .where(
-                MessageLog.guest_phone == guest_phone,
+                MessageLog.guest_phone == normalized_guest_phone,
                 MessageLog.direction == "outgoing"
             )
             .order_by(MessageLog.created_at.desc())
@@ -336,7 +371,7 @@ class FlowManager:
                 logger.info(
                     "Resolved conversation by guest_phone (using most recent outgoing message from messages_log)",
                     extra={
-                        "guest_phone": guest_phone,
+                        "guest_phone": normalized_guest_phone,
                         "conversation_id": str(conversation.id),
                         "event_id": effective_event_id,
                         "state_from_message": effective_state,
@@ -357,7 +392,7 @@ class FlowManager:
                 logger.warning(
                     "Found outgoing message but conversation not found",
                     extra={
-                        "guest_phone": guest_phone,
+                        "guest_phone": normalized_guest_phone,
                         "message_log_id": latest_outgoing_message.id,
                         "conversation_id": latest_outgoing_message.conversation_id,
                     }
@@ -365,17 +400,17 @@ class FlowManager:
         else:
             logger.info(
                 "No outgoing messages found in messages_log for guest_phone",
-                extra={"guest_phone": guest_phone}
+                extra={"guest_phone": normalized_guest_phone}
             )
         
         # If no outgoing message found, try fallback to most recent active conversation
         # This is a last resort when no messages have been logged yet
         logger.info(
             "No outgoing messages found in messages_log, trying fallback to most recent active conversation",
-            extra={"guest_phone": guest_phone}
+            extra={"guest_phone": normalized_guest_phone}
         )
         
-        conversation = await self._get_latest_active_conversation(session, guest_phone)
+        conversation = await self._get_latest_active_conversation(session, normalized_guest_phone)
         
         if conversation:
             effective_event_id = conversation.event_id
@@ -384,7 +419,7 @@ class FlowManager:
             logger.info(
                 "Resolved conversation by guest_phone (fallback: most recent active conversation)",
                 extra={
-                    "guest_phone": guest_phone,
+                    "guest_phone": normalized_guest_phone,
                     "conversation_id": str(conversation.id),
                     "event_id": effective_event_id,
                     "state": effective_state,
@@ -398,7 +433,8 @@ class FlowManager:
         logger.warning(
             "Could not resolve conversation: no active conversation found for guest_phone",
             extra={
-                "guest_phone": guest_phone,
+                "guest_phone": normalized_guest_phone,
+                "original_guest_phone": guest_phone,
                 "context_id": context_id,
                 "provided_event_id": provided_event_id,
             }

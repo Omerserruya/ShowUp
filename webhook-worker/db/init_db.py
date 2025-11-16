@@ -84,6 +84,37 @@ async def init_db() -> None:
             # Create indexes and constraints for conversations table
             await _create_conversation_indexes(conn)
             
+            # Normalize existing phone numbers in conversations and messages_log
+            # This migration removes leading "+" and "00" prefixes to match WhatsApp format
+            logger.info("Normalizing existing phone numbers in conversations and messages_log...")
+            try:
+                # Normalize conversations.guest_phone
+                # Remove leading "+" and "00" prefixes, keep only digits
+                await conn.execute(text("""
+                    UPDATE conversations
+                    SET guest_phone = REGEXP_REPLACE(
+                        REGEXP_REPLACE(guest_phone, '^\\+', ''),
+                        '^00', ''
+                    )
+                    WHERE guest_phone IS NOT NULL
+                      AND (guest_phone LIKE '+%' OR guest_phone LIKE '00%');
+                """))
+                logger.info("Normalized phone numbers in conversations table")
+                
+                # Normalize messages_log.guest_phone
+                await conn.execute(text("""
+                    UPDATE messages_log
+                    SET guest_phone = REGEXP_REPLACE(
+                        REGEXP_REPLACE(guest_phone, '^\\+', ''),
+                        '^00', ''
+                    )
+                    WHERE guest_phone IS NOT NULL
+                      AND (guest_phone LIKE '+%' OR guest_phone LIKE '00%');
+                """))
+                logger.info("Normalized phone numbers in messages_log table")
+            except Exception as e:
+                logger.warning(f"Failed to normalize existing phone numbers (they may already be normalized): {e}")
+            
             logger.info("Database tables initialized and migrations applied successfully")
     except Exception as e:
         logger.error(f"Failed to create database tables: {e}")

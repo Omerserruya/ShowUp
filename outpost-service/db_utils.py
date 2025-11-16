@@ -20,6 +20,21 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
+# Import phone normalization utility
+try:
+    from utils.phone import normalize_phone
+except ImportError:
+    # Fallback if utils.phone doesn't exist (shouldn't happen, but defensive)
+    def normalize_phone(phone: str | None) -> str | None:
+        if not phone:
+            return None
+        digits = "".join(ch for ch in phone if ch.isdigit())
+        if not digits:
+            return None
+        if digits.startswith("00"):
+            digits = digits[2:]
+        return digits
+
 logger = logging.getLogger("db_utils")
 
 
@@ -141,6 +156,16 @@ class ConversationDB:
             )
             return None
         
+        # Normalize guest_phone to canonical format (digits only, no +, no 00 prefix)
+        # This ensures consistent lookups regardless of how the phone was originally stored
+        normalized_guest_phone = normalize_phone(guest_phone)
+        if not normalized_guest_phone:
+            self.logger.warning(
+                "Invalid guest_phone after normalization",
+                extra={"original_guest_phone": guest_phone, "event_id": event_id}
+            )
+            return None
+        
         # Validate event_id is a UUID (not wamid)
         try:
             uuid.UUID(event_id)  # Will raise ValueError if not a valid UUID
@@ -154,14 +179,14 @@ class ConversationDB:
         try:
             with self.pg_conn.cursor() as cur:
                 # Check if conversation exists
-                # Lookup by guest_phone + event_id (supports multiple events per phone)
+                # Lookup by normalized guest_phone + event_id (supports multiple events per phone)
                 cur.execute(
                     """
                     SELECT id FROM conversations
                     WHERE guest_phone = %s AND event_id = %s AND active = true
                     LIMIT 1
                     """,
-                    (guest_phone, event_id),
+                    (normalized_guest_phone, event_id),
                 )
                 row = cur.fetchone()
                 if row:
@@ -171,12 +196,12 @@ class ConversationDB:
                         extra={
                             "conversation_id": conversation_id,
                             "event_id": event_id,
-                            "guest_phone": guest_phone
+                            "guest_phone": normalized_guest_phone
                         }
                     )
                     return conversation_id
                 
-                # Create new conversation
+                # Create new conversation with normalized phone
                 conversation_id = str(uuid.uuid4())
                 
                 # guest_id can be None, so handle it properly
@@ -187,7 +212,7 @@ class ConversationDB:
                         VALUES (%s::uuid, %s::uuid, %s, %s, %s, true)
                         RETURNING id
                         """,
-                        (conversation_id, guest_id, guest_phone, event_id, initial_state),
+                        (conversation_id, guest_id, normalized_guest_phone, event_id, initial_state),
                     )
                 else:
                     cur.execute(
@@ -196,7 +221,7 @@ class ConversationDB:
                         VALUES (%s::uuid, %s, %s, %s, true)
                         RETURNING id
                         """,
-                        (conversation_id, guest_phone, event_id, initial_state),
+                        (conversation_id, normalized_guest_phone, event_id, initial_state),
                     )
                 row = cur.fetchone()
                 if row:
@@ -205,7 +230,8 @@ class ConversationDB:
                         extra={
                             "conversation_id": str(row[0]),
                             "event_id": event_id,
-                            "guest_phone": guest_phone,
+                            "guest_phone": normalized_guest_phone,
+                            "original_guest_phone": guest_phone,
                             "guest_id": guest_id,
                             "initial_state": initial_state
                         }
@@ -214,10 +240,10 @@ class ConversationDB:
                 return None
         except psycopg2.IntegrityError as e:
             # Handle case where unique constraint violation occurs (race condition)
-            # Retry the lookup
+            # Retry the lookup using normalized phone
             self.logger.warning(
                 "Conversation creation failed due to constraint violation (likely race condition), retrying lookup",
-                extra={"event_id": event_id, "guest_phone": guest_phone, "error": str(e)}
+                extra={"event_id": event_id, "guest_phone": normalized_guest_phone, "error": str(e)}
             )
             try:
                 with self.pg_conn.cursor() as cur:
@@ -227,7 +253,7 @@ class ConversationDB:
                         WHERE guest_phone = %s AND event_id = %s AND active = true
                         LIMIT 1
                         """,
-                        (guest_phone, event_id),
+                        (normalized_guest_phone, event_id),
                     )
                     row = cur.fetchone()
                     if row:

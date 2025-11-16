@@ -9,6 +9,7 @@ import aio_pika
 
 from flow_manager import FlowManager
 from db.init_db import init_db
+from utils.phone import normalize_phone
 
 
 logger = logging.getLogger("webhook_worker")
@@ -61,12 +62,14 @@ class Worker:
         event_id = raw_event_id
         if isinstance(event_id, str) and event_id.startswith("wamid."):
             event_id = None
-        guest_phone = (
+        raw_guest_phone = (
             msg.get("guest_phone")
             or msg.get("recipient")
             or msg.get("from")
             or (payload.get("recipient") if payload else None)
         )
+        # Normalize phone number to canonical format (digits only, no +, no 00 prefix)
+        guest_phone = normalize_phone(raw_guest_phone)
         message_type = msg.get("message_type") or msg.get("type") or msg.get("topic") or "message"
 
         normalized_type = (
@@ -109,7 +112,7 @@ class Worker:
 
         return {
             "message_type": normalized_type,
-            "guest_phone": str(guest_phone) if guest_phone else None,
+            "guest_phone": guest_phone,  # Already normalized
             "event_id": str(event_id) if event_id else None,
             "text": text_value,
             "context_id": context_id,
