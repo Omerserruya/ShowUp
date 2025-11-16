@@ -22,6 +22,8 @@ from whatsapp_sender import WhatsAppSender
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+from conversation_manager import ensure_conversation_for_outgoing_message
+
 
 class RabbitMQConsumer:
     """RabbitMQ consumer for processing outpost messages."""
@@ -253,6 +255,31 @@ class RabbitMQConsumer:
                                 content=str(message_data.get("state") or message_data.get("template")),
                                 whatsapp_message_id=wa_id,
                             )
+                            
+                            # Ensure conversation exists for campaign messages
+                            # This creates a conversation in the webhook-worker database
+                            # to ensure proper context when webhooks arrive
+                            if message_data.get("guest_id") and message_data.get("event_id") and message_data.get("recipient"):
+                                # Run in executor to avoid blocking the async event loop
+                                # since ensure_conversation_for_outgoing_message uses synchronous DB calls
+                                conversation_id = await asyncio.get_event_loop().run_in_executor(
+                                    None,
+                                    ensure_conversation_for_outgoing_message,
+                                    str(message_data.get("event_id")),
+                                    str(message_data.get("guest_id")),
+                                    str(message_data.get("recipient"))
+                                )
+                                if conversation_id:
+                                    self.logger.info(
+                                        "Ensured conversation for outgoing campaign message",
+                                        extra={
+                                            "conversation_id": str(conversation_id),
+                                            "event_id": message_data.get("event_id"),
+                                            "guest_id": message_data.get("guest_id"),
+                                            "guest_phone": message_data.get("recipient")
+                                        }
+                                    )
+                            
                             # Store message context for reply resolution
                             if message_data.get("state") and message_data.get("recipient"):
                                 await self._store_message_context(
