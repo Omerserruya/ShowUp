@@ -72,8 +72,18 @@ class BaseState:
         # Update last_response for any incoming message related to the conversation
         # This is a base implementation that can be overridden by child classes
         # Child classes should call super().process_incoming() if they want to keep this behavior
-        event_id_str = str(conversation.event_id)
-        guest_phone = normalize_phone(conversation.guest_phone)
+        
+        # Get values before any potential errors to avoid lazy loading issues
+        try:
+            event_id_value = conversation.event_id
+            guest_phone_value = conversation.guest_phone
+        except Exception as e:
+            logger = __import__('logging').getLogger(__name__)
+            logger.warning(f"Failed to get conversation values: {e}")
+            return
+        
+        event_id_str = str(event_id_value) if event_id_value else None
+        guest_phone = normalize_phone(guest_phone_value)
         
         logger = __import__('logging').getLogger(__name__)
         logger.info(
@@ -81,8 +91,7 @@ class BaseState:
             extra={
                 "guest_phone": guest_phone,
                 "event_id": event_id_str,
-                "state": self.id,
-                "conversation_event_id": conversation.event_id
+                "state": self.id
             }
         )
         
@@ -104,7 +113,7 @@ class BaseState:
                     text("""
                         UPDATE guests 
                         SET last_response = :last_response
-                        WHERE phone = :phone AND event_id = :event_id::uuid
+                        WHERE phone = :phone AND event_id = CAST(:event_id AS uuid)
                     """),
                     {
                         "last_response": datetime.now(),
@@ -117,7 +126,7 @@ class BaseState:
                     text("""
                         UPDATE guests 
                         SET last_response = :last_response
-                        WHERE phone = :phone AND event_id::text = :event_id
+                        WHERE phone = :phone AND CAST(event_id AS text) = :event_id
                     """),
                     {
                         "last_response": datetime.now(),

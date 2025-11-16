@@ -24,12 +24,24 @@ class NoteInfoState(BaseState):
         logger = __import__('logging').getLogger(__name__)
         logger.info(f"NoteInfoState processing incoming message: '{text_content}'")
         
+        # Get conversation values before any potential errors
+        try:
+            event_id_value = conversation.event_id
+            guest_phone_value = conversation.guest_phone
+        except Exception as e:
+            logger.warning(f"Failed to get conversation values: {e}")
+            return
+        
         if text_content:
-            event_id_str = str(conversation.event_id)
-            guest_phone = normalize_phone(conversation.guest_phone)
+            event_id_str = str(event_id_value) if event_id_value else None
+            guest_phone = normalize_phone(guest_phone_value)
             
             if not guest_phone:
                 logger.warning(f"Cannot update notes: invalid guest_phone")
+                return
+            
+            if not event_id_str:
+                logger.warning(f"Cannot update notes: missing event_id")
                 return
             
             logger.info(f"Updating notes for guest {guest_phone}")
@@ -47,7 +59,7 @@ class NoteInfoState(BaseState):
                         text("""
                             UPDATE guests 
                             SET notes = :notes
-                            WHERE phone = :phone AND event_id = :event_id::uuid
+                            WHERE phone = :phone AND event_id = CAST(:event_id AS uuid)
                         """),
                         {
                             "notes": text_content,
@@ -60,7 +72,7 @@ class NoteInfoState(BaseState):
                         text("""
                             UPDATE guests 
                             SET notes = :notes
-                            WHERE phone = :phone AND event_id::text = :event_id
+                            WHERE phone = :phone AND CAST(event_id AS text) = :event_id
                         """),
                         {
                             "notes": text_content,

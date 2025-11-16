@@ -24,16 +24,28 @@ class RsvpCountState(BaseState):
         logger = __import__('logging').getLogger(__name__)
         logger.info(f"RsvpCountState processing incoming message: '{text_content}'")
         
+        # Get conversation values before any potential errors
+        try:
+            event_id_value = conversation.event_id
+            guest_phone_value = conversation.guest_phone
+        except Exception as e:
+            logger.warning(f"Failed to get conversation values: {e}")
+            return
+        
         # Try to parse as integer
         try:
             guest_count = int(text_content)
             if guest_count > 0:
                 # Update guest_count in guests table
-                event_id_str = str(conversation.event_id)
-                guest_phone = normalize_phone(conversation.guest_phone)
+                event_id_str = str(event_id_value) if event_id_value else None
+                guest_phone = normalize_phone(guest_phone_value)
                 
                 if not guest_phone:
                     logger.warning(f"Cannot update guest_count: invalid guest_phone")
+                    return
+                
+                if not event_id_str:
+                    logger.warning(f"Cannot update guest_count: missing event_id")
                     return
                 
                 logger.info(f"Updating guest_count to {guest_count} for guest {guest_phone}")
@@ -50,7 +62,7 @@ class RsvpCountState(BaseState):
                         text("""
                             UPDATE guests 
                             SET guest_count = :guest_count
-                            WHERE phone = :phone AND event_id = :event_id::uuid
+                            WHERE phone = :phone AND event_id = CAST(:event_id AS uuid)
                         """),
                         {
                             "guest_count": guest_count,
@@ -63,7 +75,7 @@ class RsvpCountState(BaseState):
                         text("""
                             UPDATE guests 
                             SET guest_count = :guest_count
-                            WHERE phone = :phone AND event_id::text = :event_id
+                            WHERE phone = :phone AND CAST(event_id AS text) = :event_id
                         """),
                         {
                             "guest_count": guest_count,
