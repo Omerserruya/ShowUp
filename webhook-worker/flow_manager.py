@@ -173,15 +173,25 @@ class FlowManager:
         This method implements a deterministic two-step strategy:
         
         1. **Primary Resolution (by context_id)**: If context_id is provided (reply to a message):
-           - Look up the original outgoing message in messages_log using context_id
+           - Look up the original outgoing message in messages_log using context_id (wamid)
            - From that message, get the conversation_id
            - Return that conversation, its event_id, and the state from the original message
            - This ensures replies are always associated with the correct conversation/event
         
-        2. **Fallback Resolution (by guest_phone)**: If no context_id or step 1 fails:
-           - Find the most recently updated active conversation for this guest_phone
-           - This supports multiple events per phone number by using timestamps
-           - Return that conversation, its event_id, and its current_state
+        2. **Fallback Resolution (by guest_phone via last outgoing message)**: If no context_id or step 1 fails:
+           - CRITICAL: Find the most recent outgoing message (system → guest) for this guest_phone
+           - From that message, get:
+             * conversation_id → the correct conversation
+             * event_id (via conversation) → the correct event
+             * state (from message) → the exact state when that message was sent
+           - This is the PRIMARY rule for free-text messages (not a recovery fallback)
+           - It ensures multi-event scenarios work correctly and the flow continues from where it left off
+           - Only if no outgoing messages exist, fall back to most recent active conversation by updated_at
+        
+        This design ensures:
+        - Quick replies (with context_id) → always go to the exact conversation/event referenced
+        - Free text (no context_id) → continues from the last message sent, preserving flow continuity
+        - Multiple events per phone → each conversation is correctly identified by the message flow
         
         Args:
             session: Database session
@@ -193,7 +203,7 @@ class FlowManager:
             Tuple of (conversation, event_id, effective_state):
             - conversation: The resolved Conversation object, or None if not found
             - event_id: The event_id (UUID string) associated with the conversation
-            - effective_state: The state to use (from original message if context_id, else conversation.current_state)
+            - effective_state: The state to use (from original message if context_id, else from last outgoing message)
         """
         if not guest_phone:
             logger.warning("Cannot resolve conversation: guest_phone is required")
@@ -255,11 +265,77 @@ class FlowManager:
                     extra={"context_id": context_id, "guest_phone": guest_phone}
                 )
         
-        # Step 2: Fallback - resolve by guest_phone (find most recent active conversation)
+        # Step 2: Fallback - resolve by guest_phone using most recent outgoing message
         # This handles free-text messages without context_id, or when context_id lookup fails
+        # 
+        # CRITICAL: For free-text messages, we must use the last outgoing message sent to this phone,
+        # not just the most recent conversation by updated_at. This ensures:
+        # - We get the correct conversation/event/state from the actual message flow
+        # - Multi-event scenarios work correctly (same phone, different events)
+        # - The state machine continues from where we left off in the conversation
         logger.info(
-            "Falling back to resolve conversation by guest_phone (most recent active)",
+            "Falling back to resolve conversation by guest_phone (using most recent outgoing message)",
             extra={"guest_phone": guest_phone, "context_id": context_id}
+        )
+        
+        # Find the most recent outgoing message (system → guest) for this phone number
+        # This tells us exactly which conversation/event/state we're continuing from
+        res = await session.execute(
+            select(MessageLog)
+            .join(Conversation, MessageLog.conversation_id == Conversation.id)
+            .where(
+                Conversation.guest_phone == guest_phone,
+                MessageLog.direction == "outgoing"
+            )
+            .order_by(MessageLog.created_at.desc())
+            .limit(1)
+        )
+        latest_outgoing_message = res.scalars().first()
+        
+        if latest_outgoing_message:
+            # Get the conversation that this outgoing message belongs to
+            conversation = await session.get(Conversation, latest_outgoing_message.conversation_id)
+            
+            if conversation:
+                # Use the state from the outgoing message (not conversation.current_state)
+                # This ensures we continue from the exact state when that message was sent
+                effective_state = latest_outgoing_message.state
+                effective_event_id = conversation.event_id
+                
+                logger.info(
+                    "Resolved conversation by guest_phone (using most recent outgoing message)",
+                    extra={
+                        "guest_phone": guest_phone,
+                        "conversation_id": str(conversation.id),
+                        "event_id": effective_event_id,
+                        "state_from_message": effective_state,
+                        "conversation_current_state": conversation.current_state,
+                        "message_created_at": latest_outgoing_message.created_at.isoformat() if latest_outgoing_message.created_at else None,
+                    }
+                )
+                
+                # Update conversation state to match the message state if different
+                # This ensures conversation.current_state reflects where we are in the flow
+                if effective_state and conversation.current_state != effective_state:
+                    await self.update_conversation(session, conversation, effective_state)
+                    await session.refresh(conversation)
+                
+                return conversation, effective_event_id, effective_state
+            else:
+                logger.warning(
+                    "Found outgoing message but conversation not found",
+                    extra={
+                        "guest_phone": guest_phone,
+                        "message_log_id": latest_outgoing_message.id,
+                        "conversation_id": latest_outgoing_message.conversation_id,
+                    }
+                )
+        
+        # If no outgoing message found, try fallback to most recent active conversation
+        # This is a last resort when no messages have been logged yet
+        logger.info(
+            "No outgoing messages found, trying fallback to most recent active conversation",
+            extra={"guest_phone": guest_phone}
         )
         
         conversation = await self._get_latest_active_conversation(session, guest_phone)
@@ -269,7 +345,7 @@ class FlowManager:
             effective_state = conversation.current_state
             
             logger.info(
-                "Resolved conversation by guest_phone (most recent active)",
+                "Resolved conversation by guest_phone (fallback: most recent active conversation)",
                 extra={
                     "guest_phone": guest_phone,
                     "conversation_id": str(conversation.id),
