@@ -10,8 +10,38 @@ from db.session import engine
 logger = logging.getLogger(__name__)
 
 
+async def _create_conversation_indexes(conn):
+    """
+    Create indexes and constraints for conversations table.
+    
+    This ensures:
+    1. Efficient lookups on (guest_id, event_id, active)
+    2. Uniqueness constraint for active conversations per guest+event pair
+       (supports multiple inactive conversations but only one active one)
+    """
+    try:
+        # Create index for efficient lookups
+        await conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_conversations_guest_event_active
+                ON conversations (guest_id, event_id, active)
+        """))
+        logger.info("Created index: idx_conversations_guest_event_active")
+        
+        # Create unique partial index to enforce one active conversation per guest+event
+        # This allows multiple inactive conversations but only one active one
+        await conn.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uniq_active_conversation_per_guest_event
+                ON conversations (guest_id, event_id)
+                WHERE active = TRUE
+        """))
+        logger.info("Created unique index: uniq_active_conversation_per_guest_event")
+        
+    except Exception as e:
+        logger.warning(f"Failed to create conversation indexes (they may already exist): {e}")
+
+
 async def init_db() -> None:
-    """Create all database tables if they don't exist."""
+    """Create all database tables if they don't exist and apply migrations."""
     try:
         async with engine.begin() as conn:
             # Enable UUID extension if not already enabled
@@ -42,7 +72,11 @@ async def init_db() -> None:
             
             # Ensure new columns exist
             await conn.execute(text("ALTER TABLE messages_log ADD COLUMN IF NOT EXISTS status VARCHAR(32)"))
-            logger.info("Database tables initialized successfully")
+            
+            # Create indexes and constraints for conversations table
+            await _create_conversation_indexes(conn)
+            
+            logger.info("Database tables initialized and migrations applied successfully")
     except Exception as e:
         logger.error(f"Failed to create database tables: {e}")
         raise

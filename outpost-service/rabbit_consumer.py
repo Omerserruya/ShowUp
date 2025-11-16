@@ -371,14 +371,14 @@ class RabbitMQConsumer:
                                         "state": message_data.get("state", "rsvp_invite")
                                     }
                                 )
-                # Always use "rsvp_invite" as initial state for new conversations
-                # The "state" field in message_data is the template name, not the conversation state
-                conversation_id = self._ensure_or_get_conversation(
-                    event_id=message_data.get("event_id"),
-                    guest_phone=message_data.get("recipient"),
-                    guest_id=message_data.get("guest_id"),
-                    initial_state="rsvp_invite"
-                )
+                                # Always use "rsvp_invite" as initial state for new conversations
+                                # The "state" field in message_data is the template name, not the conversation state
+                                conversation_id = self._ensure_or_get_conversation(
+                                    event_id=message_data.get("event_id"),
+                                    guest_phone=message_data.get("recipient"),
+                                    guest_id=message_data.get("guest_id"),
+                                    initial_state="rsvp_invite"
+                                )
                                 if conversation_id:
                                     self.logger.info(
                                         "Conversation created/retrieved",
