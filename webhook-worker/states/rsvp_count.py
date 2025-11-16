@@ -19,6 +19,9 @@ class RsvpCountState(BaseState):
         # Update guest_count if message is a number
         text_content = (message.get("text") or "").strip()
         
+        logger = __import__('logging').getLogger(__name__)
+        logger.info(f"RsvpCountState processing incoming message: '{text_content}'")
+        
         # Try to parse as integer
         try:
             guest_count = int(text_content)
@@ -26,6 +29,8 @@ class RsvpCountState(BaseState):
                 # Update guest_count in guests table
                 event_id = str(conversation.event_id)
                 guest_phone = conversation.guest_phone
+                
+                logger.info(f"Updating guest_count to {guest_count} for guest {guest_phone}")
                 
                 result = await session.execute(
                     text("""
@@ -41,12 +46,15 @@ class RsvpCountState(BaseState):
                 )
                 if result.rowcount > 0:
                     await session.commit()
+                    logger.info(f"Successfully updated guest_count to {guest_count}, rows updated: {result.rowcount}")
+                else:
+                    logger.warning(f"No rows updated for guest_count update")
         except (ValueError, TypeError):
             # Not a valid number, ignore
+            logger.debug(f"Message '{text_content}' is not a valid number, ignoring")
             pass
         except Exception as e:
-            logger = __import__('logging').getLogger(__name__)
-            logger.warning(f"Failed to update guest_count: {e}")
+            logger.warning(f"Failed to update guest_count: {e}", exc_info=True)
             await session.rollback()
 
     async def send(self, session: AsyncSession, conversation: Any) -> Optional[Dict[str, Any]]:

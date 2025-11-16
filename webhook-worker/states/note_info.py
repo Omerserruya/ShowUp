@@ -19,9 +19,14 @@ class NoteInfoState(BaseState):
         # Store note text in guests table
         text_content = (message.get("text") or "").strip()
         
+        logger = __import__('logging').getLogger(__name__)
+        logger.info(f"NoteInfoState processing incoming message: '{text_content}'")
+        
         if text_content:
             event_id = str(conversation.event_id)
             guest_phone = conversation.guest_phone
+            
+            logger.info(f"Updating notes for guest {guest_phone}")
             
             try:
                 result = await session.execute(
@@ -38,9 +43,11 @@ class NoteInfoState(BaseState):
                 )
                 if result.rowcount > 0:
                     await session.commit()
+                    logger.info(f"Successfully updated notes, rows updated: {result.rowcount}")
+                else:
+                    logger.warning(f"No rows updated for notes update")
             except Exception as e:
-                logger = __import__('logging').getLogger(__name__)
-                logger.warning(f"Failed to update notes: {e}")
+                logger.warning(f"Failed to update notes: {e}", exc_info=True)
                 await session.rollback()
 
     async def send(self, session: AsyncSession, conversation: Any) -> Dict[str, Any]:

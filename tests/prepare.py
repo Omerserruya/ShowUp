@@ -30,11 +30,7 @@ def create_guests(event_id, headers):
         "phone": "+972525401686",
         "guest_count": 1
     })
-    items.append({
-        "name": "שני יצחק",
-        "phone": "+972538852020",
-        "guest_count": 1
-    })
+  
     payload = {"items": items}
     resp = requests.post(f"{BASE_URL}/guests?event_id={event_id}", json=payload, headers=headers)
     resp.raise_for_status()

@@ -73,6 +73,16 @@ class BaseState:
         event_id = str(conversation.event_id)
         guest_phone = conversation.guest_phone
         
+        logger = __import__('logging').getLogger(__name__)
+        logger.info(
+            f"Updating last_response for guest",
+            extra={
+                "guest_phone": guest_phone,
+                "event_id": event_id,
+                "state": self.id
+            }
+        )
+        
         try:
             result = await session.execute(
                 text("""
@@ -89,10 +99,12 @@ class BaseState:
             # Only commit if we actually updated a row
             if result.rowcount > 0:
                 await session.commit()
+                logger.info(f"Successfully updated last_response for guest {guest_phone}, rows updated: {result.rowcount}")
+            else:
+                logger.warning(f"No rows updated for guest {guest_phone} with event_id {event_id}")
         except Exception as e:
             # Log error but don't fail the message processing
-            logger = __import__('logging').getLogger(__name__)
-            logger.warning(f"Failed to update last_response: {e}")
+            logger.warning(f"Failed to update last_response: {e}", exc_info=True)
             await session.rollback()
 
     def get_next_state(self, message: Dict[str, Any]) -> str:
