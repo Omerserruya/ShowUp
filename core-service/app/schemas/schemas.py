@@ -4,7 +4,7 @@ import datetime as dt
 import uuid
 from typing import List, Optional
 
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, field_validator
 
 
 class Pagination(BaseModel):
@@ -12,9 +12,16 @@ class Pagination(BaseModel):
     page_size: int = Field(20, ge=1, le=200)
 
 
+# Inviter Schema
+class Inviter(BaseModel):
+    fn: str = Field(..., description="First name")
+    ln: str = Field(..., description="Last name")
+
+
 # Event Schemas
 class EventBase(BaseModel):
     owners: List[uuid.UUID] = Field(default_factory=list)
+    inviters: List[Inviter] = Field(default_factory=list)
     name: str = Field(..., max_length=100)
     description: Optional[str] = None
     event_date: Optional[dt.datetime] = None
@@ -29,6 +36,7 @@ class EventCreate(EventBase):
 
 class EventUpdate(BaseModel):
     owners: Optional[List[uuid.UUID]] = None
+    inviters: Optional[List[Inviter]] = None
     name: Optional[str] = Field(default=None, max_length=100)
     description: Optional[str] = None
     event_date: Optional[dt.datetime] = None
@@ -39,6 +47,16 @@ class EventOut(EventBase):
     id: uuid.UUID
     created_at: dt.datetime
     updated_at: dt.datetime
+
+    @field_validator('inviters', mode='before')
+    @classmethod
+    def validate_inviters(cls, v):
+        # Convert list of dicts (from JSON) to list of Inviter objects
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return [Inviter(**item) if isinstance(item, dict) else item for item in v]
+        return v
 
     class Config:
         from_attributes = True

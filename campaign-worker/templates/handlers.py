@@ -12,6 +12,7 @@ from datetime import datetime
 from db import fetch_guests_for_event
 from datetime import datetime
 import locale
+import logging
 
 # הגדר את הלוקל לעברית (בלינוקס צריך לוודא שה-locale קיים)
 try:
@@ -20,12 +21,23 @@ except locale.Error:
     # fallback אם לא קיים locale עברי
     pass
 
+# מיפוי של שמות הימים באנגלית לעברית
+WEEKDAY_HEBREW = {
+    0: "יום שני",
+    1: "יום שלישי",
+    2: "יום רביעי",
+    3: "יום חמישי",
+    4: "יום שישי",
+    5: "יום שבת",
+    6: "יום ראשון"
+}
+
 def _format_event_date(event_date_str: str) -> str:
     """Format date string (ISO format) to 'יום שלישי, ה־3.12.25' style."""
     if not event_date_str:
         return ""
     dt = datetime.fromisoformat(event_date_str)
-    weekday = dt.strftime("%A")  # e.g. 'יום שלישי'
+    weekday = WEEKDAY_HEBREW.get(dt.weekday(), "יום")  # weekday() returns 0=Monday, 6=Sunday
     day = dt.day
     month = dt.month
     year = str(dt.year)[-2:]
@@ -44,6 +56,21 @@ def _serialize_datetime(obj):
     if isinstance(obj, datetime):
         return obj.isoformat()
     return obj
+
+
+def _format_inviters(inviters: List[Dict[str, str]]) -> str:
+    """Format inviters list as 'fn ln ו fn ln' (Hebrew format)."""
+    logger = logging.getLogger("handlers")
+    logger.info(f"Formatting inviters - input: {inviters}")
+    
+    if not inviters:
+        logger.info("No inviters found, returning space")
+        return " "  # Return space instead of empty string for WhatsApp API compatibility
+    
+    formatted_names = [f"{inviter.get('fn', '')} {inviter.get('ln', '')}" for inviter in inviters]
+    result = " ו ".join(formatted_names)
+    logger.info(f"Formatted inviters result: '{result}'")
+    return result
 
 
 def save_the_date(conn, event_id: str, event_data: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -67,12 +94,12 @@ def build_params(template_name: str, guest: Dict[str, Any], event_data: Dict[str
             "1": _format_event_date(_serialize_datetime(event_data.get("event_date", ""))),
             "2": _format_event_time(_serialize_datetime(event_data.get("event_date", ""))),
             "3":  event_data.get("location", ""),
-            "4":"inviters"
+            "4": _format_inviters(event_data.get("inviters", []))
         }
     if template_name == "general_rsvp":
         return {
             "1": "event type",
-            "2": "inviters",
+            "2": _format_inviters(event_data.get("inviters", [])),
             "3": _format_event_date(_serialize_datetime(event_data.get("event_date", ""))),
             "4":_format_event_time(_serialize_datetime(event_data.get("event_date", ""))),
             "5":  event_data.get("location", ""),

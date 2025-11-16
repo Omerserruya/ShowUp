@@ -3,15 +3,19 @@ import random
 import string
 from datetime import datetime, timedelta, timezone
 
-BASE_URL = "https://dev.28042000.xyz/api"
+BASE_URL = "http://localhost/api"
 TOKEN= "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiY2VkYjEwZGMtYjZhZS00ODllLTg4Y2EtYmM3MzkyYjM0MmU5Iiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzYzMzAwMjI4LCJleHAiOjE3NjMzODY2Mjh9.Yo8PU9gP19o4SOf5LNqtpSSo8dNZEf0FVnm8DWwPaHQ"
 
 def create_event(headers):
     payload = {
-        "name": "Tested Event",
-        "description": "Optional text",
+        "name": "חתונה",
+        "description": "חתונה של עומר ושני",
         "event_date": "2025-12-31T18:00:00Z",
-        "location": "Optional location"
+        "location": "אולמי חרטא",
+        "inviters": [
+        {"fn": "John", "ln": "Doe"},
+        {"fn": "Jane", "ln": "Smith"}
+    ]
     }
     resp = requests.post(f"{BASE_URL}/events", json=payload, headers=headers)
     resp.raise_for_status()

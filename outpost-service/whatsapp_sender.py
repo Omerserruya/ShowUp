@@ -31,11 +31,45 @@ class WhatsAppSender:
         """Build WhatsApp template message payload."""
         
         # Convert parameters dict to ordered list of text parameters
+        # Sort by numeric keys to ensure correct order (1, 2, 3, ...)
         param_list = []
-        for key, value in parameters.items():
+        
+        # Helper function to extract numeric key for sorting
+        def get_sort_key(item):
+            key = item[0]
+            try:
+                # If key is a numeric string, convert to int for proper sorting
+                if isinstance(key, str) and key.isdigit():
+                    return int(key)
+                # If key is already an int, use it directly
+                elif isinstance(key, int):
+                    return key
+                else:
+                    # Non-numeric keys go to the end
+                    return float('inf')
+            except (ValueError, TypeError):
+                return float('inf')
+        
+        try:
+            # Sort by numeric keys to ensure correct order
+            sorted_items = sorted(parameters.items(), key=get_sort_key)
+        except Exception:
+            # Fallback to original order if sorting fails
+            sorted_items = list(parameters.items())
+        
+        for key, value in sorted_items:
+            # Convert value to string, handle None/empty values
+            # WhatsApp API requires non-empty strings, so use a space if empty
+            if value is None:
+                text_value = " "
+            elif isinstance(value, str) and not value.strip():
+                text_value = " "
+            else:
+                text_value = str(value)
+            
             param_list.append({
                 "type": "text",
-                "text": str(value)
+                "text": text_value
             })
         
         payload = {
@@ -116,7 +150,9 @@ class WhatsAppSender:
             extra={
                 "recipient": recipient,
                 "template": template_name,
-                "parameter_count": len(parameters)
+                "parameter_count": len(parameters),
+                "parameters": parameters,
+                "payload": payload
             }
         )
         
@@ -129,13 +165,18 @@ class WhatsAppSender:
             
             # Log the response for debugging - ALWAYS log errors
             if response.status_code >= 400:
+                try:
+                    error_data = response.json()
+                except:
+                    error_data = {"raw_response": response.text}
+                
                 self.logger.error(
                     "WhatsApp API Error Response",
                     extra={
                         "status_code": response.status_code,
                         "url": str(response.url),
-                        "headers": dict(response.headers),
                         "request_payload": payload,
+                        "error_response": error_data,
                         "response_text": response.text,
                         "phone_id": self.phone_id
                     }

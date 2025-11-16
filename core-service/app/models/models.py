@@ -29,6 +29,9 @@ class Event(Base):
     # Owners as JSON array of UUID strings for portability across DBs
     owners = Column(JSON, nullable=False, default=list, server_default='[]')
 
+    # Inviters as JSON array of objects with fn and ln fields
+    inviters = Column(JSON, nullable=False, default=list, server_default='[]')
+
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     event_date = Column(DateTime(timezone=True), nullable=True)

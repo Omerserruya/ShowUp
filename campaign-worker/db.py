@@ -61,7 +61,7 @@ def fetch_event_by_id(conn: psycopg2.extensions.connection, event_id: str) -> Op
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
-            SELECT id, name, description, event_date, location, active, created_at, updated_at
+            SELECT id, name, description, event_date, location, active, created_at, updated_at, inviters, owners
             FROM events
             WHERE id = %s
             """,
