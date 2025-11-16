@@ -26,6 +26,7 @@ class NoteInfoState(BaseState):
         
         # Get conversation values before any potential errors
         try:
+            guest_id_value = conversation.guest_id
             event_id_value = conversation.event_id
             guest_phone_value = conversation.guest_phone
         except Exception as e:
@@ -33,20 +34,39 @@ class NoteInfoState(BaseState):
             return
         
         if text_content:
-            event_id_str = str(event_id_value) if event_id_value else None
-            guest_phone = normalize_phone(guest_phone_value)
-            
-            if not guest_phone:
-                logger.warning(f"Cannot update notes: invalid guest_phone")
-                return
-            
-            if not event_id_str:
-                logger.warning(f"Cannot update notes: missing event_id")
-                return
-            
-            logger.info(f"Updating notes for guest {guest_phone}")
+            logger.info(f"Updating notes")
             
             try:
+                # First try to update by guest_id if available (most reliable)
+                if guest_id_value:
+                    result = await session.execute(
+                        text("""
+                            UPDATE guests 
+                            SET notes = :notes
+                            WHERE id = CAST(:guest_id AS uuid)
+                        """),
+                        {
+                            "notes": text_content,
+                            "guest_id": str(guest_id_value)
+                        }
+                    )
+                    if result.rowcount > 0:
+                        await session.commit()
+                        logger.info(f"Successfully updated notes by guest_id {guest_id_value}, rows updated: {result.rowcount}")
+                        return
+                
+                # Fallback to phone + event_id if guest_id is not available
+                event_id_str = str(event_id_value) if event_id_value else None
+                guest_phone = normalize_phone(guest_phone_value)
+                
+                if not guest_phone:
+                    logger.warning(f"Cannot update notes: invalid guest_phone")
+                    return
+                
+                if not event_id_str:
+                    logger.warning(f"Cannot update notes: missing event_id")
+                    return
+                
                 # Try to convert event_id to UUID if it's a valid UUID string
                 try:
                     event_id_uuid = uuid.UUID(event_id_str) if event_id_str else None
