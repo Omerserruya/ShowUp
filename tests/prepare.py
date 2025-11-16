@@ -36,7 +36,7 @@ from datetime import datetime, timedelta, timezone
 
 def create_campaigns(event_id, headers):
     now = datetime.now(timezone.utc)
-    first_time = (now + timedelta(minutes=2)).isoformat().replace("+00:00", "Z")
+    first_time = (now + timedelta(seconds=62)).isoformat().replace("+00:00", "Z")
     second_time = (now + timedelta(minutes=16)).isoformat().replace("+00:00", "Z")
 
     payload = {

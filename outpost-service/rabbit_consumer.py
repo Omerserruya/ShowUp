@@ -219,7 +219,7 @@ class RabbitMQConsumer:
                                     extra={
                                         "conversation_id": conversation_id,
                                         "wa_message_id": wa_id,
-                                        "state": state
+                                        "state": actual_state
                                     }
                                 )
                             else:
