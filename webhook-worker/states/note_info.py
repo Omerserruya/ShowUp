@@ -53,6 +53,27 @@ class NoteInfoState(BaseState):
                     if result.rowcount > 0:
                         await session.commit()
                         logger.info(f"Successfully updated notes by guest_id {guest_id_value}, rows updated: {result.rowcount}")
+                        
+                        # Also update status to 'attending' since guest completed RSVP flow with a note
+                        logger.info(f"Guest completed RSVP with note, updating status to 'attending'")
+                        try:
+                            status_result = await session.execute(
+                                text("""
+                                    UPDATE guests 
+                                    SET status = :status
+                                    WHERE id = CAST(:guest_id AS uuid)
+                                """),
+                                {
+                                    "status": "attending",
+                                    "guest_id": str(guest_id_value)
+                                }
+                            )
+                            if status_result.rowcount > 0:
+                                await session.commit()
+                                logger.info(f"Successfully updated status to 'attending' by guest_id {guest_id_value}, rows updated: {status_result.rowcount}")
+                        except Exception as status_e:
+                            logger.warning(f"Failed to update status: {status_e}", exc_info=True)
+                            await session.rollback()
                         return
                 
                 # Fallback to phone + event_id if guest_id is not available
@@ -103,6 +124,61 @@ class NoteInfoState(BaseState):
                 if result.rowcount > 0:
                     await session.commit()
                     logger.info(f"Successfully updated notes, rows updated: {result.rowcount}")
+                    
+                    # Also update status to 'attending' since guest completed RSVP flow with a note
+                    logger.info(f"Guest completed RSVP with note, updating status to 'attending'")
+                    try:
+                        if guest_id_value:
+                            status_result = await session.execute(
+                                text("""
+                                    UPDATE guests 
+                                    SET status = :status
+                                    WHERE id = CAST(:guest_id AS uuid)
+                                """),
+                                {
+                                    "status": "attending",
+                                    "guest_id": str(guest_id_value)
+                                }
+                            )
+                            if status_result.rowcount > 0:
+                                await session.commit()
+                                logger.info(f"Successfully updated status to 'attending' by guest_id {guest_id_value}, rows updated: {status_result.rowcount}")
+                                return
+                        
+                        # Fallback to phone + event_id
+                        if event_id_uuid:
+                            status_result = await session.execute(
+                                text("""
+                                    UPDATE guests 
+                                    SET status = :status
+                                    WHERE phone = :phone AND event_id = CAST(:event_id AS uuid)
+                                """),
+                                {
+                                    "status": "attending",
+                                    "phone": guest_phone,
+                                    "event_id": str(event_id_uuid)
+                                }
+                            )
+                        else:
+                            status_result = await session.execute(
+                                text("""
+                                    UPDATE guests 
+                                    SET status = :status
+                                    WHERE phone = :phone AND CAST(event_id AS text) = :event_id
+                                """),
+                                {
+                                    "status": "attending",
+                                    "phone": guest_phone,
+                                    "event_id": event_id_str
+                                }
+                            )
+                        
+                        if status_result.rowcount > 0:
+                            await session.commit()
+                            logger.info(f"Successfully updated status to 'attending', rows updated: {status_result.rowcount}")
+                    except Exception as status_e:
+                        logger.warning(f"Failed to update status: {status_e}", exc_info=True)
+                        await session.rollback()
                 else:
                     logger.warning(f"No rows updated for notes update")
             except Exception as e:
