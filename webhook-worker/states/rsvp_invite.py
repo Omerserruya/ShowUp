@@ -36,7 +36,9 @@ class RsvpInviteState(BaseState):
             return
         
         # Determine status based on response
-        if text_content == "לצערי לא אוכל להגיע ):":
+        if text_content == "ברור שאני בא!":
+            status_value = "attending"
+        elif text_content == "לצערי לא אוכל להגיע ):":
             status_value = "declined"
         elif text_content == "עוד מתלבט, תחזרו אלי?":
             status_value = "maybe"
