@@ -124,17 +124,32 @@ class FlowManager:
         await session.refresh(entry)
         return entry
 
-    async def _get_latest_conversation(self, session: AsyncSession, guest_phone: str) -> Optional[Conversation]:
+    async def _get_latest_active_conversation(self, session: AsyncSession, guest_phone: str) -> Optional[Conversation]:
+        """
+        Get the most recently updated active conversation for a guest phone number.
+        
+        This is used as a fallback when no context_id is provided, to determine
+        which conversation is "current" for free-text messages when multiple
+        conversations exist for the same phone number (different events).
+        """
         res = await session.execute(
             select(Conversation)
-            .where(Conversation.guest_phone == guest_phone)
+            .where(
+                Conversation.guest_phone == guest_phone,
+                Conversation.active == True
+            )
             .order_by(Conversation.updated_at.desc())
             .limit(1)
         )
         return res.scalars().first()
 
     async def resolve_message_from_context(self, session: AsyncSession, context_id: Optional[str]) -> Optional[MessageLog]:
-        """Resolve message from context_id (wamid) by looking up in MessageLog table."""
+        """
+        Resolve message from context_id (wamid) by looking up in MessageLog table.
+        
+        The context_id is the WhatsApp message ID (wamid) of the original outgoing
+        message that the user is replying to.
+        """
         if not context_id:
             return None
         res = await session.execute(
@@ -145,22 +160,138 @@ class FlowManager:
         )
         return res.scalars().first()
 
-    async def get_latest_outgoing_message(self, session: AsyncSession, guest_phone: str, event_id: Optional[str] = None) -> Optional[MessageLog]:
-        """Get the latest outgoing message for a guest, optionally filtered by event_id."""
-        query = (
-            select(MessageLog)
-            .join(Conversation, MessageLog.conversation_id == Conversation.id)
-            .where(
-                Conversation.guest_phone == guest_phone,
-                MessageLog.direction == "outgoing"
-            )
-        )
-        if event_id:
-            query = query.where(Conversation.event_id == event_id)
+    async def resolve_conversation(
+        self,
+        session: AsyncSession,
+        guest_phone: Optional[str],
+        context_id: Optional[str],
+        provided_event_id: Optional[str] = None,
+    ) -> Tuple[Optional[Conversation], Optional[str], Optional[str]]:
+        """
+        Centralized conversation resolution logic.
         
-        query = query.order_by(MessageLog.created_at.desc()).limit(1)
-        res = await session.execute(query)
-        return res.scalars().first()
+        This method implements a deterministic two-step strategy:
+        
+        1. **Primary Resolution (by context_id)**: If context_id is provided (reply to a message):
+           - Look up the original outgoing message in messages_log using context_id
+           - From that message, get the conversation_id
+           - Return that conversation, its event_id, and the state from the original message
+           - This ensures replies are always associated with the correct conversation/event
+        
+        2. **Fallback Resolution (by guest_phone)**: If no context_id or step 1 fails:
+           - Find the most recently updated active conversation for this guest_phone
+           - This supports multiple events per phone number by using timestamps
+           - Return that conversation, its event_id, and its current_state
+        
+        Args:
+            session: Database session
+            guest_phone: Phone number of the guest
+            context_id: WhatsApp message ID (wamid) of the message being replied to (if any)
+            provided_event_id: Optional event_id from webhook (may be None or invalid)
+        
+        Returns:
+            Tuple of (conversation, event_id, effective_state):
+            - conversation: The resolved Conversation object, or None if not found
+            - event_id: The event_id (UUID string) associated with the conversation
+            - effective_state: The state to use (from original message if context_id, else conversation.current_state)
+        """
+        if not guest_phone:
+            logger.warning("Cannot resolve conversation: guest_phone is required")
+            return None, None, None
+        
+        conversation: Optional[Conversation] = None
+        effective_event_id: Optional[str] = None
+        effective_state: Optional[str] = None
+        
+        # Step 1: Try to resolve by context_id (reply to a previous message)
+        if context_id:
+            logger.info(
+                "Attempting to resolve conversation by context_id",
+                extra={"context_id": context_id, "guest_phone": guest_phone}
+            )
+            
+            # Find the original outgoing message that this is a reply to
+            context_message = await self.resolve_message_from_context(session, context_id)
+            
+            if context_message:
+                # Get the conversation that the original message belonged to
+                conversation = await session.get(Conversation, context_message.conversation_id)
+                
+                if conversation:
+                    # Use the state from the original message (allows replying to old messages)
+                    effective_state = context_message.state
+                    effective_event_id = conversation.event_id
+                    
+                    logger.info(
+                        "Resolved conversation by context_id",
+                        extra={
+                            "context_id": context_id,
+                            "conversation_id": str(conversation.id),
+                            "event_id": effective_event_id,
+                            "original_message_state": effective_state,
+                            "conversation_current_state": conversation.current_state,
+                        }
+                    )
+                    
+                    # Update conversation state to match the original message state if different
+                    # This ensures the conversation reflects the state when the original message was sent
+                    if effective_state and conversation.current_state != effective_state:
+                        await self.update_conversation(session, conversation, effective_state)
+                        await session.refresh(conversation)
+                    
+                    return conversation, effective_event_id, effective_state
+                else:
+                    logger.warning(
+                        "Context message found but conversation not found",
+                        extra={
+                            "context_id": context_id,
+                            "message_log_id": context_message.id,
+                            "conversation_id": context_message.conversation_id,
+                        }
+                    )
+            else:
+                logger.info(
+                    "Context_id provided but message not found in messages_log",
+                    extra={"context_id": context_id, "guest_phone": guest_phone}
+                )
+        
+        # Step 2: Fallback - resolve by guest_phone (find most recent active conversation)
+        # This handles free-text messages without context_id, or when context_id lookup fails
+        logger.info(
+            "Falling back to resolve conversation by guest_phone (most recent active)",
+            extra={"guest_phone": guest_phone, "context_id": context_id}
+        )
+        
+        conversation = await self._get_latest_active_conversation(session, guest_phone)
+        
+        if conversation:
+            effective_event_id = conversation.event_id
+            effective_state = conversation.current_state
+            
+            logger.info(
+                "Resolved conversation by guest_phone (most recent active)",
+                extra={
+                    "guest_phone": guest_phone,
+                    "conversation_id": str(conversation.id),
+                    "event_id": effective_event_id,
+                    "state": effective_state,
+                    "updated_at": conversation.updated_at.isoformat() if conversation.updated_at else None,
+                }
+            )
+            
+            return conversation, effective_event_id, effective_state
+        
+        # No conversation found at all
+        logger.warning(
+            "Could not resolve conversation: no active conversation found for guest_phone",
+            extra={
+                "guest_phone": guest_phone,
+                "context_id": context_id,
+                "provided_event_id": provided_event_id,
+            }
+        )
+        
+        return None, None, None
 
     # ---------- Flow resolution & building ----------
 
@@ -210,190 +341,35 @@ class FlowManager:
             logger.info(
                 f"handle_event start: type={message_type} guest={guest_phone} event_id={event_id} context={context_id}",
             )
-            context_entry = await self.resolve_message_from_context(session, context_id)
-            conv: Optional[Conversation] = None
-            effective_event_id: Optional[str] = None
-
-            # Step 1: If context_id exists (quick_reply to old message), resolve from MessageLog
-            # Use the state from the original message, not the current_state in conversations table
-            effective_state: Optional[str] = None
-            if context_entry:
-                conv = await session.get(Conversation, context_entry.conversation_id)
-                if conv:
-                    # Use the state from the original message (context_entry.state)
-                    # This allows replying to old messages and resuming from that state
-                    effective_state = context_entry.state
-                    effective_event_id = conv.event_id
-                    # Update conversation state to match the original message state
-                    if effective_state and conv.current_state != effective_state:
-                        await self.update_conversation(session, conv, effective_state)
-                        await session.refresh(conv)
-                    logger.info(
-                        "Resolved conversation from context (using original message state)",
-                        extra={
-                            "context_id": context_id,
-                            "conversation_id": conv.id,
-                            "original_message_state": effective_state,
-                            "conversation_current_state": conv.current_state,
-                            "event_id": effective_event_id,
-                        },
-                    )
-                else:
-                    logger.warning(
-                        "Context entry found but conversation not found",
-                        extra={
-                            "context_id": context_id,
-                            "message_log_id": context_entry.id if context_entry else None,
-                            "conversation_id": context_entry.conversation_id if context_entry else None,
-                        },
-                    )
-            elif context_id:
-                # context_id provided but message not found in messages_log yet
-                # Try to find the latest outgoing message as fallback
-                logger.info(
-                    "Context ID provided but message not found in messages_log, trying latest message fallback",
-                    extra={"context_id": context_id, "guest_phone": guest_phone},
-                )
-                latest_message = await self.get_latest_outgoing_message(session, guest_phone, None)
-                if latest_message:
-                    conv = await session.get(Conversation, latest_message.conversation_id)
-                    if conv:
-                        effective_state = latest_message.state
-                        effective_event_id = conv.event_id
-                        if effective_state and conv.current_state != effective_state:
-                            await self.update_conversation(session, conv, effective_state)
-                            await session.refresh(conv)
-                        logger.info(
-                            "Resolved conversation from latest message (context_id not found in messages_log)",
-                            extra={
-                                "context_id": context_id,
-                                "guest_phone": guest_phone,
-                                "conversation_id": conv.id,
-                                "latest_message_state": effective_state,
-                                "event_id": effective_event_id,
-                            },
-                        )
-
-            # Step 2: If no context_id (free_text), always find the latest outgoing message for this phone number
-            # Use the state from the latest outgoing message, not the current_state in conversations table
-            if not conv and not effective_state:
-                # For free_text, we want to find the latest message sent to this phone number
-                # Optionally filter by event_id if provided (and is a valid UUID)
-                filter_event_id = None
-                if event_id:
-                    try:
-                        import uuid
-                        uuid.UUID(event_id)  # Will raise ValueError if not a valid UUID
-                        filter_event_id = event_id
-                    except (ValueError, AttributeError):
-                        # event_id is not a valid UUID (probably a wamid), ignore it
-                        logger.debug(
-                            "event_id is not a valid UUID, ignoring for latest message search",
-                            extra={"event_id": event_id, "guest_phone": guest_phone},
-                        )
-                
-                latest_message = await self.get_latest_outgoing_message(session, guest_phone, filter_event_id)
-                if latest_message:
-                    conv = await session.get(Conversation, latest_message.conversation_id)
-                    if conv:
-                        # Use the state from the latest outgoing message
-                        effective_state = latest_message.state
-                        effective_event_id = conv.event_id
-                        # Update conversation state to match the latest message state
-                        if effective_state and conv.current_state != effective_state:
-                            await self.update_conversation(session, conv, effective_state)
-                            await session.refresh(conv)
-                        logger.info(
-                            "Resolved conversation from latest outgoing message (free_text - using original message state)",
-                            extra={
-                                "guest_phone": guest_phone,
-                                "event_id": effective_event_id,
-                                "conversation_id": conv.id,
-                                "latest_message_state": effective_state,
-                                "conversation_current_state": conv.current_state,
-                                "filtered_by_event_id": filter_event_id,
-                            },
-                        )
-
-            # Step 3: If still no conversation but event_id provided (UUID), try to find conversation by guest_phone + event_id
-            # This is a fallback if no messages were found in messages_log yet
-            if not conv and event_id:
-                # Validate that event_id is a UUID (not wamid)
-                try:
-                    import uuid
-                    uuid.UUID(event_id)  # Will raise ValueError if not a valid UUID
-                    # event_id is a valid UUID, try to find conversation
-                    res = await session.execute(
-                        select(Conversation).where(
-                            Conversation.guest_phone == guest_phone,
-                            Conversation.event_id == event_id,
-                            Conversation.active == True
-                        )
-                    )
-                    conv = res.scalars().first()
-                    if conv:
-                        effective_event_id = conv.event_id
-                        # Use current_state as fallback if no message state was found
-                        if not effective_state:
-                            effective_state = conv.current_state
-                        logger.info(
-                            "Resolved conversation by guest_phone + event_id (fallback - no messages found)",
-                            extra={
-                                "guest_phone": guest_phone,
-                                "event_id": effective_event_id,
-                                "conversation_id": conv.id,
-                                "state": effective_state,
-                            },
-                        )
-                except (ValueError, AttributeError):
-                    # event_id is not a valid UUID (probably a wamid), ignore it
-                    logger.debug(
-                        "event_id is not a valid UUID, ignoring",
-                        extra={"event_id": event_id, "guest_phone": guest_phone},
-                    )
             
-            # Step 4: If still no conversation, try latest conversation for this guest (fallback)
-            if not conv:
-                latest_conv = await self._get_latest_conversation(session, guest_phone)
-                if latest_conv:
-                    conv = latest_conv
-                    effective_event_id = latest_conv.event_id
-                    effective_state = latest_conv.current_state  # Use current_state as fallback
-                    logger.info(
-                        "Resolved conversation from latest (fallback)",
-                        extra={
-                            "guest_phone": guest_phone,
-                            "event_id": effective_event_id,
-                            "conversation_id": conv.id,
-                            "state": effective_state,
-                        },
-                    )
-
-            # Step 5: If still no event_id, cannot proceed
-            if not effective_event_id:
+            # Use centralized conversation resolution logic
+            # This implements the two-step strategy:
+            # 1. First try to resolve by context_id (reply to a message)
+            # 2. Fall back to most recent active conversation by guest_phone
+            conv, effective_event_id, effective_state = await self.resolve_conversation(
+                session=session,
+                guest_phone=guest_phone,
+                context_id=context_id,
+                provided_event_id=event_id,
+            )
+            
+            # If no conversation was resolved, we cannot proceed
+            if not conv or not effective_event_id:
                 logger.warning(
-                    "Could not resolve event_id (UUID) for incoming message; skipping",
-                    extra={"guest_phone": guest_phone, "context_id": context_id, "provided_event_id": event_id},
-                )
-                return
-
-            if not conv:
-                conv = await self.load_conversation(session, guest_phone, effective_event_id)
-                effective_state = conv.current_state  # Use current_state for new conversation
-                logger.info(
-                    "Created/loaded conversation",
+                    "Could not resolve conversation for incoming message; skipping",
                     extra={
-                        "conversation_id": conv.id,
                         "guest_phone": guest_phone,
-                        "event_id": effective_event_id,
-                        "state": effective_state,
+                        "context_id": context_id,
+                        "provided_event_id": event_id,
                     },
                 )
-            else:
-                # Use effective_state (from original message) if available, otherwise use conversation.current_state
-                if not effective_state:
-                    effective_state = conv.current_state
-                self.current_state = effective_state
+                return
+            
+            # Ensure we have an effective_state
+            if not effective_state:
+                effective_state = conv.current_state
+            
+            self.current_state = effective_state
 
             # Use effective_state (from original message) instead of conversation.current_state
             handler_cls = self.state_handlers.get(effective_state, FreeTextState)
@@ -494,27 +470,65 @@ class FlowManager:
         guest_phone: Optional[str],
         event_id: Optional[str],
     ) -> None:
+        """
+        Handle WhatsApp status updates (sent, delivered, read, etc.).
+        
+        Uses the same conversation resolution strategy as handle_event:
+        - First tries to resolve by wa_message_id (context_id equivalent)
+        - Falls back to most recent active conversation by guest_phone
+        """
         status_value = status_payload.get("status")
-        status_wa_id = status_payload.get("id")
+        status_wa_id = status_payload.get("id") or wa_message_id
 
         async for session in get_session():
             conversation: Optional[Conversation] = None
             message_entry: Optional[MessageLog] = None
 
-            # 1) Try to locate message by explicit WA id (context id)
-            if wa_message_id:
+            # Use centralized resolution: try by wa_message_id first (like context_id)
+            if status_wa_id:
+                logger.info(
+                    "Attempting to resolve conversation for status update by wa_message_id",
+                    extra={"wa_message_id": status_wa_id, "guest_phone": guest_phone}
+                )
+                
+                # Find the message log entry for this WhatsApp message ID
                 res = await session.execute(
-                    select(MessageLog).where(MessageLog.wa_message_id == wa_message_id).order_by(MessageLog.created_at.desc()).limit(1)
+                    select(MessageLog)
+                    .where(MessageLog.wa_message_id == status_wa_id)
+                    .order_by(MessageLog.created_at.desc())
+                    .limit(1)
                 )
                 message_entry = res.scalars().first()
+                
                 if message_entry:
-                    conv_res = await session.execute(
-                        select(Conversation).where(Conversation.id == message_entry.conversation_id)
-                    )
-                    conversation = conv_res.scalars().first()
+                    # Get the conversation that this message belongs to
+                    conversation = await session.get(Conversation, message_entry.conversation_id)
+                    if conversation:
+                        logger.info(
+                            "Resolved conversation for status update by wa_message_id",
+                            extra={
+                                "wa_message_id": status_wa_id,
+                                "conversation_id": str(conversation.id),
+                                "event_id": conversation.event_id,
+                            }
+                        )
 
+            # Fallback: if no conversation found by wa_message_id, use guest_phone
             if not conversation and guest_phone:
-                conversation = await self._get_latest_conversation(session, guest_phone)
+                logger.info(
+                    "Falling back to resolve conversation for status update by guest_phone",
+                    extra={"guest_phone": guest_phone, "wa_message_id": status_wa_id}
+                )
+                conversation = await self._get_latest_active_conversation(session, guest_phone)
+                if conversation:
+                    logger.info(
+                        "Resolved conversation for status update by guest_phone (most recent active)",
+                        extra={
+                            "guest_phone": guest_phone,
+                            "conversation_id": str(conversation.id),
+                            "event_id": conversation.event_id,
+                        }
+                    )
 
             if not conversation:
                 logger.warning(
