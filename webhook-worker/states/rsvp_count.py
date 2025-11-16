@@ -1,9 +1,11 @@
 from typing import Any, Dict, Optional
+import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from states.base_state import BaseState
+from utils.phone import normalize_phone
 
 
 class RsvpCountState(BaseState):
@@ -27,23 +29,48 @@ class RsvpCountState(BaseState):
             guest_count = int(text_content)
             if guest_count > 0:
                 # Update guest_count in guests table
-                event_id = str(conversation.event_id)
-                guest_phone = conversation.guest_phone
+                event_id_str = str(conversation.event_id)
+                guest_phone = normalize_phone(conversation.guest_phone)
+                
+                if not guest_phone:
+                    logger.warning(f"Cannot update guest_count: invalid guest_phone")
+                    return
                 
                 logger.info(f"Updating guest_count to {guest_count} for guest {guest_phone}")
                 
-                result = await session.execute(
-                    text("""
-                        UPDATE guests 
-                        SET guest_count = :guest_count
-                        WHERE phone = :phone AND event_id = :event_id
-                    """),
-                    {
-                        "guest_count": guest_count,
-                        "phone": guest_phone,
-                        "event_id": event_id
-                    }
-                )
+                # Try to convert event_id to UUID if it's a valid UUID string
+                try:
+                    event_id_uuid = uuid.UUID(event_id_str) if event_id_str else None
+                except (ValueError, AttributeError):
+                    event_id_uuid = None
+                
+                # Try both UUID and string formats
+                if event_id_uuid:
+                    result = await session.execute(
+                        text("""
+                            UPDATE guests 
+                            SET guest_count = :guest_count
+                            WHERE phone = :phone AND event_id = :event_id::uuid
+                        """),
+                        {
+                            "guest_count": guest_count,
+                            "phone": guest_phone,
+                            "event_id": str(event_id_uuid)
+                        }
+                    )
+                else:
+                    result = await session.execute(
+                        text("""
+                            UPDATE guests 
+                            SET guest_count = :guest_count
+                            WHERE phone = :phone AND event_id::text = :event_id
+                        """),
+                        {
+                            "guest_count": guest_count,
+                            "phone": guest_phone,
+                            "event_id": event_id_str
+                        }
+                    )
                 if result.rowcount > 0:
                     await session.commit()
                     logger.info(f"Successfully updated guest_count to {guest_count}, rows updated: {result.rowcount}")

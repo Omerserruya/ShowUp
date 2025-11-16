@@ -2,9 +2,11 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, Optional, Tuple, List
 from datetime import datetime
+import uuid
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from utils.phone import normalize_phone
 
 # מיפוי של שמות הימים באנגלית לעברית
 WEEKDAY_HEBREW = {
@@ -70,38 +72,77 @@ class BaseState:
         # Update last_response for any incoming message related to the conversation
         # This is a base implementation that can be overridden by child classes
         # Child classes should call super().process_incoming() if they want to keep this behavior
-        event_id = str(conversation.event_id)
-        guest_phone = conversation.guest_phone
+        event_id_str = str(conversation.event_id)
+        guest_phone = normalize_phone(conversation.guest_phone)
         
         logger = __import__('logging').getLogger(__name__)
         logger.info(
             f"Updating last_response for guest",
             extra={
                 "guest_phone": guest_phone,
-                "event_id": event_id,
-                "state": self.id
+                "event_id": event_id_str,
+                "state": self.id,
+                "conversation_event_id": conversation.event_id
             }
         )
         
+        if not guest_phone:
+            logger.warning(f"Cannot update last_response: invalid guest_phone")
+            return
+        
         try:
-            result = await session.execute(
-                text("""
-                    UPDATE guests 
-                    SET last_response = :last_response
-                    WHERE phone = :phone AND event_id = :event_id
-                """),
-                {
-                    "last_response": datetime.now(),
-                    "phone": guest_phone,
-                    "event_id": event_id
-                }
-            )
+            # Try to convert event_id to UUID if it's a valid UUID string
+            try:
+                event_id_uuid = uuid.UUID(event_id_str) if event_id_str else None
+            except (ValueError, AttributeError):
+                event_id_uuid = None
+                logger.warning(f"Invalid UUID format for event_id: {event_id_str}")
+            
+            # Try both UUID and string formats
+            if event_id_uuid:
+                result = await session.execute(
+                    text("""
+                        UPDATE guests 
+                        SET last_response = :last_response
+                        WHERE phone = :phone AND event_id = :event_id::uuid
+                    """),
+                    {
+                        "last_response": datetime.now(),
+                        "phone": guest_phone,
+                        "event_id": str(event_id_uuid)
+                    }
+                )
+            else:
+                result = await session.execute(
+                    text("""
+                        UPDATE guests 
+                        SET last_response = :last_response
+                        WHERE phone = :phone AND event_id::text = :event_id
+                    """),
+                    {
+                        "last_response": datetime.now(),
+                        "phone": guest_phone,
+                        "event_id": event_id_str
+                    }
+                )
+            
             # Only commit if we actually updated a row
             if result.rowcount > 0:
                 await session.commit()
                 logger.info(f"Successfully updated last_response for guest {guest_phone}, rows updated: {result.rowcount}")
             else:
-                logger.warning(f"No rows updated for guest {guest_phone} with event_id {event_id}")
+                logger.warning(f"No rows updated for guest {guest_phone} with event_id {event_id_str}. Checking if guest exists...")
+                # Debug: check if guest exists
+                check_result = await session.execute(
+                    text("""
+                        SELECT phone, event_id::text as event_id_str 
+                        FROM guests 
+                        WHERE phone = :phone LIMIT 5
+                    """),
+                    {"phone": guest_phone}
+                )
+                existing_guests = check_result.fetchall()
+                logger.warning(f"Found {len(existing_guests)} guests with phone {guest_phone}: {existing_guests}")
         except Exception as e:
             # Log error but don't fail the message processing
             logger.warning(f"Failed to update last_response: {e}", exc_info=True)
