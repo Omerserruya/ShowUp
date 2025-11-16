@@ -72,6 +72,14 @@ async def init_db() -> None:
             
             # Ensure new columns exist
             await conn.execute(text("ALTER TABLE messages_log ADD COLUMN IF NOT EXISTS status VARCHAR(32)"))
+            await conn.execute(text("ALTER TABLE messages_log ADD COLUMN IF NOT EXISTS guest_phone VARCHAR(64)"))
+            
+            # Create index on guest_phone + direction for efficient free-text resolution queries
+            await conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_messages_log_guest_phone_direction_created
+                    ON messages_log (guest_phone, direction, created_at DESC)
+                    WHERE guest_phone IS NOT NULL
+            """))
             
             # Create indexes and constraints for conversations table
             await _create_conversation_indexes(conn)

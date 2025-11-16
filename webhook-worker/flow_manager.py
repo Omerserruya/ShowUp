@@ -108,9 +108,35 @@ class FlowManager:
         await session.commit()
         self.current_state = new_state
 
-    async def log_message(self, session: AsyncSession, *, conversation_id, wa_message_id, direction, message_type, reply_to_id, payload, state, status: Optional[str] = None) -> MessageLog:
+    async def log_message(
+        self,
+        session: AsyncSession,
+        *,
+        conversation_id,
+        wa_message_id,
+        direction,
+        message_type,
+        reply_to_id,
+        payload,
+        state,
+        status: Optional[str] = None,
+        guest_phone: Optional[str] = None,
+    ) -> MessageLog:
+        """
+        Log a message to messages_log.
+        
+        If guest_phone is not provided, it will be fetched from the conversation.
+        This ensures guest_phone is always populated for efficient queries.
+        """
+        # If guest_phone not provided, fetch it from the conversation
+        if not guest_phone and conversation_id:
+            conv = await session.get(Conversation, conversation_id)
+            if conv:
+                guest_phone = conv.guest_phone
+        
         entry = MessageLog(
             conversation_id=conversation_id,
+            guest_phone=guest_phone,  # Denormalized for efficient queries
             wa_message_id=wa_message_id,
             direction=direction,
             message_type=message_type,
@@ -179,14 +205,18 @@ class FlowManager:
            - This ensures replies are always associated with the correct conversation/event
         
         2. **Fallback Resolution (by guest_phone via last outgoing message)**: If no context_id or step 1 fails:
-           - CRITICAL: Find the most recent outgoing message (system → guest) for this guest_phone
+           - CRITICAL: Query messages_log directly by guest_phone (denormalized field) for efficiency
+           - Find the most recent outgoing message (system → guest) where:
+             * guest_phone = :guest_phone
+             * direction = 'outgoing'
+             * Ordered by created_at DESC, limit 1
            - From that message, get:
              * conversation_id → the correct conversation
              * event_id (via conversation) → the correct event
              * state (from message) → the exact state when that message was sent
            - This is the PRIMARY rule for free-text messages (not a recovery fallback)
            - It ensures multi-event scenarios work correctly and the flow continues from where it left off
-           - Only if no outgoing messages exist, fall back to most recent active conversation by updated_at
+           - Only if no outgoing messages exist in messages_log, fall back to most recent active conversation by updated_at
         
         This design ensures:
         - Quick replies (with context_id) → always go to the exact conversation/event referenced
@@ -273,18 +303,19 @@ class FlowManager:
         # - We get the correct conversation/event/state from the actual message flow
         # - Multi-event scenarios work correctly (same phone, different events)
         # - The state machine continues from where we left off in the conversation
+        # 
+        # This is the PRIMARY rule for free-text resolution, not a recovery fallback.
         logger.info(
-            "Falling back to resolve conversation by guest_phone (using most recent outgoing message)",
+            "Falling back to resolve conversation by guest_phone (using most recent outgoing message from messages_log)",
             extra={"guest_phone": guest_phone, "context_id": context_id}
         )
         
-        # Find the most recent outgoing message (system → guest) for this phone number
-        # This tells us exactly which conversation/event/state we're continuing from
+        # Query messages_log directly by guest_phone (denormalized field for efficiency)
+        # This is the primary free-text resolution path
         res = await session.execute(
             select(MessageLog)
-            .join(Conversation, MessageLog.conversation_id == Conversation.id)
             .where(
-                Conversation.guest_phone == guest_phone,
+                MessageLog.guest_phone == guest_phone,
                 MessageLog.direction == "outgoing"
             )
             .order_by(MessageLog.created_at.desc())
@@ -303,7 +334,7 @@ class FlowManager:
                 effective_event_id = conversation.event_id
                 
                 logger.info(
-                    "Resolved conversation by guest_phone (using most recent outgoing message)",
+                    "Resolved conversation by guest_phone (using most recent outgoing message from messages_log)",
                     extra={
                         "guest_phone": guest_phone,
                         "conversation_id": str(conversation.id),
@@ -311,6 +342,7 @@ class FlowManager:
                         "state_from_message": effective_state,
                         "conversation_current_state": conversation.current_state,
                         "message_created_at": latest_outgoing_message.created_at.isoformat() if latest_outgoing_message.created_at else None,
+                        "message_log_id": latest_outgoing_message.id,
                     }
                 )
                 
@@ -330,11 +362,16 @@ class FlowManager:
                         "conversation_id": latest_outgoing_message.conversation_id,
                     }
                 )
+        else:
+            logger.info(
+                "No outgoing messages found in messages_log for guest_phone",
+                extra={"guest_phone": guest_phone}
+            )
         
         # If no outgoing message found, try fallback to most recent active conversation
         # This is a last resort when no messages have been logged yet
         logger.info(
-            "No outgoing messages found, trying fallback to most recent active conversation",
+            "No outgoing messages found in messages_log, trying fallback to most recent active conversation",
             extra={"guest_phone": guest_phone}
         )
         
