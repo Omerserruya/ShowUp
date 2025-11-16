@@ -67,7 +67,33 @@ class BaseState:
         return None
 
     async def process_incoming(self, session: AsyncSession, message: Dict[str, Any], conversation: Any) -> None:
-        return None
+        # Update last_response for any incoming message related to the conversation
+        # This is a base implementation that can be overridden by child classes
+        # Child classes should call super().process_incoming() if they want to keep this behavior
+        event_id = str(conversation.event_id)
+        guest_phone = conversation.guest_phone
+        
+        try:
+            result = await session.execute(
+                text("""
+                    UPDATE guests 
+                    SET last_response = :last_response
+                    WHERE phone = :phone AND event_id = :event_id
+                """),
+                {
+                    "last_response": datetime.now(),
+                    "phone": guest_phone,
+                    "event_id": event_id
+                }
+            )
+            # Only commit if we actually updated a row
+            if result.rowcount > 0:
+                await session.commit()
+        except Exception as e:
+            # Log error but don't fail the message processing
+            logger = __import__('logging').getLogger(__name__)
+            logger.warning(f"Failed to update last_response: {e}")
+            await session.rollback()
 
     def get_next_state(self, message: Dict[str, Any]) -> str:
         text = (message.get("text") or "").strip()
