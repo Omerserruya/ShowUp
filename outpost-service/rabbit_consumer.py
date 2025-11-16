@@ -19,8 +19,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 # Redis removed - using Postgres messages_log instead
 
 from whatsapp_sender import WhatsAppSender
-import psycopg2
-from psycopg2.extras import RealDictCursor
+from db_utils import get_conversation_db
 
 
 class RabbitMQConsumer:
@@ -41,199 +40,8 @@ class RabbitMQConsumer:
         self.password = os.getenv("RABBITMQ_PASSWORD")
         self.queue_name = os.getenv("OUTPOST_QUEUE_NAME")
 
-        # Postgres for logging WhatsApp message IDs (opt-in via OUTPOST_ENABLE_DB_LOGGING)
-        enable_db_logging = (os.getenv('OUTPOST_ENABLE_DB_LOGGING', 'false').lower() == 'true')
-        self.pg_conn = None
-        self.db_url = None
-        self.db_config = {}
-        
-        if enable_db_logging:
-            db_user = os.getenv('DB_USER')
-            db_password = os.getenv('DB_PASSWORD')
-            db_host = os.getenv('DB_HOST')
-            db_port = os.getenv('DB_PORT')
-            db_name = os.getenv('DB_NAME')
-
-            self.logger.info(
-                "DB logging enabled, will attempt to connect to Postgres",
-                extra={
-                    "db_host": db_host,
-                    "db_port": db_port,
-                    "db_name": db_name,
-                    "db_user": db_user if db_user else None
-                }
-            )
-
-            if all([db_user, db_password, db_host, db_port, db_name]):
-                self.db_url = f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-                self.db_config = {
-                    'user': db_user,
-                    'password': db_password,
-                    'host': db_host,
-                    'port': db_port,
-                    'database': db_name
-                }
-                # Don't connect immediately - Postgres might not be ready yet
-                # Will connect on first use with retry logic
-            else:
-                missing = [k for k, v in {'DB_USER': db_user, 'DB_PASSWORD': db_password, 'DB_HOST': db_host, 'DB_PORT': db_port, 'DB_NAME': db_name}.items() if not v]
-                self.logger.warning(f"DB logging disabled: missing DB_* envs: {missing}")
-        else:
-            self.logger.info("DB logging disabled: OUTPOST_ENABLE_DB_LOGGING is not 'true'")
-
-        # Redis removed - all message context is stored in Postgres messages_log table
-
-    def _ensure_pg_connection(self) -> bool:
-        """Ensure Postgres connection is established. Returns True if connected."""
-        if self.pg_conn and not self.pg_conn.closed:
-            return True
-        
-        if not self.db_url:
-            return False
-        
-        try:
-            self.pg_conn = psycopg2.connect(self.db_url)
-            self.pg_conn.autocommit = True
-            self.logger.info("Successfully connected to Postgres for message logging")
-            return True
-        except Exception as e:
-            self.logger.warning(f"Could not connect to Postgres for logging: {e}")
-            self.pg_conn = None
-            return False
-    
-    def _ensure_or_get_conversation(self, event_id: Optional[str], guest_phone: Optional[str], guest_id: Optional[str] = None, initial_state: str = "rsvp_invite") -> Optional[str]:
-        """Ensure a Conversation exists for guest_phone + event_id. Returns conversation_id UUID."""
-        self.logger.info(
-            "Attempting to ensure/get conversation",
-            extra={
-                "event_id": event_id,
-                "guest_phone": guest_phone,
-                "guest_id": guest_id,
-                "initial_state": initial_state
-            }
-        )
-        
-        # Ensure Postgres connection
-        if not self._ensure_pg_connection():
-            self.logger.warning("Postgres connection not available for conversation creation")
-            return None
-        
-        if not event_id or not guest_phone:
-            self.logger.warning(
-                "Missing required params for conversation",
-                extra={"event_id": event_id, "guest_phone": guest_phone}
-            )
-            return None
-        
-        # Validate event_id is a UUID (not wamid)
-        try:
-            import uuid
-            uuid.UUID(event_id)  # Will raise ValueError if not a valid UUID
-        except (ValueError, AttributeError):
-            self.logger.warning(
-                "event_id is not a valid UUID, skipping conversation creation",
-                extra={"event_id": event_id, "event_id_type": type(event_id).__name__}
-            )
-            return None
-        
-        try:
-            with self.pg_conn.cursor() as cur:
-                # Check if conversation exists
-                cur.execute(
-                    """
-                    SELECT id FROM conversations
-                    WHERE guest_phone = %s AND event_id = %s AND active = true
-                    LIMIT 1
-                    """,
-                    (guest_phone, event_id),
-                )
-                row = cur.fetchone()
-                if row:
-                    return str(row[0])
-                
-                # Create new conversation
-                # Generate UUID for id (Postgres doesn't auto-generate UUIDs without extension)
-                import uuid
-                conversation_id = str(uuid.uuid4())
-                
-                # guest_id can be None, so handle it properly
-                if guest_id:
-                    cur.execute(
-                        """
-                        INSERT INTO conversations (id, guest_id, guest_phone, event_id, current_state, active)
-                        VALUES (%s::uuid, %s::uuid, %s, %s, %s, true)
-                        RETURNING id
-                        """,
-                        (conversation_id, guest_id, guest_phone, event_id, initial_state),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        INSERT INTO conversations (id, guest_phone, event_id, current_state, active)
-                        VALUES (%s::uuid, %s, %s, %s, true)
-                        RETURNING id
-                        """,
-                        (conversation_id, guest_phone, event_id, initial_state),
-                    )
-                row = cur.fetchone()
-                if row:
-                    self.logger.info(
-                        f"Created new conversation for guest {guest_phone} and event {event_id} | conversation_id={row[0]}"
-                    )
-                    return str(row[0])
-                return None
-        except Exception as e:
-            self.logger.warning(f"Failed to ensure/get conversation: {e}", exc_info=True)
-            return None
-
-    def _get_conversation_state(self, conversation_id: str) -> Optional[str]:
-        """Get the current_state of a conversation from the database."""
-        if not self._ensure_pg_connection():
-            return None
-        try:
-            with self.pg_conn.cursor() as cur:
-                cur.execute(
-                    "SELECT current_state FROM conversations WHERE id = %s::uuid LIMIT 1",
-                    (conversation_id,)
-                )
-                row = cur.fetchone()
-                return row[0] if row else None
-        except Exception as e:
-            self.logger.warning(f"Failed to get conversation state: {e}", exc_info=True)
-            return None
-
-    def _log_outgoing_whatsapp_id(self, conversation_id: Optional[str], message_type: str, state: Optional[str], whatsapp_message_id: str, payload: Optional[str] = None):
-        """Log outgoing message to messages_log table with conversation_id."""
-        # Ensure Postgres connection
-        if not self._ensure_pg_connection():
-            self.logger.warning("Postgres connection not available, cannot log to messages_log")
-            return
-        if not conversation_id:
-            self.logger.warning("Skipping message log - no conversation_id provided")
-            return
-        try:
-            with self.pg_conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO messages_log (conversation_id, wa_message_id, direction, message_type, payload, state, created_at)
-                    VALUES (%s::uuid, %s, 'outgoing', %s, %s, %s, NOW())
-                    """,
-                    (conversation_id, whatsapp_message_id, message_type, payload, state)
-                )
-                self.logger.info(
-                    "Logged outgoing message to messages_log",
-                    extra={
-                        "conversation_id": conversation_id,
-                        "wa_message_id": whatsapp_message_id,
-                        "message_type": message_type,
-                        "state": state
-                    }
-                )
-        except Exception as e:
-            self.logger.error(f"Failed to log WhatsApp message id: {e}", exc_info=True)
-
-    # Redis removed - message context is stored in Postgres messages_log table
-    # No need for separate Redis storage since all data is in messages_log with wa_message_id, state, conversation_id
+        # Database utilities for conversation management and message logging
+        self.conversation_db = get_conversation_db()
     
     @retry(
         stop=stop_after_attempt(5),
@@ -373,7 +181,7 @@ class RabbitMQConsumer:
                                 )
                                 # Always use "rsvp_invite" as initial state for new conversations
                                 # The "state" field in message_data is the template name, not the conversation state
-                                conversation_id = self._ensure_or_get_conversation(
+                                conversation_id = self.conversation_db.ensure_or_get_conversation(
                                     event_id=message_data.get("event_id"),
                                     guest_phone=message_data.get("recipient"),
                                     guest_id=message_data.get("guest_id"),
@@ -397,9 +205,9 @@ class RabbitMQConsumer:
                                 # Get the actual conversation state from the database
                                 # For template messages (campaigns), the state should be "rsvp_invite"
                                 # The "state" field in message_data is the template name, not the conversation state
-                                actual_state = self._get_conversation_state(conversation_id) or "rsvp_invite"
+                                actual_state = self.conversation_db.get_conversation_state(conversation_id) or "rsvp_invite"
                                 payload_json = json.dumps(message_data, ensure_ascii=False)[:4000]
-                                self._log_outgoing_whatsapp_id(
+                                self.conversation_db.log_outgoing_message(
                                     conversation_id=conversation_id,
                                     message_type="template",
                                     state=actual_state,
@@ -504,20 +312,20 @@ class RabbitMQConsumer:
                             # Ensure conversation exists before logging
                             conversation_id = message_data.get("conversation_id")
                             if not conversation_id:
-                # Always use "rsvp_invite" as initial state for new conversations
-                # The "state" field in message_data is the template name, not the conversation state
-                conversation_id = self._ensure_or_get_conversation(
-                    event_id=message_data.get("event_id"),
-                    guest_phone=message_data.get("recipient"),
-                    guest_id=message_data.get("guest_id"),
-                    initial_state="rsvp_invite"
-                )
+                                # Always use "rsvp_invite" as initial state for new conversations
+                                # The "state" field in message_data is the template name, not the conversation state
+                                conversation_id = self.conversation_db.ensure_or_get_conversation(
+                                    event_id=message_data.get("event_id"),
+                                    guest_phone=message_data.get("recipient"),
+                                    guest_id=message_data.get("guest_id"),
+                                    initial_state="rsvp_invite"
+                                )
                             
                             if conversation_id:
                                 # Get the actual conversation state from the database
-                                actual_state = self._get_conversation_state(conversation_id) or message_data.get("state", "rsvp_invite")
+                                actual_state = self.conversation_db.get_conversation_state(conversation_id) or message_data.get("state", "rsvp_invite")
                                 payload_json = json.dumps(message_data, ensure_ascii=False)[:4000]
-                                self._log_outgoing_whatsapp_id(
+                                self.conversation_db.log_outgoing_message(
                                     conversation_id=conversation_id,
                                     message_type="free_text",
                                     state=actual_state,
@@ -615,20 +423,20 @@ class RabbitMQConsumer:
                             # Ensure conversation exists before logging
                             conversation_id = message_data.get("conversation_id")
                             if not conversation_id:
-                # Always use "rsvp_invite" as initial state for new conversations
-                # The "state" field in message_data is the template name, not the conversation state
-                conversation_id = self._ensure_or_get_conversation(
-                    event_id=message_data.get("event_id"),
-                    guest_phone=message_data.get("recipient"),
-                    guest_id=message_data.get("guest_id"),
-                    initial_state="rsvp_invite"
-                )
+                                # Always use "rsvp_invite" as initial state for new conversations
+                                # The "state" field in message_data is the template name, not the conversation state
+                                conversation_id = self.conversation_db.ensure_or_get_conversation(
+                                    event_id=message_data.get("event_id"),
+                                    guest_phone=message_data.get("recipient"),
+                                    guest_id=message_data.get("guest_id"),
+                                    initial_state="rsvp_invite"
+                                )
                             
                             if conversation_id:
                                 # Get the actual conversation state from the database
-                                actual_state = self._get_conversation_state(conversation_id) or message_data.get("state", "rsvp_invite")
+                                actual_state = self.conversation_db.get_conversation_state(conversation_id) or message_data.get("state", "rsvp_invite")
                                 payload_json = json.dumps(message_data, ensure_ascii=False)[:4000]
-                                self._log_outgoing_whatsapp_id(
+                                self.conversation_db.log_outgoing_message(
                                     conversation_id=conversation_id,
                                     message_type="interactive",
                                     state=actual_state,
