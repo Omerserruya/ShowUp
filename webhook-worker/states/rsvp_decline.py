@@ -21,6 +21,11 @@ class RsvpDeclineState(BaseState):
         # Check if the response is "בסוף נוכל להגיע" (changing mind to attend)
         text_content = (message.get("text") or "").strip()
         
+        # Only update status if there's a meaningful response
+        # Don't update on empty messages or when just entering the state
+        if not text_content:
+            return
+        
         # Get conversation values
         try:
             guest_id_value = conversation.guest_id
@@ -33,14 +38,16 @@ class RsvpDeclineState(BaseState):
         
         logger = __import__('logging').getLogger(__name__)
         
-        if text_content == "בסוף נוכל להגיע":
-            # Guest changed mind - update status to 'attending'
-            logger.info(f"Guest changed mind, updating status to 'attending'")
-            status_value = "attending"
-        else:
-            # Guest confirmed decline - update status to 'declined'
-            logger.info(f"Guest confirmed decline, updating status to 'declined'")
-            status_value = "declined"
+        # Only update status if guest changed mind to attend
+        # Status was already set to 'declined' or 'maybe' in rsvp_invite when they chose decline
+        if text_content != "בסוף נוכל להגיע":
+            # Not changing mind - status already set in rsvp_invite, no need to update
+            logger.debug(f"Guest in decline state with message '{text_content}', status already set in rsvp_invite")
+            return
+        
+        # Guest changed mind - update status to 'attending'
+        logger.info(f"Guest changed mind, updating status to 'attending'")
+        status_value = "attending"
         
         try:
             # First try to update by guest_id if available (most reliable)
