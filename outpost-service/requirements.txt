@@ -14,3 +14,6 @@ python-json-logger==2.0.7
 
 # Environment variable management
 python-dotenv==1.0.0
+
+# Postgres driver (binary distribution to avoid build deps)
+psycopg2-binary==2.9.9

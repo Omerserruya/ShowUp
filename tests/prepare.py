@@ -3,15 +3,19 @@ import random
 import string
 from datetime import datetime, timedelta, timezone
 
-BASE_URL = "http://localhost/api"
-TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMmNmYmIzZWQtNjkwNy00MDBjLTg1MDAtNzdmN2ZjY2I4NjgxIiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzYxMTQwMDY0LCJleHAiOjE3NjExNDM2NjR9.p8RbJAUc62oURb_dzBh9fML2saKJMgpwdvp9TUqzKeM"
+BASE_URL = "https://dev.28042000.xyz/api"
+TOKEN= "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiY2VkYjEwZGMtYjZhZS00ODllLTg4Y2EtYmM3MzkyYjM0MmU5Iiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzYzMzAwMjI4LCJleHAiOjE3NjMzODY2Mjh9.Yo8PU9gP19o4SOf5LNqtpSSo8dNZEf0FVnm8DWwPaHQ"
 
 def create_event(headers):
     payload = {
-        "name": "Tested Event",
-        "description": "Optional text",
+        "name": "חתונה",
+        "description": "חתונה של עומר ושני",
         "event_date": "2025-12-31T18:00:00Z",
-        "location": "Optional location"
+        "location": "אולמי חרטא",
+        "inviters": [
+        {"fn": "שני", "ln": "יצחק"},
+        {"fn": "עומר", "ln": "צרויה"}
+    ]
     }
     resp = requests.post(f"{BASE_URL}/events", json=payload, headers=headers)
     resp.raise_for_status()
@@ -24,13 +28,9 @@ def create_guests(event_id, headers):
     items.append({
         "name": "עומר צרויה",
         "phone": "+972525401686",
-        "guest_count": 1
+        "import_count": 1
     })
-    items.append({
-        "name": "שני יצחק",
-        "phone": "+972538852020",
-        "guest_count": 1
-    })
+  
     payload = {"items": items}
     resp = requests.post(f"{BASE_URL}/guests?event_id={event_id}", json=payload, headers=headers)
     resp.raise_for_status()
@@ -40,8 +40,8 @@ from datetime import datetime, timedelta, timezone
 
 def create_campaigns(event_id, headers):
     now = datetime.now(timezone.utc)
-    first_time = (now + timedelta(minutes=2)).isoformat().replace("+00:00", "Z")
-    second_time = (now + timedelta(minutes=4)).isoformat().replace("+00:00", "Z")
+    first_time = (now + timedelta(seconds=62)).isoformat().replace("+00:00", "Z")
+    second_time = (now + timedelta(minutes=16)).isoformat().replace("+00:00", "Z")
 
     payload = {
         "items": [
@@ -54,7 +54,7 @@ def create_campaigns(event_id, headers):
             },
             {
                 "name": "Reminder",
-                "template": "reminder",
+                "template": "event_no_pic",
                 "channel": "whatsapp",
                 "schedule_time": second_time,
                 "status": "pending"

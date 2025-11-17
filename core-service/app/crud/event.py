@@ -46,8 +46,14 @@ def create_event(db: Session, data: EventCreate) -> Event:
     if data.owners:
         owners_list = [str(owner) for owner in data.owners]
     
+    # Convert inviters from Pydantic models to dicts for JSON storage
+    inviters_list = []
+    if data.inviters:
+        inviters_list = [{"fn": inviter.fn, "ln": inviter.ln} for inviter in data.inviters]
+    
     event = Event(
         owners=owners_list,
+        inviters=inviters_list,
         name=data.name,
         description=data.description,
         event_date=data.event_date,
@@ -62,6 +68,9 @@ def create_event(db: Session, data: EventCreate) -> Event:
 def update_event(db: Session, event: Event, data: EventUpdate) -> Event:
     if data.owners is not None:
         event.owners = [str(owner) for owner in data.owners]
+    if data.inviters is not None:
+        # Convert inviters from Pydantic models to dicts for JSON storage
+        event.inviters = [{"fn": inviter.fn, "ln": inviter.ln} for inviter in data.inviters]
     if data.name is not None:
         event.name = data.name
     if data.description is not None:

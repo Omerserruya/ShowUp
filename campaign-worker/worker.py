@@ -50,6 +50,12 @@ def process_campaign(conn, channel, campaign_id: str):
     if not event_data:
         log_json(logger, logging.ERROR, "Event not found", campaign_id=campaign_id, event_id=event_id)
         return
+    
+    # Log event data including inviters for debugging
+    log_json(logger, logging.INFO, "Fetched event data", 
+             event_id=event_id, 
+             inviters=event_data.get("inviters"),
+             inviters_type=type(event_data.get("inviters")).__name__ if event_data.get("inviters") else "None")
 
     # Get template handler
     template_handler = get_template_handler(template_name)
@@ -84,11 +90,19 @@ def process_campaign(conn, channel, campaign_id: str):
             continue
 
         # Build outpost message payload
+        # outpost-service will create Conversation when sending the message
         message = {
             "platform": "WA",
             "recipient": str(guest.get("phone")),
             "template": template_name,
             "parameters": params,
+            "message_type": "template",  # Campaign messages are template-based
+            "source": "campaign_worker",
+            "event_id": event_id,  # Real event UUID, not wamid
+            # Use template name as a logical state marker for logging/traceability
+            "state": template_name,
+            "campaign_id": campaign_id,
+            "guest_id": guest_id
         }
 
         try:
