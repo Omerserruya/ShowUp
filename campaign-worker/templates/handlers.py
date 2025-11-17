@@ -1,18 +1,20 @@
 """
-Template handlers for different campaign types.
+Template-related helpers for campaign selection and WhatsApp parameter building.
 
-Each handler function:
-1. Takes (conn, event_id, campaign_data) as parameters
-2. Returns a list of guests who should receive the message
-3. Defines build_params function for parameter construction
+Audience selectors:
+    select_* functions decide which guests receive a campaign.
+
+Parameter builders:
+    params_* functions produce the WhatsApp template body parameters
+    in exactly the same order/value set used before this refactor.
 """
 
 from typing import List, Dict, Any
 from datetime import datetime
-from db import fetch_guests_for_event
-from datetime import datetime
 import locale
 import logging
+
+from db import fetch_guests_for_event
 
 # הגדר את הלוקל לעברית (בלינוקס צריך לוודא שה-locale קיים)
 try:
@@ -73,51 +75,68 @@ def _format_inviters(inviters: List[Dict[str, str]]) -> str:
     return result
 
 
-def save_the_date(conn, event_id: str, event_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Send to all guests with phone numbers."""
+# ---------------------------------------------------------------------------
+# Audience selectors
+# ---------------------------------------------------------------------------
+
+def select_all_guests(conn, event_id: str, event_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Return every guest that has a phone number (previous default behavior)."""
     guests = fetch_guests_for_event(conn, event_id)
     return [g for g in guests if g.get("phone")]
 
 
+def select_rsvp_pending_guests(conn, event_id: str, event_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Return guests who were previously considered "pending" for RSVP reminders.
 
-def rsvp_reminder(conn, event_id: str, event_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Send to guests who haven't responded to RSVP."""
+    NOTE: This intentionally mirrors the legacy implementation, including the fact
+    that only guests with phone numbers and status == 'invited' are returned.
+    """
     guests = fetch_guests_for_event(conn, event_id)
     return [g for g in guests if g.get("phone") and g.get("status") == "invited"]
 
 
-def build_params(template_name: str, guest: Dict[str, Any], event_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Build template parameters based on template name and guest data."""
-    base_params = {"name": guest.get("name", "")}
-    if template_name == "event_no_pic":
-        return {
-            "1": _format_event_date(_serialize_datetime(event_data.get("event_date", ""))),
-            "2": _format_event_time(_serialize_datetime(event_data.get("event_date", ""))),
-            "3":  event_data.get("location", ""),
-            "4": _format_inviters(event_data.get("inviters", []))
-        }
-    if template_name == "general_rsvp":
-        return {
-            "1": "event type",
-            "2": _format_inviters(event_data.get("inviters", [])),
-            "3": _format_event_date(_serialize_datetime(event_data.get("event_date", ""))),
-            "4":_format_event_time(_serialize_datetime(event_data.get("event_date", ""))),
-            "5":  event_data.get("location", ""),
-            "6": guest.get("name", "testname")
-        }
-    elif template_name == "reminder":
-        return {
-            **base_params,
-            "event_name": event_data.get("name", ""),
-            "date": _serialize_datetime(event_data.get("event_date", "")),
-        }
-    elif template_name == "rsvp_reminder":
-        return {
-            **base_params,
-            "event_name": event_data.get("name", ""),
-            "date": _serialize_datetime(event_data.get("event_date", "")),
-            "rsvp_deadline": _serialize_datetime(event_data.get("rsvp_deadline", "")),
-        }
-    else:
-        # Default fallback
-        return base_params
+# ---------------------------------------------------------------------------
+# Parameter builders (same values/order as the previous build_params logic)
+# ---------------------------------------------------------------------------
+
+def params_simple_name(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Dict[str, Any]:
+    """Fallback parameters used for templates like save_the_date."""
+    return {"name": guest.get("name", "")}
+
+
+def params_event_no_pic(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "1": _format_event_date(_serialize_datetime(event_data.get("event_date", ""))),
+        "2": _format_event_time(_serialize_datetime(event_data.get("event_date", ""))),
+        "3": event_data.get("location", ""),
+        "4": _format_inviters(event_data.get("inviters", [])),
+    }
+
+
+def params_general_rsvp(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "1": "event type",
+        "2": _format_inviters(event_data.get("inviters", [])),
+        "3": _format_event_date(_serialize_datetime(event_data.get("event_date", ""))),
+        "4": _format_event_time(_serialize_datetime(event_data.get("event_date", ""))),
+        "5": event_data.get("location", ""),
+        "6": guest.get("name", "testname"),
+    }
+
+
+def params_reminder(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        **params_simple_name(event_data, guest),
+        "event_name": event_data.get("name", ""),
+        "date": _serialize_datetime(event_data.get("event_date", "")),
+    }
+
+
+def params_rsvp_reminder(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        **params_simple_name(event_data, guest),
+        "event_name": event_data.get("name", ""),
+        "date": _serialize_datetime(event_data.get("event_date", "")),
+        "rsvp_deadline": _serialize_datetime(event_data.get("rsvp_deadline", "")),
+    }
