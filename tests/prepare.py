@@ -53,8 +53,8 @@ def create_campaigns(event_id, headers):
                 "status": "pending"
             },
             {
-                "name": "Reminder",
-                "template": "event_no_pic",
+                "name": "reminder",
+                "template": "reminder",
                 "channel": "whatsapp",
                 "schedule_time": second_time,
                 "status": "pending"

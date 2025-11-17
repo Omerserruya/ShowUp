@@ -160,9 +160,9 @@ def params_general_rsvp(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Di
 
 def params_reminder(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Dict[str, Any]:
     return {
-        **params_simple_name(event_data, guest),
+        "guest_name": guest.get("name", ""),
         "event_name": event_data.get("name", ""),
-        "date": _serialize_datetime(event_data.get("event_date", "")),
+        "inviters": _format_inviters(event_data.get("inviters", [])),
     }
 
 

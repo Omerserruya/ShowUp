@@ -72,13 +72,16 @@ class WhatsAppSender:
                 "text": text_value
             })
         
+        # Set language code: "reminder" template uses English, all others use Hebrew
+        language_code = "en" if template_name == "reminder" else "he"
+        
         payload = {
             "messaging_product": "whatsapp",
             "to": recipient,
             "type": "template",
             "template": {
                 "name": template_name,
-                "language": {"code": "he"},  # Hebrew language code
+                "language": {"code": language_code},
                 "components": [
                     {
                         "type": "body",

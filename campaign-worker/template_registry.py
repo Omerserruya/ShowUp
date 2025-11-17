@@ -57,7 +57,7 @@ TEMPLATE_SPECS: Dict[str, TemplateSpec] = {
     ),
     "reminder": TemplateSpec(
         wa_template="reminder",
-        audience_selector=select_all_guests,
+        audience_selector=select_pending_guests,
         params_builder=params_reminder,
     ),
 }
