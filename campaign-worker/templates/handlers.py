@@ -79,21 +79,54 @@ def _format_inviters(inviters: List[Dict[str, str]]) -> str:
 # Audience selectors
 # ---------------------------------------------------------------------------
 
+def _has_phone(guest: Dict[str, Any]) -> bool:
+    return bool(guest.get("phone"))
+
+
 def select_all_guests(conn, event_id: str, event_data: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Return every guest that has a phone number (previous default behavior)."""
     guests = fetch_guests_for_event(conn, event_id)
-    return [g for g in guests if g.get("phone")]
+    return [g for g in guests if _has_phone(g)]
 
 
-def select_rsvp_pending_guests(conn, event_id: str, event_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+def select_pending_guests(conn, event_id: str, event_data: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
-    Return guests who were previously considered "pending" for RSVP reminders.
-
-    NOTE: This intentionally mirrors the legacy implementation, including the fact
-    that only guests with phone numbers and status == 'invited' are returned.
+    Guests who haven't responded yet (status == 'invited').
+    Mirrors the existing RSVP flow definition of "pending".
     """
     guests = fetch_guests_for_event(conn, event_id)
-    return [g for g in guests if g.get("phone") and g.get("status") == "invited"]
+    return [g for g in guests if _has_phone(g) and (g.get("status") == "invited")]
+
+
+def select_attending_guests(conn, event_id: str, event_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Guests who confirmed attendance (status == 'attending')."""
+    guests = fetch_guests_for_event(conn, event_id)
+    return [g for g in guests if _has_phone(g) and (g.get("status") == "attending")]
+
+
+def select_attending_missing_count(conn, event_id: str, event_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Attending guests that still don't have a guest_count (NULL)."""
+    guests = fetch_guests_for_event(conn, event_id)
+    return [
+        g
+        for g in guests
+        if _has_phone(g) and (g.get("status") == "attending") and g.get("guest_count") is None
+    ]
+
+
+def select_attending_guests_with_table(conn, event_id: str, event_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Attending guests who already have a table assignment."""
+    guests = fetch_guests_for_event(conn, event_id)
+    return [
+        g
+        for g in guests
+        if _has_phone(g) and (g.get("status") == "attending") and g.get("table_number") is not None
+    ]
+
+
+# Backwards-compatible alias for existing registry usage
+def select_rsvp_pending_guests(conn, event_id: str, event_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return select_pending_guests(conn, event_id, event_data)
 
 
 # ---------------------------------------------------------------------------

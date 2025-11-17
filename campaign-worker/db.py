@@ -74,7 +74,14 @@ def fetch_guests_for_event(conn: psycopg2.extensions.connection, event_id: str) 
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
-            SELECT id, name, phone, email
+            SELECT
+                id,
+                name,
+                phone,
+                email,
+                status,
+                guest_count,
+                table_number
             FROM guests
             WHERE event_id = %s
             """,

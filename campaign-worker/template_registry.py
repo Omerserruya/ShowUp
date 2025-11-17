@@ -9,6 +9,10 @@ from typing import Any, Callable, Dict, List
 
 from templates.handlers import (
     select_all_guests,
+    select_pending_guests,
+    select_attending_guests,
+    select_attending_missing_count,
+    select_attending_guests_with_table,
     select_rsvp_pending_guests,
     params_simple_name,
     params_event_no_pic,
@@ -42,7 +46,7 @@ TEMPLATE_SPECS: Dict[str, TemplateSpec] = {
     ),
     "rsvp_reminder": TemplateSpec(
         wa_template="rsvp_reminder",
-        audience_selector=select_rsvp_pending_guests,
+        audience_selector=select_pending_guests,
         params_builder=params_rsvp_reminder,
     ),
     # Templates that previously relied on the default handler but had custom parameters
