@@ -27,7 +27,8 @@ Event management microservice for managing Events, Guests, and Campaigns. Provid
 | **phone**         | מספר טלפון                                            | `VARCHAR(20)`  |
 | **email**         | אימייל (אופציונלי)                                    | `VARCHAR(100)` |
 | **status**        | סטטוס הגעה (invited / attending / declined / unknown) | `VARCHAR(20)`  |
-| **guest_count**   | מספר כולל של משתתפים בהזמנה (למשל 3 אם בא עם משפחה)   | `INTEGER`      |
+| **import_count**  | כמות צפויה מצד בעלי האירוע (העלאה/ייבוא)             | `INTEGER`      |
+| **guest_count**   | כמות שאישר האורח בפועל (מתעדכן דרך WhatsApp)         | `INTEGER` (Nullable) |
 | **table_number**  |                                                       | `INTEGER`      |
 | **notes**         | הערות חופשיות כמו מנות וכו                            | `TEXT`         |
 | **last_response** | זמן התגובה האחרונה                                    | `TIMESTAMP`    |
@@ -112,7 +113,8 @@ Event management microservice for managing Events, Guests, and Campaigns. Provid
 	"name": "Alice Smith",
 	"phone": "+1234567890",
 	"email": "alice@example.com",
-	"guest_count": 2,
+	"import_count": 2,
+	"guest_count": null,
 	"table_number": 5,
 	"notes": "Vegetarian meal"
 }
@@ -127,7 +129,8 @@ Event management microservice for managing Events, Guests, and Campaigns. Provid
 				"name": "Alice Smith",
 				"phone": "+1234567890",
 				"email": "alice@example.com",
-				"guest_count": 2,
+				"import_count": 2,
+				"guest_count": null,
 				"table_number": 5,
 				"notes": "Vegetarian meal"
 			},
@@ -135,7 +138,8 @@ Event management microservice for managing Events, Guests, and Campaigns. Provid
 				"name": "Alice Smith",
 				"phone": "+1234567890",
 				"email": "alice@example.com",
-				"guest_count": 2,
+				"import_count": 2,
+				"guest_count": null,
 				"table_number": 5,
 				"notes": "Vegetarian meal"
 		}...
@@ -204,7 +208,8 @@ Event management microservice for managing Events, Guests, and Campaigns. Provid
 - **Phone Uniqueness**: Phone numbers must be unique per event (can exist across different events)
 - **Campaign Scheduling**: No two campaigns for the same event can have schedule_time within the configured minimum gap (default: 300 minutes/5 hours, configurable via `CAMPAIGN_MIN_GAP_MINUTES`)
 - **Table Numbers**: Must be between 1-128 if provided
-- **Guest Count**: Must be at least 1
+- **Import Count**: Defaults to 1 unless specified when uploading guests
+- **Guest Count**: Optional (NULL until guest replies); when provided must be at least 1
 - **Pagination**: Default page=1, page_size=20, max page_size=200
 - **Authentication**: All endpoints require valid JWT token (except health checks)
 ### Error Responses

@@ -69,7 +69,8 @@ class GuestBase(BaseModel):
     phone: str = Field(..., max_length=20)
     email: Optional[EmailStr] = None
     status: str = Field("invited", max_length=20)
-    guest_count: int = Field(1, ge=1)
+    import_count: int = Field(1, ge=1)
+    guest_count: Optional[int] = Field(default=None, ge=1)
     table_number: Optional[int] = Field(default=None, ge=1, le=128)
     notes: Optional[str] = None
     last_response: Optional[dt.datetime] = None
@@ -84,6 +85,7 @@ class GuestUpdate(BaseModel):
     phone: Optional[str] = Field(default=None, max_length=20)
     email: Optional[EmailStr] = None
     status: Optional[str] = Field(default=None, max_length=20)
+    import_count: Optional[int] = Field(default=None, ge=1)
     guest_count: Optional[int] = Field(default=None, ge=1)
     notes: Optional[str] = None
     last_response: Optional[dt.datetime] = None

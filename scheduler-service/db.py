@@ -80,13 +80,22 @@ def ensure_tables(conn: psycopg2.extensions.connection):
                 phone VARCHAR(20) NOT NULL,
                 email VARCHAR(100),
                 status VARCHAR(20) DEFAULT 'invited',
-                guest_count INTEGER DEFAULT 1 CHECK (guest_count >= 1),
+                import_count INTEGER NOT NULL DEFAULT 1 CHECK (import_count >= 1),
+                guest_count INTEGER CHECK (guest_count >= 1),
                 table_number INTEGER CHECK (table_number >= 1 AND table_number <= 128),
                 notes TEXT,
                 last_response TIMESTAMP,
                 created_at TIMESTAMP DEFAULT NOW()
             );
             """
+        )
+        cur.execute("ALTER TABLE guests ALTER COLUMN guest_count DROP DEFAULT")
+        cur.execute("ALTER TABLE guests ALTER COLUMN guest_count DROP NOT NULL")
+        cur.execute(
+            """
+            ALTER TABLE guests
+            ADD COLUMN IF NOT EXISTS import_count INTEGER NOT NULL DEFAULT 1 CHECK (import_count >= 1)
+        """
         )
         
         # Create messages_sent table if it doesn't exist

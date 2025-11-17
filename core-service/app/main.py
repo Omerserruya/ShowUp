@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from shared.auth.middleware import AuthMiddleware
 
 from app.db import Base, engine
+from app.migrations import apply_schema_patches
 from app.routers.events import router as events_router
 from app.routers.guests import router as guests_router
 from app.routers.campaigns import router as campaigns_router
@@ -43,7 +44,7 @@ def create_app() -> FastAPI:
             Base.metadata.create_all(bind=engine, checkfirst=True)
         else:
             logger.info("All tables already exist, skipping creation")
-            
+        apply_schema_patches(engine)
     except Exception as e:
         # Log error but don't crash - tables might already exist or there might be schema conflicts
         # This can happen if there's a type conflict (e.g., composite type with same name as table)

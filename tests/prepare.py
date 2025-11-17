@@ -28,7 +28,7 @@ def create_guests(event_id, headers):
     items.append({
         "name": "עומר צרויה",
         "phone": "+972525401686",
-        "guest_count": 1
+        "import_count": 1
     })
   
     payload = {"items": items}
