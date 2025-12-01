@@ -137,7 +137,7 @@ def params_simple_name(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Dic
     """Fallback parameters used for templates like save_the_date."""
     return {"name": guest.get("name", "")}
 
-
+# rsvp template
 def params_event_no_pic(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "1": _format_event_date(_serialize_datetime(event_data.get("event_date", ""))),
@@ -146,10 +146,10 @@ def params_event_no_pic(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Di
         "4": _format_inviters(event_data.get("inviters", [])),
     }
 
-
+# rsvp template
 def params_general_rsvp(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Dict[str, Any]:
     return {
-        "1": "event type",
+        "1": event_data.get("name", ""),
         "2": _format_inviters(event_data.get("inviters", [])),
         "3": _format_event_date(_serialize_datetime(event_data.get("event_date", ""))),
         "4": _format_event_time(_serialize_datetime(event_data.get("event_date", ""))),
@@ -157,19 +157,33 @@ def params_general_rsvp(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Di
         "6": guest.get("name", "testname"),
     }
 
-
+# reminder template - for who hasn't responded yet
 def params_reminder(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "guest_name": guest.get("name", ""),
         "event_name": event_data.get("name", ""),
         "inviters": _format_inviters(event_data.get("inviters", [])),
     }
-
-
-def params_rsvp_reminder(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Dict[str, Any]:
+# event reminder template - for all  guests
+def params_event_remind(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Dict[str, Any]:
     return {
-        **params_simple_name(event_data, guest),
-        "event_name": event_data.get("name", ""),
-        "date": _serialize_datetime(event_data.get("event_date", "")),
-        "rsvp_deadline": _serialize_datetime(event_data.get("rsvp_deadline", "")),
+        "1": _format_event_time(_serialize_datetime(event_data.get("event_date", ""))),
+        "2": event_data.get("location", ""),
+        "3": event_data.get("location", ""), #TBD - add address
+        "4": _format_inviters(event_data.get("inviters", []))
+    }
+# table info template - for attending guests who already have a table assignment
+def params_table_info(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "1": guest.get("name", ""),
+        "2": event_data.get("name", ""),
+        "3": _format_inviters(event_data.get("inviters", [])),
+        "4": guest.get("table_number", ""),
+    }
+
+# thank you template - for attending guests who already have a table assignment
+def params_thank_you(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "1": event_data.get("name", ""),
+        "2": _format_inviters(event_data.get("inviters", [])),
     }

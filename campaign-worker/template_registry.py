@@ -18,7 +18,9 @@ from templates.handlers import (
     params_event_no_pic,
     params_general_rsvp,
     params_reminder,
-    params_rsvp_reminder,
+    params_event_remind,
+    params_table_info,
+    params_thank_you,
 )
 
 AudienceSelector = Callable[[Any, str, Dict[str, Any]], List[Dict[str, Any]]]
@@ -33,32 +35,41 @@ class TemplateSpec:
 
 
 TEMPLATE_SPECS: Dict[str, TemplateSpec] = {
-    # Legacy templates explicitly wired in the previous registry
-    "save_the_date": TemplateSpec(
-        wa_template="save_the_date",
-        audience_selector=select_all_guests,
-        params_builder=params_simple_name,
-    ),
+    # rsvp template
     "event_no_pic": TemplateSpec(
         wa_template="event_no_pic",
         audience_selector=select_all_guests,
         params_builder=params_event_no_pic,
     ),
-    "rsvp_reminder": TemplateSpec(
-        wa_template="rsvp_reminder",
-        audience_selector=select_pending_guests,
-        params_builder=params_rsvp_reminder,
-    ),
-    # Templates that previously relied on the default handler but had custom parameters
+    # rsvp template - with picture
     "general_rsvp": TemplateSpec(
         wa_template="general_rsvp",
         audience_selector=select_all_guests,
         params_builder=params_general_rsvp,
     ),
+    # reminder template - for who hasn't responded yet
     "reminder": TemplateSpec(
         wa_template="reminder",
         audience_selector=select_pending_guests,
         params_builder=params_reminder,
+    ),
+    # event reminder template - for all  guests
+    "event_remind": TemplateSpec(
+        wa_template="event_remind",
+        audience_selector=select_all_guests,
+        params_builder=params_event_remind,
+    ),
+    # table info template - for attending guests who already have a table assignment
+    "table_info": TemplateSpec(
+        wa_template="table_info",
+        audience_selector=select_attending_guests_with_table,
+        params_builder=params_table_info,
+    ),
+    # thank you template - for attending guests who already have a table assignment
+    "thank_you": TemplateSpec(
+        wa_template="thank_you",
+        audience_selector=select_attending_guests_with_table,
+        params_builder=params_thank_you,
     ),
 }
 
