@@ -102,7 +102,8 @@ class WhatsAppSender:
                 )
             elif header_type == "image":
                 media_url = header_conf.get("media_url")
-                if media_url:
+                # Only add header component if media_url is provided and not empty
+                if media_url and media_url.strip():
                     components.append(
                         {
                             "type": "header",
@@ -117,7 +118,8 @@ class WhatsAppSender:
 
             # Body component (required for template)
             body_params = _build_text_params_from_dict(body_conf)
-            components.append({"type": "body", "parameters": body_params})
+            if body_params:  # Only add body if there are parameters
+                components.append({"type": "body", "parameters": body_params})
 
             # Buttons (optional) – currently only URL buttons with a single text parameter
             if isinstance(buttons_conf, list):
@@ -128,20 +130,22 @@ class WhatsAppSender:
                         # For now we only support URL buttons
                         continue
                     index = btn.get("index", 0)
-                    url_value = btn.get("url") or " "
-                    components.append(
-                        {
-                            "type": "button",
-                            "sub_type": "url",
-                            "index": str(index),
-                            "parameters": [
-                                {
-                                    "type": "text",
-                                    "text": url_value,
-                                }
-                            ],
-                        }
-                    )
+                    url_value = btn.get("url")
+                    # Only add button if URL is provided and not empty
+                    if url_value and url_value.strip():
+                        components.append(
+                            {
+                                "type": "button",
+                                "sub_type": "url",
+                                "index": int(index),  # WhatsApp API expects integer, not string
+                                "parameters": [
+                                    {
+                                        "type": "text",
+                                        "text": url_value,
+                                    }
+                                ],
+                            }
+                        )
         else:
             # Legacy behavior: all parameters are body text params
             body_params = _build_text_params_from_dict(parameters)
