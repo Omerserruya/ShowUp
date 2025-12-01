@@ -122,6 +122,7 @@ async def bulk_import(
             name = row.get("name") or row.get("Name")
             phone = row.get("phone") or row.get("Phone")
             email = row.get("email") or row.get("Email")
+            group = row.get("group") or row.get("Group")
             raw_import_count = (
                 row.get("import_count")
                 or row.get("Import Count")
@@ -140,6 +141,7 @@ async def bulk_import(
                     "name": name,
                     "phone": phone,
                     "email": email,
+                    "group": group,
                     "import_count": raw_import_count,
                 }
             )
