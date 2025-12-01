@@ -146,15 +146,26 @@ def params_event_no_pic(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Di
         "4": _format_inviters(event_data.get("inviters", [])),
     }
 
-# rsvp template
+# rsvp template (with optional image header)
 def params_general_rsvp(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Structured parameters:
+    - header: optional image for template header (header_image_url)
+    - body:   same placeholders as before (1..6)
+    """
     return {
-        "1": event_data.get("name", ""),
-        "2": _format_inviters(event_data.get("inviters", [])),
-        "3": _format_event_date(_serialize_datetime(event_data.get("event_date", ""))),
-        "4": _format_event_time(_serialize_datetime(event_data.get("event_date", ""))),
-        "5": event_data.get("location", ""),
-        "6": guest.get("name", "testname"),
+        "header": {
+            "type": "image",
+            "media_url": "https://joywedding.co.il/wp-content/uploads/2021/07/%D7%A2%D7%95%D7%AA%D7%A7-%D7%A9%D7%9C-%D7%94%D7%9B%D7%9C-23-scaled.jpg",
+        },
+        "body": {
+            "1": event_data.get("name", ""),
+            "2": _format_inviters(event_data.get("inviters", [])),
+            "3": _format_event_date(_serialize_datetime(event_data.get("event_date", ""))),
+            "4": _format_event_time(_serialize_datetime(event_data.get("event_date", ""))),
+            "5": event_data.get("location", ""),
+            "6": guest.get("name", "testname"),
+        },
     }
 
 # reminder template - for who hasn't responded yet
@@ -164,13 +175,27 @@ def params_reminder(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Dict[s
         "event_name": event_data.get("name", ""),
         "inviters": _format_inviters(event_data.get("inviters", [])),
     }
-# event reminder template - for all  guests
+# event reminder template - for all guests (with optional Waze URL button)
 def params_event_remind(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Structured parameters:
+    - body:    time/location/inviters (1..4)
+    - buttons: optional URL button for Waze (index 0)
+    """
     return {
-        "1": _format_event_time(_serialize_datetime(event_data.get("event_date", ""))),
-        "2": event_data.get("location", ""),
-        "3": event_data.get("location", ""), #TBD - add address
-        "4": _format_inviters(event_data.get("inviters", []))
+        "body": {
+            "1": _format_event_time(_serialize_datetime(event_data.get("event_date", ""))),
+            "2": event_data.get("location", ""),
+            "3": event_data.get("location", ""),  # TBD - add address
+            "4": _format_inviters(event_data.get("inviters", [])),
+        },
+        "buttons": [
+            {
+                "type": "url",
+                "index": 0,
+                "url": event_data.get("waze_url", "https://www.waze.com/ul?q=%D7%A0%D7%95%D7%A2%D7%94+%D7%94%D7%91%D7%99%D7%AA+%D7%9C%D7%90%D7%99%D7%A8%D7%95%D7%A2%D7%99%D7%9D&navigate=yes"),
+            }
+        ],
     }
 # table info template - for attending guests who already have a table assignment
 def params_table_info(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Dict[str, Any]:

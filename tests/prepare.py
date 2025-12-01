@@ -4,8 +4,7 @@ import string
 from datetime import datetime, timedelta, timezone
 
 BASE_URL =  "http://localhost/api" #"https://dev.28042000.xyz/api"
-TOKEN= "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiZTgyMzFlZGYtYWEzMC00NWZjLTk4NTEtZjQzMzVjNzgyNWExIiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzYzMzkwNjM2LCJleHAiOjE3NjM0NzcwMzZ9.lHqNwVbwZsKKHKwXxXx4FsWzczO16kCwhNBuI3vhgF0"
-
+TOKEN= "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMTMzYzJkMTctYzUwOC00MjIyLTgyMjItYmM1NGQ3MmMxYWRmIiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzY0NjA4MDIxLCJleHAiOjE3NjQ2MTE2MjF9.wmnuw1B1b6KCsYDRAGU4_ZDlRlZwYW_HM9VLjrNFBag"
 def create_event(headers):
     payload = {
         "name": "חתונה",
@@ -28,7 +27,9 @@ def create_guests(event_id, headers):
     items.append({
         "name": "עומר צרויה",
         "phone": "+972525401686",
-        "import_count": 1
+        "import_count": 1, 
+        "table_number": 1,
+        "groups": ["family", "vip"]
     })
   
     payload = {"items": items}
@@ -41,13 +42,15 @@ from datetime import datetime, timedelta, timezone
 def create_campaigns(event_id, headers):
     now = datetime.now(timezone.utc)
     first_time = (now + timedelta(seconds=62)).isoformat().replace("+00:00", "Z")
-    second_time = (now + timedelta(minutes=16)).isoformat().replace("+00:00", "Z")
+    second_time = (now + timedelta(minutes=4)).isoformat().replace("+00:00", "Z")
+    third_time = (now + timedelta(minutes=15)).isoformat().replace("+00:00", "Z")
+    fourth_time = (now + timedelta(minutes=20)).isoformat().replace("+00:00", "Z")
 
     payload = {
         "items": [
             {
                 "name": "Save the Date",
-                "template": "event_no_pic",
+                "template": "general_rsvp",
                 "channel": "whatsapp",
                 "schedule_time": first_time,
                 "status": "pending"
@@ -58,6 +61,28 @@ def create_campaigns(event_id, headers):
                 "channel": "whatsapp",
                 "schedule_time": second_time,
                 "status": "pending"
+            },
+            {
+                "name": "remind about event",
+                "template": "event_remind",
+                "channel": "whatsapp",
+                "schedule_time": third_time,    
+                "status": "pending"
+
+            },
+            {
+                "name": "table assignment",
+                "template": "table_info",
+                "channel": "whatsapp",
+                "schedule_time": fourth_time,
+                "status": "pending"
+            },
+            {
+                "name":"thank you",
+                "template":"thank_you",
+                "channel":"whatsapp",
+                "schedule_time": fourth_time,
+                "status":"pending"
             }
         ]
     }
@@ -65,7 +90,7 @@ def create_campaigns(event_id, headers):
     resp = requests.post(f"{BASE_URL}/campaigns?event_id={event_id}", json=payload, headers=headers)
     resp.raise_for_status()
     print("Campaigns created:", [c["name"] for c in payload["items"]])
-    print("Schedule times:", first_time, "and", second_time)
+    print("Schedule times:",  [c["schedule_time"] for c in payload["items"]])
 
 
 def main():

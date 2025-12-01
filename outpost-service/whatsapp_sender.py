@@ -28,53 +28,128 @@ class WhatsAppSender:
             raise ValueError("WA_API_B and WA_PHONE_ID environment variables are required")
     
     def _build_template_payload(self, recipient: str, template_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Build WhatsApp template message payload."""
-        
-        # Convert parameters dict to ordered list of text parameters
-        # Sort by numeric keys to ensure correct order (1, 2, 3, ...)
-        param_list = []
-        
-        # Helper function to extract numeric key for sorting
-        def get_sort_key(item):
-            key = item[0]
+        """Build WhatsApp template message payload.
+
+        Supports two styles:
+        1. Legacy flat dict: {"1": "...", "2": "..."} -> mapped to body parameters only.
+        2. Structured dict with components:
+           {
+             "header": {"type": "text" | "image", "text": "...", "media_url": "..."},
+             "body": {"1": "...", "2": "..."},
+             "buttons": [
+               {"type": "url", "index": 0, "url": "..."}
+             ]
+           }
+        """
+
+        def _build_text_params_from_dict(d: Dict[Any, Any]) -> List[Dict[str, str]]:
+            """Convert a dict of values into an ordered list of text parameters."""
+            if not d:
+                return []
+
+            # Helper function to extract numeric key for sorting
+            def get_sort_key(item):
+                key = item[0]
+                try:
+                    if isinstance(key, str) and key.isdigit():
+                        return int(key)
+                    elif isinstance(key, int):
+                        return key
+                    return float("inf")
+                except (ValueError, TypeError):
+                    return float("inf")
+
             try:
-                # If key is a numeric string, convert to int for proper sorting
-                if isinstance(key, str) and key.isdigit():
-                    return int(key)
-                # If key is already an int, use it directly
-                elif isinstance(key, int):
-                    return key
+                sorted_items = sorted(d.items(), key=get_sort_key)
+            except Exception:
+                sorted_items = list(d.items())
+
+            result: List[Dict[str, str]] = []
+            for _key, value in sorted_items:
+                if value is None:
+                    text_value = " "
+                elif isinstance(value, str) and not value.strip():
+                    text_value = " "
                 else:
-                    # Non-numeric keys go to the end
-                    return float('inf')
-            except (ValueError, TypeError):
-                return float('inf')
-        
-        try:
-            # Sort by numeric keys to ensure correct order
-            sorted_items = sorted(parameters.items(), key=get_sort_key)
-        except Exception:
-            # Fallback to original order if sorting fails
-            sorted_items = list(parameters.items())
-        
-        for key, value in sorted_items:
-            # Convert value to string, handle None/empty values
-            # WhatsApp API requires non-empty strings, so use a space if empty
-            if value is None:
-                text_value = " "
-            elif isinstance(value, str) and not value.strip():
-                text_value = " "
-            else:
-                text_value = str(value)
-            
-            param_list.append({
-                "type": "text",
-                "text": text_value
-            })
-        
+                    text_value = str(value)
+                result.append({"type": "text", "text": text_value})
+            return result
+
+        # Decide if we're in structured mode (header/body/buttons) or legacy flat dict
+        is_structured = any(k in parameters for k in ("header", "body", "buttons"))
+
+        components: List[Dict[str, Any]] = []
+
+        if is_structured:
+            header_conf = parameters.get("header") or {}
+            body_conf = parameters.get("body") or {}
+            buttons_conf = parameters.get("buttons") or []
+
+            # Header component (optional)
+            header_type = header_conf.get("type")
+            if header_type == "text":
+                text_value = header_conf.get("text") or " "
+                components.append(
+                    {
+                        "type": "header",
+                        "parameters": [
+                            {
+                                "type": "text",
+                                "text": text_value,
+                            }
+                        ],
+                    }
+                )
+            elif header_type == "image":
+                media_url = header_conf.get("media_url")
+                if media_url:
+                    components.append(
+                        {
+                            "type": "header",
+                            "parameters": [
+                                {
+                                    "type": "image",
+                                    "image": {"link": media_url},
+                                }
+                            ],
+                        }
+                    )
+
+            # Body component (required for template)
+            body_params = _build_text_params_from_dict(body_conf)
+            components.append({"type": "body", "parameters": body_params})
+
+            # Buttons (optional) – currently only URL buttons with a single text parameter
+            if isinstance(buttons_conf, list):
+                for btn in buttons_conf:
+                    if not isinstance(btn, dict):
+                        continue
+                    if btn.get("type") != "url":
+                        # For now we only support URL buttons
+                        continue
+                    index = btn.get("index", 0)
+                    url_value = btn.get("url") or " "
+                    components.append(
+                        {
+                            "type": "button",
+                            "sub_type": "url",
+                            "index": str(index),
+                            "parameters": [
+                                {
+                                    "type": "text",
+                                    "text": url_value,
+                                }
+                            ],
+                        }
+                    )
+        else:
+            # Legacy behavior: all parameters are body text params
+            body_params = _build_text_params_from_dict(parameters)
+            components.append({"type": "body", "parameters": body_params})
+
         # Set language code: "reminder" template uses English, all others use Hebrew
         language_code = "en" if template_name == "reminder" else "he"
-        
+
         payload = {
             "messaging_product": "whatsapp",
             "to": recipient,
@@ -82,15 +157,10 @@ class WhatsAppSender:
             "template": {
                 "name": template_name,
                 "language": {"code": language_code},
-                "components": [
-                    {
-                        "type": "body",
-                        "parameters": param_list
-                    }
-                ]
-            }
+                "components": components,
+            },
         }
-        
+
         return payload
     
     def _build_text_payload(self, recipient: str, text: str) -> Dict[str, Any]:
