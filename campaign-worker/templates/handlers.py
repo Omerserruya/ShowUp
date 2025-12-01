@@ -70,7 +70,7 @@ def _format_inviters(inviters: List[Dict[str, str]]) -> str:
         return " "  # Return space instead of empty string for WhatsApp API compatibility
     
     formatted_names = [f"{inviter.get('fn', '')} {inviter.get('ln', '')}" for inviter in inviters]
-    result = " ו ".join(formatted_names)
+    result = "ו ".join(formatted_names)
     logger.info(f"Formatted inviters result: '{result}'")
     return result
 
