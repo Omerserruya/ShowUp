@@ -518,7 +518,8 @@ class FlowManager:
                 )
 
                 if self.secondary_bot_phone:
-                    # Build an interactive CTA URL button that links to the secondary bot chat
+                    # Build an interactive CTA URL message that links to the secondary bot chat
+                    # according to Meta's interactive cta_url spec.
                     wa_link = f"https://wa.me/{self.secondary_bot_phone}"
                     body_text = (
                         "היי 👋\n"
@@ -530,16 +531,14 @@ class FlowManager:
                         "recipient": guest_phone,
                         "message_type": "interactive",
                         "interactive": {
-                            "type": "button",
+                            "type": "cta_url",
                             "body": {"text": body_text},
                             "action": {
-                                "buttons": [
-                                    {
-                                        "type": "cta_url",
-                                        "text": "דבר עם הבוט הראשי 💬",
-                                        "url": wa_link,
-                                    }
-                                ]
+                                "name": "cta_url",
+                                "parameters": {
+                                    "display_text": "דבר עם הבוט הראשי 💬",
+                                    "url": wa_link,
+                                },
                             },
                         },
                         "event_id": effective_event_id or (event_id or ""),
