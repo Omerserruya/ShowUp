@@ -522,9 +522,10 @@ class FlowManager:
                     # according to Meta's interactive cta_url spec.
                     wa_link = f"https://wa.me/{self.secondary_bot_phone}"
                     body_text = (
-                        "היי 👋\n"
-                        "נראה שאין לך כאן שיחה פעילה לאירוע, אז אין לי איך לזהות אותך כרגע 🤗\n\n"
-                        "אם אתה רוצה לפתוח אירוע חדש או להקים בוט משלך – לחץ על הכפתור ונפנה אותך לבוט הראשי של ShowUp:"
+                       "היי 👋"
+"לא מצאתי אצלך אירוע פתוח… אולי זה כי אתה עובד על משהו סופר סודי 😎\n"
+"אם בא לך לפתוח אירוע, לשאול שאלות או לקבל מידע —\n"
+"לחץ על הכפתור, ונציג שלנו ימשיך איתך משם"
                     )
                     outgoing = {
                         "platform": "WA",
@@ -536,7 +537,7 @@ class FlowManager:
                             "action": {
                                 "name": "cta_url",
                                 "parameters": {
-                                    "display_text": "דבר עם הבוט הראשי 💬",
+                                    "display_text": "לדבר עם נציג שלנו",
                                     "url": wa_link,
                                 },
                             },
