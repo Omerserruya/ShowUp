@@ -204,6 +204,7 @@ services:
       - WEBHOOK_QUEUE=${WEBHOOK_QUEUE_NAME}
       - OUTPOST_QUEUE_NAME=${OUTPOST_QUEUE_NAME}
       - CONVERSATION_INITIAL_STATE=${CONVERSATION_INITIAL_STATE}
+      - SECONDARY_BOT_PHONE=${SECONDARY_BOT_PHONE}
     depends_on:
       postgres:
         condition: service_healthy
