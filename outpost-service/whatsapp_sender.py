@@ -6,6 +6,7 @@ Handles sending messages via WhatsApp Business Cloud API using Facebook Graph AP
 
 import os
 import logging
+import json
 from typing import Dict, Any, List
 from datetime import datetime
 
@@ -150,10 +151,10 @@ class WhatsAppSender:
             # Legacy behavior: all parameters are body text params
             body_params = _build_text_params_from_dict(parameters)
             components.append({"type": "body", "parameters": body_params})
-
+        
         # Set language code: "reminder" template uses English, all others use Hebrew
         language_code = "en" if template_name == "reminder" else "he"
-
+        
         payload = {
             "messaging_product": "whatsapp",
             "to": recipient,
@@ -164,7 +165,7 @@ class WhatsAppSender:
                 "components": components,
             },
         }
-
+        
         return payload
     
     def _build_text_payload(self, recipient: str, text: str) -> Dict[str, Any]:
@@ -247,6 +248,7 @@ class WhatsAppSender:
                 except:
                     error_data = {"raw_response": response.text}
                 
+                # Structured log (may be filtered/shortened by logger config)
                 self.logger.error(
                     "WhatsApp API Error Response",
                     extra={
@@ -258,6 +260,23 @@ class WhatsAppSender:
                         "phone_id": self.phone_id
                     }
                 )
+                # Fallback raw print so we can see full payload/error even if logger formatting hides extras
+                try:
+                    print(
+                        "WA_API_ERROR_DETAIL:",
+                        json.dumps(
+                            {
+                                "status_code": response.status_code,
+                                "request_payload": payload,
+                                "error_response": error_data,
+                            },
+                            ensure_ascii=False,
+                        ),
+                        flush=True,
+                    )
+                except Exception:
+                    # Best-effort; don't crash on logging
+                    pass
             else:
                 self.logger.debug(
                     "WhatsApp API response",

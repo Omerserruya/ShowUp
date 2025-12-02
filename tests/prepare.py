@@ -3,8 +3,10 @@ import random
 import string
 from datetime import datetime, timedelta, timezone
 
-BASE_URL =  "http://localhost/api" #"https://dev.28042000.xyz/api"
-TOKEN= "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMTMzYzJkMTctYzUwOC00MjIyLTgyMjItYmM1NGQ3MmMxYWRmIiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzY0NjA4MDIxLCJleHAiOjE3NjQ2MTE2MjF9.wmnuw1B1b6KCsYDRAGU4_ZDlRlZwYW_HM9VLjrNFBag"
+# BASE_URL = "https://dev.28042000.xyz/api" 
+BASE_URL =  "http://localhost/api" 
+TOKEN= "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiYmY5ZGY2ZjQtNTUwMy00N2RhLTgxMTYtOWI4NTc4MTg1YWFjIiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzY0NjYyNTIyLCJleHAiOjE3NjQ2NjYxMjJ9.IQZbOlAppoo3mcmXkMM1hboDcEIlW6ZH84FeVg73XXs"
+
 def create_event(headers):
     payload = {
         "name": "חתונה",
@@ -29,7 +31,7 @@ def create_guests(event_id, headers):
         "phone": "+972525401686",
         "import_count": 1, 
         "table_number": 1,
-        "groups": ["family", "vip"]
+        "group": "family"
     })
   
     payload = {"items": items}
@@ -43,47 +45,48 @@ def create_campaigns(event_id, headers):
     now = datetime.now(timezone.utc)
     first_time = (now + timedelta(seconds=62)).isoformat().replace("+00:00", "Z")
     second_time = (now + timedelta(minutes=4)).isoformat().replace("+00:00", "Z")
-    third_time = (now + timedelta(minutes=15)).isoformat().replace("+00:00", "Z")
-    fourth_time = (now + timedelta(minutes=20)).isoformat().replace("+00:00", "Z")
+    third_time = (now + timedelta(minutes=7)).isoformat().replace("+00:00", "Z")
+    fourth_time = (now + timedelta(minutes=10)).isoformat().replace("+00:00", "Z")
+    fifth_time = (now + timedelta(minutes=13)).isoformat().replace("+00:00", "Z")
 
     payload = {
         "items": [
-            {
-                "name": "Save the Date",
-                "template": "general_rsvp",
-                "channel": "whatsapp",
-                "schedule_time": first_time,
-                "status": "pending"
-            },
-            {
-                "name": "reminder",
-                "template": "reminder",
-                "channel": "whatsapp",
-                "schedule_time": second_time,
-                "status": "pending"
-            },
-            {
-                "name": "remind about event",
-                "template": "event_remind",
-                "channel": "whatsapp",
-                "schedule_time": third_time,    
-                "status": "pending"
+            # {
+            #     "name": "Save the Date",
+            #     "template": "general_rsvp",
+            #     "channel": "whatsapp",
+            #     "schedule_time": first_time,
+            #     "status": "pending"
+            # },
+            # {
+            #     "name": "reminder",
+            #     "template": "reminder",
+            #     "channel": "whatsapp",
+            #     "schedule_time": second_time,
+            #     "status": "pending"
+            # },
+            # {
+            #     "name": "remind about event",
+            #     "template": "event_remind",
+            #     "channel": "whatsapp",
+            #     "schedule_time": third_time,    
+            #     "status": "pending"
 
-            },
+            # },
             {
                 "name": "table assignment",
                 "template": "table_info",
                 "channel": "whatsapp",
-                "schedule_time": fourth_time,
+                "schedule_time": first_time ,
                 "status": "pending"
             },
-            {
-                "name":"thank you",
-                "template":"thank_you",
-                "channel":"whatsapp",
-                "schedule_time": fourth_time,
-                "status":"pending"
-            }
+            # {
+            #     "name":"thank you",
+            #     "template":"thank_you",
+            #     "channel":"whatsapp",
+            #     "schedule_time": first_time,
+            #     "status":"pending"
+            # }
         ]
     }
 

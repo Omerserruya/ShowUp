@@ -199,11 +199,33 @@ def params_event_remind(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Di
     }
 # table info template - for attending guests who already have a table assignment
 def params_table_info(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Structured parameters for `table_info` template:
+    - body:    same placeholders as before (1..4)
+    - buttons: URL button (index 0) that expects a parameter (e.g. Waze link)
+    """
+    # Ensure table_number is a string (can be None or int from DB)
+    table_num = guest.get("table_number")
+    table_num_str = str(table_num) if table_num is not None else ""
+
     return {
-        "1": guest.get("name", ""),
-        "2": event_data.get("name", ""),
-        "3": _format_inviters(event_data.get("inviters", [])),
-        "4": guest.get("table_number", ""),
+        "body": {
+            "1": guest.get("name", ""),
+            "2": event_data.get("name", ""),
+            "3": _format_inviters(event_data.get("inviters", [])),
+            "4": table_num_str,
+        },
+        "buttons": [
+            {
+                "type": "url",
+                "index": 0,
+                # Use event-specific Waze URL if provided, otherwise a default link
+                "url": event_data.get(
+                    "waze_url",
+                    "https://www.waze.com/ul?q=%D7%A0%D7%95%D7%A2%D7%94+%D7%94%D7%91%D7%99%D7%AA+%D7%9C%D7%90%D7%99%D7%A8%D7%95%D7%A2%D7%99%D7%9D&navigate=yes",
+                ),
+            }
+        ],
     }
 
 # thank you template - for attending guests who already have a table assignment
