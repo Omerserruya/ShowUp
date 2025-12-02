@@ -13,7 +13,7 @@ from typing import List, Dict, Any
 from datetime import datetime
 import locale
 import logging
-
+import os
 from db import fetch_guests_for_event
 
 # הגדר את הלוקל לעברית (בלינוקס צריך לוודא שה-locale קיים)
@@ -33,6 +33,7 @@ WEEKDAY_HEBREW = {
     5: "יום שבת",
     6: "יום ראשון"
 }
+s3_url = os.getenv("MEDIA_S3_URL")
 
 def _format_event_date(event_date_str: str) -> str:
     """Format date string (ISO format) to 'יום שלישי, ה־3.12.25' style."""
@@ -156,7 +157,7 @@ def params_general_rsvp(event_data: Dict[str, Any], guest: Dict[str, Any]) -> Di
     return {
         "header": {
             "type": "image",
-            "media_url": "https://joywedding.co.il/wp-content/uploads/2021/07/%D7%A2%D7%95%D7%AA%D7%A7-%D7%A9%D7%9C-%D7%94%D7%9B%D7%9C-23-scaled.jpg",
+            "media_url": s3_url+"uploads/c9ef4676-461e-4822-8930-c9a74edf6b30/e1d8d2dd-7662-4c2d-9aea-88c6da854fd2.jpg" #+ event_data.get("header_image_path", "default_header.jpg"),
         },
         "body": {
             "1": event_data.get("name", ""),
