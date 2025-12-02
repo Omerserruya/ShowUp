@@ -522,7 +522,7 @@ class FlowManager:
                     # according to Meta's interactive cta_url spec.
                     wa_link = f"https://wa.me/{self.secondary_bot_phone}"
                     body_text = (
-                       "היי 👋"
+                       "היי 👋\n"
 "לא מצאתי אצלך אירוע פתוח… אולי זה כי אתה עובד על משהו סופר סודי 😎\n"
 "אם בא לך לפתוח אירוע, לשאול שאלות או לקבל מידע —\n"
 "לחץ על הכפתור, ונציג שלנו ימשיך איתך משם"
