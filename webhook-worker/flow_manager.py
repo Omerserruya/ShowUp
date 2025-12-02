@@ -55,6 +55,9 @@ class FlowManager:
         self.initial_state = os.getenv("CONVERSATION_INITIAL_STATE", "rsvp_invite")
         self.fallback_state_id = os.getenv("FALLBACK_TEMPLATE", "didnt_understand")
         self.outpost_queue = outpost_queue
+        # Optional: phone number of secondary bot for users without an active conversation
+        # Expected format: WhatsApp-recognized phone (e.g. 9725XXXXXXXX)
+        self.secondary_bot_phone = os.getenv("SECONDARY_BOT_PHONE")
         self.publisher_channel: Optional[aio_pika.abc.AbstractChannel] = None
         self.publisher_routing_key: Optional[str] = None
         # No external YAML message builder; states construct messages directly
@@ -502,16 +505,49 @@ class FlowManager:
                 provided_event_id=event_id,
             )
             
-            # If no conversation was resolved, we cannot proceed
+            # If no conversation was resolved, send a friendly redirect message (to secondary bot) and stop
             if not conv or not effective_event_id:
                 logger.warning(
-                    "Could not resolve conversation for incoming message; skipping",
+                    "Could not resolve conversation for incoming message; sending secondary-bot redirect (if configured)",
                     extra={
                         "guest_phone": guest_phone,
                         "context_id": context_id,
                         "provided_event_id": event_id,
+                        "secondary_bot_phone": self.secondary_bot_phone,
                     },
                 )
+
+                if self.secondary_bot_phone:
+                    # Build an interactive CTA URL button that links to the secondary bot chat
+                    wa_link = f"https://wa.me/{self.secondary_bot_phone}"
+                    body_text = (
+                        "היי 👋\n"
+                        "נראה שאין לך כאן שיחה פעילה לאירוע, אז אין לי איך לזהות אותך כרגע 🤗\n\n"
+                        "אם אתה רוצה לפתוח אירוע חדש או להקים בוט משלך – לחץ על הכפתור ונפנה אותך לבוט הראשי של ShowUp:"
+                    )
+                    outgoing = {
+                        "platform": "WA",
+                        "recipient": guest_phone,
+                        "message_type": "interactive",
+                        "interactive": {
+                            "type": "button",
+                            "body": {"text": body_text},
+                            "action": {
+                                "buttons": [
+                                    {
+                                        "type": "cta_url",
+                                        "text": "דבר עם הבוט הראשי 💬",
+                                        "url": wa_link,
+                                    }
+                                ]
+                            },
+                        },
+                        "event_id": effective_event_id or (event_id or ""),
+                        "state": "no_conversation_redirect",
+                        "source": "webhook_worker",
+                    }
+                    await self.publish_outgoing(outgoing)
+
                 return
             
             # Ensure we have an effective_state
