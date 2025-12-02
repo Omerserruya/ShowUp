@@ -123,6 +123,7 @@ async def bulk_import(
             phone = row.get("phone") or row.get("Phone")
             email = row.get("email") or row.get("Email")
             group = row.get("group") or row.get("Group")
+            table_number_raw = row.get("table_number") or row.get("Table Number") or row.get("tableNumber")
             raw_import_count = (
                 row.get("import_count")
                 or row.get("Import Count")
@@ -145,6 +146,12 @@ async def bulk_import(
                     "import_count": raw_import_count,
                 }
             )
+            # Safely parse table_number if provided
+            if table_number_raw not in (None, ""):
+                try:
+                    normalized_payload["table_number"] = int(table_number_raw)
+                except ValueError:
+                    pass
             guests_to_create.append(GuestCreate(**normalized_payload))
     elif body is not None:
         for g in body:

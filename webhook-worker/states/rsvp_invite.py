@@ -14,9 +14,11 @@ class RsvpInviteState(BaseState):
     next_states = {
         "ברור שאני בא!": "rsvp_count",
         "ברור שנגיע !": "rsvp_count",
+        "ברור שאגיע!": "rsvp_count",
         "לצערי לא אוכל להגיע ):": "rsvp_decline",
         "עוד מתלבט, תחזרו אלי?": "rsvp_decline",
         "לצערי לא אוכל": "rsvp_decline",
+        "לצערי לא אוכל להגיע": "rsvp_decline",
         "עוד מתלבט/ת, תחזרו אלי?": "rsvp_decline",
         "*": "didnt_understand"
     }

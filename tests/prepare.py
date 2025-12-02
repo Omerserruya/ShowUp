@@ -3,9 +3,9 @@ import random
 import string
 from datetime import datetime, timedelta, timezone
 
-# BASE_URL = "https://dev.28042000.xyz/api" 
-BASE_URL =  "http://localhost/api" 
-TOKEN= "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiYmY5ZGY2ZjQtNTUwMy00N2RhLTgxMTYtOWI4NTc4MTg1YWFjIiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzY0NjYyNTIyLCJleHAiOjE3NjQ2NjYxMjJ9.IQZbOlAppoo3mcmXkMM1hboDcEIlW6ZH84FeVg73XXs"
+BASE_URL = "https://dev.28042000.xyz/api" 
+# BASE_URL =  "http://localhost/api" 
+TOKEN= "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiYzllZjQ2NzYtNDYxZS00ODIyLTg5MzAtYzlhNzRlZGY2YjMwIiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzY0NjY2MzAxLCJleHAiOjE3NjQ3NTI3MDF9.AIwkWKntGcsaqMbwBy-qjuwonfjRQ_1DtBtaty9-T5A"
 
 def create_event(headers):
     payload = {
@@ -29,8 +29,8 @@ def create_guests(event_id, headers):
     items.append({
         "name": "עומר צרויה",
         "phone": "+972525401686",
-        "import_count": 1, 
-        "table_number": 1,
+        "import_count": 6, 
+        "table_number": "23",
         "group": "family"
     })
   
@@ -51,42 +51,42 @@ def create_campaigns(event_id, headers):
 
     payload = {
         "items": [
-            # {
-            #     "name": "Save the Date",
-            #     "template": "general_rsvp",
-            #     "channel": "whatsapp",
-            #     "schedule_time": first_time,
-            #     "status": "pending"
-            # },
-            # {
-            #     "name": "reminder",
-            #     "template": "reminder",
-            #     "channel": "whatsapp",
-            #     "schedule_time": second_time,
-            #     "status": "pending"
-            # },
-            # {
-            #     "name": "remind about event",
-            #     "template": "event_remind",
-            #     "channel": "whatsapp",
-            #     "schedule_time": third_time,    
-            #     "status": "pending"
+            {
+                "name": "Save the Date",
+                "template": "general_rsvp",
+                "channel": "whatsapp",
+                "schedule_time": first_time,
+                "status": "pending"
+            },
+            {
+                "name": "reminder",
+                "template": "reminder",
+                "channel": "whatsapp",
+                "schedule_time": second_time,
+                "status": "pending"
+            },
+            {
+                "name": "remind about event",
+                "template": "event_remind",
+                "channel": "whatsapp",
+                "schedule_time": third_time,    
+                "status": "pending"
 
-            # },
+            },
             {
                 "name": "table assignment",
                 "template": "table_info",
                 "channel": "whatsapp",
-                "schedule_time": first_time ,
+                "schedule_time": fourth_time ,
                 "status": "pending"
             },
-            # {
-            #     "name":"thank you",
-            #     "template":"thank_you",
-            #     "channel":"whatsapp",
-            #     "schedule_time": first_time,
-            #     "status":"pending"
-            # }
+            {
+                "name":"thank you",
+                "template":"thank_you",
+                "channel":"whatsapp",
+                "schedule_time": fifth_time,
+                "status":"pending"
+            }
         ]
     }
 

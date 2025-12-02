@@ -89,6 +89,7 @@ class GuestUpdate(BaseModel):
     group: Optional[str] = Field(default=None, max_length=100, description="Guest group/side (e.g. bride, groom)")
     import_count: Optional[int] = Field(default=None, ge=1)
     guest_count: Optional[int] = Field(default=None, ge=1)
+    table_number: Optional[int] = Field(default=None, ge=1, le=128)
     notes: Optional[str] = None
     last_response: Optional[dt.datetime] = None
 
