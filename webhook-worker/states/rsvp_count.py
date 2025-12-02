@@ -1,5 +1,6 @@
 from typing import Any, Dict, Optional
 import uuid
+import re
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -10,15 +11,25 @@ from utils.phone import normalize_phone
 
 class RsvpCountState(BaseState):
     id = "rsvp_count"
-    next_states = {
-        "*": "rsvp_info_question",
-    }
+    # next_states is not used directly; we override get_next_state for custom logic.
+    next_states = {}
+
+    def get_next_state(self, message: Dict[str, Any]) -> str:
+        """
+        Decide next state based on whether the input is a valid positive integer.
+        - If valid number: move to rsvp_info_question
+        - If invalid: stay in rsvp_count and ask again
+        """
+        text_content = (message.get("text") or "").strip()
+        if re.fullmatch(r"\d+", text_content) and int(text_content) > 0:
+            return "rsvp_info_question"
+        return self.id
 
     async def process_incoming(self, session: AsyncSession, message: Dict[str, Any], conversation: Any) -> None:
         # Call parent to update last_response
         await super().process_incoming(session, message, conversation)
         
-        # Update guest_count if message is a number
+        # Update guest_count only if message is a valid positive integer
         text_content = (message.get("text") or "").strip()
         
         logger = __import__('logging').getLogger(__name__)
@@ -33,7 +44,12 @@ class RsvpCountState(BaseState):
             logger.warning(f"Failed to get conversation values: {e}")
             return
         
-        # Try to parse as integer
+        # Validate as positive integer; if not valid, stay in this state and let send() resend instructions
+        if not re.fullmatch(r"\d+", text_content):
+            logger.info("RsvpCountState received non-numeric input, keeping state and re-asking for number")
+            # No DB updates here; FlowManager will keep state as rsvp_count and call send()
+            return
+
         try:
             guest_count = int(text_content)
             if guest_count > 0:
@@ -183,10 +199,6 @@ class RsvpCountState(BaseState):
                         await session.rollback()
                 else:
                     logger.warning(f"No rows updated for guest_count update")
-        except (ValueError, TypeError):
-            # Not a valid number, ignore
-            logger.debug(f"Message '{text_content}' is not a valid number, ignoring")
-            pass
         except Exception as e:
             logger.warning(f"Failed to update guest_count: {e}", exc_info=True)
             await session.rollback()
