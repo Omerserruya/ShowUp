@@ -3,15 +3,20 @@ import random
 import string
 from datetime import datetime, timedelta, timezone
 
-BASE_URL = "http://localhost/api"
-TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMmNmYmIzZWQtNjkwNy00MDBjLTg1MDAtNzdmN2ZjY2I4NjgxIiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzYxMTQwMDY0LCJleHAiOjE3NjExNDM2NjR9.p8RbJAUc62oURb_dzBh9fML2saKJMgpwdvp9TUqzKeM"
+# BASE_URL = "https://dev.28042000.xyz/api" 
+BASE_URL =  "http://localhost/api" 
+TOKEN= "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiYzllZjQ2NzYtNDYxZS00ODIyLTg5MzAtYzlhNzRlZGY2YjMwIiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzY0NjY2MzAxLCJleHAiOjE3NjQ3NTI3MDF9.AIwkWKntGcsaqMbwBy-qjuwonfjRQ_1DtBtaty9-T5A"
 
 def create_event(headers):
     payload = {
-        "name": "Tested Event",
-        "description": "Optional text",
+        "name": "חתונה",
+        "description": "חתונה של עומר ושני",
         "event_date": "2025-12-31T18:00:00Z",
-        "location": "Optional location"
+        "location": "אולמי חרטא",
+        "inviters": [
+        {"fn": "שני", "ln": "יצחק"},
+        {"fn": "עומר", "ln": "צרויה"}
+    ]
     }
     resp = requests.post(f"{BASE_URL}/events", json=payload, headers=headers)
     resp.raise_for_status()
@@ -24,13 +29,11 @@ def create_guests(event_id, headers):
     items.append({
         "name": "עומר צרויה",
         "phone": "+972525401686",
-        "guest_count": 1
+        "import_count": 6, 
+        "table_number": "23",
+        "group": "family"
     })
-    items.append({
-        "name": "שני יצחק",
-        "phone": "+972538852020",
-        "guest_count": 1
-    })
+  
     payload = {"items": items}
     resp = requests.post(f"{BASE_URL}/guests?event_id={event_id}", json=payload, headers=headers)
     resp.raise_for_status()
@@ -40,24 +43,49 @@ from datetime import datetime, timedelta, timezone
 
 def create_campaigns(event_id, headers):
     now = datetime.now(timezone.utc)
-    first_time = (now + timedelta(minutes=2)).isoformat().replace("+00:00", "Z")
+    first_time = (now + timedelta(seconds=62)).isoformat().replace("+00:00", "Z")
     second_time = (now + timedelta(minutes=4)).isoformat().replace("+00:00", "Z")
+    third_time = (now + timedelta(minutes=7)).isoformat().replace("+00:00", "Z")
+    fourth_time = (now + timedelta(minutes=10)).isoformat().replace("+00:00", "Z")
+    fifth_time = (now + timedelta(minutes=13)).isoformat().replace("+00:00", "Z")
 
     payload = {
         "items": [
             {
                 "name": "Save the Date",
-                "template": "event_no_pic",
+                "template": "general_rsvp",
                 "channel": "whatsapp",
                 "schedule_time": first_time,
                 "status": "pending"
             },
             {
-                "name": "Reminder",
+                "name": "reminder",
                 "template": "reminder",
                 "channel": "whatsapp",
                 "schedule_time": second_time,
                 "status": "pending"
+            },
+            {
+                "name": "remind about event",
+                "template": "event_remind",
+                "channel": "whatsapp",
+                "schedule_time": third_time,    
+                "status": "pending"
+
+            },
+            {
+                "name": "table assignment",
+                "template": "table_info",
+                "channel": "whatsapp",
+                "schedule_time": fourth_time ,
+                "status": "pending"
+            },
+            {
+                "name":"thank you",
+                "template":"thank_you",
+                "channel":"whatsapp",
+                "schedule_time": fifth_time,
+                "status":"pending"
             }
         ]
     }
@@ -65,7 +93,7 @@ def create_campaigns(event_id, headers):
     resp = requests.post(f"{BASE_URL}/campaigns?event_id={event_id}", json=payload, headers=headers)
     resp.raise_for_status()
     print("Campaigns created:", [c["name"] for c in payload["items"]])
-    print("Schedule times:", first_time, "and", second_time)
+    print("Schedule times:",  [c["schedule_time"] for c in payload["items"]])
 
 
 def main():

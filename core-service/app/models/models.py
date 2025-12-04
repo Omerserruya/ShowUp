@@ -29,6 +29,9 @@ class Event(Base):
     # Owners as JSON array of UUID strings for portability across DBs
     owners = Column(JSON, nullable=False, default=list, server_default='[]')
 
+    # Inviters as JSON array of objects with fn and ln fields
+    inviters = Column(JSON, nullable=False, default=list, server_default='[]')
+
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     event_date = Column(DateTime(timezone=True), nullable=True)
@@ -55,10 +58,16 @@ class Guest(Base):
         event_id = Column(String(36), ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
 
     name = Column(String(100), nullable=False)
+    # group / side of guest (e.g. bride, groom, family, friends)
+    # Use DB column name 'guest_group' to avoid reserved-word issues with 'group'
+    group = Column("guest_group", String(100), nullable=True)
     phone = Column(String(20), nullable=False, index=True)
     email = Column(String(100), nullable=True)
     status = Column(String(20), nullable=False, default="invited")
-    guest_count = Column(Integer, nullable=False, default=1)
+    # import_count = expected number from event owner (default 1)
+    import_count = Column(Integer, nullable=False, default=1, server_default="1")
+    # guest_count = number provided by guest via WhatsApp (NULL until answered)
+    guest_count = Column(Integer, nullable=True, default=None)
     table_number = Column(Integer, nullable=True)
     notes = Column(Text, nullable=True)
     last_response = Column(DateTime(timezone=True), nullable=True)

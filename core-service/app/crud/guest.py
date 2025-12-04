@@ -54,7 +54,10 @@ def create_guest(db: Session, data: GuestCreate) -> Guest:
         phone=phone_norm,
         email=data.email,
         status=data.status,
+        group=data.group,
+        import_count=data.import_count,
         guest_count=data.guest_count,
+        table_number=data.table_number,
         notes=data.notes,
         last_response=data.last_response,
     )
@@ -77,8 +80,14 @@ def update_guest(db: Session, guest: Guest, data: GuestUpdate) -> Guest:
         guest.email = data.email
     if data.status is not None:
         guest.status = data.status
+    if data.group is not None:
+        guest.group = data.group
+    if data.import_count is not None:
+        guest.import_count = data.import_count
     if data.guest_count is not None:
         guest.guest_count = data.guest_count
+    if data.table_number is not None:
+        guest.table_number = data.table_number
     if data.notes is not None:
         guest.notes = data.notes
     if data.last_response is not None:
@@ -114,7 +123,10 @@ def create_guests_bulk(db: Session, event_id: uuid.UUID, items: List[GuestCreate
             phone=phone_norm_val,
             email=data.email,
             status=data.status,
+            group=data.group,
+            import_count=data.import_count,
             guest_count=data.guest_count,
+            table_number=data.table_number,
             notes=data.notes,
             last_response=data.last_response,
         )

@@ -19,6 +19,16 @@ from shared.auth.deps import get_current_user_id
 router = APIRouter(prefix="/guests", tags=["guests"])
 
 
+def _normalize_import_counts(payload: dict) -> dict:
+    """Ensure legacy guest_count inputs become import_count and guest_count stays unset."""
+    if payload.get("import_count") in (None, ""):
+        legacy_count = payload.get("guest_count")
+        if legacy_count not in (None, ""):
+            payload["import_count"] = legacy_count
+            payload["guest_count"] = None
+    return payload
+
+
 @router.get("", response_model=list[GuestOut])
 def list_guests(
     event_id: uuid.UUID = Query(...),
@@ -75,6 +85,7 @@ def create_guests(
         phone = str(raw.get("phone", ""))
         if not validate_phone(phone):
             continue
+        raw = _normalize_import_counts(raw)
         try:
             item = GuestCreate(**raw)
             valid_items.append(item)
@@ -111,15 +122,43 @@ async def bulk_import(
             name = row.get("name") or row.get("Name")
             phone = row.get("phone") or row.get("Phone")
             email = row.get("email") or row.get("Email")
+            group = row.get("group") or row.get("Group")
+            table_number_raw = row.get("table_number") or row.get("Table Number") or row.get("tableNumber")
+            raw_import_count = (
+                row.get("import_count")
+                or row.get("Import Count")
+                or row.get("importCount")
+                or row.get("guest_count")
+                or row.get("Guest Count")
+                or row.get("guestCount")
+            )
             if not name or not phone:
                 continue
             if not validate_phone(phone):
                 continue
-            guests_to_create.append(GuestCreate(event_id=event_id, name=name, phone=phone, email=email))
+            normalized_payload = _normalize_import_counts(
+                {
+                    "event_id": event_id,
+                    "name": name,
+                    "phone": phone,
+                    "email": email,
+                    "group": group,
+                    "import_count": raw_import_count,
+                }
+            )
+            # Safely parse table_number if provided
+            if table_number_raw not in (None, ""):
+                try:
+                    normalized_payload["table_number"] = int(table_number_raw)
+                except ValueError:
+                    pass
+            guests_to_create.append(GuestCreate(**normalized_payload))
     elif body is not None:
         for g in body:
             if validate_phone(g.phone):
-                guests_to_create.append(g)
+                payload = g.model_dump()
+                payload = _normalize_import_counts(payload)
+                guests_to_create.append(GuestCreate(**payload))
     else:
         raise HTTPException(status_code=400, detail="Provide CSV file or JSON body")
 

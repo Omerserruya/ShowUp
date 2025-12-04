@@ -8,8 +8,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from db import connect as db_connect, fetch_campaign_by_id, fetch_event_by_id, was_message_sent, mark_message_sent
 from mq import connect as mq_connect, publish_outpost
-from template_registry import get_template_handler
-from templates.handlers import build_params
+from template_registry import get_template_spec
 
 
 def configure_logging():
@@ -50,17 +49,27 @@ def process_campaign(conn, channel, campaign_id: str):
     if not event_data:
         log_json(logger, logging.ERROR, "Event not found", campaign_id=campaign_id, event_id=event_id)
         return
+    
+    # Log event data including inviters for debugging
+    log_json(logger, logging.INFO, "Fetched event data", 
+             event_id=event_id, 
+             inviters=event_data.get("inviters"),
+             inviters_type=type(event_data.get("inviters")).__name__ if event_data.get("inviters") else "None")
 
     # Get template handler
-    template_handler = get_template_handler(template_name)
-    if not template_handler:
-        log_json(logger, logging.ERROR, "Unknown template handler", campaign_id=campaign_id, template=template_name)
-        return
+    template_spec = get_template_spec(template_name)
 
-    # Get guest list from template handler
+    # Get guest list from template spec
     try:
-        guests = template_handler(conn, event_id, event_data)
-        log_json(logger, logging.INFO, "Template handler selected guests", campaign_id=campaign_id, template=template_name, guest_count=len(guests))
+        guests = template_spec.audience_selector(conn, event_id, event_data)
+        log_json(
+            logger,
+            logging.INFO,
+            "Template handler selected guests",
+            campaign_id=campaign_id,
+            template=template_name,
+            guest_count=len(guests),
+        )
     except Exception as e:
         log_json(logger, logging.ERROR, "Template handler failed", campaign_id=campaign_id, template=template_name, error=str(e))
         return
@@ -77,18 +86,26 @@ def process_campaign(conn, channel, campaign_id: str):
 
         # Build parameters using template-specific logic
         try:
-            params = build_params(template_name, guest, event_data)
+            params = template_spec.params_builder(event_data, guest)
         except Exception as e:
             failed_count += 1
             log_json(logger, logging.ERROR, "Parameter building failed", campaign_id=campaign_id, guest_id=guest_id, error=str(e))
             continue
 
         # Build outpost message payload
+        # outpost-service will create Conversation when sending the message
         message = {
             "platform": "WA",
             "recipient": str(guest.get("phone")),
-            "template": template_name,
+            "template": template_spec.wa_template,
             "parameters": params,
+            "message_type": "template",  # Campaign messages are template-based
+            "source": "campaign_worker",
+            "event_id": event_id,  # Real event UUID, not wamid
+            # Use template name as a logical state marker for logging/traceability
+            "state": template_name,
+            "campaign_id": campaign_id,
+            "guest_id": guest_id
         }
 
         try:
