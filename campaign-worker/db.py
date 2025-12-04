@@ -74,7 +74,14 @@ def fetch_guests_for_event(conn: psycopg2.extensions.connection, event_id: str) 
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
-            SELECT id, name, phone, email
+            SELECT
+                id,
+                name,
+                phone,
+                email,
+                status,
+                guest_count,
+                table_number
             FROM guests
             WHERE event_id = %s
             """,
@@ -104,41 +111,5 @@ def mark_message_sent(conn: psycopg2.extensions.connection, campaign_id: str, gu
         )
 
 
-def ensure_or_get_conversation(conn: psycopg2.extensions.connection, guest_id: str, guest_phone: str, event_id: str, initial_state: str = "rsvp_invite") -> str:
-    """
-    Ensure a Conversation exists for guest_phone + event_id.
-    Returns the conversation UUID.
-    Creates conversation if it doesn't exist, otherwise returns existing one.
-    """
-    with conn.cursor() as cur:
-        # Check if conversation exists
-        cur.execute(
-            """
-            SELECT id FROM conversations
-            WHERE guest_phone = %s AND event_id = %s AND active = true
-            LIMIT 1
-            """,
-            (guest_phone, event_id),
-        )
-        row = cur.fetchone()
-        if row:
-            return str(row[0])
-        
-        # Create new conversation
-        cur.execute(
-            """
-            INSERT INTO conversations (guest_id, guest_phone, event_id, current_state, active)
-            VALUES (%s::uuid, %s, %s, %s, true)
-            RETURNING id
-            """,
-            (guest_id, guest_phone, event_id, initial_state),
-        )
-        row = cur.fetchone()
-        if row:
-            logger.info(
-                f"Created new conversation for guest {guest_phone} and event {event_id} | conversation_id={row[0]}"
-            )
-            return str(row[0])
-        raise Exception("Failed to create conversation")
 
 

@@ -58,6 +58,9 @@ class Guest(Base):
         event_id = Column(String(36), ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
 
     name = Column(String(100), nullable=False)
+    # group / side of guest (e.g. bride, groom, family, friends)
+    # Use DB column name 'guest_group' to avoid reserved-word issues with 'group'
+    group = Column("guest_group", String(100), nullable=True)
     phone = Column(String(20), nullable=False, index=True)
     email = Column(String(100), nullable=True)
     status = Column(String(20), nullable=False, default="invited")

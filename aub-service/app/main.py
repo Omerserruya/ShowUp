@@ -233,6 +233,9 @@ def login(payload: dict = Body(...)):
     if not phone:
         return JSONResponse(status_code=400, content={"error": "phone is required"})
 
+    # Ensure users table exists (idempotent)
+    ensure_users_table(env)
+
     # Ensure user exists
     with psycopg2.connect(
         host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"], password=env["DB_PASSWORD"], dbname=env["DB_NAME"],

@@ -65,6 +65,11 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME}
       - CAMPAIGN_MIN_GAP_MINUTES=${CAMPAIGN_MIN_GAP_MINUTES}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID}
     depends_on:
       - postgres
       - rabbitmq
@@ -161,6 +166,7 @@ services:
       - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
       - CAMPAIGNS_QUEUE=${CAMPAIGNS_QUEUE}
       - OUTPOST_QUEUE_NAME=${OUTPOST_QUEUE_NAME}
+      - MEDIA_S3_URL=${MEDIA_S3_URL}
     depends_on:
       - postgres
       - rabbitmq
@@ -204,6 +210,7 @@ services:
       - WEBHOOK_QUEUE=${WEBHOOK_QUEUE_NAME}
       - OUTPOST_QUEUE_NAME=${OUTPOST_QUEUE_NAME}
       - CONVERSATION_INITIAL_STATE=${CONVERSATION_INITIAL_STATE}
+      - SECONDARY_BOT_PHONE=${SECONDARY_BOT_PHONE}
     depends_on:
       postgres:
         condition: service_healthy
