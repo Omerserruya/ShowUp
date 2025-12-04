@@ -49,16 +49,18 @@ const tiers = [
 ];
 
 const StyledPaper = styled(Paper)<{ accent: string; popular?: boolean }>(({ theme, accent, popular }) => ({
-  padding: theme.spacing(4),
+  padding: popular ? theme.spacing(5) : theme.spacing(4),
   display: 'flex',
   flexDirection: 'column',
   width: '100%',
+  height: '100%',
   borderRadius: 16,
   backgroundColor: '#ffffff',
   border: popular ? `1px solid ${accent}` : '1px solid #e2e8f0',
   boxShadow: popular ? '0 16px 40px rgba(37,99,235,0.18)' : '0 10px 30px rgba(15,23,42,0.06)',
   position: 'relative',
   overflow: 'hidden',
+  transform: popular ? 'scale(1.05)' : 'scale(1)',
   transition:
     'transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, background-color 0.22s ease',
   '&::before': popular
@@ -71,12 +73,18 @@ const StyledPaper = styled(Paper)<{ accent: string; popular?: boolean }>(({ them
       }
     : {},
   '&:hover': {
-    transform: 'translateY(-6px)',
+    transform: popular ? 'scale(1.08) translateY(-6px)' : 'translateY(-6px)',
     boxShadow: popular
       ? '0 20px 55px rgba(37,99,235,0.25)'
       : '0 18px 45px rgba(15,23,42,0.12)',
     borderColor: accent,
     backgroundColor: '#fdfefe',
+  },
+  [theme.breakpoints.down('md')]: {
+    transform: 'scale(1)',
+    '&:hover': {
+      transform: popular ? 'scale(1.02) translateY(-6px)' : 'translateY(-6px)',
+    },
   },
 }));
 
@@ -91,9 +99,10 @@ const FeatureItem = styled(Box)(({ theme }) => ({
 }));
 
 const FeaturesBox = styled(Box)(({ theme }) => ({
-  flex: 1,
+  flex: '1 1 auto',
   marginTop: theme.spacing(3),
   marginBottom: theme.spacing(4),
+  minHeight: 0,
 }));
 
 export default function Pricing() {
@@ -105,7 +114,7 @@ export default function Pricing() {
         bgcolor: 'linear-gradient(to bottom, #f5f7fb 0%, #ffffff 40%, #f5f7fb 100%)',
       }}
     >
-      <Container maxWidth="lg">
+      <Container maxWidth="lg" sx={{ overflow: 'visible', px: { md: 4 } }}>
         <Box
           sx={{
             textAlign: 'center',
@@ -129,11 +138,30 @@ export default function Pricing() {
           </Typography>
         </Box>
 
-        <Grid container spacing={4} sx={{ mt: 2, alignItems: 'stretch', direction: 'rtl' }}>
-          {tiers.map((tier) => (
-            <Grid item xs={12} sm={6} md={4} key={tier.title}>
+        <Grid 
+          container 
+          spacing={{ xs: 3, md: 4 }} 
+          sx={{ 
+            mt: 2, 
+            alignItems: 'stretch', 
+            direction: 'rtl',
+            py: { md: 2 },
+          }}
+        >
+          {tiers.map((tier, index) => (
+            <Grid 
+              item 
+              xs={12} 
+              sm={6} 
+              md={4} 
+              key={tier.title}
+              sx={{
+                display: 'flex',
+                alignItems: 'stretch',
+              }}
+            >
               {tier.isPopular ? (
-                <StyledPaper accent={tier.color} popular elevation={0}>
+                <StyledPaper accent={tier.color} popular elevation={0} sx={{ width: '100%' }}>
                   <Chip
                     label="הכי נבחרה"
                     color="primary"
@@ -214,7 +242,7 @@ export default function Pricing() {
                   </Button>
                 </StyledPaper>
               ) : (
-                <StyledPaper accent={tier.color} elevation={0}>
+                <StyledPaper accent={tier.color} elevation={0} sx={{ width: '100%' }}>
                   <Typography
                     component="h2"
                     variant="h4"

@@ -66,13 +66,13 @@ export default function Highlights() {
     <Box
       id="highlights"
       sx={{
-        pt: { xs: 6, sm: 12 },
+        pt: { xs: 1, sm: 12 },
         pb: { xs: 8, sm: 16 },
         bgcolor: 'linear-gradient(to bottom, #f5f7fb 0%, #ffffff 40%, #f5f7fb 100%)',
         color: theme.palette.text.primary,
       }}
     >
-      <Container maxWidth="lg">
+      <Container maxWidth="lg" sx={{ overflow: 'hidden' }}>
         {/* Header Section (RTL) */}
         <Box
           sx={{
@@ -119,7 +119,7 @@ export default function Highlights() {
                     flexDirection: 'column',
                     alignItems: 'flex-start',
                     gap: 1,
-                    p: 1.5,
+                    p: 0,
                     borderRadius: 2,
                     transition: 'background-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease',
                     cursor: 'default',

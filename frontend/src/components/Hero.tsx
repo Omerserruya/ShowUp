@@ -111,7 +111,7 @@ export default function Hero() {
         alignItems: 'center',
         overflow: 'hidden',
         py: { xs: 12, md: 12 },
-        px: { xs: 2, md: 4 },
+        px: 0,
         background: 'radial-gradient(circle at 0 100%, #e0f2ff 0, #ffffff 55%)',
         fontFamily: '"Geist","Geist Fallback","system-ui",sans-serif',
       }}
@@ -182,174 +182,11 @@ export default function Hero() {
           gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
           alignItems: 'center',
           gap: { xs: 6, md: 10 },
+          px: { xs: 2, md: 4 },
         }}
         dir="ltr"
       >
-        {/* Left chat mockup */}
-        <Box
-          sx={{
-            position: 'relative',
-            height: { xs: 'auto', md: 380 },
-            mb: { xs: 0, md: 0 },
-            direction: 'rtl',
-            zIndex: 1,
-          }}
-        >
-
-        {/* Message 1 - Top left */}
-          <Box
-            sx={(theme) => ({
-              position: 'absolute',
-              top: { xs: 0, md: -8 },
-              left: { xs: '18%', md: '24%' },
-              animation: `${float} 6s ease-in-out infinite`,
-              animationDelay: '0s',
-              opacity: 0,
-              [theme.breakpoints.down('sm')]: {
-                position: 'static',
-                opacity: 1,
-                mb: 1.5,
-              },
-            })}
-          >
-            <Box
-              sx={{
-                bgcolor: '#ffffff',
-                borderRadius: '26px',
-                borderTopLeftRadius: 6,
-                boxShadow: '0 18px 45px rgba(15,23,42,0.15)',
-                border: '1px solid rgba(226,232,240,0.9)',
-                px: 3,
-                py: 2,
-                maxWidth: 230,
-              }}
-            >
-              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#111827' }}>
-                שלום! 👋
-              </Typography>
-              <Typography
-                variant="body2"
-                sx={{ mt: 0.5, color: '#6b7280', fontSize: 13.5 }}
-              >
-הנכם מוזמנים לחתונה של ...              </Typography>
-              {["כן, אני בא! 🎉", "לצערי לא אוכל להגיע", "לצערי לא אוכל"].map((label) => (
-                <Box
-                  key={label}
-                  sx={{
-                    mt: 0.5,
-                    borderRadius: 999,
-                    px: 1.8,
-                    py: 0.8,
-                    background: 'linear-gradient(90deg,#e0f2fe,#ede9fe)',
-                    fontSize: 13,
-                    fontWeight: 500,
-                    color: '#374151',
-                  }}
-                >
-                  {label}
-                </Box>
-              ))}
-            </Box>
-          </Box>
-
-          {/* Message 2 - User response (green) */}
-          <Box
-            sx={(theme) => ({
-              position: 'absolute',
-              top: { xs: 82, md: 190 },
-              right: { xs: '12%', md: '18%' },
-              animation: `${float} 6s ease-in-out infinite`,
-              animationDelay: '1s',
-              opacity: 0,
-              [theme.breakpoints.down('sm')]: {
-                position: 'static',
-                opacity: 1,
-                mb: 1.5,
-              },
-            })}
-          >
-            <Box
-              sx={{
-                background: 'linear-gradient(135deg,#22c55e,#059669)',
-                color: '#ffffff',
-                borderRadius: '26px',
-                borderTopRightRadius: 8,
-                px: 3,
-                py: 2,
-                boxShadow: '0 20px 50px rgba(21,128,61,0.45)',
-                maxWidth: 230,
-                fontSize: 14,
-                fontWeight: 600,
-              }}
-            >
-              כן, אני בא! 🎉
-            </Box>
-          </Box>
-
-
-          {/* Message3 - Top left */}
-          <Box
-            sx={(theme) => ({
-              position: 'absolute',
-              top: { xs: 82, md: 230 },
-              left: { xs: '18%', md: '24%' },
-              animation: `${float} 6s ease-in-out infinite`,
-              animationDelay: '2.5s',
-              opacity: 0,
-              [theme.breakpoints.down('sm')]: {
-                position: 'static',
-                opacity: 1,
-                mb: 1.5,
-              },
-            })}
-          >
-            <Box
-              sx={{
-                bgcolor: '#ffffff',
-                borderRadius: '26px',
-                borderTopLeftRadius: 6,
-                boxShadow: '0 18px 45px rgba(15,23,42,0.15)',
-                border: '1px solid rgba(226,232,240,0.9)',
-                px: 3,
-                py: 2,
-                maxWidth: 230,
-              }}
-            >
-              <Typography
-                variant="body2"
-                sx={{ mt: 0.5, color: '#6b7280', fontSize: 13.5 }}
-              >
-אנחנו כבר מתרגשים לקראת הערב, מקווים שגם אתם! 💗 
-מזכירים - היום, 19:30 באולמי..
-
-מחכים לראותכם! 💗 
-         
-          </Typography>
-          <Typography variant="body2" sx={{ mt: 0.5, color: '#6b7280', fontSize: 13.5 }}>
-            <br />
-          לנוחיותכם ניווט מהיר באמצעות waze ע״י הכפתור למטה     
-          </Typography>
-              <Box
-                  key={"waze לאירוע"}
-                  sx={{
-                    mt: 0.5,
-                    borderRadius: 999,
-                    px: 1.8,
-                    py: 0.8,
-                    background: 'linear-gradient(90deg,#e0f2fe,#ede9fe)',
-                    fontSize: 13,
-                    fontWeight: 500,
-                    color: '#374151',
-                  }}
-                >
-                    {"waze לאירוע"}
-                </Box>
-            </Box>
-          </Box>
-
-        </Box>
-
-        {/* Right content */}
+        {/* Right content - shown first on mobile */}
         <Box
           sx={{
             display: 'flex',
@@ -359,6 +196,7 @@ export default function Hero() {
             maxWidth: 520,
             ml: 'auto',
             mt: { xs: 2, md: 0 },
+            order: { xs: 1, md: 2 },
           }}
           dir="rtl"
         >
@@ -569,6 +407,171 @@ export default function Hero() {
               </Button>
             </Box>
           </Box>
+        </Box>
+
+        {/* Left chat mockup - shown second on mobile */}
+        <Box
+          sx={{
+            position: 'relative',
+            height: { xs: 'auto', md: 380 },
+            mb: { xs: 0, md: 0 },
+            direction: 'rtl',
+            zIndex: 1,
+            order: { xs: 2, md: 1 },
+          }}
+        >
+
+        {/* Message 1 - Top left */}
+          <Box
+            sx={(theme) => ({
+              position: 'absolute',
+              top: { xs: 0, md: -8 },
+              left: { xs: '18%', md: '24%' },
+              animation: `${float} 6s ease-in-out infinite`,
+              animationDelay: '0s',
+              opacity: 0,
+              [theme.breakpoints.down('sm')]: {
+                position: 'static',
+                opacity: 1,
+                mb: 1.5,
+              },
+            })}
+          >
+            <Box
+              sx={{
+                bgcolor: '#ffffff',
+                borderRadius: '26px',
+                borderTopLeftRadius: 6,
+                boxShadow: '0 18px 45px rgba(15,23,42,0.15)',
+                border: '1px solid rgba(226,232,240,0.9)',
+                px: 3,
+                py: 2,
+                maxWidth: 230,
+              }}
+            >
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#111827' }}>
+                שלום! 👋
+              </Typography>
+              <Typography
+                variant="body2"
+                sx={{ mt: 0.5, color: '#6b7280', fontSize: 13.5 }}
+              >
+הנכם מוזמנים לחתונה של ...              </Typography>
+              {["כן, אני בא! 🎉", "לצערי לא אוכל להגיע", "לצערי לא אוכל"].map((label) => (
+                <Box
+                  key={label}
+                  sx={{
+                    mt: 0.5,
+                    borderRadius: 999,
+                    px: 1.8,
+                    py: 0.8,
+                    background: 'linear-gradient(90deg,#e0f2fe,#ede9fe)',
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: '#374151',
+                  }}
+                >
+                  {label}
+                </Box>
+              ))}
+            </Box>
+          </Box>
+
+          {/* Message 2 - User response (green) */}
+          <Box
+            sx={(theme) => ({
+              position: 'absolute',
+              top: { xs: 82, md: 190 },
+              right: { xs: '12%', md: '18%' },
+              animation: `${float} 6s ease-in-out infinite`,
+              animationDelay: '1s',
+              opacity: 0,
+              [theme.breakpoints.down('sm')]: {
+                position: 'static',
+                opacity: 1,
+                mb: 1.5,
+              },
+            })}
+          >
+            <Box
+              sx={{
+                background: 'linear-gradient(135deg,#22c55e,#059669)',
+                color: '#ffffff',
+                borderRadius: '26px',
+                borderTopRightRadius: 8,
+                px: 3,
+                py: 2,
+                boxShadow: '0 20px 50px rgba(21,128,61,0.45)',
+                maxWidth: 230,
+                fontSize: 14,
+                fontWeight: 600,
+              }}
+            >
+              כן, אני בא! 🎉
+            </Box>
+          </Box>
+
+
+          {/* Message3 - Top left */}
+          <Box
+            sx={(theme) => ({
+              position: 'absolute',
+              top: { xs: 82, md: 230 },
+              left: { xs: '18%', md: '24%' },
+              animation: `${float} 6s ease-in-out infinite`,
+              animationDelay: '2.5s',
+              opacity: 0,
+              [theme.breakpoints.down('sm')]: {
+                position: 'static',
+                opacity: 1,
+                mb: 1.5,
+              },
+            })}
+          >
+            <Box
+              sx={{
+                bgcolor: '#ffffff',
+                borderRadius: '26px',
+                borderTopLeftRadius: 6,
+                boxShadow: '0 18px 45px rgba(15,23,42,0.15)',
+                border: '1px solid rgba(226,232,240,0.9)',
+                px: 3,
+                py: 2,
+                maxWidth: 230,
+              }}
+            >
+              <Typography
+                variant="body2"
+                sx={{ mt: 0.5, color: '#6b7280', fontSize: 13.5 }}
+              >
+אנחנו כבר מתרגשים לקראת הערב, מקווים שגם אתם! 💗 
+מזכירים - היום, 19:30 באולמי..
+
+מחכים לראותכם! 💗 
+         
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 0.5, color: '#6b7280', fontSize: 13.5 }}>
+            <br />
+          לנוחיותכם ניווט מהיר באמצעות waze ע״י הכפתור למטה     
+          </Typography>
+              <Box
+                  key={"waze לאירוע"}
+                  sx={{
+                    mt: 0.5,
+                    borderRadius: 999,
+                    px: 1.8,
+                    py: 0.8,
+                    background: 'linear-gradient(90deg,#e0f2fe,#ede9fe)',
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: '#374151',
+                  }}
+                >
+                    {"waze לאירוע"}
+                </Box>
+            </Box>
+          </Box>
+
         </Box>
       </Container>
     </Box>
