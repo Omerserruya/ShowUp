@@ -81,6 +81,7 @@ export default function Highlights() {
             width: { sm: '100%', md: '60%' },
             textAlign: 'center',
             mx: 'auto',
+            mt: { xs: 4, md: 0 },
             mb: 8,
             direction: 'rtl',
           }}
