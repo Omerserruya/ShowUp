@@ -135,13 +135,14 @@ export default function AppAppBar() {
             sx={{ 
               display: { xs: 'flex', md: 'none' }, 
               alignItems: 'center',
-              gap: 2,
+              justifyContent: 'space-between',
+              width: '100%',
             }}
           >
-            <Logo />
             <IconButton aria-label="Menu button" onClick={toggleDrawer(true)}>
               <MenuIcon />
             </IconButton>
+            <Logo />
           </Box>
           <Drawer
             anchor="top"
@@ -153,6 +154,11 @@ export default function AppAppBar() {
                 borderRadius: 0,
                 borderBottom: '1px solid',
                 borderColor: 'divider',
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                zIndex: 1300,
               },
             }}
           >

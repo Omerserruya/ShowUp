@@ -61,6 +61,13 @@ const themeWithTransitions = {
       styleOverrides: {
         body: {
           transition: 'background-color 0.3s, color 0.3s',
+          overflowX: 'hidden',
+        },
+        html: {
+          overflowX: 'hidden',
+        },
+        '#root': {
+          overflowX: 'hidden',
         },
       },
     },

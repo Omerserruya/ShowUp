@@ -117,10 +117,10 @@ export default function Highlights() {
                 <Box
                   sx={{
                     direction: 'rtl',
-                    textAlign: 'right',
+                    textAlign: 'center',
                     display: 'flex',
                     flexDirection: 'column',
-                    alignItems: 'flex-start',
+                    alignItems: 'center',
                     gap: 1,
                     p: 0,
                     borderRadius: 2,

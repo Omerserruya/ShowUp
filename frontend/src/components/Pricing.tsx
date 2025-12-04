@@ -86,7 +86,7 @@ const StyledPaper = styled(Paper)<{ accent: string; popular?: boolean }>(({ them
       ? '0 20px 55px rgba(37,99,235,0.25)'
       : theme.palette.mode === 'dark'
         ? '0 18px 45px rgba(0,0,0,0.4)'
-        : '0 18px 45px rgba(15,23,42,0.12)',
+      : '0 18px 45px rgba(15,23,42,0.12)',
     borderColor: accent,
     backgroundColor: theme.palette.mode === 'dark'
       ? theme.palette.background.paper
