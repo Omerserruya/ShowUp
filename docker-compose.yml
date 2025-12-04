@@ -11,9 +11,9 @@ services:
       - DOLLAR=$ # To escape $ in envsubst
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-       - ./frontend/build:/usr/share/nginx/html:ro
+      - ./frontend/build:/usr/share/nginx/html:ro
       - ./nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf.template
-    command: /bin/sh -c "envsubst < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'"
+    command: /bin/sh -c "envsubst '$$CORE_SERVICE_URL $$AUB_SERVICE_URL $$WEBHOOK_HANDLER_URL $$DOLLAR' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'"
     depends_on:
       - aub-service
       - core-service
