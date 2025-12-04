@@ -68,7 +68,9 @@ export default function Highlights() {
       sx={{
         pt: { xs: 1, sm: 12 },
         pb: { xs: 8, sm: 16 },
-        bgcolor: 'linear-gradient(to bottom, #f5f7fb 0%, #ffffff 40%, #f5f7fb 100%)',
+        bgcolor: theme.palette.mode === 'dark'
+          ? theme.palette.background.default
+          : 'linear-gradient(to bottom, #f5f7fb 0%, #ffffff 40%, #f5f7fb 100%)',
         color: theme.palette.text.primary,
       }}
     >
@@ -124,8 +126,12 @@ export default function Highlights() {
                     transition: 'background-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease',
                     cursor: 'default',
                     '&:hover': {
-                      backgroundColor: 'rgba(15,23,42,0.02)',
-                      boxShadow: '0 10px 30px rgba(15,23,42,0.08)',
+                      backgroundColor: theme.palette.mode === 'dark'
+                        ? 'rgba(255,255,255,0.05)'
+                        : 'rgba(15,23,42,0.02)',
+                      boxShadow: theme.palette.mode === 'dark'
+                        ? '0 10px 30px rgba(0,0,0,0.3)'
+                        : '0 10px 30px rgba(15,23,42,0.08)',
                       transform: 'translateY(-3px)',
                     },
                   }}

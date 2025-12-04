@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Container, Grid, Typography, Paper, Button, Chip } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import { styled } from '@mui/material/styles';
+import { styled, useTheme } from '@mui/material/styles';
 
 const tiers = [
   {
@@ -55,9 +55,17 @@ const StyledPaper = styled(Paper)<{ accent: string; popular?: boolean }>(({ them
   width: '100%',
   height: '100%',
   borderRadius: 16,
-  backgroundColor: '#ffffff',
-  border: popular ? `1px solid ${accent}` : '1px solid #e2e8f0',
-  boxShadow: popular ? '0 16px 40px rgba(37,99,235,0.18)' : '0 10px 30px rgba(15,23,42,0.06)',
+  backgroundColor: theme.palette.mode === 'dark' 
+    ? theme.palette.background.paper 
+    : '#ffffff',
+  border: popular 
+    ? `1px solid ${accent}` 
+    : `1px solid ${theme.palette.mode === 'dark' ? theme.palette.divider : '#e2e8f0'}`,
+  boxShadow: popular 
+    ? '0 16px 40px rgba(37,99,235,0.18)' 
+    : theme.palette.mode === 'dark'
+      ? '0 10px 30px rgba(0,0,0,0.3)'
+      : '0 10px 30px rgba(15,23,42,0.06)',
   position: 'relative',
   overflow: 'hidden',
   transform: popular ? 'scale(1.05)' : 'scale(1)',
@@ -76,9 +84,13 @@ const StyledPaper = styled(Paper)<{ accent: string; popular?: boolean }>(({ them
     transform: popular ? 'scale(1.08) translateY(-6px)' : 'translateY(-6px)',
     boxShadow: popular
       ? '0 20px 55px rgba(37,99,235,0.25)'
-      : '0 18px 45px rgba(15,23,42,0.12)',
+      : theme.palette.mode === 'dark'
+        ? '0 18px 45px rgba(0,0,0,0.4)'
+        : '0 18px 45px rgba(15,23,42,0.12)',
     borderColor: accent,
-    backgroundColor: '#fdfefe',
+    backgroundColor: theme.palette.mode === 'dark'
+      ? theme.palette.background.paper
+      : '#fdfefe',
   },
   [theme.breakpoints.down('md')]: {
     transform: 'scale(1)',
@@ -106,12 +118,15 @@ const FeaturesBox = styled(Box)(({ theme }) => ({
 }));
 
 export default function Pricing() {
+  const theme = useTheme();
   return (
     <Box
       id="pricing"
       sx={{
         py: 10,
-        bgcolor: 'linear-gradient(to bottom, #f5f7fb 0%, #ffffff 40%, #f5f7fb 100%)',
+        bgcolor: theme.palette.mode === 'dark'
+          ? theme.palette.background.default
+          : 'linear-gradient(to bottom, #f5f7fb 0%, #ffffff 40%, #f5f7fb 100%)',
       }}
     >
       <Container maxWidth="lg" sx={{ overflow: 'visible', px: { md: 4 } }}>

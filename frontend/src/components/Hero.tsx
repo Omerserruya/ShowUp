@@ -104,7 +104,7 @@ export default function Hero() {
   return (
     <Box
       id="hero"
-      sx={{
+      sx={(theme) => ({
         position: 'relative',
         minHeight: '100vh',
         display: 'flex',
@@ -112,9 +112,11 @@ export default function Hero() {
         overflow: 'hidden',
         py: { xs: 12, md: 12 },
         px: 0,
-        background: 'radial-gradient(circle at 0 100%, #e0f2ff 0, #ffffff 55%)',
+        background: theme.palette.mode === 'dark'
+          ? theme.palette.background.default
+          : 'radial-gradient(circle at 0 100%, #e0f2ff 0, #ffffff 55%)',
         fontFamily: '"Geist","Geist Fallback","system-ui",sans-serif',
-      }}
+      })}
     >
       {/* background gradient orbs */}
       <Box
@@ -232,14 +234,18 @@ export default function Hero() {
 
           {/* White card with form */}
           <Box
-            sx={{
-              bgcolor: 'rgba(249, 249, 249, 0.31)',
+            sx={(theme) => ({
+              bgcolor: theme.palette.mode === 'dark'
+                ? 'rgba(255, 255, 255, 0.05)'
+                : 'rgba(249, 249, 249, 0.31)',
               borderRadius: 1.5,
-              boxShadow: '0 20px 55px rgba(15,23,42,0.10)',
-              border: '1px solid rgba(148,163,184,0.18)',
+              boxShadow: theme.palette.mode === 'dark'
+                ? '0 20px 55px rgba(0,0,0,0.3)'
+                : '0 20px 55px rgba(15,23,42,0.10)',
+              border: `1px solid ${theme.palette.divider}`,
               p: { xs: 2, md: 3 },
               width: '100%',
-            }}
+            })}
           >
             <Typography
               variant="subtitle1"
@@ -260,24 +266,28 @@ export default function Hero() {
                 select
                 value={countryCode}
                 onChange={(e) => setCountryCode(e.target.value as string)}
-                sx={{
+                sx={(theme) => ({
                   minWidth: 110,
                   '& .MuiOutlinedInput-root': {
                     borderRadius: 1.5,
                     height: 40,
-                    bgcolor: '#f9fafb',
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f9fafb',
                     '& fieldset': {
-                      borderColor: '#e5e7eb',
+                      borderColor: theme.palette.divider,
                     },
                     '&:hover fieldset': {
-                      borderColor: '#d1d5db',
+                      borderColor: theme.palette.mode === 'dark'
+                        ? theme.palette.divider
+                        : '#d1d5db',
                     },
                     '&.Mui-focused fieldset': {
                       borderColor: '#3b82f6',
                       boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
                     },
                   },
-                }}
+                })}
                 SelectProps={{
                   renderValue: (value) => (value as string) || '+972',
                 }}
@@ -297,24 +307,28 @@ export default function Hero() {
                 value={phone}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPhone(e.target.value)}
                 inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
-                sx={{
+                sx={(theme) => ({
                   '& .MuiOutlinedInput-root': {
                     borderRadius: 1.5,
                     height: 40,
-                    bgcolor: '#f9fafb',
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f9fafb',
                     '& fieldset': {
-                      borderColor: '#e5e7eb',
+                      borderColor: theme.palette.divider,
                       transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
                     },
                     '&:hover fieldset': {
-                      borderColor: '#d1d5db',
+                      borderColor: theme.palette.mode === 'dark'
+                        ? theme.palette.divider
+                        : '#d1d5db',
                     },
                     '&.Mui-focused fieldset': {
                       borderColor: '#3b82f6',
                       boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
                     },
                   },
-                }}
+                })}
               />
             </Box>
 
@@ -365,19 +379,25 @@ export default function Hero() {
             >
               <Button
                 variant="outlined"
-                sx={{
+                sx={(theme) => ({
                   borderRadius: 1.5,
                   px: 3.5,
                   py: 1.1,
                   textTransform: 'none',
-                  borderColor: '#e2e8f0',
-                  color: '#0f172a',
-                  bgcolor: '#ffffff',
+                  borderColor: theme.palette.divider,
+                  color: theme.palette.text.primary,
+                  bgcolor: theme.palette.mode === 'dark'
+                    ? theme.palette.background.paper
+                    : '#ffffff',
                   '&:hover': {
-                    borderColor: '#cbd5e1',
-                    bgcolor: '#f8fafc',
+                    borderColor: theme.palette.mode === 'dark'
+                      ? theme.palette.divider
+                      : '#cbd5e1',
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.action.hover
+                      : '#f8fafc',
                   },
-                }}
+                })}
               >
 ספרו לי עוד              </Button>
               <Button
