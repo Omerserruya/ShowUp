@@ -1,138 +1,162 @@
 import * as React from 'react';
 import Box from '@mui/material/Box';
-import Card from '@mui/material/Card';
 import Container from '@mui/material/Container';
 import Grid from '@mui/material/Grid';
-import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
+import { styled, useTheme } from '@mui/material/styles';
+
+// Icons
 import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import TrackChangesIcon from '@mui/icons-material/TrackChanges';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
-import ChatIcon from '@mui/icons-material/Chat';
-import EditIcon from '@mui/icons-material/Edit';
-import EventIcon from '@mui/icons-material/Event';
-import { styled } from '@mui/material/styles';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
 
-const items = [
+// --- Feature Data ---
+const featureData = [
   {
-    icon: <WhatsAppIcon />,
-    title: 'שליחת הודעות וואטסאפ אוטומטיות',
+    icon: WhatsAppIcon,
+    title: 'אישורי הגעה אוטומטיים בוואטסאפ, בלי לינקים',
     description:
-      'תזמון הודעות אישור הגעה ישירות לאורחים – בלי כאבי ראש, בלי לשכוח.',
-    color: '#4CAF50', // Green
+      'חוויה אישית ונוחה למענה שמבטיחה שהאורחים שלכם באמת יענו – הכל קורה ישירות בוואטסאפ, בלי טפסים מסורבלים.',
+    color: '#16a34a', // Green
   },
   {
-    icon: <TrackChangesIcon />,
-    title: 'מעקב אחר אישורי הגעה בזמן אמת',
+    icon: TrackChangesIcon,
+    title: 'ניהול מתקדם בדשבורד בזמן אמת',
     description:
-      'רואים מי קיבל, מי פתח, מי לחץ, ומי עדיין מתעלם 😉 – הכל בדשבורד פשוט.',
-    color: '#2196F3', // Blue
+      'עדכוני סטטוס לייב, סידורי הושבה ותצוגה ברורה של כמה מגיעים, מי אישר, מי מתלבט ומה המצב בשטח בכל רגע.',
+    color: '#2563eb', // Blue
   },
   {
-    icon: <CloudUploadIcon />,
-    title: 'ייבוא אורחים בקלות דרך אקסל או וואטסאפ',
+    icon: SmartToyIcon,
+    title: 'נציג AI זמין 24/7',
     description:
-      'מעלים קובץ או שולחים את אנשי הקשר לבוט שלנו – אנחנו כבר נוסיף אותם אוטומטית.',
-    color: '#FF9800', // Orange
+      'העוזר האישי שלכם לשאלות כמו כמה אישורי הגעה התקבלו, מי אישר ומה, כמה צמחונים, ואפילו בקשות מיוחדות מאורחים – במילה אחת: שקט.',
+    color: '#7c3aed', // Purple
   },
   {
-    icon: <ChatIcon />,
-    title: 'ניהול שיחה עם אורחים בצורת צ\'אט מרוכז',
+    icon: CloudUploadIcon,
+    title: 'העלאת אורחים מהירה ופשוטה דרך הבוט',
     description:
-      'כל התשובות של האורחים – במקום אחד. בלי להסתובב בין הודעות.',
-    color: '#E91E63', // Pink
-  },
-  {
-    icon: <EditIcon />,
-    title: 'התאמה אישית של הודעות ההזמנה',
-    description:
-      'כותבים בדיוק מה שמתאים לכם – עם שם, פרטים, לינק ומיתוג אישי.',
-    color: '#673AB7', // Deep Purple
-  },
-  {
-    icon: <EventIcon />,
-    title: 'מותאם לאירועים פרטיים ועסקיים',
-    description:
-      'חתונות, בריתות, ימי הולדת, כנסים – תפעול חלק ונעים לכל סוג של אירוע.',
-    color: '#009688', // Teal
+      'ייבוא אנשי קשר מאקסל או מהמחשב, או שליחה ישירה לבוט – אנחנו נטפל בסידור וניהול הרשימה, בלי כאב ראש.',
+    color: '#f97316', // Orange
   },
 ];
 
-const StyledCard = styled(Card)(({ theme }) => ({
-  padding: theme.spacing(4),
-  display: 'flex',
-  flexDirection: 'column',
-  height: '100%',
-  transition: 'transform 0.2s',
-  transform: 'scale(0.98)',
-  '&:hover': {
-    transform: 'translateY(-8px) scale(0.98)',
-    boxShadow: theme.shadows[4],
-  },
-}));
-
-const FeatureIcon = styled(Box)(({ color }) => ({
-  display: 'flex',
+// --- Icon with clean accent box (no outer card) ---
+const FeatureIcon = styled(Box)<{ colorprop: string }>(({ colorprop }) => ({
+  display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
-  marginBottom: '16px',
+  marginBottom: 8,
+  borderRadius: 999,
+  padding: 10,
+  background: `linear-gradient(135deg, ${colorprop}18, ${colorprop}08)`,
+  border: `1px solid ${colorprop}40`,
   '& svg': {
-    fontSize: 40,
-    color: color,
+    fontSize: 26,
+    color: colorprop,
   },
 }));
 
 export default function Highlights() {
+  const theme = useTheme();
+
   return (
     <Box
       id="highlights"
       sx={{
         pt: { xs: 6, sm: 12 },
         pb: { xs: 8, sm: 16 },
-        color: 'text.primary',
-        bgcolor: 'background.paper',
+        bgcolor: 'linear-gradient(to bottom, #f5f7fb 0%, #ffffff 40%, #f5f7fb 100%)',
+        color: theme.palette.text.primary,
       }}
     >
       <Container maxWidth="lg">
+        {/* Header Section (RTL) */}
         <Box
           sx={{
             width: { sm: '100%', md: '60%' },
             textAlign: 'center',
             mx: 'auto',
-            mb: 6,
+            mb: 8,
             direction: 'rtl',
           }}
         >
-          <Typography component="h2" variant="h3" gutterBottom>
-            במה אנחנו מיוחדים?
+          <Typography component="h2" variant="h3" gutterBottom sx={{ fontWeight: 800 }}>
+            למה לבחור ב‑
+            <Box
+              component="span"
+              sx={{
+                ml: 0.5,
+                background: 'linear-gradient(90deg,#2563eb,#7c3aed)',
+                WebkitBackgroundClip: 'text',
+                color: 'transparent',
+                fontWeight: 800,
+              }}
+            >
+              ShowUp?
+            </Box>
           </Typography>
-          <Typography variant="h6" sx={{ color: 'text.secondary' }}>
-            לא משנה אם זה אירוע משפחתי קטן או כנס גדול – אצלנו תקבלו מערכת פשוטה, חכמה ויעילה שמרכזת את כל מה שצריך כדי לדאוג שכולם יגיעו – ויידעו על זה בזמן.
+          <Typography variant="h6" sx={{ color: theme.palette.text.secondary, mt: 1 }}>
+            כל מה שאתם צריכים לניהול אורחים חכם – בפלטפורמה אחת פשוטה ויעילה.
           </Typography>
         </Box>
-        <Grid container spacing={5}>
-          {items.map((item, index) => (
-            <Grid item xs={12} sm={6} md={4} key={index}>
-              <StyledCard
-                elevation={2}
-                sx={{ 
-                  direction: 'rtl',
-                  textAlign: 'right',
-                  borderTop: `4px solid ${item.color}`,
-                }}
-              >
-                <FeatureIcon color={item.color}>
-                  {item.icon}
-                </FeatureIcon>
-                <Typography gutterBottom variant="h5" sx={{ fontWeight: 'medium', mb: 2 }}>
-                  {item.title}
-                </Typography>
-                <Typography variant="body1" sx={{ color: 'text.secondary', mb: 2 }}>
-                  {item.description}
-                </Typography>
-              </StyledCard>
-            </Grid>
-          ))}
+
+        {/* Features Grid (RTL) */}
+        <Grid container spacing={4} sx={{ alignItems: 'stretch', direction: 'rtl' }}>
+          {featureData.map((item, index) => {
+            const IconComponent = item.icon;
+            const featureColor = item.color;
+
+            return (
+              <Grid item xs={12} sm={6} md={3} key={index}>
+                <Box
+                  sx={{
+                    direction: 'rtl',
+                    textAlign: 'right',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-start',
+                    gap: 1,
+                    p: 1.5,
+                    borderRadius: 2,
+                    transition: 'background-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease',
+                    cursor: 'default',
+                    '&:hover': {
+                      backgroundColor: 'rgba(15,23,42,0.02)',
+                      boxShadow: '0 10px 30px rgba(15,23,42,0.08)',
+                      transform: 'translateY(-3px)',
+                    },
+                  }}
+                >
+                  <FeatureIcon colorprop={featureColor}>
+                    <IconComponent />
+                  </FeatureIcon>
+                  <Typography
+                    gutterBottom
+                    variant="h6"
+                    sx={{
+                      fontWeight: 700,
+                      mb: 1,
+                      color: theme.palette.text.primary,
+                    }}
+                  >
+                    {item.title}
+                  </Typography>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: theme.palette.text.secondary,
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    {item.description}
+                  </Typography>
+                </Box>
+              </Grid>
+            );
+          })}
         </Grid>
       </Container>
     </Box>
