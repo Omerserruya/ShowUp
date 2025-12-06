@@ -499,13 +499,14 @@ export default function Hero() {
                 display: 'flex',
                 gap: { xs: 1, md: 2 },
                 justifyContent: 'flex-end',
-                flexWrap: 'nowrap',
-                flexDirection: 'row',
+                flexWrap: { xs: 'wrap', sm: 'nowrap' },
+                flexDirection: { xs: 'column', sm: 'row' },
                 width: '100%',
               }}
             >
               <Button
                 variant="outlined"
+                fullWidth={false}
                 sx={(theme) => ({
                   borderRadius: 1.5,
                   py: 1.1,
@@ -516,8 +517,9 @@ export default function Hero() {
                     ? theme.palette.background.paper
                     : '#ffffff',
                   whiteSpace: 'nowrap',
-                  flex: '1 1 50%',
-                  maxWidth: '50%',
+                  flex: { xs: '1 1 100%', sm: '1 1 50%' },
+                  width: { xs: '100%', sm: 'auto' },
+                  maxWidth: { xs: '100%', sm: '50%' },
                   fontSize: { xs: 13, md: 14 },
                   '&:hover': {
                     borderColor: theme.palette.mode === 'dark'
@@ -533,6 +535,7 @@ export default function Hero() {
               </Button>
               <Button
                 variant="contained"
+                fullWidth={false}
                 sx={{
                   borderRadius: 1.5,
                   py: 1.1,
@@ -542,8 +545,9 @@ export default function Hero() {
                   boxShadow: 'none',
                   outline: 'none',
                   whiteSpace: 'nowrap',
-                  flex: '1 1 50%',
-                  maxWidth: '50%',
+                  flex: { xs: '1 1 100%', sm: '1 1 50%' },
+                  width: { xs: '100%', sm: 'auto' },
+                  maxWidth: { xs: '100%', sm: '50%' },
                   fontSize: { xs: 13, md: 14 },
                   fontWeight: 600,
                   '&:hover': {
