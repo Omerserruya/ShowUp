@@ -12,13 +12,20 @@ import AccessibilityNewIcon from '@mui/icons-material/AccessibilityNew';
 
 function Copyright() {
   return (
-    <Typography variant="body2" color="text.secondary" align="center">
+    <Typography 
+      variant="body2" 
+      color="text.secondary" 
+      align="center"
+      sx={{
+        width: { xs: '100%', sm: 'auto' },
+      }}
+    >
       {'© '}
       {new Date().getFullYear()}{' '}
       <Link color="inherit" href="https://mui.com/">
         ShowUp
       </Link>
-      {'. כל הזכויות שמורות.'}
+      {'ֿ כל הזכויות שמורות'}
     </Typography>
   );
 }
@@ -53,19 +60,35 @@ export default function Footer() {
             display: 'flex',
             flexDirection: 'column',
             gap: 4,
-            minWidth: { xs: '100%', sm: '60%' },
+            alignItems: { xs: 'center', sm: 'flex-start' },
+            width: { xs: '100%', sm: '60%' },
           }}
         >
-          <Box sx={{ width: { xs: '100%', sm: 60 } }}>
-            <Logo />
+          <Box 
+            sx={{ 
+              display: 'flex', 
+              flexDirection: 'column',
+              alignItems: { xs: 'center', sm: 'flex-start' },
+              gap: 1,
+              width: { xs: '100%', sm: 'auto' } 
+            }}
+          >
+            <Logo height={40} mr={0} />
+            <Typography 
+              variant="body2" 
+              color="text.secondary"
+              sx={{
+                textAlign: { xs: 'center', sm: 'left' },
+              }}
+            >
+              ShowUp - העוזר החכם שלך לניהול אורחים
+            </Typography>
           </Box>
-          <Typography variant="body2" color="text.secondary">
-            ShowUp - פלטפורמה לניהול תורים ופגישות לעסקים קטנים ובינוניים.
-          </Typography>
           <Box
             sx={{
               display: 'flex',
               gap: 1,
+              justifyContent: { xs: 'center', sm: 'flex-start' },
             }}
           >
             {socialItems.map((item) => (
@@ -181,15 +204,25 @@ export default function Footer() {
       <Box
         sx={{
           display: 'flex',
+          flexDirection: { xs: 'column', sm: 'row' },
           justifyContent: 'space-between',
+          alignItems: { xs: 'center', sm: 'flex-start' },
           pt: { xs: 4, sm: 8 },
           width: '100%',
           borderTop: '1px solid',
           borderColor: 'divider',
+          gap: { xs: 2, sm: 0 },
         }}
       >
         <Copyright />
-        <Box sx={{ display: 'flex', gap: 3 }}>
+        <Box 
+          sx={{ 
+            display: 'flex', 
+            gap: 3,
+            flexWrap: 'wrap',
+            justifyContent: { xs: 'center', sm: 'flex-end' },
+          }}
+        >
           <Link 
             component={RouterLink} 
             to="/terms" 
