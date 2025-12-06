@@ -38,7 +38,8 @@ export default function FAQ() {
         sx={{
           color: 'text.primary',
           width: { sm: '100%', md: '60%' },
-          textAlign: { sm: 'left', md: 'center' },
+          textAlign: 'center',
+          mx: 'auto',
         }}
       >
         שאלות נפוצות

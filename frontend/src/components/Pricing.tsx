@@ -144,11 +144,12 @@ export default function Pricing() {
             gutterBottom
             sx={{
               fontWeight: 800,
+              textAlign: 'center',
             }}
           >
             כמה זה עולה לכם?
           </Typography>
-          <Typography variant="h6" color="text.secondary">
+          <Typography variant="h6" color="text.secondary" sx={{ textAlign: 'center' }}>
             שלוש חבילות פשוטות שמותאמות לגודל האירוע – בלי הפתעות ובלי אותיות קטנות.
           </Typography>
         </Box>

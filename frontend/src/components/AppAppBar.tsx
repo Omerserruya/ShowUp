@@ -11,6 +11,7 @@ import MenuItem from '@mui/material/MenuItem';
 import Drawer from '@mui/material/Drawer';
 import MenuIcon from '@mui/icons-material/Menu';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import PersonIcon from '@mui/icons-material/Person';
 import { useNavigate } from 'react-router-dom';
 import { useColorScheme } from '@mui/material/styles';
 import ColorModeIconDropdown from '../components/ColorModeIconDropdown';
@@ -85,7 +86,7 @@ export default function AppAppBar() {
           variant="dense" 
           disableGutters
           sx={{
-            justifyContent: { xs: 'center', md: 'space-between' },
+            justifyContent: { xs: 'space-between', md: 'space-between' },
             width: '100%',
           }}
         >
@@ -135,13 +136,23 @@ export default function AppAppBar() {
             sx={{ 
               display: { xs: 'flex', md: 'none' }, 
               alignItems: 'center',
-              justifyContent: 'space-between',
-              width: '100%',
+              gap: 1,
             }}
           >
             <IconButton aria-label="Menu button" onClick={toggleDrawer(true)}>
               <MenuIcon />
             </IconButton>
+            <IconButton 
+              aria-label="Login button" 
+              onClick={handleLoginClick}
+              sx={{
+                color: 'text.primary',
+              }}
+            >
+              <PersonIcon />
+            </IconButton>
+          </Box>
+          <Box sx={{ display: { xs: 'flex', md: 'none' }, alignItems: 'center' }}>
             <Logo />
           </Box>
           <Drawer

@@ -100,6 +100,9 @@ const countryOptions = [
 export default function Hero() {
   const [countryCode, setCountryCode] = React.useState('+972');
   const [phone, setPhone] = React.useState('');
+  const [fullName, setFullName] = React.useState('');
+  const [eventType, setEventType] = React.useState('');
+  const [customEventType, setCustomEventType] = React.useState('');
 
   return (
     <Box
@@ -115,7 +118,7 @@ export default function Hero() {
         background: theme.palette.mode === 'dark'
           ? theme.palette.background.default
           : 'radial-gradient(circle at 0 100%, #e0f2ff 0, #ffffff 55%)',
-        fontFamily: '"Geist","Geist Fallback","system-ui",sans-serif',
+        fontFamily: '"Noto Sans Hebrew", Arial, sans-serif',
       })}
     >
       {/* background gradient orbs */}
@@ -213,6 +216,7 @@ export default function Hero() {
                 color: 'transparent',
                 WebkitBackgroundClip: 'text',
                 backgroundClip: 'text',
+                textAlign: 'center',
               }}
             >
 לניהול אורחים חכם.              <br />
@@ -224,8 +228,9 @@ export default function Hero() {
                 mt: 2,
                 color: 'text.secondary',
                 maxWidth: 480,
-                ml: 'auto',
+                mx: 'auto',
                 fontWeight: 400,
+                textAlign: 'center',
               }}
             >
 מערכת אוטמטית שעושה לכם סדר בהכל - אישורי הגעה, בחירת מנות, שאלות של אורחים והכול ללא לינקים מסורבלים.
@@ -253,6 +258,126 @@ export default function Hero() {
             >
               רוצים לראות איך האורח יחווה ? נסו בעצמכם
             </Typography>
+
+            {/* Full Name Field */}
+            <TextField
+              fullWidth
+              placeholder="שם מלא"
+              value={fullName}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFullName(e.target.value)}
+              inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
+              sx={(theme) => ({
+                mb: 2,
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 1.5,
+                  height: 40,
+                  bgcolor: theme.palette.mode === 'dark'
+                    ? theme.palette.background.paper
+                    : '#f9fafb',
+                  '& fieldset': {
+                    borderColor: theme.palette.divider,
+                    transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+                  },
+                  '&:hover fieldset': {
+                    borderColor: theme.palette.mode === 'dark'
+                      ? theme.palette.divider
+                      : '#d1d5db',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: '#3b82f6',
+                    boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
+                  },
+                },
+              })}
+            />
+
+            {/* Event Type Field */}
+            <TextField
+              select
+              fullWidth
+              placeholder="בחר אירוע"
+              value={eventType}
+              onChange={(e) => setEventType(e.target.value as string)}
+              sx={(theme) => ({
+                mb: 2,
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 1.5,
+                  height: 40,
+                  bgcolor: theme.palette.mode === 'dark'
+                    ? theme.palette.background.paper
+                    : '#f9fafb',
+                  '& fieldset': {
+                    borderColor: theme.palette.divider,
+                  },
+                  '&:hover fieldset': {
+                    borderColor: theme.palette.mode === 'dark'
+                      ? theme.palette.divider
+                      : '#d1d5db',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: '#3b82f6',
+                    boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
+                  },
+                },
+              })}
+              SelectProps={{
+                displayEmpty: true,
+                renderValue: (value) => {
+                  if (!value) return 'בחר אירוע';
+                  const options = [
+                    { value: 'wedding', label: 'חתונה' },
+                    { value: 'bar-mitzvah', label: 'בר מצווה' },
+                    { value: 'bat-mitzvah', label: 'בת מצווה' },
+                    { value: 'brit', label: 'ברית' },
+                    { value: 'corporate', label: 'אירוע חברה' },
+                    { value: 'other', label: 'אחר' },
+                  ];
+                  return options.find(opt => opt.value === value)?.label || (value as string);
+                },
+              }}
+              inputProps={{ style: { direction: 'rtl', textAlign: 'right', fontSize: 13 } }}
+            >
+              <MenuItem value="wedding">חתונה</MenuItem>
+              <MenuItem value="bar-mitzvah">בר מצווה</MenuItem>
+              <MenuItem value="bat-mitzvah">בת מצווה</MenuItem>
+              <MenuItem value="brit">ברית</MenuItem>
+              <MenuItem value="corporate">אירוע חברה</MenuItem>
+              <MenuItem value="other">אחר</MenuItem>
+            </TextField>
+
+            {/* Custom Event Type Field (shown only when "other" is selected) */}
+            {eventType === 'other' && (
+              <TextField
+                fullWidth
+                placeholder="נא להזין סוג אירוע"
+                value={customEventType}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCustomEventType(e.target.value)}
+                inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
+                sx={(theme) => ({
+                  mb: 2,
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 1.5,
+                    height: 40,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f9fafb',
+                    '& fieldset': {
+                      borderColor: theme.palette.divider,
+                      transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+                    },
+                    '&:hover fieldset': {
+                      borderColor: theme.palette.mode === 'dark'
+                        ? theme.palette.divider
+                        : '#d1d5db',
+                    },
+                    '&.Mui-focused fieldset': {
+                      borderColor: '#3b82f6',
+                      boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
+                    },
+                  },
+                })}
+              />
+            )}
 
             <Box
               sx={{
@@ -358,7 +483,7 @@ export default function Hero() {
                   textTransform: 'none',
                 }}
               >
-                קדימה, מגניב!
+                קדימה, תראו לי
               </Button>
             </Box>
 
@@ -372,16 +497,17 @@ export default function Hero() {
             <Box
               sx={{
                 display: 'flex',
-                gap: 2,
+                gap: { xs: 1, md: 2 },
                 justifyContent: 'flex-end',
-                flexWrap: 'wrap',
+                flexWrap: 'nowrap',
+                flexDirection: 'row',
+                width: '100%',
               }}
             >
               <Button
                 variant="outlined"
                 sx={(theme) => ({
                   borderRadius: 1.5,
-                  px: 3.5,
                   py: 1.1,
                   textTransform: 'none',
                   borderColor: theme.palette.divider,
@@ -389,6 +515,10 @@ export default function Hero() {
                   bgcolor: theme.palette.mode === 'dark'
                     ? theme.palette.background.paper
                     : '#ffffff',
+                  whiteSpace: 'nowrap',
+                  flex: '1 1 50%',
+                  maxWidth: '50%',
+                  fontSize: { xs: 13, md: 14 },
                   '&:hover': {
                     borderColor: theme.palette.mode === 'dark'
                       ? theme.palette.divider
@@ -399,22 +529,28 @@ export default function Hero() {
                   },
                 })}
               >
-ספרו לי עוד              </Button>
+                שנציג יספר לי עוד
+              </Button>
               <Button
                 variant="contained"
                 sx={{
                   borderRadius: 1.5,
-                  px: 3.8,
                   py: 1.1,
                   textTransform: 'none',
                   background: 'linear-gradient(90deg,#3b82f6,#a855f7)',
                   border: 'none',
                   boxShadow: 'none',
                   outline: 'none',
+                  whiteSpace: 'nowrap',
+                  flex: '1 1 50%',
+                  maxWidth: '50%',
+                  fontSize: { xs: 13, md: 14 },
+                  fontWeight: 600,
                   '&:hover': {
                     background: 'linear-gradient(90deg,#2563eb,#9333ea)',
                     border: 'none',
                     boxShadow: 'none',
+                    transform: 'translateY(-1px)',
                   },
                   '&:focus-visible': {
                     outline: 'none',
@@ -423,7 +559,7 @@ export default function Hero() {
                   },
                 }}
               >
-                התחילו עכשיו
+                התחילו עכשיו - בחרו חבילה
               </Button>
             </Box>
           </Box>
@@ -438,10 +574,12 @@ export default function Hero() {
             direction: 'rtl',
             zIndex: 1,
             order: { xs: 2, md: 1 },
+            display: { xs: 'flex', md: 'block' },
+            flexDirection: { xs: 'column', md: 'row' },
           }}
         >
 
-        {/* Message 1 - Top left */}
+        {/* Message 1 - Top left (white/gray - left aligned) */}
           <Box
             sx={(theme) => ({
               position: 'absolute',
@@ -454,6 +592,9 @@ export default function Hero() {
                 position: 'static',
                 opacity: 1,
                 mb: 1.5,
+                alignSelf: 'flex-start',
+                mr: 'auto',
+                ml: 0,
               },
             })}
           >
@@ -482,7 +623,7 @@ export default function Hero() {
                   key={label}
                   sx={{
                     mt: 0.5,
-                    borderRadius: 999,
+                    borderRadius: 1,
                     px: 1.8,
                     py: 0.8,
                     background: 'linear-gradient(90deg,#e0f2fe,#ede9fe)',
@@ -497,7 +638,7 @@ export default function Hero() {
             </Box>
           </Box>
 
-          {/* Message 2 - User response (green) */}
+          {/* Message 2 - User response (green - right aligned) */}
           <Box
             sx={(theme) => ({
               position: 'absolute',
@@ -510,6 +651,9 @@ export default function Hero() {
                 position: 'static',
                 opacity: 1,
                 mb: 1.5,
+                alignSelf: 'flex-end',
+                ml: 'auto',
+                mr: 0,
               },
             })}
           >
@@ -532,7 +676,7 @@ export default function Hero() {
           </Box>
 
 
-          {/* Message3 - Top left */}
+          {/* Message3 - Top left (white/gray - left aligned) */}
           <Box
             sx={(theme) => ({
               position: 'absolute',
@@ -545,6 +689,9 @@ export default function Hero() {
                 position: 'static',
                 opacity: 1,
                 mb: 1.5,
+                alignSelf: 'flex-start',
+                mr: 'auto',
+                ml: 0,
               },
             })}
           >
@@ -578,7 +725,7 @@ export default function Hero() {
                   key={"waze לאירוע"}
                   sx={{
                     mt: 0.5,
-                    borderRadius: 999,
+                    borderRadius: 1,
                     px: 1.8,
                     py: 0.8,
                     background: 'linear-gradient(90deg,#e0f2fe,#ede9fe)',
