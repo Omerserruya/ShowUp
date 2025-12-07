@@ -8,6 +8,7 @@ import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import MenuItem from '@mui/material/MenuItem';
 import { keyframes } from '@mui/system';
+import { countryOptions, normalizePhoneNumber } from '../utils/countryOptions';
 
 const float = keyframes`
   0% {
@@ -44,58 +45,6 @@ const blob = keyframes`
     transform: translate(-20px, 20px) scale(0.97);
   }
 `;
-
-const countryOptions = [
-  { code: 'IL', name: 'ישראל', dialCode: '+972', flag: '🇮🇱' },
-  { code: 'US', name: 'United States', dialCode: '+1', flag: '🇺🇸' },
-  { code: 'CA', name: 'Canada', dialCode: '+1', flag: '🇨🇦' },
-  { code: 'GB', name: 'United Kingdom', dialCode: '+44', flag: '🇬🇧' },
-  { code: 'FR', name: 'France', dialCode: '+33', flag: '🇫🇷' },
-  { code: 'DE', name: 'Germany', dialCode: '+49', flag: '🇩🇪' },
-  { code: 'ES', name: 'Spain', dialCode: '+34', flag: '🇪🇸' },
-  { code: 'IT', name: 'Italy', dialCode: '+39', flag: '🇮🇹' },
-  { code: 'NL', name: 'Netherlands', dialCode: '+31', flag: '🇳🇱' },
-  { code: 'BE', name: 'Belgium', dialCode: '+32', flag: '🇧🇪' },
-  { code: 'PT', name: 'Portugal', dialCode: '+351', flag: '🇵🇹' },
-  { code: 'GR', name: 'Greece', dialCode: '+30', flag: '🇬🇷' },
-  { code: 'SE', name: 'Sweden', dialCode: '+46', flag: '🇸🇪' },
-  { code: 'NO', name: 'Norway', dialCode: '+47', flag: '🇳🇴' },
-  { code: 'DK', name: 'Denmark', dialCode: '+45', flag: '🇩🇰' },
-  { code: 'FI', name: 'Finland', dialCode: '+358', flag: '🇫🇮' },
-  { code: 'IE', name: 'Ireland', dialCode: '+353', flag: '🇮🇪' },
-  { code: 'CH', name: 'Switzerland', dialCode: '+41', flag: '🇨🇭' },
-  { code: 'AT', name: 'Austria', dialCode: '+43', flag: '🇦🇹' },
-  { code: 'PL', name: 'Poland', dialCode: '+48', flag: '🇵🇱' },
-  { code: 'CZ', name: 'Czech Republic', dialCode: '+420', flag: '🇨🇿' },
-  { code: 'HU', name: 'Hungary', dialCode: '+36', flag: '🇭🇺' },
-  { code: 'RO', name: 'Romania', dialCode: '+40', flag: '🇷🇴' },
-  { code: 'BG', name: 'Bulgaria', dialCode: '+359', flag: '🇧🇬' },
-  { code: 'RU', name: 'Russia', dialCode: '+7', flag: '🇷🇺' },
-  { code: 'UA', name: 'Ukraine', dialCode: '+380', flag: '🇺🇦' },
-  { code: 'TR', name: 'Turkey', dialCode: '+90', flag: '🇹🇷' },
-  { code: 'AE', name: 'United Arab Emirates', dialCode: '+971', flag: '🇦🇪' },
-  { code: 'SA', name: 'Saudi Arabia', dialCode: '+966', flag: '🇸🇦' },
-  { code: 'EG', name: 'Egypt', dialCode: '+20', flag: '🇪🇬' },
-  { code: 'JO', name: 'Jordan', dialCode: '+962', flag: '🇯🇴' },
-  { code: 'LB', name: 'Lebanon', dialCode: '+961', flag: '🇱🇧' },
-  { code: 'QA', name: 'Qatar', dialCode: '+974', flag: '🇶🇦' },
-  { code: 'BH', name: 'Bahrain', dialCode: '+973', flag: '🇧🇭' },
-  { code: 'IN', name: 'India', dialCode: '+91', flag: '🇮🇳' },
-  { code: 'PK', name: 'Pakistan', dialCode: '+92', flag: '🇵🇰' },
-  { code: 'CN', name: 'China', dialCode: '+86', flag: '🇨🇳' },
-  { code: 'JP', name: 'Japan', dialCode: '+81', flag: '🇯🇵' },
-  { code: 'KR', name: 'South Korea', dialCode: '+82', flag: '🇰🇷' },
-  { code: 'SG', name: 'Singapore', dialCode: '+65', flag: '🇸🇬' },
-  { code: 'AU', name: 'Australia', dialCode: '+61', flag: '🇦🇺' },
-  { code: 'NZ', name: 'New Zealand', dialCode: '+64', flag: '🇳🇿' },
-  { code: 'ZA', name: 'South Africa', dialCode: '+27', flag: '🇿🇦' },
-  { code: 'NG', name: 'Nigeria', dialCode: '+234', flag: '🇳🇬' },
-  { code: 'KE', name: 'Kenya', dialCode: '+254', flag: '🇰🇪' },
-  { code: 'BR', name: 'Brazil', dialCode: '+55', flag: '🇧🇷' },
-  { code: 'AR', name: 'Argentina', dialCode: '+54', flag: '🇦🇷' },
-  { code: 'CL', name: 'Chile', dialCode: '+56', flag: '🇨🇱' },
-  { code: 'MX', name: 'Mexico', dialCode: '+52', flag: '🇲🇽' },
-];
 
 export default function Hero() {
   const [countryCode, setCountryCode] = React.useState('+972');
@@ -430,7 +379,18 @@ export default function Hero() {
                 type="tel"
                 placeholder="הזינו מספר טלפון"
                 value={phone}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPhone(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  setPhone(e.target.value);
+                }}
+                onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
+                  // Normalize phone number when user leaves the field
+                  if (phone && countryCode) {
+                    const normalized = normalizePhoneNumber(phone, countryCode);
+                    // Extract just the phone part (without country code) for display
+                    const phonePart = normalized.replace(countryCode, '');
+                    setPhone(phonePart);
+                  }
+                }}
                 inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
                 sx={(theme) => ({
                   '& .MuiOutlinedInput-root': {
@@ -466,6 +426,14 @@ export default function Hero() {
               <Button
                 fullWidth
                 variant="contained"
+                onClick={() => {
+                  // Normalize phone number before any potential submission
+                  if (phone && countryCode) {
+                    const normalized = normalizePhoneNumber(phone, countryCode);
+                    console.log('Normalized phone:', normalized);
+                    // Here you can add any submission logic if needed
+                  }
+                }}
                 sx={{
                   borderRadius: 1.5,
                   py: 0.5,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Button,
@@ -6,40 +6,33 @@ import {
   TextField,
   Typography,
   Link,
-  Grid,
   CircularProgress,
-  Snackbar,
-  Alert,
   CardContent,
   IconButton,
-  Divider,
   Card,
-  Checkbox,
-  FormControlLabel,
-  FormHelperText,
+  MenuItem,
 } from '@mui/material';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import PersonAddOutlinedIcon from '@mui/icons-material/PersonAddOutlined';
-import GoogleIcon from '@mui/icons-material/Google';
-import FacebookIcon from '@mui/icons-material/Facebook';
-import { StyledBackground, SocialButton } from '../styles/AuthStyles';
+import PhoneIcon from '@mui/icons-material/Phone';
 import { styled, Theme } from '@mui/material/styles';
-import { Directions } from '@mui/icons-material';
+import { gray } from '../shared-theme/themePrimitives';
+import { useUser } from '../contexts/UserContext';
+import { countryOptions, normalizePhoneNumber } from '../utils/countryOptions';
 
 interface RegisterFormData {
-  username: string;
+  phone: string;
+  countryCode: string;
+  firstName: string;
+  lastName: string;
   email: string;
-  password: string;
-  confirmPassword: string;
-  agreedToTerms: boolean;
 }
 
 interface FormErrors {
-  username?: string;
+  phone?: string;
+  firstName?: string;
+  lastName?: string;
   email?: string;
-  password?: string;
-  confirmPassword?: string;
-  agreedToTerms?: string;
 }
 
 const StyledCard = styled(Card)(({ theme }: { theme: Theme }) => ({
@@ -52,43 +45,59 @@ const StyledCard = styled(Card)(({ theme }: { theme: Theme }) => ({
   padding: theme.spacing(4),
 }));
 
+const StyledTextField = styled(TextField)(({ theme }: { theme: Theme }) => ({
+  marginBottom: theme.spacing(2),
+  '& .MuiOutlinedInput-root': {
+    backgroundColor: theme.palette.background.paper,
+    '& fieldset': {
+      borderColor: theme.palette.mode === 'dark' ? gray[700] : gray[300]
+    },
+    '&:hover fieldset': {
+      borderColor: theme.palette.mode === 'dark' ? gray[600] : gray[400]
+    }
+  },
+  '& .MuiInputLabel-root': {
+    color: theme.palette.mode === 'dark' ? gray[400] : 'inherit'
+  },
+  '& .MuiInputBase-input': {
+    color: theme.palette.text.primary
+  }
+}));
+
 const Register = () => {
   const navigate = useNavigate();
+  const { setUser } = useUser();
   const [formData, setFormData] = useState<RegisterFormData>({
-    username: '',
+    phone: '',
+    countryCode: '+972',
+    firstName: '',
+    lastName: '',
     email: '',
-    password: '',
-    confirmPassword: '',
-    agreedToTerms: false,
   });
+  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [showOtpScreen, setShowOtpScreen] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [errors, setErrors] = useState<FormErrors>({});
+  const [otpError, setOtpError] = useState('');
+  const [formError, setFormError] = useState('');
+  const [otpSentMessage, setOtpSentMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const [snackbar, setSnackbar] = useState({
-    open: false,
-    message: '',
-    severity: 'error' as 'error' | 'success',
-  });
 
   const validateForm = () => {
     const newErrors: FormErrors = {};
-    if (!formData.username) {
-      newErrors.username = 'שם משתמש הוא שדה חובה';
+    if (!formData.phone) {
+      newErrors.phone = 'מספר טלפון הוא שדה חובה';
+    } else if (!/^\d{7,15}$/.test(formData.phone.replace(/\s/g, ''))) {
+      newErrors.phone = 'מספר הטלפון אינו תקין';
     }
-    if (!formData.email) {
-      newErrors.email = 'אימייל הוא שדה חובה';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+    if (!formData.firstName) {
+      newErrors.firstName = 'שם פרטי הוא שדה חובה';
+    }
+    if (!formData.lastName) {
+      newErrors.lastName = 'שם משפחה הוא שדה חובה';
+    }
+    if (formData.email && !/\S+@\S+\.\S+/.test(formData.email)) {
       newErrors.email = 'כתובת האימייל אינה תקינה';
-    }
-    if (!formData.password) {
-      newErrors.password = 'סיסמה היא שדה חובה';
-    } else if (formData.password.length < 6) {
-      newErrors.password = 'הסיסמה חייבת להכיל לפחות 6 תווים';
-    }
-    if (formData.password !== formData.confirmPassword) {
-      newErrors.confirmPassword = 'הסיסמאות אינן תואמות';
-    }
-    if (!formData.agreedToTerms) {
-      newErrors.agreedToTerms = 'עליך להסכים לתנאי השימוש ולמדיניות הפרטיות';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -96,59 +105,251 @@ const Register = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError('');
     if (!validateForm()) return;
 
     setLoading(true);
     try {
+      const fullPhoneNumber = normalizePhoneNumber(formData.phone, formData.countryCode);
       const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          username: formData.username,
-          email: formData.email,
-          password: formData.password,
+          phone: fullPhoneNumber,
+          first_name: formData.firstName,
+          last_name: formData.lastName,
+          email: formData.email || undefined,
         }),
+        credentials: 'include',
       });
 
-      if (!response.ok) {
-        throw new Error('Registration failed');
+      const data = await response.json();
+
+      if (response.ok && data.status === 'otp_sent') {
+        setPhoneNumber(fullPhoneNumber);
+        setShowOtpScreen(true);
+        setFormError('');
+        setOtpSentMessage('קוד OTP נשלח למספר הטלפון שלך');
+      } else {
+        setFormError(
+          data.error === 'user_exists' 
+            ? 'מספר טלפון זה כבר רשום במערכת. אנא התחבר במקום' 
+            : data.error || 'ההרשמה נכשלה'
+        );
       }
-
-      setSnackbar({
-        open: true,
-        message: 'ההרשמה בוצעה בהצלחה! מעביר לדף ההתחברות...',
-        severity: 'success',
-      });
-
-      setTimeout(() => {
-        navigate('/login');
-      }, 1500);
-
     } catch (error) {
-      setSnackbar({
-        open: true,
-        message: 'ההרשמה נכשלה. אנא נסה שוב.',
-        severity: 'error',
-      });
+      console.error('Registration error:', error);
+      setFormError('אירעה שגיאה במהלך ההרשמה');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const otpString = otp.join('');
+    if (otpString.length !== 6) {
+      setOtpError('אנא הזן קוד OTP בן 6 ספרות');
+      return;
+    }
+
+    setLoading(true);
+    setOtpError('');
+    try {
+      const response = await fetch('/api/auth/verify-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          phone: phoneNumber,
+          code: otpString 
+        }),
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.access_token) {
+        // Store the JWT token
+        localStorage.setItem('access_token', data.access_token);
+        
+        // Fetch user details using the token
+        try {
+          const userResponse = await fetch('/api/user/me', {
+            headers: {
+              'Authorization': `Bearer ${data.access_token}`,
+            },
+            credentials: 'include',
+          });
+          
+          if (userResponse.ok) {
+            const userData = await userResponse.json();
+            setUser({
+              _id: userData._id || userData.id,
+              username: userData.username || userData.first_name + ' ' + userData.last_name,
+              email: userData.email || '',
+              role: userData.role || 'user',
+              createdAt: userData.created_at || userData.createdAt,
+              updatedAt: userData.updated_at || userData.updatedAt
+            });
+          }
+        } catch (userError) {
+          console.error('Error fetching user details:', userError);
+        }
+        
+        setOtpError('');
+        navigate('/home');
+      } else {
+        if (data.error === 'too_many_attempts') {
+          setOtpError('יותר מדי ניסיונות. אנא נסה שוב מאוחר יותר');
+        } else if (data.error === 'otp_expired_or_missing') {
+          setOtpError('קוד OTP פג תוקף. אנא בקש קוד חדש');
+        } else if (data.error === 'invalid_code') {
+          setOtpError(`קוד שגוי. נותרו ${5 - (data.attempts || 0)} ניסיונות`);
+        } else {
+          setOtpError(data.error || 'קוד OTP שגוי');
+        }
+      }
+    } catch (error) {
+      console.error('OTP verification error:', error);
+      setOtpError('אירעה שגיאה באימות הקוד');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOtpInputChange = (index: number, value: string) => {
+    if (!/^\d*$/.test(value)) return;
+    
+    const newOtp = [...otp];
+    newOtp[index] = value.slice(-1); // Only take the last character
+    setOtp(newOtp);
+    setOtpError('');
+
+    // Force LTR direction on the input element after value change
+    setTimeout(() => {
+      const inputElement = document.getElementById(`otp-input-${index}`);
+      if (inputElement) {
+        const muiInputRoot = inputElement.querySelector('.MuiOutlinedInput-root') as HTMLElement;
+        if (muiInputRoot) {
+          const actualInput = muiInputRoot.querySelector('input') as HTMLInputElement;
+          if (actualInput) {
+            actualInput.setAttribute('dir', 'ltr');
+            actualInput.style.setProperty('direction', 'ltr', 'important');
+            actualInput.style.setProperty('text-align', 'center', 'important');
+            actualInput.style.setProperty('unicode-bidi', 'bidi-override', 'important');
+          }
+        }
+      }
+    }, 0);
+
+    // Auto-focus next input
+    if (value && index < 5) {
+      const nextInput = document.getElementById(`otp-input-${index + 1}`);
+      if (nextInput) {
+        (nextInput as HTMLInputElement).focus();
+      }
+    }
+  };
+
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Backspace' && !otp[index] && index > 0) {
+      const prevInput = document.getElementById(`otp-input-${index - 1}`);
+      if (prevInput) {
+        (prevInput as HTMLInputElement).focus();
+      }
+    }
+  };
+
+  const handleOtpPaste = (e: React.ClipboardEvent<HTMLDivElement>, startIndex: number) => {
+    e.preventDefault();
+    const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    const newOtp = [...otp];
+    
+    // Fill OTP from left to right (LTR), starting from the first input (index 0)
+    for (let i = 0; i < 6 && i < pastedData.length; i++) {
+      newOtp[i] = pastedData[i] || '';
+    }
+    
+    setOtp(newOtp);
+    setOtpError('');
+    
+    // Focus the last filled input or the first empty one (LTR)
+    const nextIndex = Math.min(pastedData.length, 5);
+    const nextInput = document.getElementById(`otp-input-${nextIndex}`);
+    if (nextInput) {
+      (nextInput as HTMLInputElement).focus();
+    }
+  };
+
+  const handleBackToForm = () => {
+    setShowOtpScreen(false);
+    setOtp(['', '', '', '', '', '']);
+    setOtpError('');
+    setOtpSentMessage('');
+  };
+
+  // Force LTR direction on OTP input fields
+  useEffect(() => {
+    if (showOtpScreen) {
+      const applyLtrDirection = () => {
+        // Find all OTP input fields by their IDs
+        for (let i = 0; i < 6; i++) {
+          const inputElement = document.getElementById(`otp-input-${i}`);
+          if (inputElement) {
+            // Find the actual input element inside MUI TextField structure
+            const muiInputRoot = inputElement.querySelector('.MuiOutlinedInput-root') as HTMLElement;
+            if (muiInputRoot) {
+              muiInputRoot.setAttribute('dir', 'ltr');
+              muiInputRoot.style.setProperty('direction', 'ltr', 'important');
+              
+              const actualInput = muiInputRoot.querySelector('input') as HTMLInputElement;
+              if (actualInput) {
+                actualInput.setAttribute('dir', 'ltr');
+                actualInput.style.setProperty('direction', 'ltr', 'important');
+                actualInput.style.setProperty('text-align', 'center', 'important');
+                actualInput.style.setProperty('unicode-bidi', 'bidi-override', 'important');
+              }
+            }
+          }
+        }
+      };
+
+      // Apply multiple times to ensure it sticks
+      applyLtrDirection();
+      const timeoutId1 = setTimeout(applyLtrDirection, 50);
+      const timeoutId2 = setTimeout(applyLtrDirection, 150);
+      const timeoutId3 = setTimeout(applyLtrDirection, 300);
+      const intervalId = setInterval(applyLtrDirection, 500);
+
+      return () => {
+        clearTimeout(timeoutId1);
+        clearTimeout(timeoutId2);
+        clearTimeout(timeoutId3);
+        clearInterval(intervalId);
+      };
+    }
+  }, [showOtpScreen, otp]);
+
   return (
-    <Container component="main" maxWidth="xs">
-      <Box
-        sx={{
-          marginTop: 8,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          minHeight: '100vh',
-          pb: 4,
-        }}
-      >
+    <Box
+      sx={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: {
+          xs: 'transparent',
+          md: 'linear-gradient(135deg, rgba(147, 197, 253, 0.15) 0%, rgba(191, 219, 254, 0.15) 50%, rgba(219, 234, 254, 0.15) 100%)',
+        },
+        py: { xs: 4, md: 8 },
+        px: { xs: 2, md: 0 },
+      }}
+    >
+      <Container component="main" maxWidth="xs">
         <StyledCard>
           <CardContent>
             <Box
@@ -171,205 +372,408 @@ const Register = () => {
                 <PersonAddOutlinedIcon />
               </IconButton>
               <Typography component="h1" variant="h5" fontWeight="bold">
-                יצירת חשבון
+                {showOtpScreen ? 'אימות קוד OTP' : 'יצירת חשבון'}
               </Typography>
               <Typography color="textSecondary" variant="body2" sx={{ mt: 1 }}>
-                הירשם כדי להתחיל
+                {showOtpScreen 
+                  ? `הזן את קוד ה-OTP שנשלח למספר ${phoneNumber}`
+                  : 'הירשם כדי להתחיל'}
               </Typography>
             </Box>
 
-            <Box component="form" onSubmit={handleSubmit}
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                '& fieldset': {
-                  borderColor: 'divider',
-                },
-              },
-              
-            }}>
-              <Grid container spacing={2}>
-                <Grid item xs={12}>
+            {!showOtpScreen ? (
+              <Box component="form" onSubmit={handleSubmit}>
+                {formError && (
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: 'error.main',
+                      mb: 2,
+                      textAlign: 'right',
+                      fontSize: '14px',
+                    }}
+                  >
+                    {formError}
+                  </Typography>
+                )}
+                {/* Phone Number Field */}
+                <Box
+                  sx={{
+                    mb: 2,
+                    display: 'flex',
+                    flexDirection: 'row-reverse',
+                    gap: 1,
+                  }}
+                >
                   <TextField
-                    required
-                    fullWidth
-                    id="username"
-                    label="שם משתמש"
-                    name="username"
-                    autoComplete="username"
-                    value={formData.username}
-                    onChange={(e) =>
-                      setFormData({ ...formData, username: e.target.value })
-                    }
-                    error={!!errors.username}
-                    helperText={errors.username}
-                  />
-                </Grid>
-                <Grid item xs={12}>
-                  <TextField
-                    required
-                    fullWidth
-                    id="email"
-                    label="כתובת אימייל"
-                    name="email"
-                    autoComplete="email"
-                    value={formData.email}
-                    onChange={(e) =>
-                      setFormData({ ...formData, email: e.target.value })
-                    }
-                    error={!!errors.email}
-                    helperText={errors.email}
-                  />
-                </Grid>
-                <Grid item xs={12}>
-                  <TextField
-                    required
-                    fullWidth
-                    name="password"
-                    label="סיסמה"
-                    type="password"
-                    id="password"
-                    autoComplete="new-password"
-                    value={formData.password}
-                    onChange={(e) =>
-                      setFormData({ ...formData, password: e.target.value })
-                    }
-                    error={!!errors.password}
-                    helperText={errors.password}
-                  />
-                </Grid>
-                <Grid item xs={12}>
-                  <TextField
-                    required
-                    fullWidth
-                    name="confirmPassword"
-                    label="אימות סיסמה"
-                    type="password"
-                    id="confirmPassword"
-                    value={formData.confirmPassword}
-                    onChange={(e) =>
-                      setFormData({ ...formData, confirmPassword: e.target.value })
-                    }
-                    error={!!errors.confirmPassword}
-                    helperText={errors.confirmPassword}
-                  />
-                </Grid>
-                <Grid item xs={12}>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={formData.agreedToTerms}
-                        onChange={(e) =>
-                          setFormData({ ...formData, agreedToTerms: e.target.checked })
-                        }
-                        name="agreedToTerms"
-                        color="primary"
-                      />
-                    }
-                    label={
-                      <Box component="span" sx={{ fontSize: '0.875rem' }}>
-                        אני מאשר שקראתי ואני מסכים ל-
-                        <Link component={RouterLink} to="/terms" target="_blank">
-                          תנאי השימוש
-                        </Link>
-                        {' '}ו-
-                        <Link component={RouterLink} to="/privacy" target="_blank">
-                          מדיניות הפרטיות
-                        </Link>
-                      </Box>
-                    }
-                  />
-                  {errors.agreedToTerms && (
-                    <FormHelperText error>{errors.agreedToTerms}</FormHelperText>
-                  )}
-                </Grid>
-              </Grid>
+                    select
+                    value={formData.countryCode}
+                    onChange={(e) => setFormData({ ...formData, countryCode: e.target.value as string })}
+                    sx={(theme) => ({
+                      minWidth: 110,
+                      '& .MuiOutlinedInput-root': {
+                        borderRadius: 1.5,
+                        height: 40,
+                        bgcolor: theme.palette.mode === 'dark'
+                          ? theme.palette.background.paper
+                          : '#f9fafb',
+                      '& fieldset': {
+                        borderColor: theme.palette.divider,
+                      },
+                      '&:hover fieldset': {
+                        borderColor: theme.palette.mode === 'dark'
+                          ? theme.palette.divider
+                          : '#d1d5db',
+                      },
+                      '&.Mui-focused fieldset': {
+                        borderColor: '#3b82f6',
+                        boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
+                      },
+                    },
+                  })}
+                  SelectProps={{
+                    renderValue: (value) => (value as string) || '+972',
+                  }}
+                  inputProps={{ style: { direction: 'rtl', textAlign: 'right', fontSize: 13 } }}
+                >
+                  {countryOptions.map((option) => (
+                    <MenuItem key={option.code + option.dialCode} value={option.dialCode}>
+                      {option.flag} {option.name} ({option.dialCode})
+                    </MenuItem>
+                  ))}
+                </TextField>
+
+                <StyledTextField
+                  fullWidth
+                  type="tel"
+                  placeholder="הזינו מספר טלפון"
+                  value={formData.phone}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                    setFormData({ ...formData, phone: e.target.value });
+                    setFormError('');
+                  }}
+                  inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
+                  error={!!errors.phone}
+                  helperText={errors.phone}
+                  sx={(theme) => ({
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 1.5,
+                      height: 40,
+                      bgcolor: theme.palette.mode === 'dark'
+                        ? theme.palette.background.paper
+                        : '#f9fafb',
+                      '& fieldset': {
+                        borderColor: theme.palette.divider,
+                        transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+                      },
+                      '&:hover fieldset': {
+                        borderColor: theme.palette.mode === 'dark'
+                          ? theme.palette.divider
+                          : '#d1d5db',
+                      },
+                      '&.Mui-focused fieldset': {
+                        borderColor: '#3b82f6',
+                        boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
+                      },
+                    },
+                  })}
+                />
+              </Box>
+
+              {/* First Name Field */}
+              <StyledTextField
+                fullWidth
+                placeholder="שם פרטי"
+                value={formData.firstName}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  setFormData({ ...formData, firstName: e.target.value });
+                  setFormError('');
+                }}
+                inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
+                error={!!errors.firstName}
+                helperText={errors.firstName}
+                sx={(theme) => ({
+                  mb: 2,
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 1.5,
+                    height: 40,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f9fafb',
+                    '& fieldset': {
+                      borderColor: theme.palette.divider,
+                      transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+                    },
+                    '&:hover fieldset': {
+                      borderColor: theme.palette.mode === 'dark'
+                        ? theme.palette.divider
+                        : '#d1d5db',
+                    },
+                    '&.Mui-focused fieldset': {
+                      borderColor: '#3b82f6',
+                      boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
+                    },
+                  },
+                })}
+              />
+
+              {/* Last Name Field */}
+              <StyledTextField
+                fullWidth
+                placeholder="שם משפחה"
+                value={formData.lastName}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  setFormData({ ...formData, lastName: e.target.value });
+                  setFormError('');
+                }}
+                inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
+                error={!!errors.lastName}
+                helperText={errors.lastName}
+                sx={(theme) => ({
+                  mb: 2,
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 1.5,
+                    height: 40,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f9fafb',
+                    '& fieldset': {
+                      borderColor: theme.palette.divider,
+                      transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+                    },
+                    '&:hover fieldset': {
+                      borderColor: theme.palette.mode === 'dark'
+                        ? theme.palette.divider
+                        : '#d1d5db',
+                    },
+                    '&.Mui-focused fieldset': {
+                      borderColor: '#3b82f6',
+                      boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
+                    },
+                  },
+                })}
+              />
+
+              {/* Email Field (Optional) */}
+              <StyledTextField
+                fullWidth
+                type="email"
+                placeholder="כתובת אימייל (אופציונלי)"
+                value={formData.email}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  setFormData({ ...formData, email: e.target.value });
+                  setFormError('');
+                }}
+                inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
+                error={!!errors.email}
+                helperText={errors.email}
+                sx={(theme) => ({
+                  mb: 2,
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 1.5,
+                    height: 40,
+                    bgcolor: theme.palette.mode === 'dark'
+                      ? theme.palette.background.paper
+                      : '#f9fafb',
+                    '& fieldset': {
+                      borderColor: theme.palette.divider,
+                      transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+                    },
+                    '&:hover fieldset': {
+                      borderColor: theme.palette.mode === 'dark'
+                        ? theme.palette.divider
+                        : '#d1d5db',
+                    },
+                    '&.Mui-focused fieldset': {
+                      borderColor: '#3b82f6',
+                      boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
+                    },
+                  },
+                })}
+              />
 
               <Button
                 type="submit"
                 fullWidth
                 variant="contained"
                 sx={{
-                  mt: 3,
+                  mt: 2,
                   mb: 2,
-                  borderRadius: '20px',
-                  padding: '10px',
+                  borderRadius: 1,
+                  padding: '12px',
                   textTransform: 'none',
                   fontSize: '16px',
+                  bgcolor: '#000000',
+                  color: '#ffffff',
+                  '&:hover': {
+                    bgcolor: '#1a1a1a',
+                  },
+                  '&:disabled': {
+                    bgcolor: '#666666',
+                    color: '#ffffff',
+                  },
                 }}
                 disabled={loading}
               >
-                {loading ? <CircularProgress size={24} /> : 'צור חשבון'}
+                {loading ? <CircularProgress size={24} color="inherit" /> : 'המשך'}
               </Button>
 
-              <Grid container justifyContent="center">
-                <Grid item>
-                  <Link href="/login" variant="body2" color="primary">
-                    כבר יש לך חשבון? התחבר
-                  </Link>
-                </Grid>
-              </Grid>
-
-              <Divider sx={{ my: 3 }}>
-                <Typography color="textSecondary" variant="body2">
-                  או
-                </Typography>
-              </Divider>
-
-              <SocialButton
-                startIcon={<GoogleIcon sx={{ marginLeft: '10px' }} />}
-                variant="outlined"
-                color="inherit"
-                onClick={() => window.location.href = '/auth/google'}
-              >
-                המשך עם Google
-              </SocialButton>
-
-              <SocialButton
-                startIcon={<FacebookIcon sx={{ marginLeft: '10px' }}/>}
-                variant="outlined"
-                color="primary"
-                onClick={() => window.location.href = '/auth/facebook'}
-                sx={{ mt: 2 }}
-              >
-                 המשך עם Facebook 
-              </SocialButton>
+              <Box sx={{ textAlign: 'center', mt: 2 }}>
+                <Link component={RouterLink} to="/login" variant="body2" color="primary">
+                  כבר יש לך חשבון? התחבר
+                </Link>
+              </Box>
             </Box>
+            ) : (
+              <Box component="form" onSubmit={handleOtpSubmit}>
+                {otpSentMessage && (
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: 'success.main',
+                      mb: 2,
+                      textAlign: 'center',
+                      fontSize: '14px',
+                    }}
+                  >
+                    {otpSentMessage}
+                  </Typography>
+                )}
+                
+                <Box
+                  dir="ltr"
+                  sx={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    gap: 1.5,
+                    mb: 2,
+                    direction: 'ltr',
+                    '& *': {
+                      direction: 'ltr !important' as any,
+                    },
+                  }}
+                >
+                  {[0, 1, 2, 3, 4, 5].map((index) => (
+                    <TextField
+                      key={index}
+                      id={`otp-input-${index}`}
+                      type="text"
+                      inputMode="numeric"
+                      value={otp[index]}
+                      onChange={(e) => handleOtpInputChange(index, e.target.value)}
+                      onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                      onPaste={(e) => handleOtpPaste(e, index)}
+                      inputProps={{
+                        maxLength: 1,
+                        style: {
+                          direction: 'ltr',
+                          textAlign: 'center',
+                          fontSize: '24px',
+                          fontWeight: 600,
+                          padding: '12px',
+                          unicodeBidi: 'bidi-override',
+                        },
+                      }}
+                      sx={(theme) => ({
+                        width: 56,
+                        direction: 'ltr',
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: 1.5,
+                          height: 56,
+                          direction: 'ltr',
+                          bgcolor: theme.palette.mode === 'dark'
+                            ? theme.palette.background.paper
+                            : '#f9fafb',
+                          '& fieldset': {
+                            borderColor: otpError ? 'error.main' : theme.palette.divider,
+                            borderWidth: otpError ? 2 : 1,
+                          },
+                          '&:hover fieldset': {
+                            borderColor: otpError ? 'error.main' : (theme.palette.mode === 'dark'
+                              ? theme.palette.divider
+                              : '#d1d5db'),
+                          },
+                          '&.Mui-focused fieldset': {
+                            borderColor: otpError ? 'error.main' : '#3b82f6',
+                            borderWidth: 2,
+                            boxShadow: otpError ? 'none' : '0 0 0 2px rgba(59,130,246,0.2)',
+                          },
+                        '& input': {
+                          direction: 'ltr !important' as any,
+                          textAlign: 'center !important' as any,
+                          unicodeBidi: 'bidi-override !important' as any,
+                          '&::placeholder': {
+                            direction: 'ltr !important' as any,
+                          },
+                        },
+                        },
+                      })}
+                    />
+                  ))}
+                </Box>
+
+                {otpError && (
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: 'error.main',
+                      mb: 2,
+                      textAlign: 'center',
+                      fontSize: '14px',
+                    }}
+                  >
+                    {otpError}
+                  </Typography>
+                )}
+
+                <Button
+                  type="submit"
+                  fullWidth
+                  variant="contained"
+                  sx={{
+                    mt: 2,
+                    mb: 2,
+                    borderRadius: 1,
+                    padding: '12px',
+                    textTransform: 'none',
+                    fontSize: '16px',
+                    bgcolor: '#000000',
+                    color: '#ffffff',
+                    '&:hover': {
+                      bgcolor: '#1a1a1a',
+                    },
+                    '&:disabled': {
+                      bgcolor: '#666666',
+                      color: '#ffffff',
+                    },
+                  }}
+                  disabled={loading || otp.join('').length !== 6}
+                >
+                  {loading ? <CircularProgress size={24} color="inherit" /> : 'אימות'}
+                </Button>
+
+                <Box sx={{ textAlign: 'center', mt: 2 }}>
+                  <Link 
+                    component="button"
+                    variant="body2" 
+                    color="primary"
+                    onClick={handleBackToForm}
+                    sx={{ 
+                      cursor: 'pointer',
+                      border: 'none',
+                      background: 'none',
+                      textDecoration: 'underline'
+                    }}
+                  >
+                    חזרה לטופס הרשמה
+                  </Link>
+                </Box>
+              </Box>
+            )}
           </CardContent>
         </StyledCard>
-      </Box>
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={3000}
-        onClose={() => setSnackbar({ ...snackbar, open: false })}
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-        sx={{ 
-          width: '100%',
-          maxWidth: '500px',
-          top: '50% !important',
-          transform: 'translateY(-50%) !important',
-          left: '0 !important',
-          right: '0 !important',
-          margin: '0 auto',
-          '& .MuiAlert-root': {
-            width: '100%',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-            fontSize: '1rem'
-          }
-        }}
-      >
-        <Alert 
-          severity={snackbar.severity} 
-          variant="filled"
-          onClose={() => setSnackbar({ ...snackbar, open: false })}
-          sx={{ 
-            width: '100%',
-            padding: '12px 16px'
-          }}
-        >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
-    </Container>
+      </Container>
+    </Box>
   );
 };
 
