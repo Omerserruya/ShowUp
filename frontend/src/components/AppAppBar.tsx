@@ -11,6 +11,7 @@ import MenuItem from '@mui/material/MenuItem';
 import Drawer from '@mui/material/Drawer';
 import MenuIcon from '@mui/icons-material/Menu';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import PersonIcon from '@mui/icons-material/Person';
 import { useNavigate } from 'react-router-dom';
 import { useColorScheme } from '@mui/material/styles';
 import ColorModeIconDropdown from '../components/ColorModeIconDropdown';
@@ -31,6 +32,9 @@ const StyledToolbar = styled(Toolbar)(({ theme }: { theme: Theme & { vars?: any 
     : alpha(theme.palette.background.default, 0.4),
   boxShadow: (theme.vars || theme).shadows[1],
   padding: '8px 12px',
+  [theme.breakpoints.down('md')]: {
+    padding: '8px 16px',
+  },
 }));
 
 const menuItems = [
@@ -65,11 +69,28 @@ export default function AppAppBar() {
         bgcolor: 'transparent',
         backgroundImage: 'none',
         mt: 'calc(var(--template-frame-height, 0px) + 28px)',
+
+        width: '100%',
       }}
     >
-      <Container maxWidth="lg">
-        <StyledToolbar variant="dense" disableGutters>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+      <Container 
+        maxWidth="lg"
+        sx={{
+          width: '100%',
+          px: { xs: 2, md: 3 },
+          mx: 'auto',
+          display: 'block',
+        }}
+      >
+        <StyledToolbar 
+          variant="dense" 
+          disableGutters
+          sx={{
+            justifyContent: { xs: 'space-between', md: 'space-between' },
+            width: '100%',
+          }}
+        >
+          <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 2 }}>
             <Logo />
             <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 1 }}>
               {menuItems.map((item) => (
@@ -86,7 +107,7 @@ export default function AppAppBar() {
               ))}
             </Box>
           </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 1 }}>
             <Button 
               color="primary" 
               variant="outlined" 
@@ -111,11 +132,29 @@ export default function AppAppBar() {
             </Button>
             <ColorModeIconDropdown size="small" />
           </Box>
-          <Box sx={{ display: { xs: 'flex', md: 'none' }, gap: 1 }}>
-            <ColorModeIconDropdown size="medium" />
+          <Box 
+            sx={{ 
+              display: { xs: 'flex', md: 'none' }, 
+              alignItems: 'center',
+              gap: 1,
+            }}
+          >
             <IconButton aria-label="Menu button" onClick={toggleDrawer(true)}>
               <MenuIcon />
             </IconButton>
+            <IconButton 
+              aria-label="Login button" 
+              onClick={handleLoginClick}
+              sx={{
+                color: 'text.primary',
+              }}
+            >
+              <PersonIcon />
+            </IconButton>
+          </Box>
+          <Box sx={{ display: { xs: 'flex', md: 'none' }, alignItems: 'center' }}>
+            <Logo />
+          </Box>
             <Drawer
               anchor="top"
               open={open}
@@ -126,6 +165,11 @@ export default function AppAppBar() {
                   borderRadius: 0,
                   borderBottom: '1px solid',
                   borderColor: 'divider',
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                right: 0,
+                zIndex: 1300,
                 },
               }}
             >
@@ -193,7 +237,6 @@ export default function AppAppBar() {
                 </Box>
               </Box>
             </Drawer>
-          </Box>
         </StyledToolbar>
       </Container>
     </AppBar>

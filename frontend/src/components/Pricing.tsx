@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Container, Grid, Typography, Paper, Button, Chip } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import { styled } from '@mui/material/styles';
+import { styled, useTheme } from '@mui/material/styles';
 
 const tiers = [
   {
@@ -48,23 +48,55 @@ const tiers = [
   },
 ];
 
-const StyledPaper = styled(Paper)(({ theme }) => ({
-  padding: theme.spacing(4),
+const StyledPaper = styled(Paper)<{ accent: string; popular?: boolean }>(({ theme, accent, popular }) => ({
+  padding: popular ? theme.spacing(5) : theme.spacing(4),
   display: 'flex',
   flexDirection: 'column',
-  height: '520px',
   width: '100%',
-  transition: 'transform 0.2s',
-  transform: 'scale(0.95)',
+  height: '100%',
+  borderRadius: 16,
+  backgroundColor: theme.palette.mode === 'dark' 
+    ? theme.palette.background.paper 
+    : '#ffffff',
+  border: popular 
+    ? `1px solid ${accent}` 
+    : `1px solid ${theme.palette.mode === 'dark' ? theme.palette.divider : '#e2e8f0'}`,
+  boxShadow: popular 
+    ? '0 16px 40px rgba(37,99,235,0.18)' 
+    : theme.palette.mode === 'dark'
+      ? '0 10px 30px rgba(0,0,0,0.3)'
+      : '0 10px 30px rgba(15,23,42,0.06)',
+  position: 'relative',
+  overflow: 'hidden',
+  transform: popular ? 'scale(1.05)' : 'scale(1)',
+  transition:
+    'transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, background-color 0.22s ease',
+  '&::before': popular
+    ? {
+        content: '""',
+        position: 'absolute',
+        inset: 0,
+        background: `linear-gradient(135deg, ${accent}22, transparent 60%)`,
+        pointerEvents: 'none',
+      }
+    : {},
   '&:hover': {
-    transform: 'translateY(-8px) scale(0.95)',
+    transform: popular ? 'scale(1.08) translateY(-6px)' : 'translateY(-6px)',
+    boxShadow: popular
+      ? '0 20px 55px rgba(37,99,235,0.25)'
+      : theme.palette.mode === 'dark'
+        ? '0 18px 45px rgba(0,0,0,0.4)'
+      : '0 18px 45px rgba(15,23,42,0.12)',
+    borderColor: accent,
+    backgroundColor: theme.palette.mode === 'dark'
+      ? theme.palette.background.paper
+      : '#fdfefe',
   },
-}));
-
-const PopularPaper = styled(StyledPaper)(({ theme }) => ({
-  transform: 'scale(1.05) !important',
-  '&:hover': {
-    transform: 'translateY(-8px) scale(1.05) !important',
+  [theme.breakpoints.down('md')]: {
+    transform: 'scale(1)',
+    '&:hover': {
+      transform: popular ? 'scale(1.02) translateY(-6px)' : 'translateY(-6px)',
+    },
   },
 }));
 
@@ -79,63 +111,91 @@ const FeatureItem = styled(Box)(({ theme }) => ({
 }));
 
 const FeaturesBox = styled(Box)(({ theme }) => ({
-  flex: 1,
-  overflowY: 'auto',
+  flex: '1 1 auto',
   marginTop: theme.spacing(3),
   marginBottom: theme.spacing(4),
-  paddingRight: theme.spacing(1),
-  '&::-webkit-scrollbar': {
-    width: '4px',
-  },
-  '&::-webkit-scrollbar-track': {
-    background: theme.palette.grey[100],
-    borderRadius: '2px',
-  },
-  '&::-webkit-scrollbar-thumb': {
-    background: theme.palette.grey[400],
-    borderRadius: '2px',
-  },
+  minHeight: 0,
 }));
 
 export default function Pricing() {
+  const theme = useTheme();
   return (
-    <Box 
-    id="pricing"
-    sx={{ py: 8, bgcolor: 'background.paper' }}>
-      <Container maxWidth="lg">
-        <Typography variant="h3" align="center" gutterBottom>
-          אז כמה זה בסך הכול?
-        </Typography>
-        <Typography variant="h6" align="center" color="text.secondary" paragraph>
-          בחרו את החבילה שמתאימה לכם
-        </Typography>
-        <Grid container spacing={4} sx={{ mt: 4, alignItems: 'center' }}>
-          {tiers.map((tier) => (
-            <Grid item xs={12} sm={6} md={4} key={tier.title}>
+    <Box
+      id="pricing"
+      sx={{
+        py: 10,
+        bgcolor: theme.palette.mode === 'dark'
+          ? theme.palette.background.default
+          : 'linear-gradient(to bottom, #f5f7fb 0%, #ffffff 40%, #f5f7fb 100%)',
+      }}
+    >
+      <Container maxWidth="lg" sx={{ overflow: 'visible', px: { md: 4 } }}>
+        <Box
+          sx={{
+            textAlign: 'center',
+            maxWidth: 640,
+            mx: 'auto',
+            mb: 6,
+            direction: 'rtl',
+          }}
+        >
+          <Typography
+            variant="h3"
+            gutterBottom
+            sx={{
+              fontWeight: 800,
+              textAlign: 'center',
+            }}
+          >
+            כמה זה עולה לכם?
+          </Typography>
+          <Typography variant="h6" color="text.secondary" sx={{ textAlign: 'center' }}>
+            שלוש חבילות פשוטות שמותאמות לגודל האירוע – בלי הפתעות ובלי אותיות קטנות.
+          </Typography>
+        </Box>
+
+        <Grid 
+          container 
+          spacing={{ xs: 3, md: 4 }} 
+          sx={{ 
+            mt: 2, 
+            alignItems: 'stretch', 
+            direction: 'rtl',
+            py: { md: 2 },
+          }}
+        >
+          {tiers.map((tier, index) => (
+            <Grid 
+              item 
+              xs={12} 
+              sm={6} 
+              md={4} 
+              key={tier.title}
+              sx={{
+                display: 'flex',
+                alignItems: 'stretch',
+              }}
+            >
               {tier.isPopular ? (
-                <PopularPaper
-                  elevation={3}
-                  sx={{
-                    borderTop: `4px solid ${tier.color}`,
-                    position: 'relative',
-                  }}
-                >
+                <StyledPaper accent={tier.color} popular elevation={0} sx={{ width: '100%' }}>
                   <Chip
-                    label="פופולרי"
+                    label="הכי נבחרה"
                     color="primary"
+                    size="small"
                     sx={{
                       position: 'absolute',
-                      top: -12,
-                      right: '50%',
-                      transform: 'translateX(50%)',
-                      fontWeight: 'bold',
+                      top: 16,
+                      right: 16,
+                      fontWeight: 700,
+                      borderRadius: 999,
+                      px: 1.5,
                     }}
                   />
                   <Typography
                     component="h2"
                     variant="h4"
-                    color="text.primary"
                     gutterBottom
+                    sx={{ fontWeight: 700, mt: 1, direction: 'rtl', textAlign: 'right' }}
                   >
                     {tier.title}
                   </Typography>
@@ -143,13 +203,14 @@ export default function Pricing() {
                     variant="h6"
                     color="text.secondary"
                     gutterBottom
+                    sx={{ direction: 'rtl', textAlign: 'right' }}
                   >
                     {tier.subtitle}
                   </Typography>
                   <Typography
                     variant="h3"
                     color="text.primary"
-                    sx={{ my: 2 }}
+                    sx={{ my: 2, direction: 'rtl', textAlign: 'right', fontWeight: 800 }}
                   >
                     {tier.price}
                   </Typography>
@@ -157,6 +218,7 @@ export default function Pricing() {
                     variant="subtitle1"
                     color="text.secondary"
                     gutterBottom
+                    sx={{ direction: 'rtl', textAlign: 'right' }}
                   >
                     {tier.description}
                   </Typography>
@@ -174,28 +236,34 @@ export default function Pricing() {
                     fullWidth
                     variant="contained"
                     sx={{
-                      backgroundColor: tier.color,
+                      borderRadius: 999,
+                      py: 1.2,
+                      fontWeight: 600,
+                      background: `linear-gradient(90deg, ${tier.color}, #111827)`,
+                      border: 'none',
+                      boxShadow: 'none',
                       '&:hover': {
-                        backgroundColor: tier.color,
-                        opacity: 0.9,
+                        background: `linear-gradient(90deg, ${tier.color}, #020617)`,
+                        transform: 'translateY(-1px)',
+                        boxShadow: '0 12px 30px rgba(15,23,42,0.25)',
+                      },
+                      '&:focusVisible': {
+                        outline: 'none',
+                        boxShadow: 'none',
+                        border: 'none',
                       },
                     }}
                   >
                     התחל עכשיו
                   </Button>
-                </PopularPaper>
+                </StyledPaper>
               ) : (
-                <StyledPaper
-                  elevation={3}
-                  sx={{ 
-                    borderTop: `4px solid ${tier.color}`,
-                  }}
-                >
+                <StyledPaper accent={tier.color} elevation={0} sx={{ width: '100%' }}>
                   <Typography
                     component="h2"
                     variant="h4"
-                    color="text.primary"
                     gutterBottom
+                    sx={{ fontWeight: 700, direction: 'rtl', textAlign: 'right' }}
                   >
                     {tier.title}
                   </Typography>
@@ -203,13 +271,14 @@ export default function Pricing() {
                     variant="h6"
                     color="text.secondary"
                     gutterBottom
+                    sx={{ direction: 'rtl', textAlign: 'right' }}
                   >
                     {tier.subtitle}
                   </Typography>
                   <Typography
                     variant="h3"
                     color="text.primary"
-                    sx={{ my: 2 }}
+                    sx={{ my: 2, direction: 'rtl', textAlign: 'right', fontWeight: 800 }}
                   >
                     {tier.price}
                   </Typography>
@@ -217,6 +286,7 @@ export default function Pricing() {
                     variant="subtitle1"
                     color="text.secondary"
                     gutterBottom
+                    sx={{ direction: 'rtl', textAlign: 'right' }}
                   >
                     {tier.description}
                   </Typography>
@@ -234,10 +304,22 @@ export default function Pricing() {
                     fullWidth
                     variant="contained"
                     sx={{
-                      backgroundColor: tier.color,
+                      borderRadius: 999,
+                      py: 1.2,
+                      fontWeight: 600,
+                      background: tier.color,
+                      border: 'none',
+                      boxShadow: 'none',
                       '&:hover': {
-                        backgroundColor: tier.color,
-                        opacity: 0.9,
+                        background: tier.color,
+                        opacity: 0.95,
+                        transform: 'translateY(-1px)',
+                        boxShadow: '0 10px 24px rgba(15,23,42,0.18)',
+                      },
+                      '&:focusVisible': {
+                        outline: 'none',
+                        boxShadow: 'none',
+                        border: 'none',
                       },
                     }}
                   >

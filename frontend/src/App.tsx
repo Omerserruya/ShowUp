@@ -38,6 +38,22 @@ function App() {
                 <Route path="/terms" element={<Terms />} />
                 <Route path="/privacy" element={<Privacy />} />
                 <Route path="/accessibility" element={<AccessibilityStatement />} />
+          <Route 
+            path="/login" 
+            element={
+              <UserProvider>
+                <Login />
+              </UserProvider>
+            } 
+          />
+          <Route 
+            path="/register" 
+            element={
+              <UserProvider>
+                <Register />
+              </UserProvider>
+            } 
+          />
         </Routes>
     </ThemeProvider>
   );

@@ -68,7 +68,7 @@ export default function SideMenu() {
         <LogoContainer>
           <img 
             src={'./logo.png'}
-            alt="Aurora Logo" 
+            alt="ShowUp Logo" 
             style={{ 
               width: '180px', 
               height: 'auto',
