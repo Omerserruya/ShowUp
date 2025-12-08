@@ -155,88 +155,88 @@ export default function AppAppBar() {
           <Box sx={{ display: { xs: 'flex', md: 'none' }, alignItems: 'center' }}>
             <Logo />
           </Box>
-          <Drawer
-            anchor="top"
-            open={open}
-            onClose={toggleDrawer(false)}
-            PaperProps={{
-              sx: {
-                mt: 'calc(var(--template-frame-height, 0px) + 28px)',
-                borderRadius: 0,
-                borderBottom: '1px solid',
-                borderColor: 'divider',
+            <Drawer
+              anchor="top"
+              open={open}
+              onClose={toggleDrawer(false)}
+              PaperProps={{
+                sx: {
+                  mt: 'calc(var(--template-frame-height, 0px) + 28px)',
+                  borderRadius: 0,
+                  borderBottom: '1px solid',
+                  borderColor: 'divider',
                 position: 'fixed',
                 top: 0,
                 left: 0,
                 right: 0,
                 zIndex: 1300,
-              },
-            }}
-          >
-            <Box
-              sx={{
-                p: 2,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 1,
+                },
               }}
             >
               <Box
                 sx={{
+                  p: 2,
                   display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
+                  flexDirection: 'column',
+                  gap: 1,
                 }}
               >
-                <Logo />
-                <IconButton aria-label="Close menu" onClick={toggleDrawer(false)}>
-                  <CloseRoundedIcon />
-                </IconButton>
-              </Box>
-              <Divider sx={{ my: 1 }} />
-              {menuItems.map((item) => (
-                <MenuItem
-                  key={item.title}
-                  component="a"
-                  href={item.href}
-                  onClick={toggleDrawer(false)}
-                >
-                  {item.title}
-                </MenuItem>
-              ))}
-              <Divider sx={{ my: 1 }} />
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                <Button 
-                  color="primary" 
-                  variant="outlined" 
-                  fullWidth
-                  onClick={handleLoginClick}
+                <Box
                   sx={{
-                    borderWidth: 2,
-                    '&:hover': {
-                      borderWidth: 2,
-                    },
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
                   }}
                 >
-                  התחברות
-                </Button>
-                <Button 
-                  color="primary" 
-                  variant="contained" 
-                  fullWidth
-                  onClick={handleRegisterClick}
-                >
-                  הרשמה
-                </Button>
+                  <Logo />
+                  <IconButton aria-label="Close menu" onClick={toggleDrawer(false)}>
+                    <CloseRoundedIcon />
+                  </IconButton>
+                </Box>
+                <Divider sx={{ my: 1 }} />
+                {menuItems.map((item) => (
+                  <MenuItem
+                    key={item.title}
+                    component="a"
+                    href={item.href}
+                    onClick={toggleDrawer(false)}
+                  >
+                    {item.title}
+                  </MenuItem>
+                ))}
+                <Divider sx={{ my: 1 }} />
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Button 
+                    color="primary" 
+                    variant="outlined" 
+                    fullWidth
+                    onClick={handleLoginClick}
+                    sx={{
+                      borderWidth: 2,
+                      '&:hover': {
+                        borderWidth: 2,
+                      },
+                    }}
+                  >
+                    התחברות
+                  </Button>
+                  <Button 
+                    color="primary" 
+                    variant="contained" 
+                    fullWidth
+                    onClick={handleRegisterClick}
+                  >
+                    הרשמה
+                  </Button>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
+                    מצב תצוגה
+                  </Typography>
+                  <ColorModeIconDropdown size="small" />
+                </Box>
               </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>
-                <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
-                  מצב תצוגה
-                </Typography>
-                <ColorModeIconDropdown size="small" />
-              </Box>
-            </Box>
-          </Drawer>
+            </Drawer>
         </StyledToolbar>
       </Container>
     </AppBar>

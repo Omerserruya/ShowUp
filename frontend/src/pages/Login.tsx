@@ -332,11 +332,11 @@ const Login = () => {
   }, [showOtpScreen, otp]);
 
   return (
-    <Box
-      sx={{
+      <Box
+        sx={{
         minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
+          display: 'flex',
+          alignItems: 'center',
         justifyContent: 'center',
         background: {
           xs: 'transparent',
@@ -344,8 +344,8 @@ const Login = () => {
         },
         py: { xs: 4, md: 8 },
         px: { xs: 2, md: 0 },
-      }}
-    >
+        }}
+      >
       <Container component="main" maxWidth="xs">
         <StyledCard>
           <CardContent>
@@ -379,7 +379,7 @@ const Login = () => {
             </Box>
 
             {!showOtpScreen ? (
-              <Box component="form" onSubmit={handleSubmit}>
+            <Box component="form" onSubmit={handleSubmit}>
                 {formError && (
                   <Typography
                     variant="body2"
@@ -439,8 +439,8 @@ const Login = () => {
                     ))}
                   </TextField>
 
-                  <StyledTextField
-                    fullWidth
+              <StyledTextField
+                fullWidth
                     type="tel"
                     placeholder="הזינו מספר טלפון"
                     value={formData.phone}
@@ -473,20 +473,20 @@ const Login = () => {
                         },
                       },
                     })}
-                  />
+              />
                 </Box>
 
-                <Button
-                  type="submit"
-                  fullWidth
-                  variant="contained"
-                  sx={{
-                    mt: 2,
-                    mb: 2,
+              <Button
+                type="submit"
+                fullWidth
+                variant="contained"
+                sx={{
+                  mt: 2,
+                  mb: 2,
                     borderRadius: 1,
                     padding: '12px',
-                    textTransform: 'none',
-                    fontSize: '16px',
+                  textTransform: 'none',
+                  fontSize: '16px',
                     bgcolor: '#000000',
                     color: '#ffffff',
                     '&:hover': {
@@ -496,11 +496,11 @@ const Login = () => {
                       bgcolor: '#666666',
                       color: '#ffffff',
                     },
-                  }}
-                  disabled={loading}
-                >
+                }}
+                disabled={loading}
+              >
                   {loading ? <CircularProgress size={24} color="inherit" /> : 'המשך'}
-                </Button>
+              </Button>
 
                 <Box sx={{ textAlign: 'center', mt: 2 }}>
                   <Link href="/register" variant="body2" color="primary">
@@ -607,7 +607,7 @@ const Login = () => {
                     }}
                   >
                     {otpError}
-                  </Typography>
+                </Typography>
                 )}
 
                 <Button
@@ -632,7 +632,7 @@ const Login = () => {
                     },
                   }}
                   disabled={loading || otp.join('').length !== 6}
-                >
+              >
                   {loading ? <CircularProgress size={24} color="inherit" /> : 'אימות'}
                 </Button>
 
@@ -640,7 +640,7 @@ const Login = () => {
                   <Link 
                     component="button"
                     variant="body2" 
-                    color="primary"
+                color="primary"
                     onClick={handleBackToPhone}
                     sx={{ 
                       cursor: 'pointer',
@@ -648,16 +648,16 @@ const Login = () => {
                       background: 'none',
                       textDecoration: 'underline'
                     }}
-                  >
+              >
                     חזרה להזנת מספר טלפון
                   </Link>
                 </Box>
-              </Box>
+            </Box>
             )}
           </CardContent>
         </StyledCard>
       </Container>
-    </Box>
+      </Box>
   );
 };
 

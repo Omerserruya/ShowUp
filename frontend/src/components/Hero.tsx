@@ -133,10 +133,11 @@ export default function Hero() {
         sx={{
           position: 'relative',
           display: 'grid',
+          // Two columns from md (≥900px); single column below that
           gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
           alignItems: 'center',
-          gap: { xs: 6, md: 10 },
-          px: { xs: 2, md: 4 },
+          gap: { xs: 6, md: 8, lg: 10 },
+          px: { xs: 2.5, md: 4 },
         }}
         dir="ltr"
       >
@@ -542,7 +543,7 @@ export default function Hero() {
           sx={{
             position: 'relative',
             height: { xs: 'auto', md: 380 },
-            mb: { xs: 0, md: 0 },
+            mb: 0,
             direction: 'rtl',
             zIndex: 1,
             order: { xs: 2, md: 1 },
@@ -560,7 +561,7 @@ export default function Hero() {
               animation: `${float} 6s ease-in-out infinite`,
               animationDelay: '0s',
               opacity: 0,
-              [theme.breakpoints.down('sm')]: {
+              [theme.breakpoints.down('md')]: {
                 position: 'static',
                 opacity: 1,
                 mb: 1.5,
@@ -619,7 +620,7 @@ export default function Hero() {
               animation: `${float} 6s ease-in-out infinite`,
               animationDelay: '1s',
               opacity: 0,
-              [theme.breakpoints.down('sm')]: {
+              [theme.breakpoints.down('md')]: {
                 position: 'static',
                 opacity: 1,
                 mb: 1.5,
@@ -657,7 +658,7 @@ export default function Hero() {
               animation: `${float} 6s ease-in-out infinite`,
               animationDelay: '2.5s',
               opacity: 0,
-              [theme.breakpoints.down('sm')]: {
+              [theme.breakpoints.down('md')]: {
                 position: 'static',
                 opacity: 1,
                 mb: 1.5,

@@ -144,7 +144,7 @@ const Register = () => {
       setFormError('אירעה שגיאה במהלך ההרשמה');
     } finally {
       setLoading(false);
-    }
+      }
   };
 
   const handleOtpSubmit = async (e: React.FormEvent) => {
@@ -183,8 +183,8 @@ const Register = () => {
               'Authorization': `Bearer ${data.access_token}`,
             },
             credentials: 'include',
-          });
-          
+      });
+
           if (userResponse.ok) {
             const userData = await userResponse.json();
             setUser({
@@ -335,11 +335,11 @@ const Register = () => {
   }, [showOtpScreen, otp]);
 
   return (
-    <Box
-      sx={{
+      <Box
+        sx={{
         minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
+          display: 'flex',
+          alignItems: 'center',
         justifyContent: 'center',
         background: {
           xs: 'transparent',
@@ -347,8 +347,8 @@ const Register = () => {
         },
         py: { xs: 4, md: 8 },
         px: { xs: 2, md: 0 },
-      }}
-    >
+        }}
+      >
       <Container component="main" maxWidth="xs">
         <StyledCard>
           <CardContent>
@@ -398,7 +398,7 @@ const Register = () => {
                 )}
                 {/* Phone Number Field */}
                 <Box
-                  sx={{
+            sx={{
                     mb: 2,
                     display: 'flex',
                     flexDirection: 'row-reverse',
@@ -494,13 +494,13 @@ const Register = () => {
                 helperText={errors.firstName}
                 sx={(theme) => ({
                   mb: 2,
-                  '& .MuiOutlinedInput-root': {
+              '& .MuiOutlinedInput-root': {
                     borderRadius: 1.5,
                     height: 40,
                     bgcolor: theme.palette.mode === 'dark'
                       ? theme.palette.background.paper
                       : '#f9fafb',
-                    '& fieldset': {
+                '& fieldset': {
                       borderColor: theme.palette.divider,
                       transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
                     },
@@ -512,14 +512,14 @@ const Register = () => {
                     '&.Mui-focused fieldset': {
                       borderColor: '#3b82f6',
                       boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
-                    },
-                  },
+                },
+              },
                 })}
               />
 
               {/* Last Name Field */}
               <StyledTextField
-                fullWidth
+                    fullWidth
                 placeholder="שם משפחה"
                 value={formData.lastName}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
@@ -556,17 +556,17 @@ const Register = () => {
 
               {/* Email Field (Optional) */}
               <StyledTextField
-                fullWidth
+                    fullWidth
                 type="email"
                 placeholder="כתובת אימייל (אופציונלי)"
-                value={formData.email}
+                    value={formData.email}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                   setFormData({ ...formData, email: e.target.value });
                   setFormError('');
                 }}
                 inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
-                error={!!errors.email}
-                helperText={errors.email}
+                    error={!!errors.email}
+                    helperText={errors.email}
                 sx={(theme) => ({
                   mb: 2,
                   '& .MuiOutlinedInput-root': {
@@ -620,8 +620,8 @@ const Register = () => {
 
               <Box sx={{ textAlign: 'center', mt: 2 }}>
                 <Link component={RouterLink} to="/login" variant="body2" color="primary">
-                  כבר יש לך חשבון? התחבר
-                </Link>
+                    כבר יש לך חשבון? התחבר
+                  </Link>
               </Box>
             </Box>
             ) : (
@@ -723,7 +723,7 @@ const Register = () => {
                     }}
                   >
                     {otpError}
-                  </Typography>
+                </Typography>
                 )}
 
                 <Button
@@ -748,7 +748,7 @@ const Register = () => {
                     },
                   }}
                   disabled={loading || otp.join('').length !== 6}
-                >
+              >
                   {loading ? <CircularProgress size={24} color="inherit" /> : 'אימות'}
                 </Button>
 
@@ -756,7 +756,7 @@ const Register = () => {
                   <Link 
                     component="button"
                     variant="body2" 
-                    color="primary"
+                color="primary"
                     onClick={handleBackToForm}
                     sx={{ 
                       cursor: 'pointer',
@@ -764,16 +764,16 @@ const Register = () => {
                       background: 'none',
                       textDecoration: 'underline'
                     }}
-                  >
+              >
                     חזרה לטופס הרשמה
                   </Link>
                 </Box>
-              </Box>
+            </Box>
             )}
           </CardContent>
         </StyledCard>
       </Container>
-    </Box>
+      </Box>
   );
 };
 
