@@ -8,7 +8,11 @@ import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import MenuItem from '@mui/material/MenuItem';
 import { keyframes } from '@mui/system';
+import { useNavigate } from 'react-router-dom';
 import { countryOptions, normalizePhoneNumber } from '../utils/countryOptions';
+
+const LEAD_ENDPOINT_START = '/api/leads/start-now'; // החלף ל-URL הסופי
+const LEAD_ENDPOINT_CONTACT = '/api/leads/contact'; // החלף ל-URL הסופי
 
 const float = keyframes`
   0% {
@@ -47,11 +51,54 @@ const blob = keyframes`
 `;
 
 export default function Hero() {
+  const navigate = useNavigate();
   const [countryCode, setCountryCode] = React.useState('+972');
   const [phone, setPhone] = React.useState('');
   const [fullName, setFullName] = React.useState('');
   const [eventType, setEventType] = React.useState('');
   const [customEventType, setCustomEventType] = React.useState('');
+
+  const buildLeadPayload = (source: string) => {
+    const normalizedPhone = phone ? normalizePhoneNumber(phone, countryCode) : '';
+    return {
+      source, // e.g., 'hero_start_now' / 'hero_contact'
+      fullName,
+      phone: normalizedPhone,
+      countryCode,
+      eventType,
+      eventTypeOther: eventType === 'other' ? customEventType : '',
+    };
+  };
+
+  const sendLead = async (source: string, endpoint: string) => {
+    try {
+      const payload = buildLeadPayload(source);
+      await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      console.error('Lead submission failed', err);
+    }
+  };
+
+  const handleStartNow = () => {
+    const params = new URLSearchParams();
+    if (fullName) params.set('fullName', fullName);
+    if (phone) params.set('phone', phone);
+    if (countryCode) params.set('countryCode', countryCode);
+    if (eventType) {
+      params.set('eventType', eventType);
+      if (eventType === 'other' && customEventType) {
+        params.set('eventTypeOther', customEventType);
+      }
+    }
+    // Fire-and-forget lead
+    sendLead('hero_start_now', LEAD_ENDPOINT_START);
+
+    navigate(`/wizard?${params.toString()}`);
+  };
 
   return (
     <Box
@@ -499,6 +546,7 @@ export default function Hero() {
                       : '#f8fafc',
                   },
                 })}
+                onClick={() => sendLead('hero_contact', LEAD_ENDPOINT_CONTACT)}
               >
                 שנציג יספר לי עוד
               </Button>
@@ -531,6 +579,7 @@ export default function Hero() {
                     border: 'none',
                   },
                 }}
+                onClick={handleStartNow}
               >
                 התחילו עכשיו - בחרו חבילה
               </Button>

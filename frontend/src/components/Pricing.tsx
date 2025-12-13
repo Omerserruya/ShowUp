@@ -2,53 +2,12 @@ import React from 'react';
 import { Box, Container, Grid, Typography, Paper, Button, Chip } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { styled, useTheme } from '@mui/material/styles';
+import { useNavigate } from 'react-router-dom';
+import { plans as tiers } from '../config/plans';
 
-const tiers = [
-  {
-    title: 'Basic',
-    subtitle: 'בוא נתחיל',
-    price: '₪39',
-    description: 'עד 50 אורחים',
-    features: [
-      'שליחת הודעות בסיסיות בוואטסאפ',
-      'מעקב תגובות בסיסי',
-      'דשבורד תגובות',
-    ],
-    color: '#4CAF50', // Green
-    isPopular: false,
-  },
-  {
-    title: 'Plus',
-    subtitle: 'אירוע בשליטה',
-    price: '₪99',
-    description: 'עד 250 אורחים',
-    features: [
-      'תזמון הודעות מתקדם',
-      'תגובות מסווגות לפי תוכן',
-      'ייבוא אנשי קשר מכל פורמט',
-      'תמיכה בצ\'אט',
-    ],
-    color: '#2196F3', // Blue
-    isPopular: true,
-  },
-  {
-    title: 'Pro',
-    subtitle: 'הכול כלול',
-    price: '₪199',
-    description: 'ללא הגבלת אורחים',
-    features: [
-      'אוטומציות ותזכורות מתקדמות',
-      'אינטגרציות עם Google Sheets / CRM',
-      'ניתוחי בינה מלאכותית לתגובות',
-      'תיוגים והערות על אורחים',
-      'תמיכה טלפונית',
-    ],
-    color: '#9C27B0', // Purple
-    isPopular: false,
-  },
-];
-
-const StyledPaper = styled(Paper)<{ accent: string; popular?: boolean }>(({ theme, accent, popular }) => ({
+const StyledPaper = styled(Paper, {
+  shouldForwardProp: (prop) => prop !== 'accent' && prop !== 'popular',
+})<{ accent: string; popular?: boolean }>(({ theme, accent, popular }) => ({
   padding: popular ? theme.spacing(5) : theme.spacing(4),
   display: 'flex',
   flexDirection: 'column',
@@ -119,6 +78,12 @@ const FeaturesBox = styled(Box)(({ theme }) => ({
 
 export default function Pricing() {
   const theme = useTheme();
+  const navigate = useNavigate();
+
+  const handleStartNow = (planId: string) => {
+    navigate(`/wizard?package=${planId}`);
+  };
+
   return (
     <Box
       id="pricing"
@@ -253,6 +218,7 @@ export default function Pricing() {
                         border: 'none',
                       },
                     }}
+                    onClick={() => handleStartNow(tier.id)}
                   >
                     התחל עכשיו
                   </Button>
@@ -322,6 +288,7 @@ export default function Pricing() {
                         border: 'none',
                       },
                     }}
+                    onClick={() => handleStartNow(tier.id)}
                   >
                     התחל עכשיו
                   </Button>
