@@ -123,6 +123,8 @@ const WhatsAppBubble = ({ template, variables }: { template: MessageTemplate; va
         boxShadow: '0 1px 0.5px rgba(0,0,0,0.13)',
         border: '1px solid rgba(0,0,0,0.08)',
         overflow: 'hidden', // כדי שה-divider לא יבלוט
+        direction: 'rtl',
+        textAlign: 'right',
         '&::before': {
           content: '""',
           position: 'absolute',
@@ -137,7 +139,18 @@ const WhatsAppBubble = ({ template, variables }: { template: MessageTemplate; va
       }}
     >
       {template.title && (
-        <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 0.5, color: '#000' }}>
+        <Typography 
+          variant="subtitle2" 
+          fontWeight={700} 
+          sx={{ 
+            mb: 0.5, 
+            color: '#000',
+            textAlign: 'right',
+            direction: 'rtl',
+            width: '100%',
+            display: 'block',
+          }}
+        >
           {processTemplate({ ...template, body: template.title }, variables)}
         </Typography>
       )}
@@ -1367,16 +1380,16 @@ export default function EventWizard() {
                           }}
                         />
                       )}
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5, flexDirection: 'row-reverse' }}>
-                        <Typography variant="body2" fontWeight={600}>
-                          {template.title}
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5, flexDirection: 'row-reverse', direction: 'rtl' }}>
+                        <Typography variant="body2" fontWeight={600} sx={{ textAlign: 'right', direction: 'rtl', flex: 1 }}>
+                          {template.name}
                         </Typography>
                         {isSelected && (
                           <Chip
                             label="נבחר"
                             size="small"
                             color="primary"
-                            sx={{ height: 20, fontSize: '0.7rem' }}
+                            sx={{ height: 20, fontSize: '0.7rem', ml: 1 }}
                           />
                         )}
                       </Box>
