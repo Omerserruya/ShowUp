@@ -1805,7 +1805,6 @@ export default function EventWizard() {
         gap: 0,
         minWidth: 240,
         pr: 4,
-        borderRight: `1px solid ${theme.palette.divider}`,
       }}
     >
       {steps.map((step, index) => {
