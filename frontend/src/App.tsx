@@ -18,8 +18,8 @@ function App() {
 
   return (
     <ThemeProvider>
-      <Routes>
-        <Route path="/" element={<MarketingPage />} />
+        <Routes>
+                <Route path="/" element={<MarketingPage />} />
         <Route 
           path="/wizard" 
           element={
@@ -28,9 +28,9 @@ function App() {
             </UserProvider>
           } 
         />
-        <Route path="/terms" element={<Terms />} />
-        <Route path="/privacy" element={<Privacy />} />
-        <Route path="/accessibility" element={<AccessibilityStatement />} />
+                <Route path="/terms" element={<Terms />} />
+                <Route path="/privacy" element={<Privacy />} />
+                <Route path="/accessibility" element={<AccessibilityStatement />} />
         <Route 
           path="/login" 
           element={
@@ -47,7 +47,7 @@ function App() {
             </UserProvider>
           } 
         />
-      </Routes>
+        </Routes>
     </ThemeProvider>
   );
 }

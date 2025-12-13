@@ -41,16 +41,26 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { useTheme } from '@mui/material/styles';
 import { plans, PlanTier, getCampaignsForPlan } from '../config/plans';
 import { CampaignSchedule } from '../config/campaigns';
-import { templates, getTemplatesByCampaign, processTemplate, MessageTemplate } from '../config/templates';
+import { templates, getTemplatesByCampaign, getDefaultTemplateForCampaign, processTemplate, MessageTemplate } from '../config/templates';
 import { useUser } from '../contexts/UserContext';
 import { countryOptions, normalizePhoneNumber } from '../utils/countryOptions';
 import PersonIcon from '@mui/icons-material/Person';
 import EmailIcon from '@mui/icons-material/Email';
 import PhoneIcon from '@mui/icons-material/Phone';
+import { usePlacesAutocomplete } from '../hooks/usePlacesAutocomplete';
 
 interface Inviter {
   fn: string; // first name
   ln: string; // last name
+}
+
+interface LocationData {
+  name: string;
+  address: string;
+  coordinates: {
+    lat: number;
+    lng: number;
+  };
 }
 
 interface EventDetails {
@@ -59,7 +69,7 @@ interface EventDetails {
   type: string;
   date: Dayjs | null;
   time: string;
-  locationText: string;
+  location: LocationData | null;
   inviters: Inviter[];
 }
 
@@ -90,7 +100,7 @@ const getTemplateVariables = (eventDetails: EventDetails, inviters: Inviter[]): 
     'סוג_אירוע': eventTypeMap[eventDetails.type] || 'אירוע',
     'תאריך': eventDetails.date ? eventDetails.date.format('DD/MM/YYYY') : '{{תאריך}}',
     'שעה': eventDetails.time || '{{שעה}}',
-    'מיקום': eventDetails.locationText || '{{מיקום}}',
+    'מיקום': eventDetails.location?.address || eventDetails.location?.name || '{{מיקום}}',
     'שם_אירוע': eventDetails.name || '{{שם_אירוע}}',
   };
 };
@@ -307,7 +317,7 @@ export default function EventWizard() {
     type: normalizedHeroType.type,
     date: null,
     time: '18:00',
-    locationText: '',
+    location: null,
     inviters: [{ fn: firstNameFromQuery, ln: lastNameFromQuery }], // מתחיל עם מזמין אחד מהנתונים מה-Hero
   });
   const [campaigns, setCampaigns] = useState<CampaignSchedule[]>(() => {
@@ -327,6 +337,14 @@ export default function EventWizard() {
   });
   const [paymentErrors, setPaymentErrors] = useState<Record<string, string>>({});
   const [paymentLoading, setPaymentLoading] = useState(false);
+
+  // Places Autocomplete hook - must be at component level
+  const placesAutocomplete = usePlacesAutocomplete({
+    onPlaceSelected: (location) => {
+      setEventDetails((prev) => ({ ...prev, location }));
+    },
+    language: 'he',
+  });
 
   // Update payment data when user changes or when data comes from Hero
   useEffect(() => {
@@ -366,14 +384,21 @@ export default function EventWizard() {
   const canNext = useMemo(() => {
     if (activeStep === 0) return !!selectedPackageId;
     if (activeStep === 1) {
-      // שם האירוע הוא חובה, השאר אופציונלי
-      return Boolean(eventDetails.name && eventDetails.name.trim().length > 0);
+      // חובה: שם האירוע, תאריך, שעה, וסוג האירוע (מיקום אופציונלי כרגע)
+      return Boolean(
+        eventDetails.name && 
+        eventDetails.name.trim().length > 0 &&
+        eventDetails.date !== null &&
+        eventDetails.time && 
+        eventDetails.time.trim().length > 0 &&
+        eventDetails.type && 
+        eventDetails.type.trim().length > 0
+      );
     }
     if (activeStep === 2) return true;
     if (activeStep === 3) {
-      // בדיקה שכל קמפיין פעיל יש לו תבנית נבחרת
-      const activeCampaigns = campaigns.filter(c => c.enabled);
-      return activeCampaigns.every(c => selectedTemplates[c.label]);
+      // שלב התבניות - לא חובה לבחור, אפשר להמשיך (התבנית הדיפולטית תיבחר אוטומטית)
+      return true;
     }
     if (activeStep === 4) return agreedToTerms; // שלב הסיכום - צריך הסכמה לתנאים
     if (activeStep === 5) {
@@ -385,6 +410,24 @@ export default function EventWizard() {
   }, [activeStep, selectedPackageId, eventDetails, campaigns, selectedTemplates, agreedToTerms, user, paymentData]);
 
   const handleNext = () => {
+    // אם עוברים משלב התבניות (שלב 3), וודא שכל קמפיין פעיל יש לו תבנית (דיפולטית או נבחרת)
+    if (activeStep === 3) {
+      const activeCampaigns = campaigns.filter(c => c.enabled);
+      const updatedTemplates = { ...selectedTemplates };
+      
+      activeCampaigns.forEach((campaign) => {
+        // אם לא נבחרה תבנית לקמפיין הזה, בחר את התבנית הדיפולטית
+        if (!updatedTemplates[campaign.label]) {
+          const defaultTemplate = getDefaultTemplateForCampaign(campaign.label);
+          if (defaultTemplate) {
+            updatedTemplates[campaign.label] = defaultTemplate.id;
+          }
+        }
+      });
+      
+      setSelectedTemplates(updatedTemplates);
+    }
+    
     if (activeStep < steps.length - 1) {
       setActiveStep((s) => s + 1);
     }
@@ -393,13 +436,80 @@ export default function EventWizard() {
 
   const handleBack = () => setActiveStep((s) => Math.max(0, s - 1));
 
+  const createEvent = async (): Promise<string | null> => {
+    try {
+      // Combine date and time into ISO datetime string
+      let eventDateTime: string | null = null;
+      if (eventDetails.date && eventDetails.time) {
+        const [hours, minutes] = eventDetails.time.split(':');
+        const combinedDateTime = eventDetails.date
+          .hour(parseInt(hours, 10))
+          .minute(parseInt(minutes, 10))
+          .second(0);
+        eventDateTime = combinedDateTime.toISOString();
+      } else if (eventDetails.date) {
+        eventDateTime = eventDetails.date.toISOString();
+      }
+
+      // Prepare location as JSON string
+      const locationJson = eventDetails.location
+        ? JSON.stringify({
+            name: eventDetails.location.name,
+            address: eventDetails.location.address,
+            coordinates: eventDetails.location.coordinates,
+          })
+        : null;
+
+      // Prepare event payload
+      const eventPayload = {
+        name: eventDetails.name,
+        description: eventDetails.description || undefined,
+        event_date: eventDateTime || undefined,
+        location: locationJson,
+        inviters: eventDetails.inviters
+          .filter(inv => inv.fn || inv.ln)
+          .map(inv => ({ fn: inv.fn, ln: inv.ln })),
+      };
+
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/events', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify(eventPayload),
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to create event');
+      }
+
+      const eventData = await response.json();
+      return eventData.id;
+    } catch (error) {
+      console.error('Event creation error:', error);
+      throw error;
+    }
+  };
+
   const handlePaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // If user is logged in, proceed directly to payment
+    // If user is logged in, create event and proceed to home
     if (user) {
-      navigate('/home');
-      return;
+      try {
+        setPaymentLoading(true);
+        await createEvent();
+        navigate('/home');
+        return;
+      } catch (error) {
+        setPaymentErrors({ form: 'שגיאה ביצירת האירוע. אנא נסו שוב.' });
+        setPaymentLoading(false);
+        return;
+      }
     }
     
     // Validate form for new users
@@ -455,6 +565,13 @@ export default function EventWizard() {
       }
       
       if (response.ok && data.message === 'otp_sent') {
+        // Create event before navigating to OTP verification
+        try {
+          await createEvent();
+        } catch (eventError) {
+          console.error('Event creation failed after registration:', eventError);
+          // Continue to OTP verification even if event creation fails
+        }
         // Navigate to login/register page for OTP verification
         navigate('/register?phone=' + encodeURIComponent(normalizedPhone));
       } else {
@@ -715,13 +832,16 @@ export default function EventWizard() {
       {/* סוג האירוע */}
       <Box>
         <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, textAlign: 'right' }}>
-          סוג האירוע
+          סוג האירוע *
         </Typography>
         <TextField
           select
           fullWidth
+          required
           value={eventDetails.type}
           onChange={(e) => setEventDetails({ ...eventDetails, type: e.target.value })}
+          error={!eventDetails.type || eventDetails.type.trim().length === 0}
+          helperText={(!eventDetails.type || eventDetails.type.trim().length === 0) ? 'שדה חובה' : ''}
           SelectProps={{
             MenuProps: {
               PaperProps: {
@@ -757,7 +877,7 @@ export default function EventWizard() {
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
         <Box>
           <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, textAlign: 'right' }}>
-            תאריך האירוע
+            תאריך האירוע *
           </Typography>
           <LocalizationProvider dateAdapter={AdapterDayjs}>
             <DatePicker
@@ -766,7 +886,10 @@ export default function EventWizard() {
               slotProps={{
                 textField: {
                   fullWidth: true,
+                  required: true,
                   placeholder: 'בחר תאריך',
+                  error: eventDetails.date === null,
+                  helperText: eventDetails.date === null ? 'שדה חובה' : '',
                   inputProps: { style: { direction: 'rtl', textAlign: 'right' } },
                   sx: {
                     '& .MuiOutlinedInput-root': {
@@ -780,13 +903,16 @@ export default function EventWizard() {
         </Box>
         <Box>
           <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, textAlign: 'right' }}>
-            שעת האירוע
+            שעת האירוע *
           </Typography>
           <TextField
             fullWidth
+            required
             type="time"
             value={eventDetails.time}
             onChange={(e) => setEventDetails({ ...eventDetails, time: e.target.value })}
+            error={!eventDetails.time || eventDetails.time.trim().length === 0}
+            helperText={(!eventDetails.time || eventDetails.time.trim().length === 0) ? 'שדה חובה' : ''}
             inputProps={{ 
               style: { direction: 'ltr', textAlign: 'center' },
             }}
@@ -806,9 +932,15 @@ export default function EventWizard() {
         </Typography>
         <TextField
           fullWidth
-          placeholder="חיפוש כתובת (Google Places יתווסף)"
-          value={eventDetails.locationText}
-          onChange={(e) => setEventDetails({ ...eventDetails, locationText: e.target.value })}
+          inputRef={placesAutocomplete.inputRef}
+          placeholder={placesAutocomplete.isLoaded ? "הקלד כתובת או שם מקום..." : "טוען חיפוש כתובות..."}
+          value={placesAutocomplete.inputValue}
+          onChange={(e) => {
+            placesAutocomplete.setInputValue(e.target.value);
+            if (!e.target.value) {
+              setEventDetails({ ...eventDetails, location: null });
+            }
+          }}
           inputProps={{ 
             style: { direction: 'rtl', textAlign: 'right' },
             maxLength: 200,
@@ -819,6 +951,11 @@ export default function EventWizard() {
             },
           }}
         />
+        {eventDetails.location && (
+          <Typography variant="caption" color="success.main" sx={{ mt: 0.5, display: 'block', textAlign: 'right' }}>
+            ✓ {eventDetails.location.name || eventDetails.location.address}
+          </Typography>
+        )}
       </Box>
 
       {/* מזמינים */}
@@ -1167,7 +1304,10 @@ export default function EventWizard() {
               
               <Box sx={{ 
                 display: { xs: 'flex', sm: 'grid' },
-                gridTemplateColumns: { sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' },
+                gridTemplateColumns: { 
+                  sm: `repeat(${campaignTemplates.length}, 1fr)`,
+                  md: `repeat(${campaignTemplates.length}, 1fr)`,
+                },
                 gap: 2,
                 overflowX: { xs: 'auto', sm: 'visible' },
                 overflowY: 'hidden',
@@ -1183,6 +1323,7 @@ export default function EventWizard() {
               }}>
                 {campaignTemplates.map((template) => {
                   const isSelected = selectedTemplateId === template.id;
+                  const isDefault = template.isDefault === true;
                   
                   return (
                     <Paper
@@ -1198,19 +1339,34 @@ export default function EventWizard() {
                         p: 2,
                         cursor: 'pointer',
                         borderWidth: isSelected ? 2 : 1,
-                        borderColor: isSelected ? 'primary.main' : 'divider',
-                        bgcolor: isSelected ? 'primary.main' + '08' : 'transparent',
+                        borderColor: isSelected ? 'primary.main' : isDefault ? 'success.main' : 'divider',
+                        bgcolor: isSelected ? 'primary.main' + '08' : isDefault ? 'success.main' + '05' : 'transparent',
                         transition: 'all 0.2s ease',
                         minWidth: { xs: '85%', sm: 'auto' },
                         width: { xs: '85%', sm: 'auto' },
                         flexShrink: { xs: 0, sm: 1 },
                         scrollSnapAlign: { xs: 'center', sm: 'none' },
+                        position: 'relative',
                         '&:hover': {
                           borderColor: 'primary.main',
                           bgcolor: 'primary.main' + '05',
                         },
                       }}
                     >
+                      {isDefault && (
+                        <Chip
+                          label="ברירת מחדל"
+                          size="small"
+                          color="success"
+                          sx={{
+                            position: 'absolute',
+                            top: 8,
+                            left: 8,
+                            fontSize: '10px',
+                            height: 20,
+                          }}
+                        />
+                      )}
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5, flexDirection: 'row-reverse' }}>
                         <Typography variant="body2" fontWeight={600}>
                           {template.title}
@@ -1308,10 +1464,12 @@ export default function EventWizard() {
                 </Typography>
               </Box>
             )}
-            {eventDetails.locationText && (
+            {eventDetails.location && (
               <Box sx={{ display: 'flex', justifyContent: 'space-between', flexDirection: 'row' }}>
                 <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'right' }}>מיקום:</Typography>
-                <Typography variant="body2" fontWeight={500} sx={{ textAlign: 'right' }}>{eventDetails.locationText}</Typography>
+                <Typography variant="body2" fontWeight={500} sx={{ textAlign: 'right' }}>
+                  {eventDetails.location.name || eventDetails.location.address}
+                </Typography>
               </Box>
             )}
             {eventDetails.inviters.length > 0 && eventDetails.inviters.some(inv => inv.fn || inv.ln) && (
@@ -1732,16 +1890,41 @@ export default function EventWizard() {
 
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
-      <Container
-        maxWidth="lg"
+      <Box
         sx={{
+          minHeight: '100vh',
+          background: `
+            radial-gradient(
+              1200px 600px at 10% 0%,
+              #e8ecff 0%,
+              #f0f4ff 40%,
+              transparent 70%
+            ),
+            radial-gradient(
+              800px 500px at 90% 20%,
+              #fce8f5 0%,
+              #fef0f7 35%,
+              transparent 65%
+            ),
+            linear-gradient(
+              180deg,
+              #f7f8fb 0%,
+              #f3f4fa 100%
+            )
+          `,
           py: { xs: 4, md: 6 },
-          px: { xs: 2, sm: 3, md: 4 },
-          bgcolor: 'transparent',
-          overflow: { xs: 'visible', sm: 'visible' },
         }}
-        dir="rtl"
       >
+        <Container
+          maxWidth="lg"
+          sx={{
+            py: { xs: 4, md: 6 },
+            px: { xs: 2, sm: 3, md: 4 },
+            bgcolor: 'transparent',
+            overflow: { xs: 'visible', sm: 'visible' },
+          }}
+          dir="rtl"
+        >
         <Box sx={{ mb: 4, textAlign: 'center' }}>
           <Typography variant="h4" fontWeight={800} sx={{ mb: 1 }}>
             הקמה מהירה של אירוע
@@ -1846,9 +2029,10 @@ export default function EventWizard() {
                 הקודם
               </Button>
             </Box>
+            </Box>
           </Box>
-        </Box>
-      </Container>
+        </Container>
+      </Box>
     </LocalizationProvider>
   );
 }

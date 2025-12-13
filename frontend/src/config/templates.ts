@@ -8,6 +8,7 @@ export interface MessageTemplate {
   campaignLabel: string; // איזה קמפיין התבנית שייכת אליו
   title: string;
   body: string;
+  isDefault?: boolean; // האם זו התבנית הדיפולטית לקמפיין הזה
   cta?: {
     text: string;
     link?: string;
@@ -38,6 +39,7 @@ export const templates: MessageTemplate[] = [
     campaignLabel: 'Save the date',
     title: 'שמור את התאריך! 📅',
     body: 'שלום {{שם}},\n\nאנחנו שמחים להזמין אותך ל{{סוג_אירוע}} של {{שם_מזמין}}.\n\n📅 תאריך: {{תאריך}}\n🕐 שעה: {{שעה}}\n📍 מיקום: {{מיקום}}\n\nנשמח לראותך!',
+    isDefault: true, // תבנית דיפולטית
     variables: ['שם', 'סוג_אירוע', 'שם_מזמין', 'תאריך', 'שעה', 'מיקום'],
     buttons: [
       { id: 'view_details', text: 'צפה בפרטים', type: 'url' },
@@ -58,6 +60,7 @@ export const templates: MessageTemplate[] = [
     campaignLabel: 'תזכורת שבוע לפני',
     title: 'תזכורת: {{שם_אירוע}}',
     body: 'שלום {{שם}},\n\nזו תזכורת ש{{סוג_אירוע}} של {{שם_מזמין}} יתקיים בעוד שבוע.\n\n📅 {{תאריך}} בשעה {{שעה}}\n📍 {{מיקום}}\n\nמצפים לראותך!',
+    isDefault: true, // תבנית דיפולטית
     variables: ['שם', 'שם_אירוע', 'סוג_אירוע', 'שם_מזמין', 'תאריך', 'שעה', 'מיקום'],
   },
   {
@@ -77,6 +80,7 @@ export const templates: MessageTemplate[] = [
     campaignLabel: 'תזכורת יום לפני',
     title: 'מחר: {{שם_אירוע}}',
     body: 'שלום {{שם}},\n\nתזכורת אחרונה: מחר {{תאריך}} בשעה {{שעה}} יתקיים {{סוג_אירוע}} של {{שם_מזמין}} ב{{מיקום}}.\n\nמצפים לראותך!',
+    isDefault: true, // תבנית דיפולטית
     variables: ['שם', 'שם_אירוע', 'תאריך', 'שעה', 'סוג_אירוע', 'שם_מזמין', 'מיקום'],
   },
   {
@@ -97,6 +101,7 @@ export const templates: MessageTemplate[] = [
     campaignLabel: 'תודה אחרי האירוע',
     title: 'תודה שהגעת! 🙏',
     body: 'שלום {{שם}},\n\nתודה רבה שהגעת ל{{סוג_אירוע}} של {{שם_מזמין}}.\n\nהנוכחות שלך הייתה משמעותית עבורנו ואנחנו מעריכים את זה מאוד.\n\nתודה רבה!',
+    isDefault: true, // תבנית דיפולטית
     variables: ['שם', 'סוג_אירוע', 'שם_מזמין'],
   },
   {
@@ -113,6 +118,13 @@ export const templates: MessageTemplate[] = [
  */
 export const getTemplatesByCampaign = (campaignLabel: string): MessageTemplate[] => {
   return templates.filter(t => t.campaignLabel === campaignLabel);
+};
+
+/**
+ * קבלת התבנית הדיפולטית לקמפיין
+ */
+export const getDefaultTemplateForCampaign = (campaignLabel: string): MessageTemplate | undefined => {
+  return templates.find(t => t.campaignLabel === campaignLabel && t.isDefault === true);
 };
 
 /**
