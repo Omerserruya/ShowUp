@@ -84,23 +84,28 @@ export function usePlacesAutocomplete({
   // Using legacy Autocomplete for now (will work for existing customers)
   // For new customers, we should migrate to PlaceAutocompleteElement
   useEffect(() => {
-    if (!isLoaded || !inputRef.current) return;
+    if (!isLoaded) return;
 
-    // Clean up previous instance if it exists
-    if (autocompleteRef.current) {
+    // Wait for inputRef to be attached to DOM element
+    const initAutocomplete = () => {
+      if (!inputRef.current) {
+        // Retry after a short delay if inputRef is not ready
+        setTimeout(initAutocomplete, 100);
+        return;
+      }
+
+      // Clean up previous instance if it exists
+      if (autocompleteRef.current) {
+        try {
+          window.google.maps.event.clearInstanceListeners(autocompleteRef.current);
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+        autocompleteRef.current = null;
+      }
+
       try {
-        window.google.maps.event.clearInstanceListeners(autocompleteRef.current);
-      } catch (e) {
-        // Ignore cleanup errors
-      }
-      autocompleteRef.current = null;
-    }
-
-    try {
-      // Try to use the new PlaceAutocompleteElement if available
-      if (customElements.get('gmp-place-autocomplete')) {
-        // PlaceAutocompleteElement is available - but we need to use it differently
-        // For now, fall back to legacy Autocomplete
+        // Use legacy Autocomplete (works on both desktop and mobile)
         const autocomplete = new window.google.maps.places.Autocomplete(inputRef.current, {
           componentRestrictions: { country: 'il' },
           fields: ['name', 'formatted_address', 'geometry', 'place_id'],
@@ -130,41 +135,13 @@ export function usePlacesAutocomplete({
         });
 
         autocompleteRef.current = autocomplete;
-      } else {
-        // Use legacy Autocomplete (will show warning but should still work)
-        const autocomplete = new window.google.maps.places.Autocomplete(inputRef.current, {
-          componentRestrictions: { country: 'il' },
-          fields: ['name', 'formatted_address', 'geometry', 'place_id'],
-          language: language,
-        });
-
-        autocomplete.addListener('place_changed', () => {
-          const place = autocomplete.getPlace();
-          
-          if (place.geometry && place.geometry.location) {
-            const locationData: LocationData = {
-              name: place.name || place.formatted_address || '',
-              address: place.formatted_address || '',
-              coordinates: {
-                lat: place.geometry.location.lat(),
-                lng: place.geometry.location.lng(),
-              },
-            };
-
-            setLocation(locationData);
-            setInputValue(locationData.address);
-            
-            if (onPlaceSelectedRef.current) {
-              onPlaceSelectedRef.current(locationData);
-            }
-          }
-        });
-
-        autocompleteRef.current = autocomplete;
+      } catch (error) {
+        console.error('Error initializing Places Autocomplete:', error);
       }
-    } catch (error) {
-      console.error('Error initializing Places Autocomplete:', error);
-    }
+    };
+
+    // Start initialization
+    initAutocomplete();
 
     return () => {
       if (autocompleteRef.current) {

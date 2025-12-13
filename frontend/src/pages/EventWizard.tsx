@@ -382,6 +382,18 @@ export default function EventWizard() {
     }
   }, [user, firstNameFromQuery, lastNameFromQuery, phoneFromQuery, initialCountryCode]);
 
+  // Update event details when data comes from Hero (on mount)
+  useEffect(() => {
+    if (firstNameFromQuery || lastNameFromQuery) {
+      setEventDetails(prev => ({
+        ...prev,
+        inviters: prev.inviters.length > 0 && (prev.inviters[0].fn || prev.inviters[0].ln)
+          ? prev.inviters // Keep existing if already filled
+          : [{ fn: firstNameFromQuery, ln: lastNameFromQuery }], // Use from Hero if empty
+      }));
+    }
+  }, [firstNameFromQuery, lastNameFromQuery]);
+
   // Update campaigns when package changes
   useEffect(() => {
     if (selectedPackageId) {
