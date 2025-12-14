@@ -18,10 +18,9 @@ function Layout() {
   }
 
   // Redirect to login if not authenticated
-/*  if (!user) {
+  if (!loading && !user) {
     return <Navigate to="/login" replace />;
   }
-*/
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
       {/* Sidebar */}

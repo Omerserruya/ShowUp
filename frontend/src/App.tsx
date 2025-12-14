@@ -2,7 +2,16 @@ import React, { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { UserProvider } from './contexts/UserContext';
 import { EventProvider } from './contexts/EventContext';
+import { AccountProvider } from './contexts/AccountContext';
+import { SearchProvider } from './contexts/SearchContext';
 import ThemeProvider from './theme/ThemeProvider';
+import Layout from './components/Layout';
+import Home from './pages/Home';
+import Overview from './pages/Overview';
+import Guests from './pages/Guests';
+import Messages from './pages/Messages';
+import Seating from './pages/Seating';
+import Profile from './pages/Profile';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import MarketingPage from './pages/MarketingPage';
@@ -47,6 +56,27 @@ function App() {
             </UserProvider>
           } 
         />
+        {/* Protected routes with Layout */}
+        <Route 
+          element={
+            <UserProvider>
+              <AccountProvider>
+                <EventProvider>
+                  <SearchProvider>
+                    <Layout />
+                  </SearchProvider>
+                </EventProvider>
+              </AccountProvider>
+            </UserProvider>
+          } 
+        >
+          <Route path="/home" element={<Home />} />
+          <Route path="/overview" element={<Overview />} />
+          <Route path="/guests" element={<Guests />} />
+          <Route path="/messages" element={<Messages />} />
+          <Route path="/seating" element={<Seating />} />
+          <Route path="/profile" element={<Profile />} />
+        </Route>
         </Routes>
     </ThemeProvider>
   );

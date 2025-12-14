@@ -173,28 +173,27 @@ const Login = () => {
         // Store the JWT token
         localStorage.setItem('access_token', data.access_token);
         
-        // Fetch user details using the token
+        // Decode token to get user_id and create user object
         try {
-          const userResponse = await fetch('/api/user/me', {
-            headers: {
-              'Authorization': `Bearer ${data.access_token}`,
-            },
-            credentials: 'include',
-          });
+          const base64Url = data.access_token.split('.')[1];
+          const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+          const jsonPayload = decodeURIComponent(
+            atob(base64)
+              .split('')
+              .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+              .join('')
+          );
+          const decoded = JSON.parse(jsonPayload);
           
-          if (userResponse.ok) {
-            const userData = await userResponse.json();
-            setUser({
-              _id: userData._id || userData.id,
-              username: userData.username || userData.first_name + ' ' + userData.last_name,
-              email: userData.email || '',
-              role: userData.role || 'user',
-              createdAt: userData.created_at || userData.createdAt,
-              updatedAt: userData.updated_at || userData.updatedAt
-            });
-          }
-        } catch (userError) {
-          console.error('Error fetching user details:', userError);
+          // Set user from token data
+          setUser({
+            _id: decoded.user_id || decoded.sub || '',
+            username: decoded.sub || phoneNumber || 'משתמש',
+            email: '',
+            role: 'user',
+          });
+        } catch (tokenError) {
+          console.error('Error decoding token:', tokenError);
         }
         
         setOtpError('');

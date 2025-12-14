@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { fetchWithAuth } from '../utils/fetchWithAuth';
 
 export interface Event {
   id: string;
@@ -41,7 +42,7 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
   const fetchEvents = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/events');
+      const response = await fetchWithAuth('/api/events');
       if (!response.ok) throw new Error('Failed to fetch events');
       const data = await response.json();
       setEvents(data);
@@ -56,9 +57,8 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
   const addEvent = async (event: Event) => {
     setLoading(true);
     try {
-      const response = await fetch('/api/events', {
+      const response = await fetchWithAuth('/api/events', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(event),
       });
       if (!response.ok) throw new Error('Failed to add event');
@@ -75,9 +75,8 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
   const updateEvent = async (event: Event) => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/events/${event.id}`, {
+      const response = await fetchWithAuth(`/api/events/${event.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(event),
       });
       if (!response.ok) throw new Error('Failed to update event');
@@ -93,7 +92,7 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
   const deleteEvent = async (eventId: string) => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/events/${eventId}`, {
+      const response = await fetchWithAuth(`/api/events/${eventId}`, {
         method: 'DELETE',
       });
       if (!response.ok) throw new Error('Failed to delete event');

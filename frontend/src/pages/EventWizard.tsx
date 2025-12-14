@@ -20,6 +20,7 @@ import {
   Checkbox,
   CircularProgress,
 } from '@mui/material';
+import { fetchWithAuth } from '../utils/fetchWithAuth';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CheckIcon from '@mui/icons-material/Check';
 import InventoryIcon from '@mui/icons-material/Inventory';
@@ -496,15 +497,9 @@ export default function EventWizard() {
           .map(inv => ({ fn: inv.fn, ln: inv.ln })),
       };
 
-      const token = localStorage.getItem('token');
-      const response = await fetch('/api/events', {
+      const response = await fetchWithAuth('/api/events', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
         body: JSON.stringify(eventPayload),
-        credentials: 'include',
       });
 
       if (!response.ok) {
