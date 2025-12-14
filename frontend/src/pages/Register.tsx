@@ -188,11 +188,26 @@ const Register = () => {
           );
           const decoded = JSON.parse(jsonPayload);
           
-          // Set user from token data
+          // Save user details to localStorage
+          if (formData.firstName && formData.lastName) {
+            localStorage.setItem('user_first_name', formData.firstName);
+            localStorage.setItem('user_last_name', formData.lastName);
+            if (formData.email) {
+              localStorage.setItem('user_email', formData.email);
+            }
+          }
+          
+          // Set user from token data and localStorage
+          const savedFirstName = localStorage.getItem('user_first_name') || '';
+          const savedLastName = localStorage.getItem('user_last_name') || '';
+          const savedEmail = localStorage.getItem('user_email') || '';
+          
           setUser({
             _id: decoded.user_id || decoded.sub || '',
-            username: decoded.sub || phoneNumber || 'משתמש',
-            email: '',
+            username: savedFirstName && savedLastName 
+              ? `${savedFirstName} ${savedLastName}`
+              : decoded.sub || phoneNumber || 'משתמש',
+            email: savedEmail,
             role: 'user',
           });
         } catch (tokenError) {

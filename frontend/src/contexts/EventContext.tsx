@@ -30,14 +30,54 @@ interface EventContextType {
 const EventContext = createContext<EventContextType | undefined>(undefined);
 
 export function EventProvider({ children }: { children: React.ReactNode }) {
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  // Load selected event from localStorage on mount
+  const [selectedEvent, setSelectedEventState] = useState<Event | null>(() => {
+    const saved = localStorage.getItem('selected_event_id');
+    return saved ? { id: saved } as Event : null;
+  });
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Custom setter that also saves to localStorage
+  const setSelectedEvent = (event: Event | null) => {
+    setSelectedEventState(event);
+    if (event) {
+      localStorage.setItem('selected_event_id', event.id);
+    } else {
+      localStorage.removeItem('selected_event_id');
+    }
+  };
+
   useEffect(() => {
     fetchEvents();
   }, []);
+
+  // When events are loaded, try to restore selected event
+  useEffect(() => {
+    if (events.length > 0 && selectedEvent?.id) {
+      const foundEvent = events.find(e => e.id === selectedEvent.id);
+      if (foundEvent) {
+        setSelectedEventState(foundEvent);
+      } else {
+        // Selected event not found, clear it
+        setSelectedEventState(null);
+        localStorage.removeItem('selected_event_id');
+      }
+    } else if (events.length > 0 && !selectedEvent) {
+      // If no event is selected but we have events, try to restore from localStorage
+      const savedEventId = localStorage.getItem('selected_event_id');
+      if (savedEventId) {
+        const foundEvent = events.find(e => e.id === savedEventId);
+        if (foundEvent) {
+          setSelectedEventState(foundEvent);
+        } else {
+          localStorage.removeItem('selected_event_id');
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events]);
 
   const fetchEvents = async () => {
     setLoading(true);

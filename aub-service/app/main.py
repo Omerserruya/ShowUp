@@ -3,9 +3,10 @@ import json
 import pika
 import psycopg2
 import redis
-from fastapi import FastAPI, Body
+from fastapi import FastAPI, Body, Header, HTTPException
 from fastapi.responses import JSONResponse
-from .token_utils import create_jwt
+from fastapi import status
+from .token_utils import create_jwt, verify_jwt
 
 
 def get_env():
@@ -224,6 +225,88 @@ def verify_otp(payload: dict = Body(...)):
     jwt_payload = {"user_id": user_id, "sub": phone}
     token = create_jwt(jwt_payload, env["JWT_EXP_SECONDS"])
     return JSONResponse(status_code=200, content={"access_token": token})
+
+
+@app.get("/me")
+def get_current_user(authorization: str = Header(None)):
+    env = get_env()
+    
+    # Extract token from Authorization header
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authorization header"
+        )
+    
+    token = authorization.split(" ")[1]
+    
+    # Verify and decode token
+    try:
+        decoded = verify_jwt(token)
+        user_id = decoded.get("user_id") or decoded.get("sub")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token: missing user_id"
+            )
+        # Convert to string if needed
+        user_id = str(user_id)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid token: {str(e)}"
+        )
+    
+    ensure_users_table(env)
+    
+    with psycopg2.connect(
+        host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"], password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
+    ) as conn:
+        with conn.cursor() as cur:
+            # Try to find user by id (UUID format)
+            # First try as UUID, then as string (phone)
+            row = None
+            try:
+                import uuid
+                user_uuid = uuid.UUID(user_id)
+                # Search by UUID - convert to string for psycopg2
+                cur.execute(
+                    "SELECT id, phone, email, first_name, last_name, is_verified, created_at, updated_at, last_login FROM users WHERE id = %s",
+                    (str(user_uuid),)
+                )
+                row = cur.fetchone()
+            except ValueError:
+                # If not a valid UUID, try to find by phone (sub might be phone)
+                cur.execute(
+                    "SELECT id, phone, email, first_name, last_name, is_verified, created_at, updated_at, last_login FROM users WHERE phone = %s",
+                    (user_id,)
+                )
+                row = cur.fetchone()
+            
+            if not row:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail=f"User not found: {user_id}"
+                )
+            
+            # Combine first_name and last_name into full_name
+            full_name = f"{row[3]} {row[4]}".strip() if row[3] and row[4] else (row[3] or row[4] or "")
+            
+            return JSONResponse(status_code=200, content={
+                "id": str(row[0]),
+                "_id": str(row[0]),
+                "phone": row[1],
+                "email": row[2] or "",
+                "first_name": row[3],
+                "last_name": row[4],
+                "full_name": full_name,
+                "name": full_name,
+                "username": full_name,
+                "is_verified": row[5],
+                "created_at": row[6].isoformat() if row[6] else None,
+                "updated_at": row[7].isoformat() if row[7] else None,
+                "last_login": row[8].isoformat() if row[8] else None,
+            })
 
 
 @app.post("/login")

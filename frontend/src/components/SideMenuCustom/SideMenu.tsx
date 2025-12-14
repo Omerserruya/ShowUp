@@ -15,7 +15,7 @@ import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import InfoRoundedIcon from '@mui/icons-material/InfoRounded';
 import { useNavigate, useLocation } from 'react-router-dom';
 
-const drawerWidth = 240;
+const drawerWidth = 280;
 
 const Drawer = styled(MuiDrawer)({
   width: drawerWidth,
@@ -52,7 +52,7 @@ export default function SideMenu() {
       sx={{
         display: { xs: 'none', md: 'block' },
         '& .MuiDrawer-paper': {
-          backgroundColor: 'background.paper',
+          backgroundColor: '#ffffff',
           borderRight: '1px solid',
           borderColor: 'divider',
           width: drawerWidth
@@ -91,7 +91,7 @@ export default function SideMenu() {
           bottom: 0,
           left: 0,
           right: 0,
-          backgroundColor: 'background.paper'
+          backgroundColor: '#ffffff'
         }}>
           <List dense>
             {bottomMenuItems.map((item) => (

@@ -185,11 +185,20 @@ const Login = () => {
           );
           const decoded = JSON.parse(jsonPayload);
           
-          // Set user from token data
+          // Try to get saved user details from localStorage
+          const savedFirstName = localStorage.getItem('user_first_name');
+          const savedLastName = localStorage.getItem('user_last_name');
+          const savedEmail = localStorage.getItem('user_email');
+          
+          // Set user from token data and localStorage
+          const username = savedFirstName && savedLastName
+            ? `${savedFirstName} ${savedLastName}`
+            : decoded.sub || phoneNumber || 'משתמש';
+          
           setUser({
             _id: decoded.user_id || decoded.sub || '',
-            username: decoded.sub || phoneNumber || 'משתמש',
-            email: '',
+            username: username,
+            email: savedEmail || '',
             role: 'user',
           });
         } catch (tokenError) {
