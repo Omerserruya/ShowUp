@@ -182,13 +182,13 @@ const MessageStatistics: React.FC<MessageStatisticsProps> = ({ stats, maxWidth =
         }}>
           <CardContent sx={{ p: { xs: 2, md: 3 } }}>
             <Typography 
-              variant="subtitle1" 
-              component="h3" 
+              variant="h5" 
+              component="h2" 
               sx={{ 
                 mb: 3, 
-                fontWeight: 500, 
-                textAlign: 'center', 
-                color: '#777' 
+                fontWeight: 600, 
+                textAlign: 'right', 
+                color: '#424242' 
               }}
             >
               סטטיסטיקת הודעות

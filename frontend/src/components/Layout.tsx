@@ -1,11 +1,51 @@
 import React from 'react';
 import { Box, CircularProgress } from "@mui/material";
-import { Outlet, Navigate } from 'react-router-dom';
+import { Outlet, Navigate, useLocation } from 'react-router-dom';
 import SideMenu from './SideMenuCustom/SideMenu';
+import Header from './Header';
 import { useUser } from '../contexts/UserContext';
 
 function Layout() {
   const { user, loading } = useUser();
+  const location = useLocation();
+
+  const getHeaderContent = () => {
+    switch (location.pathname) {
+      case '/overview':
+      case '/home':
+        return {
+          title: 'לוח בקרה',
+          subtitle: 'סקירה כללית של האירוע שלך',
+        };
+      case '/guests':
+        return {
+          title: 'רשימת אורחים',
+          subtitle: 'ניהול האורחים והסטטוסים שלהם',
+        };
+      case '/messages':
+        return {
+          title: 'ניהול קמפיינים',
+          subtitle: 'הודעות, תזכורות ועדכונים לאורחים',
+        };
+      case '/seating':
+        return {
+          title: 'סידור מושבים',
+          subtitle: 'תכנון ישיבה ומיקום האורחים',
+        };
+      case '/profile':
+        return {
+          title: 'הפרופיל שלי',
+          subtitle: 'פרטי החשבון וההגדרות שלך',
+        };
+      default:
+        return {
+          title: 'לוח בקרה',
+          subtitle: 'סקירה כללית של האירוע שלך',
+        };
+    }
+  };
+
+  const headerContent = getHeaderContent();
 
   // Show loading state while checking user authentication
   if (loading) {
@@ -33,10 +73,11 @@ function Layout() {
         minHeight: '100vh',
         display: 'flex',
         flexDirection: 'column',
-        backgroundColor: (theme) => theme.palette.mode === 'dark' 
-          ? theme.palette.grey[900] 
-          : theme.palette.grey[100],
+        backgroundColor: '#f6f7fb', // Light gray-blue background
       }}>
+        {/* Top app header (sticky) */}
+        <Header title={headerContent.title} subtitle={headerContent.subtitle} />
+
         {/* Page Content */}
         <Box sx={{ 
           flexGrow: 1,

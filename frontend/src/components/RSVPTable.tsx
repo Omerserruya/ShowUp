@@ -19,20 +19,29 @@ import {
   MenuItem,
   IconButton,
   Popover,
+  Button,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import FilterListIcon from '@mui/icons-material/FilterList';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CancelIcon from '@mui/icons-material/Cancel';
+import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
 
 interface Guest {
   _id: string;
   eventId: string;
   name: string;
   phone: string;
+  email?: string;
   group?: string;
   status: 'pending' | 'confirmed' | 'declined' | 'maybe';
   source: 'manual' | 'imported' | 'whatsapp';
   note?: string;
   reminderSentAt?: Date;
+  confirmedCount?: number;
+  lastResponse?: string | Date;
+  avatarUrl?: string;
 }
 
 interface RSVPTableProps {
@@ -49,16 +58,23 @@ interface Column {
 
 const statusColors = {
   pending: '#f57c00',
-  confirmed: '#2e7d32',
+  confirmed: '#16a34a', // Dark green for confirmed status
   declined: '#c62828',
   maybe: '#1976d2',
 };
 
 const statusLabels = {
-  pending: 'ממתין',
-  confirmed: 'אישר',
-  declined: 'ביטל',
+  pending: 'לא ענה',
+  confirmed: 'מגיע',
+  declined: 'לא מגיע',
   maybe: 'אולי',
+};
+
+const statusIcons = {
+  pending: <QuestionAnswerIcon sx={{ fontSize: 16 }} />,
+  confirmed: <CheckCircleIcon sx={{ fontSize: 16 }} />,
+  declined: <CancelIcon sx={{ fontSize: 16 }} />,
+  maybe: <QuestionAnswerIcon sx={{ fontSize: 16 }} />,
 };
 
 const sourceLabels = {
@@ -108,10 +124,12 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
 
   // Column definitions with initial widths
   const [columns, setColumns] = useState<Column[]>([
-    { id: 'name', label: 'שם', width: 200 },
-    { id: 'group', label: 'קבוצה', width: 200 },
-    { id: 'status', label: 'סטטוס', width: 150 },
-    { id: 'note', label: 'הערות', width: 300 },
+    { id: 'name', label: 'שם', width: 200, align: 'right' },
+    { id: 'phone', label: 'טלפון', width: 150, align: 'right' },
+    { id: 'status', label: 'סטטוס', width: 150, align: 'right' },
+    { id: 'confirmedCount', label: 'כמות אורחים', width: 150, align: 'right' },
+    { id: 'lastResponse', label: 'תאריך תגובה', width: 150, align: 'right' },
+    { id: 'actions', label: 'פעולות', width: 80, align: 'right' },
   ]);
 
   // State for tracking resizing
@@ -123,6 +141,8 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
 
   const filteredGuests = guests.filter((guest) => {
     const matchesSearch = guest.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      guest.phone.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (guest.email && guest.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (guest.group && guest.group.toLowerCase().includes(searchTerm.toLowerCase()));
     
     const matchesStatus = statusFilter === 'all' || guest.status === statusFilter;
@@ -215,11 +235,11 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
   }, [resizing, handleResizeMove, handleResizeEnd]);
 
   return (
-    <Box sx={{ width: '100%', mx: 'auto', px: 2 }}>
-      <Box sx={{ mb: 2 }}>
+    <Box sx={{ width: '100%', mt: 2 }}>
+      <Box sx={{ mb: 3, display: 'flex', gap: 2, alignItems: 'center', flexDirection: 'row-reverse' }}>
         <TextField
           fullWidth
-          placeholder="חיפוש לפי שם או קבוצה..."
+          placeholder="חיפוש אורח..."
           variant="outlined"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
@@ -231,7 +251,16 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
             ),
           }}
           size="small"
+          sx={{ maxWidth: 300 }}
         />
+        <Button
+          variant="outlined"
+          startIcon={<FilterListIcon />}
+          onClick={handleFilterClick}
+          sx={{ minWidth: 100 }}
+        >
+          סינון
+        </Button>
       </Box>
       
       {loading ? (
@@ -240,7 +269,7 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
         </Box>
       ) : (
         <>
-          <TableContainer sx={{ maxHeight: 600, width: '100%', overflow: 'auto' }}>
+          <TableContainer sx={{ width: '100%', overflow: 'auto' }}>
             <Table 
               ref={tableRef}
               stickyHeader 
@@ -263,20 +292,11 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
                     <ResizableTableCell 
                       key={column.id}
                       width={column.width} 
-                      align="right"
+                      align={column.align || 'right'}
                     >
-                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1 }}>
+                      <Typography variant="body2" sx={{ textAlign: 'right', fontWeight: 'inherit' }}>
                         {column.label}
-                        {column.id === 'status' && (
-                          <IconButton
-                            size="small"
-                            onClick={handleFilterClick}
-                            sx={{ p: 0.5 }}
-                          >
-                            <FilterListIcon fontSize="small" />
-                          </IconButton>
-                        )}
-                      </Box>
+                      </Typography>
                       <Resizer 
                         className={resizing?.columnIndex === index ? 'isResizing' : ''}
                         onMouseDown={(e) => handleResizeStart(e, index)}
@@ -314,37 +334,61 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
                               minWidth: 80 
                             }}
                           >
-                            {column.id === 'status' ? (
-                              <Chip
-                                label={statusLabels[guest.status]}
-                                sx={{
-                                  backgroundColor: `${statusColors[guest.status]}20`,
-                                  color: statusColors[guest.status],
-                                  fontWeight: 500,
-                                  minWidth: 80,
-                                }}
-                              />
-                            ) : column.id === 'note' ? (
-                              editingNoteId === guest._id ? (
-                                <TextField
-                                  fullWidth
-                                  size="small"
-                                  value={editedNote}
-                                  onChange={(e) => setEditedNote(e.target.value)}
-                                  onKeyDown={(e) => handleNoteKeyPress(e, guest._id)}
-                                  onBlur={() => handleNoteSave(guest._id)}
-                                  autoFocus
+                            {column.id === 'name' ? (
+                              <Typography variant="body2" sx={{ fontWeight: 500, textAlign: 'right' }}>
+                                {guest.name}
+                              </Typography>
+                            ) : column.id === 'status' ? (
+                              <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                <Chip
+                                  icon={statusIcons[guest.status]}
+                                  label={statusLabels[guest.status]}
+                                  sx={{
+                                    backgroundColor: guest.status === 'confirmed' 
+                                      ? '#dcfce7' // Light green background for confirmed
+                                      : `${statusColors[guest.status]}20`,
+                                    color: statusColors[guest.status],
+                                    fontWeight: 500,
+                                    minWidth: 100,
+                                    height: 28,
+                                    '& .MuiChip-icon': {
+                                      color: statusColors[guest.status],
+                                    },
+                                  }}
                                 />
+                              </Box>
+                            ) : column.id === 'confirmedCount' ? (
+                              guest.status === 'confirmed' && guest.confirmedCount ? (
+                                <Typography variant="body2" sx={{ fontWeight: 500, textAlign: 'right' }}>
+                                  {guest.confirmedCount > 1 ? `${guest.confirmedCount - 1}+` : '0'}
+                                </Typography>
                               ) : (
-                                <Typography 
-                                  onClick={() => handleNoteClick(guest)}
-                                  sx={{ cursor: 'pointer' }}
-                                >
-                                  {guest.note || '-'}
+                                <Typography variant="body2" sx={{ color: 'text.secondary', textAlign: 'right' }}>
+                                  -
                                 </Typography>
                               )
+                            ) : column.id === 'lastResponse' ? (
+                              guest.lastResponse ? (
+                                <Typography variant="body2" sx={{ textAlign: 'right' }}>
+                                  {typeof guest.lastResponse === 'string' 
+                                    ? guest.lastResponse 
+                                    : new Date(guest.lastResponse).toLocaleDateString('he-IL')}
+                                </Typography>
+                              ) : (
+                                <Typography variant="body2" sx={{ color: 'text.secondary', textAlign: 'right' }}>
+                                  -
+                                </Typography>
+                              )
+                            ) : column.id === 'actions' ? (
+                              <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                <IconButton size="small">
+                                  <MoreVertIcon fontSize="small" />
+                                </IconButton>
+                              </Box>
                             ) : (
-                              String(guest[column.id as keyof Guest] || '-')
+                              <Typography variant="body2" sx={{ textAlign: 'right' }}>
+                                {String(guest[column.id as keyof Guest] || '-')}
+                              </Typography>
                             )}
                           </TableCell>
                         ))}
@@ -389,9 +433,9 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
         }}
       >
         <MenuItem onClick={() => handleStatusFilter('all')}>הכל</MenuItem>
-        <MenuItem onClick={() => handleStatusFilter('pending')}>ממתין</MenuItem>
-        <MenuItem onClick={() => handleStatusFilter('confirmed')}>אישר</MenuItem>
-        <MenuItem onClick={() => handleStatusFilter('declined')}>ביטל</MenuItem>
+        <MenuItem onClick={() => handleStatusFilter('pending')}>לא ענה</MenuItem>
+        <MenuItem onClick={() => handleStatusFilter('confirmed')}>מגיע</MenuItem>
+        <MenuItem onClick={() => handleStatusFilter('declined')}>לא מגיע</MenuItem>
         <MenuItem onClick={() => handleStatusFilter('maybe')}>אולי</MenuItem>
       </Menu>
     </Box>
