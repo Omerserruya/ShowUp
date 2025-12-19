@@ -150,6 +150,22 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
     return matchesSearch && matchesStatus;
   });
 
+  // Ensure guests are always ordered by lastResponse (most recent first)
+  const sortedGuests = [...filteredGuests].sort((a, b) => {
+    if (!a.lastResponse && !b.lastResponse) return 0;
+    if (!a.lastResponse) return 1; // No response goes to end
+    if (!b.lastResponse) return -1; // No response goes to end
+    
+    const aTime = a.lastResponse instanceof Date 
+      ? a.lastResponse.getTime() 
+      : new Date(a.lastResponse).getTime();
+    const bTime = b.lastResponse instanceof Date 
+      ? b.lastResponse.getTime() 
+      : new Date(b.lastResponse).getTime();
+    
+    return bTime - aTime; // Most recent first
+  });
+
   const handleFilterClick = (event: React.MouseEvent<HTMLElement>) => {
     setFilterAnchorEl(event.currentTarget);
   };
@@ -236,7 +252,16 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
 
   return (
     <Box sx={{ width: '100%', mt: 2 }}>
-      <Box sx={{ mb: 3, display: 'flex', gap: 2, alignItems: 'center', flexDirection: 'row-reverse' }}>
+      {/* Search + filter row */}
+      <Box
+        sx={{
+          mb: 3,
+          display: 'flex',
+          gap: 1.5,
+          flexDirection: 'row-reverse',
+          alignItems: 'stretch',
+        }}
+      >
         <TextField
           fullWidth
           placeholder="חיפוש אורח..."
@@ -251,13 +276,28 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
             ),
           }}
           size="small"
-          sx={{ maxWidth: 300 }}
+          sx={{
+            maxWidth: 360,
+            '& .MuiOutlinedInput-root': {
+              height: 40,
+              borderRadius: 9999,
+            },
+            '& .MuiOutlinedInput-input': {
+              py: 0,
+            },
+          }}
         />
         <Button
           variant="outlined"
+          size="small"
           startIcon={<FilterListIcon />}
           onClick={handleFilterClick}
-          sx={{ minWidth: 100 }}
+          sx={{
+            minWidth: 96,
+            height: 40,
+            borderRadius: 9999,
+            px: 2.5,
+          }}
         >
           סינון
         </Button>
@@ -313,7 +353,7 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredGuests
+                  sortedGuests
                     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                     .map((guest) => (
                       <TableRow 
@@ -358,9 +398,9 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
                                 />
                               </Box>
                             ) : column.id === 'confirmedCount' ? (
-                              guest.status === 'confirmed' && guest.confirmedCount ? (
+                              guest.status === 'confirmed' && typeof guest.confirmedCount === 'number' ? (
                                 <Typography variant="body2" sx={{ fontWeight: 500, textAlign: 'right' }}>
-                                  {guest.confirmedCount > 1 ? `${guest.confirmedCount - 1}+` : '0'}
+                                  {guest.confirmedCount}
                                 </Typography>
                               ) : (
                                 <Typography variant="body2" sx={{ color: 'text.secondary', textAlign: 'right' }}>

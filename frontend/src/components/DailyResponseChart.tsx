@@ -14,42 +14,47 @@ import {
 
 interface DailyResponseData {
   date: string;
+  dateLabel: string;
   confirmed: number;
   declined: number;
 }
 
 interface Milestone {
   date: string;
+  dateLabel: string;
   label: string;
 }
 
 interface DailyResponseChartProps {
   data?: DailyResponseData[];
   milestones?: Milestone[];
+  period: 'week' | 'month';
+  onChangePeriod: (period: 'week' | 'month') => void;
 }
 
 // Mock data for the last 7 days
 const defaultData: DailyResponseData[] = [
-  { date: 'יום א', confirmed: 5, declined: 2 },
-  { date: 'יום ב', confirmed: 8, declined: 1 },
-  { date: 'יום ג', confirmed: 12, declined: 3 },
-  { date: 'יום ד', confirmed: 6, declined: 2 },
-  { date: 'יום ה', confirmed: 10, declined: 1 },
-  { date: 'יום ו', confirmed: 4, declined: 0 },
-  { date: 'שבת', confirmed: 3, declined: 1 },
+  { date: '2024-05-12', dateLabel: 'יום א', confirmed: 5, declined: 2 },
+  { date: '2024-05-13', dateLabel: 'יום ב', confirmed: 8, declined: 1 },
+  { date: '2024-05-14', dateLabel: 'יום ג', confirmed: 12, declined: 3 },
+  { date: '2024-05-15', dateLabel: 'יום ד', confirmed: 6, declined: 2 },
+  { date: '2024-05-16', dateLabel: 'יום ה', confirmed: 10, declined: 1 },
+  { date: '2024-05-17', dateLabel: 'יום ו', confirmed: 4, declined: 0 },
+  { date: '2024-05-18', dateLabel: 'שבת', confirmed: 3, declined: 1 },
 ];
 
 // Mock milestones
 const defaultMilestones: Milestone[] = [
-  { date: 'יום ג', label: 'שליחת הודעת תזכורת 1' },
-  { date: 'יום ה', label: 'שליחת הודעת תזכורת 2' },
+  { date: '2024-05-14', dateLabel: 'יום ג', label: 'שליחת הודעת תזכורת 1' },
+  { date: '2024-05-16', dateLabel: 'יום ה', label: 'שליחת הודעת תזכורת 2' },
 ];
 
 const DailyResponseChart: React.FC<DailyResponseChartProps> = ({ 
   data = defaultData,
-  milestones = defaultMilestones 
+  milestones = defaultMilestones,
+  period,
+  onChangePeriod,
 }) => {
-  const [timeFilter, setTimeFilter] = useState<'week' | 'month' | 'year'>('week');
 
   // Custom label component for milestones
   const MilestoneLabel = (props: any) => {
@@ -167,104 +172,118 @@ const DailyResponseChart: React.FC<DailyResponseChartProps> = ({
         >
           אחוזי תגובה
         </Typography>
-        <ButtonGroup variant="outlined" size="small">
+        <ButtonGroup
+          variant="outlined"
+          size="small"
+          sx={{
+            overflow: 'hidden',
+            '& .MuiButton-root': {
+              minWidth: 72,
+              px: 2.5,
+              fontSize: '0.875rem',
+              borderColor: '#e5e7eb',
+            },
+          }}
+        >
           <Button
-            onClick={() => setTimeFilter('week')}
+            onClick={() => onChangePeriod('week')}
             sx={{
-              bgcolor: timeFilter === 'week' ? '#f3f4f6' : 'transparent',
-              color: timeFilter === 'week' ? '#424242' : '#666',
+              bgcolor: period === 'week' ? '#f3f4f6' : 'transparent',
+              color: period === 'week' ? '#424242' : '#666',
               borderColor: '#e5e7eb',
               '&:hover': {
                 borderColor: '#d1d5db',
-                bgcolor: timeFilter === 'week' ? '#f3f4f6' : '#f9fafb',
+                bgcolor: period === 'week' ? '#f3f4f6' : '#f9fafb',
               },
             }}
           >
             שבוע
           </Button>
           <Button
-            onClick={() => setTimeFilter('month')}
+            onClick={() => onChangePeriod('month')}
             sx={{
-              bgcolor: timeFilter === 'month' ? '#f3f4f6' : 'transparent',
-              color: timeFilter === 'month' ? '#424242' : '#666',
+              bgcolor: period === 'month' ? '#f3f4f6' : 'transparent',
+              color: period === 'month' ? '#424242' : '#666',
               borderColor: '#e5e7eb',
               '&:hover': {
                 borderColor: '#d1d5db',
-                bgcolor: timeFilter === 'month' ? '#f3f4f6' : '#f9fafb',
+                bgcolor: period === 'month' ? '#f3f4f6' : '#f9fafb',
               },
             }}
           >
             חודש
           </Button>
-          <Button
-            onClick={() => setTimeFilter('year')}
-            sx={{
-              bgcolor: timeFilter === 'year' ? '#f3f4f6' : 'transparent',
-              color: timeFilter === 'year' ? '#424242' : '#666',
-              borderColor: '#e5e7eb',
-              '&:hover': {
-                borderColor: '#d1d5db',
-                bgcolor: timeFilter === 'year' ? '#f3f4f6' : '#f9fafb',
-              },
-            }}
-          >
-            שנה
-          </Button>
         </ButtonGroup>
       </Box>
 
-      <Box sx={{ width: '100%', height: 300 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart
-            data={data}
-            margin={{ top: 40, right: 30, left: 20, bottom: 5 }}
-            barSize={40}
-            barGap={2}
-          >
-            <CartesianGrid
-              strokeDasharray="3 3"
-              vertical={false}
-              stroke="rgba(0,0,0,0.04)"
-            />
-            <XAxis
-              dataKey="date"
-              tick={{ fontSize: 12, fill: '#777' }}
-              axisLine={{ stroke: 'rgba(0,0,0,0.07)' }}
-              tickLine={{ stroke: 'rgba(0,0,0,0.07)' }}
-            />
-            <YAxis
-              axisLine={{ stroke: 'rgba(0,0,0,0.07)' }}
-              tickLine={{ stroke: 'rgba(0,0,0,0.07)' }}
-              tick={{ fontSize: 12, fill: '#777' }}
-            />
-            <Tooltip content={<CustomTooltip />} />
-            <Legend content={<CustomLegend />} />
-            {milestones.map((milestone, index) => (
-              <ReferenceLine
-                key={index}
-                x={milestone.date}
-                stroke="#6366f1"
-                strokeWidth={2}
-                strokeDasharray="5 5"
-                label={(props: any) => <MilestoneLabel {...props} label={milestone.label} />}
-              />
-            ))}
-            <Bar
-              dataKey="confirmed"
-              name="אישרו הגעה"
-              fill="#4ade80"
-              radius={[4, 4, 0, 0]}
-              stackId="a"
-            />
-            <Bar
-              dataKey="declined"
-              name="ביטלו השתתפות"
-              fill="#f87171"
-              radius={[4, 4, 0, 0]}
-              stackId="a"
-            />
-          </BarChart>
-        </ResponsiveContainer>
+      {/* Scrollable container to allow seeing all days comfortably */}
+      <Box sx={{ width: '100%', height: 300, overflowX: 'auto', overflowY: 'hidden' }}>
+        <Box
+          sx={{
+            width: `${Math.max((data?.length || defaultData.length) * 60, 600)}px`,
+            height: '100%',
+          }}
+        >
+          {data && data.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={data}
+                margin={{ top: 40, right: 30, left: 20, bottom: 5 }}
+                barSize={32}
+                barGap={4}
+              >
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  vertical={false}
+                  stroke="rgba(0,0,0,0.04)"
+                />
+                <XAxis
+                  dataKey="dateLabel"
+                  tick={{ fontSize: 12, fill: '#777' }}
+                  axisLine={{ stroke: 'rgba(0,0,0,0.07)' }}
+                  tickLine={{ stroke: 'rgba(0,0,0,0.07)' }}
+                />
+                <YAxis
+                  axisLine={{ stroke: 'rgba(0,0,0,0.07)' }}
+                  tickLine={{ stroke: 'rgba(0,0,0,0.07)' }}
+                  tick={{ fontSize: 12, fill: '#777' }}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend content={<CustomLegend />} />
+                {milestones.map((milestone, index) => (
+                  <ReferenceLine
+                    key={index}
+                    x={milestone.dateLabel}
+                    stroke="#6366f1"
+                    strokeWidth={2}
+                    strokeDasharray="5 5"
+                    label={(props: any) => <MilestoneLabel {...props} label={milestone.label} />}
+                  />
+                ))}
+                <Bar
+                  dataKey="confirmed"
+                  name="אישרו הגעה"
+                  fill="#4ade80"
+                  radius={[4, 4, 0, 0]}
+                  stackId="a"
+                />
+                <Bar
+                  dataKey="declined"
+                  name="ביטלו השתתפות"
+                  fill="#f87171"
+                  radius={[4, 4, 0, 0]}
+                  stackId="a"
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                אין נתונים להצגה
+              </Typography>
+            </Box>
+          )}
+        </Box>
       </Box>
     </Paper>
   );

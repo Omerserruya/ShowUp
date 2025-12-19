@@ -3,20 +3,41 @@ from __future__ import annotations
 import csv
 import io
 import uuid
+import datetime as dt
 from typing import Optional, List, Union, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Body
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
+from sqlalchemy import func, case
 
 from app.db import get_db
 from app.crud import guest as guest_crud, event as event_crud
-from app.schemas.schemas import GuestCreate, GuestOut, GuestUpdate
+from app.schemas.schemas import GuestCreate, GuestOut, GuestUpdate, GuestStatsOut, DailyResponsesOut, DailyResponseData, MilestoneData
 from app.utils import paginate_params, validate_phone
 from shared.auth.deps import get_current_user_id
+from app.models.models import Guest, Campaign
 
 
 router = APIRouter(prefix="/guests", tags=["guests"])
+
+
+# Hebrew weekday mapping (0=Monday, 6=Sunday)
+WEEKDAY_HEBREW = {
+    0: "יום שני",
+    1: "יום שלישי",
+    2: "יום רביעי",
+    3: "יום חמישי",
+    4: "יום שישי",
+    5: "יום שבת",
+    6: "יום ראשון"
+}
+
+
+def _format_hebrew_date(date: dt.date) -> str:
+    """Format date to Hebrew weekday name."""
+    weekday = WEEKDAY_HEBREW.get(date.weekday(), "יום")
+    return weekday
 
 
 def _normalize_import_counts(payload: dict) -> dict:
@@ -37,13 +58,206 @@ def list_guests(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
     search: Optional[str] = Query(None),
+    order_by: Optional[str] = Query(None, regex="^(last_response|created_at)$"),
+    only_with_responses: bool = Query(False),
 ):
     event = event_crud.get_event(db, event_id)
     if not event or not event_crud.is_owner(event, user_id):
         raise HTTPException(status_code=404, detail="Event not found or not permitted")
     page, page_size = paginate_params(page, page_size)
-    items, _ = guest_crud.list_guests(db, event_id=event_id, page=page, page_size=page_size, search=search)
+    items, _ = guest_crud.list_guests(
+        db, 
+        event_id=event_id, 
+        page=page, 
+        page_size=page_size, 
+        search=search,
+        order_by=order_by,
+        only_with_responses=only_with_responses,
+    )
     return items
+
+
+@router.get("/stats", response_model=GuestStatsOut)
+def get_guest_stats(
+    event_id: uuid.UUID = Query(...),
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Get RSVP statistics for an event."""
+    event = event_crud.get_event(db, event_id)
+    if not event or not event_crud.is_owner(event, user_id):
+        raise HTTPException(status_code=404, detail="Event not found or not permitted")
+    
+    # Count guests by status
+    total = db.query(Guest).filter(Guest.event_id == str(event_id)).count()
+    confirmed = db.query(Guest).filter(
+        Guest.event_id == str(event_id),
+        Guest.status.in_(['attending', 'confirmed'])
+    ).count()
+    declined = db.query(Guest).filter(
+        Guest.event_id == str(event_id),
+        Guest.status == 'declined'
+    ).count()
+    pending = db.query(Guest).filter(
+        Guest.event_id == str(event_id),
+        Guest.status.in_(['invited', 'pending'])
+    ).count()
+    
+    return GuestStatsOut(
+        total=total,
+        confirmed=confirmed,
+        declined=declined,
+        pending=pending
+    )
+
+
+@router.get("/daily-responses", response_model=DailyResponsesOut)
+def get_daily_responses(
+    event_id: uuid.UUID = Query(...),
+    period: str = Query("week", regex="^(week|month|year)$"),
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Get daily response statistics for an event."""
+    event = event_crud.get_event(db, event_id)
+    if not event or not event_crud.is_owner(event, user_id):
+        raise HTTPException(status_code=404, detail="Event not found or not permitted")
+    
+    # Calculate date range based on period
+    end_date = dt.datetime.now(dt.timezone.utc)
+    if period == "week":
+        start_date = end_date - dt.timedelta(days=7)
+    elif period == "month":
+        start_date = end_date - dt.timedelta(days=30)
+    else:  # year
+        start_date = end_date - dt.timedelta(days=365)
+    
+    # Query daily responses grouped by date
+    # First try to get responses in the requested time range
+    daily_query = (
+        db.query(
+            func.date(Guest.last_response).label('date'),
+            func.sum(case((Guest.status.in_(['attending', 'confirmed']), 1), else_=0)).label('confirmed'),
+            func.sum(case((Guest.status == 'declined', 1), else_=0)).label('declined')
+        )
+        .filter(
+            Guest.event_id == str(event_id),
+            Guest.last_response.isnot(None),
+            Guest.last_response >= start_date,
+            Guest.last_response <= end_date
+        )
+        .group_by(func.date(Guest.last_response))
+        .order_by(func.date(Guest.last_response))
+    )
+    
+    daily_results = daily_query.all()
+    used_fallback = False
+    
+    # If no results in the time range, get all responses (for demo data that might be older)
+    # This handles cases where demo data was created with dates outside the current period
+    if not daily_results:
+        # Get all responses for this event, sorted by date (most recent first, then take last 30)
+        all_responses_query = (
+            db.query(
+                func.date(Guest.last_response).label('date'),
+                func.sum(case((Guest.status.in_(['attending', 'confirmed']), 1), else_=0)).label('confirmed'),
+                func.sum(case((Guest.status == 'declined', 1), else_=0)).label('declined')
+            )
+            .filter(
+                Guest.event_id == str(event_id),
+                Guest.last_response.isnot(None)
+            )
+            .group_by(func.date(Guest.last_response))
+            .order_by(func.date(Guest.last_response).desc())  # Most recent first
+            .limit(30)  # Take last 30 days with responses
+        )
+        daily_results = all_responses_query.all()
+        # Reverse to show chronological order (oldest first)
+        daily_results = list(reversed(daily_results))
+        used_fallback = True
+    
+    # If we still have no data at all, return empty structures early
+    if not daily_results:
+        return DailyResponsesOut(data=[], milestones=[])
+
+    # Build a continuous date range and fill in missing days with zeros
+    counts_by_date: dict[dt.date, dict[str, int]] = {}
+    min_date: Optional[dt.date] = None
+    max_date: Optional[dt.date] = None
+
+    for row in daily_results:
+        date_obj = row.date if isinstance(row.date, dt.date) else dt.datetime.strptime(str(row.date), '%Y-%m-%d').date()
+        counts_by_date[date_obj] = {
+            "confirmed": int(row.confirmed or 0),
+            "declined": int(row.declined or 0),
+        }
+        if min_date is None or date_obj < min_date:
+            min_date = date_obj
+        if max_date is None or date_obj > max_date:
+            max_date = date_obj
+
+    assert min_date is not None and max_date is not None  # for mypy
+
+    # Determine the date range to display.
+    # - If we used the requested period, show from start_date..end_date
+    # - If we fell back to "last 30 days with responses", synthesize a fixed window
+    #   (e.g. 7 ימים או 30 ימים) כדי שתמיד יראו רצף מלא כולל ימים בלי תגובה.
+    if used_fallback:
+        if period == "week":
+            range_start = min_date
+            range_end = min_date + dt.timedelta(days=6)
+        elif period == "month":
+            range_start = min_date
+            range_end = min_date + dt.timedelta(days=29)
+        else:  # year fallback – השתמש בטווח המלא של הדאטה
+            range_start = min_date
+            range_end = max_date
+    else:
+        range_start = start_date.date()
+        range_end = end_date.date()
+
+    daily_data: list[DailyResponseData] = []
+    current_date = range_start
+    while current_date <= range_end:
+        counts = counts_by_date.get(current_date, {"confirmed": 0, "declined": 0})
+        daily_data.append(DailyResponseData(
+            date=current_date.isoformat(),
+            dateLabel=_format_hebrew_date(current_date),
+            confirmed=counts["confirmed"],
+            declined=counts["declined"],
+        ))
+        current_date += dt.timedelta(days=1)
+    
+    # Get milestones from campaigns in the same visible date range
+    display_start_dt = dt.datetime.combine(range_start, dt.time.min).replace(tzinfo=dt.timezone.utc)
+    display_end_dt = dt.datetime.combine(range_end, dt.time.max).replace(tzinfo=dt.timezone.utc)
+
+    milestones_query = (
+        db.query(Campaign)
+        .filter(
+            Campaign.event_id == str(event_id),
+            Campaign.schedule_time.isnot(None),
+            Campaign.schedule_time >= display_start_dt,
+            Campaign.schedule_time <= display_end_dt,
+        )
+        .order_by(Campaign.schedule_time)
+    )
+    
+    milestones = []
+    for campaign in milestones_query.all():
+        if campaign.schedule_time:
+            # Convert to date
+            campaign_date = campaign.schedule_time.date() if hasattr(campaign.schedule_time, 'date') else dt.datetime.fromisoformat(str(campaign.schedule_time)).date()
+            milestones.append(MilestoneData(
+                date=campaign_date.isoformat(),
+                dateLabel=_format_hebrew_date(campaign_date),
+                label=campaign.name
+            ))
+    
+    return DailyResponsesOut(
+        data=daily_data,
+        milestones=milestones
+    )
 
 
 @router.get("/{guest_id}", response_model=GuestOut)

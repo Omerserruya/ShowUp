@@ -140,3 +140,29 @@ class PaginatedResponse(BaseModel):
     items: list
 
 
+# Guest Stats Schemas
+class GuestStatsOut(BaseModel):
+    total: int
+    confirmed: int
+    declined: int
+    pending: int
+
+
+class DailyResponseData(BaseModel):
+    date: str
+    dateLabel: str
+    confirmed: int
+    declined: int
+
+
+class MilestoneData(BaseModel):
+    date: str
+    dateLabel: str
+    label: str
+
+
+class DailyResponsesOut(BaseModel):
+    data: List[DailyResponseData]
+    milestones: List[MilestoneData]
+
+

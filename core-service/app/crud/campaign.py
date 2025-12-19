@@ -20,18 +20,29 @@ def list_campaigns(
     page: int,
     page_size: int,
     search: Optional[str] = None,
+    order_by: Optional[str] = None,
 ) -> Tuple[List[Campaign], int]:
     query = db.query(Campaign).filter(Campaign.event_id == str(event_id))
     if search:
         like = f"%{search}%"
         query = query.filter(Campaign.name.ilike(like))
     total = query.count()
-    items = (
-        query.order_by(Campaign.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
-    )
+    
+    # Order by schedule_time if requested, otherwise by created_at
+    if order_by == "schedule_time":
+        items = (
+            query.order_by(Campaign.schedule_time.asc().nullslast())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+    else:
+        items = (
+            query.order_by(Campaign.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
     return items, total
 
 

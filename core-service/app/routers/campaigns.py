@@ -25,12 +25,13 @@ def list_campaigns(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
     search: Optional[str] = Query(None),
+    order_by: Optional[str] = Query(None, regex="^(schedule_time|created_at)$"),
 ):
     event = event_crud.get_event(db, event_id)
     if not event or not event_crud.is_owner(event, user_id):
         raise HTTPException(status_code=404, detail="Event not found or not permitted")
     page, page_size = paginate_params(page, page_size)
-    items, _ = campaign_crud.list_campaigns(db, event_id=event_id, page=page, page_size=page_size, search=search)
+    items, _ = campaign_crud.list_campaigns(db, event_id=event_id, page=page, page_size=page_size, search=search, order_by=order_by)
     return items
 
 

@@ -11,10 +11,10 @@ export interface CampaignUpdate {
   title: string;
   description: string;
   sentLabel: string;
-  readLabel: string;
+  readLabel?: string;
   repliedLabel?: string;
   sentCount: number;
-  readCount: number;
+  readCount?: number;
   repliedCount?: number;
   timeAgo: string;
   type: 'primary' | 'reminder' | 'info';
@@ -231,14 +231,16 @@ const CampaignUpdates: React.FC<CampaignUpdatesProps> = ({ items = defaultItems 
                         color: '#2563eb',
                       }}
                     />
-                    <Chip
-                      label={`${item.readLabel} ${item.readCount}`}
-                      size="small"
-                      sx={{
-                        bgcolor: 'rgba(37,99,235,0.06)',
-                        color: '#1d4ed8',
-                      }}
-                    />
+                    {item.readLabel && item.readCount !== undefined && (
+                      <Chip
+                        label={`${item.readLabel} ${item.readCount}`}
+                        size="small"
+                        sx={{
+                          bgcolor: 'rgba(37,99,235,0.06)',
+                          color: '#1d4ed8',
+                        }}
+                      />
+                    )}
                     {item.repliedLabel && item.repliedCount !== undefined && (
                       <Chip
                         label={`${item.repliedLabel} ${item.repliedCount}`}
