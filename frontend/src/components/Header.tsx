@@ -57,6 +57,8 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, onMenuClick }) => {
               variant="h4"
               component="h1"
               sx={{ 
+                textAlign: 'right',
+                width: '100%',
                 fontWeight: 700, 
                 color: '#0f172a',
                 fontSize: { xs: '1.25rem', sm: '2.125rem' }
