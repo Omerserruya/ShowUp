@@ -48,7 +48,7 @@ const CampaignTimeline: React.FC<CampaignTimelineProps> = ({ items = defaultItem
       elevation={0}
       sx={{
         p: 2.5,
-        bgcolor: 'background.paper',
+        bgcolor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
         borderRadius: '16px',
         border: '1px solid',
         borderColor: 'divider',

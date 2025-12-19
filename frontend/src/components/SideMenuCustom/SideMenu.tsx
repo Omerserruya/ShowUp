@@ -57,7 +57,7 @@ export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenu
         flexDirection: 'column', 
         height: '100%',
         position: 'relative',
-        backgroundColor: 'background.paper'
+        backgroundColor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff'
       }}>
       {/* Close button for mobile */}
       <Box sx={{ 
@@ -104,7 +104,7 @@ export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenu
           bottom: 0,
           left: 0,
           right: 0,
-          backgroundColor: 'background.paper'
+          backgroundColor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff'
         }}>
           <List dense>
             {bottomMenuItems.map((item) => (
@@ -145,7 +145,7 @@ export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenu
             boxSizing: 'border-box',
             width: '100%',
             maxWidth: '100vw',
-            backgroundColor: 'background.paper',
+            backgroundColor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
             borderRight: 'none',
           },
         }}
@@ -160,7 +160,7 @@ export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenu
         sx={{
           display: { xs: 'none', md: 'block' },
           '& .MuiDrawer-paper': {
-            backgroundColor: 'background.paper',
+            backgroundColor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
             borderRight: '1px solid',
             borderColor: 'divider',
             width: drawerWidth

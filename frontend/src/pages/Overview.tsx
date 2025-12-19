@@ -6,7 +6,8 @@ import {
   Divider,
   Paper,
   CircularProgress,
-  Alert
+  Alert,
+  useTheme
 } from '@mui/material';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
@@ -156,6 +157,7 @@ function mapCampaignsToUpdates(campaigns: any[]): CampaignUpdate[] {
 }
 
 function Overview() {
+  const theme = useTheme();
   const { selectedEvent } = useEvent();
   const [dailyPeriod, setDailyPeriod] = useState<'week' | 'month'>('week');
   const { stats, loading: statsLoading, error: statsError } = useOverviewStats();
@@ -286,7 +288,7 @@ function Overview() {
         elevation={0}
         sx={{
           p: 3,
-          bgcolor: 'background.paper',
+          bgcolor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
           borderRadius: '16px',
           border: '1px solid',
           borderColor: 'divider',

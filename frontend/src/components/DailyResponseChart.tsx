@@ -91,7 +91,7 @@ const DailyResponseChart: React.FC<DailyResponseChartProps> = ({
       return (
         <Box
           sx={{
-            bgcolor: 'background.paper',
+            bgcolor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
             border: '1px solid',
             borderColor: 'divider',
             borderRadius: '8px',
@@ -148,7 +148,7 @@ const DailyResponseChart: React.FC<DailyResponseChartProps> = ({
       elevation={0}
       sx={{
         p: 3,
-        bgcolor: 'background.paper',
+        bgcolor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
         borderRadius: '16px',
         border: '1px solid',
         borderColor: 'divider',

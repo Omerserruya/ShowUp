@@ -21,7 +21,7 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, onMenuClick }) => {
         top: 0,
         zIndex: 1100,
         // Let the page background show through so header blends with page
-        backgroundColor: 'background.paper',
+        backgroundColor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
         borderBottom: '1px solid',
         borderColor: 'divider',
         pl: { xs: 1, sm: 4 }, // Left padding (right side in RTL)

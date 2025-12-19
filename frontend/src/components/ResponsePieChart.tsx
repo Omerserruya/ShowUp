@@ -35,7 +35,7 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData 
       return (
         <Box
           sx={{
-            bgcolor: 'background.paper',
+            bgcolor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
             border: '1px solid',
             borderColor: 'divider',
             borderRadius: '8px',
@@ -89,7 +89,7 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData 
       elevation={0}
       sx={{
         p: 3,
-        bgcolor: 'background.paper',
+        bgcolor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
         borderRadius: '16px',
         border: '1px solid',
         borderColor: 'divider',
