@@ -196,7 +196,7 @@ function Overview() {
   ] : [];
 
   return (
-    <Box sx={{ p: 4, direction: 'rtl' }}>
+    <Box sx={{ p: { xs: 1, sm: 4 }, direction: 'rtl' }}>
       {statsError && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {statsError}
@@ -204,9 +204,9 @@ function Overview() {
       )}
 
       {/* Status Cards */}
-      <Grid container spacing={4} sx={{ mb: 4 }}>
+      <Grid container spacing={{ xs: 1, sm: 1.5 }} sx={{ mb: 4 }}>
         {/* Approved Card */}
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={6} sm={6} md={3}>
           <StatusCard
             title="אישרו הגעה"
             description="אנשים שאישרו השתתפות באירוע"
@@ -217,7 +217,7 @@ function Overview() {
         </Grid>
         
         {/* Declined Card */}
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={6} sm={6} md={3}>
           <StatusCard
             title="ביטלו השתתפות"
             description="אנשים שלא יוכלו להגיע לאירוע"
@@ -228,7 +228,7 @@ function Overview() {
         </Grid>
         
         {/* Pending Card */}
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={6} sm={6} md={3}>
           <StatusCard
             title="טרם הגיבו"
             description="ממתינים לתשובה מהם"
@@ -239,7 +239,7 @@ function Overview() {
         </Grid>
         
         {/* Total Invited Guests Card */}
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={6} sm={6} md={3}>
           <StatusCard
             title="סה״כ מוזמנים"
             description="מספר המוזמנים הכולל לאירוע"
@@ -251,7 +251,7 @@ function Overview() {
       </Grid>
 
       {/* Daily Response Charts Section */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
+      <Grid container spacing={3} sx={{ mb: 4, display: { xs: 'none', md: 'flex' } }}>
         {/* Daily Response Bar Chart - 2/3 width */}
         <Grid item xs={12} md={8}>
           <DailyResponseChart 

@@ -162,53 +162,74 @@ const CampaignUpdates: React.FC<CampaignUpdatesProps> = ({ items = defaultItems 
               key={item.id}
               sx={{
                 display: 'flex',
-                flexDirection: 'row-reverse',
+                flexDirection: { xs: 'column', sm: 'row-reverse' },
                 alignItems: 'stretch',
                 bgcolor: style.bg,
                 borderRadius: 3,
-                p: 2,
-                gap: 2,
+                p: { xs: 1.5, sm: 2 },
+                gap: { xs: 1.5, sm: 2 },
+                position: 'relative',
               }}
             >
-              {/* Time ago */}
+              {/* Time ago - top left on mobile, right side on desktop */}
               <Box
                 sx={{
-                  minWidth: 96,
+                  minWidth: { xs: 'auto', sm: 96 },
                   display: 'flex',
                   alignItems: 'flex-start',
-                  justifyContent: 'flex-end',
+                  justifyContent: { xs: 'flex-start', sm: 'flex-end' },
                   color: '#6b7280',
-                  fontSize: '0.875rem',
-                  pt: 1,
+                  fontSize: { xs: '0.75rem', sm: '0.875rem' },
+                  pt: { xs: 0, sm: 1 },
                   textAlign: 'right',
+                  flexShrink: 0,
+                  order: { xs: 1, sm: 0 },
                 }}
               >
                 {item.timeAgo}
               </Box>
 
-              {/* Main content */}
+              {/* Main content area */}
               <Box
                 sx={{
                   flex: 1,
                   display: 'flex',
-                  flexDirection: 'row-reverse',
-                  alignItems: 'center',
+                  flexDirection: { xs: 'column', sm: 'row-reverse' },
+                  alignItems: { xs: 'flex-start', sm: 'center' },
                   justifyContent: 'flex-end',
-                  gap: 2,
-                  maxWidth: '100%',
-                  ml: 'auto',
+                  gap: { xs: 1.5, sm: 2 },
+                  minWidth: 0,
+                  order: { xs: 2, sm: 0 },
                 }}
               >
-                <Box sx={{ textAlign: 'right' }}>
+                {/* Text content */}
+                <Box 
+                  sx={{ 
+                    textAlign: 'right',
+                    flex: 1,
+                    minWidth: 0,
+                    width: '100%',
+                  }}
+                >
                   <Typography
                     variant="subtitle1"
-                    sx={{ fontWeight: 600, color: '#111827', mb: 0.5, textAlign: 'right' }}
+                    sx={{ 
+                      fontWeight: 600, 
+                      color: '#111827', 
+                      mb: 0.5, 
+                      textAlign: 'right',
+                      fontSize: { xs: '0.875rem', sm: '1rem' },
+                    }}
                   >
                     {item.title}
                   </Typography>
                   <Typography
                     variant="body2"
-                    sx={{ color: '#4b5563', textAlign: 'right' }}
+                    sx={{ 
+                      color: '#4b5563', 
+                      textAlign: 'right',
+                      fontSize: { xs: '0.75rem', sm: '0.875rem' },
+                    }}
                   >
                     {item.description}
                   </Typography>
@@ -221,6 +242,7 @@ const CampaignUpdates: React.FC<CampaignUpdatesProps> = ({ items = defaultItems 
                       alignItems: 'center',
                       gap: 1.5,
                       mt: 1.5,
+                      flexWrap: 'wrap',
                     }}
                   >
                     <Chip
@@ -229,6 +251,8 @@ const CampaignUpdates: React.FC<CampaignUpdatesProps> = ({ items = defaultItems 
                       sx={{
                         bgcolor: 'rgba(59,130,246,0.06)',
                         color: '#2563eb',
+                        fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                        height: { xs: 24, sm: 28 },
                       }}
                     />
                     {item.readLabel && item.readCount !== undefined && (
@@ -238,6 +262,8 @@ const CampaignUpdates: React.FC<CampaignUpdatesProps> = ({ items = defaultItems 
                         sx={{
                           bgcolor: 'rgba(37,99,235,0.06)',
                           color: '#1d4ed8',
+                          fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                          height: { xs: 24, sm: 28 },
                         }}
                       />
                     )}
@@ -248,17 +274,19 @@ const CampaignUpdates: React.FC<CampaignUpdatesProps> = ({ items = defaultItems 
                         sx={{
                           bgcolor: 'rgba(34,197,94,0.08)',
                           color: '#16a34a',
+                          fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                          height: { xs: 24, sm: 28 },
                         }}
                       />
                     )}
                   </Box>
                 </Box>
 
-                {/* Icon */}
+                {/* Icon - top right on mobile, right side on desktop */}
                 <Box
                   sx={{
-                    width: 40,
-                    height: 40,
+                    width: { xs: 36, sm: 40 },
+                    height: { xs: 36, sm: 40 },
                     borderRadius: '999px',
                     bgcolor: style.iconBg,
                     display: 'flex',
@@ -266,6 +294,12 @@ const CampaignUpdates: React.FC<CampaignUpdatesProps> = ({ items = defaultItems 
                     justifyContent: 'center',
                     color: '#ffffff',
                     flexShrink: 0,
+                    flexGrow: 0,
+                    alignSelf: { xs: 'flex-end', sm: 'center' },
+                    order: { xs: 0, sm: 0 },
+                    position: { xs: 'absolute', sm: 'static' },
+                    top: { xs: 12, sm: 'auto' },
+                    left: { xs: 12, sm: 'auto' },
                   }}
                 >
                   {style.icon}

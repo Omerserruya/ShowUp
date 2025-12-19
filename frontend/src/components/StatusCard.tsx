@@ -5,6 +5,7 @@ import {
   Card, 
   CardContent, 
   Button,
+  IconButton,
   Stack
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -29,7 +30,7 @@ const StatusCard: React.FC<StatusCardProps> = ({
     borderRadius: '20px',
     boxShadow: '0 8px 30px rgba(0,0,0,0.04)',
     transition: 'all 0.3s ease',
-    height: '180px', // Fixed height
+    height: { xs: '140px', sm: '180px' }, // Smaller height on mobile
     width: '100%',
     position: 'relative', // For absolute positioning of number and button
     '&:hover': {
@@ -40,14 +41,14 @@ const StatusCard: React.FC<StatusCardProps> = ({
 
   // Icon style for more gentle, modern look
   const iconStyle = {
-    fontSize: 32,
-    p: 0.8,
+    fontSize: { xs: 24, sm: 32 }, // Smaller icon on mobile
+    p: { xs: 0.6, sm: 0.8 },
     borderRadius: '12px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: '52px',
-    height: '52px'
+    minWidth: { xs: '40px', sm: '52px' },
+    height: { xs: '40px', sm: '52px' }
   };
 
   // Helper function to check if color is a gradient
@@ -123,8 +124,12 @@ const StatusCard: React.FC<StatusCardProps> = ({
         ), 
       }}
     >
-      <CardContent sx={{ p: 2, pl: 1, height: '100%', position: 'relative' }}>
-        <Stack direction="row" spacing={5} sx={{ mb: 0 }}>
+      <CardContent sx={{ p: { xs: 0.75, sm: 2 }, pl: { xs: 0.75, sm: 1 }, height: '100%', position: 'relative' }}>
+        <Stack 
+          direction={{ xs: 'column', sm: 'row' }} 
+          spacing={{ xs: 1, sm: 5 }} 
+          sx={{ mb: 0, alignItems: { xs: 'flex-start', sm: 'center' } }}
+        >
           <Box 
             sx={{ 
               ...iconStyle,
@@ -135,10 +140,29 @@ const StatusCard: React.FC<StatusCardProps> = ({
             {icon}
           </Box>
           <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', flex: 1 }}>
-            <Typography variant="h6" component="h2" sx={{ fontWeight: 500, mr: 0.75, mb: 0.5, color: '#ffffff' }}>
+            <Typography 
+              variant="h6" 
+              component="h2" 
+              sx={{ 
+                fontWeight: 500, 
+                mr: { xs: 0, sm: 0.75 }, 
+                mb: { xs: 0, sm: 0.5 }, 
+                color: '#ffffff',
+                fontSize: { xs: '0.875rem', sm: '1.25rem' }, // Smaller title on mobile
+                textAlign: { xs: 'right', sm: 'right' }
+              }}
+            >
               {title}
             </Typography>
-            <Typography variant="body2" sx={{ mr: 0.75, color: 'rgba(255, 255, 255, 0.8)' }}>
+            <Typography 
+              variant="body2" 
+              sx={{ 
+                mr: { xs: 0, sm: 0.75 }, 
+                color: 'rgba(255, 255, 255, 0.8)',
+                fontSize: { xs: '0.7rem', sm: '0.875rem' }, // Smaller description on mobile
+                display: { xs: 'none', sm: 'block' } // Hide description on mobile
+              }}
+            >
               {description}
             </Typography>
           </Box>
@@ -147,16 +171,41 @@ const StatusCard: React.FC<StatusCardProps> = ({
         {/* Fixed position for number and button */}
         <Box sx={{ 
           position: 'absolute',
-          bottom: 16,
-          left: 16,
-          right: 16,
+          bottom: { xs: 8, sm: 16 },
+          left: { xs: 8, sm: 16 },
+          right: { xs: 8, sm: 16 },
           display: 'flex', 
           justifyContent: 'space-between', 
           alignItems: 'flex-end'
         }}>
-          <Typography variant="h3" component="div" sx={{ fontWeight: 700, color: '#ffffff' }}>
+          <Typography 
+            variant="h3" 
+            component="div" 
+            sx={{ 
+              fontWeight: 700, 
+              color: '#ffffff',
+              fontSize: { xs: '1.75rem', sm: '3rem' } // Smaller number on mobile
+            }}
+          >
             {count}
           </Typography>
+          
+          {/* Mobile: Icon only, Desktop: Button with text */}
+          <IconButton
+            size="small"
+            sx={{
+              display: { xs: 'flex', sm: 'none' }, // Show only on mobile
+              color: '#ffffff',
+              opacity: 0.9,
+              p: '4px',
+              '&:hover': {
+                bgcolor: getBackgroundColor(color, 0.1),
+                opacity: 1
+              }
+            }}
+          >
+            <ArrowBackIcon sx={{ fontSize: 18, color: '#ffffff' }} />
+          </IconButton>
           
           <Button 
             size="small" 
@@ -167,6 +216,8 @@ const StatusCard: React.FC<StatusCardProps> = ({
               opacity: 0.9,
               p: '6px 12px',
               borderRadius: '8px',
+              fontSize: '0.875rem',
+              display: { xs: 'none', sm: 'flex' }, // Hide button on desktop, show icon on mobile
               '&:hover': { 
                 bgcolor: getBackgroundColor(color, 0.1),
                 opacity: 1 

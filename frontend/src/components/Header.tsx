@@ -20,7 +20,8 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
         backgroundColor: 'white',
         borderBottom: '1px solid',
         borderColor: 'divider',
-        px: 4,
+        pl: { xs: 1, sm: 4 }, // Left padding (right side in RTL)
+        pr: { xs: 1, sm: 1 }, // Right padding (left side in RTL) - minimal to stick title to right
         py: 1.5, // make header taller
       }}
     >
@@ -39,6 +40,7 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
             flexGrow: 0,
             flexShrink: 0,
             ml: 'auto', // push text block to the far right
+            mr: { xs: 0, sm: 0 }, // Remove right margin on mobile to stick to edge
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'flex-end',
