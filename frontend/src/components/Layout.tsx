@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Box, CircularProgress } from "@mui/material";
 import { Outlet, Navigate, useLocation } from 'react-router-dom';
 import SideMenu from './SideMenuCustom/SideMenu';
@@ -8,6 +8,11 @@ import { useUser } from '../contexts/UserContext';
 function Layout() {
   const { user, loading } = useUser();
   const location = useLocation();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const handleDrawerToggle = () => {
+    setMobileOpen(!mobileOpen);
+  };
 
   const getHeaderContent = () => {
     switch (location.pathname) {
@@ -62,8 +67,8 @@ function Layout() {
   }
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-      {/* Sidebar */}
-      <SideMenu />
+      {/* Sidebar - Desktop permanent, Mobile drawer */}
+      <SideMenu mobileOpen={mobileOpen} onMobileClose={handleDrawerToggle} />
       
       {/* Main content */}
       <Box sx={{ 
@@ -76,7 +81,11 @@ function Layout() {
         backgroundColor: '#f6f7fb', // Light gray-blue background
       }}>
         {/* Top app header (sticky) */}
-        <Header title={headerContent.title} subtitle={headerContent.subtitle} />
+        <Header 
+          title={headerContent.title} 
+          subtitle={headerContent.subtitle}
+          onMenuClick={handleDrawerToggle}
+        />
 
         {/* Page Content */}
         <Box sx={{ 

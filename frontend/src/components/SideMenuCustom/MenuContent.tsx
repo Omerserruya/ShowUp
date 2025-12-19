@@ -87,7 +87,11 @@ const MenuItemButton = styled(ListItemButton)<{ selected?: boolean }>(({ theme, 
   },
 }));
 
-export default function MenuContent() {
+interface MenuContentProps {
+  onItemClick?: () => void;
+}
+
+export default function MenuContent({ onItemClick }: MenuContentProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [adminOpen, setAdminOpen] = useState(false);
@@ -112,13 +116,18 @@ export default function MenuContent() {
     setAdminOpen(!adminOpen);
   };
 
+  const handleNavigation = (path: string) => {
+    navigate(path);
+    onItemClick?.();
+  };
+
   return (
     <List sx={{ px: 1 }}>
       {/* Dashboard Button */}
       <ListItem disablePadding sx={{ mb: 1 }}>
         <DashboardButton
           startIcon={<BarChartIcon />}
-          onClick={() => navigate('/overview')}
+          onClick={() => handleNavigation('/overview')}
           fullWidth
           selected={isDashboardSelected}
         >
@@ -133,7 +142,7 @@ export default function MenuContent() {
           <ListItem key={item.text} disablePadding>
             <MenuItemButton
               selected={isSelected}
-              onClick={() => navigate(item.path)}
+              onClick={() => handleNavigation(item.path)}
               dir="rtl"
             >
               <ListItemIcon>
@@ -172,7 +181,7 @@ export default function MenuContent() {
             <ListItem key={item.text} disablePadding sx={{ pr: 4 }}>
               <ListItemButton
                 selected={location.pathname === item.path}
-                onClick={() => navigate(item.path)}
+                onClick={() => handleNavigation(item.path)}
               >
                 <ListItemIcon>{item.icon}</ListItemIcon>
                 <ListItemText primary={item.text} sx={{ display: 'flex', justifyContent: 'right' }} />

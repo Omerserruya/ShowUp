@@ -82,21 +82,27 @@ export default function SelectContent() {
     <Box 
       width="100%" 
       px={1}
-      sx={{ mb: 2, mt: 3 }}
+      sx={{ mb: { xs: 1.5, sm: 2 }, mt: { xs: 1, sm: 3 } }}
     >
-      <EventCard onClick={handleClick} elevation={0}>
+      <EventCard 
+        onClick={handleClick} 
+        elevation={0}
+        sx={{
+          padding: { xs: '12px 16px', sm: '24px' },
+        }}
+      >
         <Box 
           display="flex" 
           alignItems="center" 
           justifyContent="space-between" 
-          mb={1.5}
+          mb={{ xs: 0.5, sm: 1.5 }}
         >
           <Typography 
             variant="caption" 
             sx={{ 
               fontWeight: 500, 
               color: 'text.secondary',
-              fontSize: '0.875rem'
+              fontSize: { xs: '0.75rem', sm: '0.875rem' }
             }}
           >
             אירוע נוכחי
@@ -111,7 +117,7 @@ export default function SelectContent() {
               }
             }}
           >
-            <ExpandMoreIcon sx={{ fontSize: '0.875rem' }} />
+            <ExpandMoreIcon sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }} />
           </IconButton>
         </Box>
         
@@ -122,8 +128,8 @@ export default function SelectContent() {
               sx={{ 
                 fontWeight: 700, 
                 color: 'text.primary',
-                mb: 1,
-                fontSize: '1.25rem',
+                mb: { xs: 0.5, sm: 1 },
+                fontSize: { xs: '0.875rem', sm: '1.25rem' },
                 lineHeight: 1.3
               }}
             >
@@ -134,7 +140,7 @@ export default function SelectContent() {
                 variant="caption" 
                 sx={{ 
                   color: 'text.secondary',
-                  fontSize: '0.875rem'
+                  fontSize: { xs: '0.7rem', sm: '0.875rem' }
                 }}
               >
                 {formatEventDate(selectedEvent.date)}
@@ -147,7 +153,7 @@ export default function SelectContent() {
             sx={{ 
               color: 'text.secondary',
               fontStyle: 'italic',
-              fontSize: '1rem'
+              fontSize: { xs: '0.875rem', sm: '1rem' }
             }}
           >
             בחר אירוע

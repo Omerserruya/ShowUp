@@ -1,14 +1,17 @@
 import * as React from 'react';
 import Stack from '@mui/material/Stack';
+import IconButton from '@mui/material/IconButton';
+import MenuIcon from '@mui/icons-material/Menu';
 import ColorModeIconDropdown from '../shared-theme/ColorModeIconDropdown';
 import { Box, Typography } from '@mui/material';
 
 interface HeaderProps {
   title?: string;
   subtitle?: string;
+  onMenuClick?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
+const Header: React.FC<HeaderProps> = ({ title, subtitle, onMenuClick }) => {
   return (
     <Box
       sx={{
@@ -40,19 +43,24 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
             flexGrow: 0,
             flexShrink: 0,
             ml: 'auto', // push text block to the far right
-            mr: { xs: 0, sm: 0 }, // Remove right margin on mobile to stick to edge
+            mr: 0, // Stick to right edge
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'flex-end',
             textAlign: 'right',
             gap: 0.5,
+            width: 'fit-content', // Only take needed width
           }}
         >
           {title && (
             <Typography
               variant="h4"
               component="h1"
-              sx={{ fontWeight: 700, color: '#0f172a' }}
+              sx={{ 
+                fontWeight: 700, 
+                color: '#0f172a',
+                fontSize: { xs: '1.25rem', sm: '2.125rem' }
+              }}
             >
               {title}
             </Typography>
@@ -60,16 +68,31 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
           {subtitle && (
             <Typography
               variant="subtitle1"
-              sx={{ color: '#6b7280' }}
+              sx={{ 
+                color: '#6b7280',
+                fontSize: { xs: '0.75rem', sm: '1rem' },
+                display: { xs: 'block', sm: 'block' }
+              }}
             >
               {subtitle}
             </Typography>
           )}
         </Box>
 
-        {/* Color mode toggle aligned to left */}
-        <Box sx={{ position: 'absolute', left: 0 }}>
-          <ColorModeIconDropdown />
+        {/* Mobile: Hamburger menu, Desktop: Color mode toggle */}
+        <Box sx={{ position: 'absolute', left: 0, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <IconButton
+            onClick={onMenuClick}
+            sx={{
+              display: { xs: 'flex', md: 'none' },
+              color: '#0f172a',
+            }}
+          >
+            <MenuIcon />
+          </IconButton>
+          <Box sx={{ display: { xs: 'none', md: 'block' } }}>
+            <ColorModeIconDropdown />
+          </Box>
         </Box>
       </Stack>
     </Box>

@@ -2,6 +2,8 @@ import * as React from 'react';
 import { styled, useTheme } from '@mui/material/styles';
 import MuiDrawer, { drawerClasses } from '@mui/material/Drawer';
 import Box from '@mui/material/Box';
+import IconButton from '@mui/material/IconButton';
+import CloseIcon from '@mui/icons-material/Close';
 import MenuContent from './MenuContent';
 import UserCard from './UserCard';
 import Divider from '@mui/material/Divider';
@@ -33,7 +35,12 @@ const LogoContainer = styled(Box)({
   alignItems: 'center'
 });
 
-export default function SideMenu() {
+interface SideMenuProps {
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
+}
+
+export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenuProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useTheme();
@@ -44,72 +51,123 @@ export default function SideMenu() {
   ];
 
 
-  return (
-    <Drawer
-      variant="permanent"
-      anchor="right"
-      
-      sx={{
-        display: { xs: 'none', md: 'block' },
-        '& .MuiDrawer-paper': {
-          backgroundColor: '#ffffff',
-          borderRight: '1px solid',
-          borderColor: 'divider',
-          width: drawerWidth
-        }
-      }}
-    >
+  const drawerContent = (
+    <Box sx={{ 
+      display: 'flex', 
+      flexDirection: 'column', 
+      height: '100%',
+      position: 'relative'
+    }}>
+      {/* Close button for mobile */}
       <Box sx={{ 
-        display: 'flex', 
-        flexDirection: 'column', 
-        height: '100%',
-        position: 'relative'
+        display: { xs: 'flex', md: 'none' },
+        justifyContent: 'flex-start',
+        alignItems: 'center',
+        p: 1,
+        borderBottom: '1px solid',
+        borderColor: 'divider',
       }}>
-        <LogoContainer>
-          <img 
-            src={'./logo.png'}
-            alt="ShowUp Logo" 
-            style={{ 
-              width: '180px', 
-              height: 'auto',
-              display: 'block',
-              margin: '15px auto'
-            }} 
-          />
-        </LogoContainer>
-        
-        <Box sx={{ 
-          flexGrow: 1,
-          overflowY: 'auto',
-        }}>
-          <SelectContent />
-          <MenuContent />
-        </Box>
-
-        <Box sx={{ 
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          backgroundColor: '#ffffff'
-        }}>
-          <List dense>
-            {bottomMenuItems.map((item) => (
-              <ListItem key={item.text} disablePadding>
-                <ListItemButton
-                  selected={location.pathname === item.path}
-                  onClick={() => navigate(item.path)}
-                >
-                  <ListItemIcon>{item.icon}</ListItemIcon>
-                  <ListItemText primary={item.text} sx={{ display: 'flex', justifyContent: 'right' }} />
-                </ListItemButton>
-              </ListItem>
-            ))}
-          </List>
-          <Divider />
-          <UserCard />
-        </Box>
+        <IconButton
+          onClick={onMobileClose}
+          sx={{
+            color: '#0f172a',
+          }}
+        >
+          <CloseIcon />
+        </IconButton>
       </Box>
-    </Drawer>
+
+      <LogoContainer>
+        <img 
+          src={'./logo.png'}
+          alt="ShowUp Logo" 
+          style={{ 
+            width: '180px', 
+            height: 'auto',
+            display: 'block',
+            margin: '15px auto'
+          }} 
+        />
+      </LogoContainer>
+      
+      <Box sx={{ 
+        flexGrow: 1,
+        overflowY: 'auto',
+      }}>
+        <SelectContent />
+        <MenuContent onItemClick={onMobileClose} />
+      </Box>
+
+      <Box sx={{ 
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: '#ffffff'
+      }}>
+        <List dense>
+          {bottomMenuItems.map((item) => (
+            <ListItem key={item.text} disablePadding>
+              <ListItemButton
+                selected={location.pathname === item.path}
+                onClick={() => {
+                  navigate(item.path);
+                  onMobileClose?.();
+                }}
+              >
+                <ListItemIcon>{item.icon}</ListItemIcon>
+                <ListItemText primary={item.text} sx={{ display: 'flex', justifyContent: 'right' }} />
+              </ListItemButton>
+            </ListItem>
+          ))}
+        </List>
+        <Divider />
+        <UserCard />
+      </Box>
+    </Box>
+  );
+
+  return (
+    <>
+      {/* Mobile drawer - full screen */}
+      <MuiDrawer
+        variant="temporary"
+        open={mobileOpen}
+        onClose={onMobileClose}
+        anchor="right"
+        ModalProps={{
+          keepMounted: true, // Better open performance on mobile.
+        }}
+        sx={{
+          display: { xs: 'block', md: 'none' },
+          '& .MuiDrawer-paper': {
+            boxSizing: 'border-box',
+            width: '100%',
+            maxWidth: '100vw',
+            backgroundColor: '#ffffff',
+            borderRight: 'none',
+          },
+        }}
+      >
+        {drawerContent}
+      </MuiDrawer>
+
+      {/* Desktop permanent drawer */}
+      <Drawer
+        variant="permanent"
+        anchor="right"
+        sx={{
+          display: { xs: 'none', md: 'block' },
+          '& .MuiDrawer-paper': {
+            backgroundColor: '#ffffff',
+            borderRight: '1px solid',
+            borderColor: 'divider',
+            width: drawerWidth
+          }
+        }}
+      >
+        {drawerContent}
+      </Drawer>
+    </>
   );
 }
