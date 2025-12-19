@@ -6,7 +6,8 @@ import {
   CardContent, 
   Button,
   IconButton,
-  Stack
+  Stack,
+  useTheme
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
@@ -25,17 +26,23 @@ const StatusCard: React.FC<StatusCardProps> = ({
   color,
   icon
 }) => {
+  const theme = useTheme();
+  
   // Card styles for a modern, gentle appearance
   const cardStyle = {
     borderRadius: '20px',
-    boxShadow: '0 8px 30px rgba(0,0,0,0.04)',
+    boxShadow: theme.palette.mode === 'dark' 
+      ? '0 8px 30px rgba(0,0,0,0.3)'
+      : '0 8px 30px rgba(0,0,0,0.04)',
     transition: 'all 0.3s ease',
     height: { xs: '140px', sm: '180px' }, // Smaller height on mobile
     width: '100%',
     position: 'relative', // For absolute positioning of number and button
     '&:hover': {
       transform: 'translateY(-4px)',
-      boxShadow: '0 10px 40px rgba(0,0,0,0.08)',
+      boxShadow: theme.palette.mode === 'dark' 
+        ? '0 10px 40px rgba(0,0,0,0.5)'
+        : '0 10px 40px rgba(0,0,0,0.08)',
     }
   };
 

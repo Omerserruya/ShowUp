@@ -3,7 +3,7 @@ import Stack from '@mui/material/Stack';
 import IconButton from '@mui/material/IconButton';
 import MenuIcon from '@mui/icons-material/Menu';
 import ColorModeIconDropdown from '../shared-theme/ColorModeIconDropdown';
-import { Box, Typography } from '@mui/material';
+import { Box, Typography, useTheme } from '@mui/material';
 
 interface HeaderProps {
   title?: string;
@@ -12,6 +12,7 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ title, subtitle, onMenuClick }) => {
+  const theme = useTheme();
   return (
     <Box
       sx={{
@@ -20,7 +21,7 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, onMenuClick }) => {
         top: 0,
         zIndex: 1100,
         // Let the page background show through so header blends with page
-        backgroundColor: 'white',
+        backgroundColor: 'background.paper',
         borderBottom: '1px solid',
         borderColor: 'divider',
         pl: { xs: 1, sm: 4 }, // Left padding (right side in RTL)
@@ -60,7 +61,7 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, onMenuClick }) => {
                 textAlign: 'right',
                 width: '100%',
                 fontWeight: 700, 
-                color: '#0f172a',
+                color: 'text.primary',
                 fontSize: { xs: '1.25rem', sm: '2.125rem' }
               }}
             >
@@ -71,7 +72,7 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, onMenuClick }) => {
             <Typography
               variant="subtitle1"
               sx={{ 
-                color: '#6b7280',
+                color: 'text.secondary',
                 fontSize: { xs: '0.75rem', sm: '1rem' },
                 display: { xs: 'block', sm: 'block' }
               }}
@@ -87,7 +88,7 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, onMenuClick }) => {
             onClick={onMenuClick}
             sx={{
               display: { xs: 'flex', md: 'none' },
-              color: '#0f172a',
+              color: 'text.primary',
             }}
           >
             <MenuIcon />

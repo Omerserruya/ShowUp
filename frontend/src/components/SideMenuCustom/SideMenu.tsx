@@ -52,12 +52,13 @@ export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenu
 
 
   const drawerContent = (
-    <Box sx={{ 
-      display: 'flex', 
-      flexDirection: 'column', 
-      height: '100%',
-      position: 'relative'
-    }}>
+      <Box sx={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        height: '100%',
+        position: 'relative',
+        backgroundColor: 'background.paper'
+      }}>
       {/* Close button for mobile */}
       <Box sx={{ 
         display: { xs: 'flex', md: 'none' },
@@ -70,61 +71,61 @@ export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenu
         <IconButton
           onClick={onMobileClose}
           sx={{
-            color: '#0f172a',
+            color: 'text.primary',
           }}
         >
           <CloseIcon />
         </IconButton>
       </Box>
 
-      <LogoContainer>
-        <img 
-          src={'./logo.png'}
-          alt="ShowUp Logo" 
-          style={{ 
-            width: '180px', 
-            height: 'auto',
-            display: 'block',
-            margin: '15px auto'
-          }} 
-        />
-      </LogoContainer>
-      
-      <Box sx={{ 
-        flexGrow: 1,
-        overflowY: 'auto',
-      }}>
-        <SelectContent />
+        <LogoContainer>
+          <img 
+            src={'./logo.png'}
+            alt="ShowUp Logo" 
+            style={{ 
+              width: '180px', 
+              height: 'auto',
+              display: 'block',
+              margin: '15px auto'
+            }} 
+          />
+        </LogoContainer>
+        
+        <Box sx={{ 
+          flexGrow: 1,
+          overflowY: 'auto',
+        }}>
+          <SelectContent />
         <MenuContent onItemClick={onMobileClose} />
-      </Box>
+        </Box>
 
-      <Box sx={{ 
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        backgroundColor: '#ffffff'
-      }}>
-        <List dense>
-          {bottomMenuItems.map((item) => (
-            <ListItem key={item.text} disablePadding>
-              <ListItemButton
-                selected={location.pathname === item.path}
+        <Box sx={{ 
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          backgroundColor: 'background.paper'
+        }}>
+          <List dense>
+            {bottomMenuItems.map((item) => (
+              <ListItem key={item.text} disablePadding>
+                <ListItemButton
+                  selected={location.pathname === item.path}
                 onClick={() => {
                   navigate(item.path);
                   onMobileClose?.();
                 }}
-              >
-                <ListItemIcon>{item.icon}</ListItemIcon>
-                <ListItemText primary={item.text} sx={{ display: 'flex', justifyContent: 'right' }} />
-              </ListItemButton>
-            </ListItem>
-          ))}
-        </List>
-        <Divider />
-        <UserCard />
+                >
+                  <ListItemIcon>{item.icon}</ListItemIcon>
+                  <ListItemText primary={item.text} sx={{ display: 'flex', justifyContent: 'right' }} />
+                </ListItemButton>
+              </ListItem>
+            ))}
+          </List>
+          <Divider />
+          <UserCard />
+        </Box>
       </Box>
-    </Box>
   );
 
   return (
@@ -144,7 +145,7 @@ export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenu
             boxSizing: 'border-box',
             width: '100%',
             maxWidth: '100vw',
-            backgroundColor: '#ffffff',
+            backgroundColor: 'background.paper',
             borderRight: 'none',
           },
         }}
@@ -159,7 +160,7 @@ export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenu
         sx={{
           display: { xs: 'none', md: 'block' },
           '& .MuiDrawer-paper': {
-            backgroundColor: '#ffffff',
+            backgroundColor: 'background.paper',
             borderRight: '1px solid',
             borderColor: 'divider',
             width: drawerWidth
@@ -167,7 +168,7 @@ export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenu
         }}
       >
         {drawerContent}
-      </Drawer>
+    </Drawer>
     </>
   );
 }

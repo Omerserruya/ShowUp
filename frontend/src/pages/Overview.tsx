@@ -286,9 +286,10 @@ function Overview() {
         elevation={0}
         sx={{
           p: 3,
-          bgcolor: '#ffffff',
+          bgcolor: 'background.paper',
           borderRadius: '16px',
-          border: '1px solid #e5e7eb',
+          border: '1px solid',
+          borderColor: 'divider',
         }}
       >
         <Typography 
@@ -296,7 +297,7 @@ function Overview() {
           component="h2" 
           sx={{ 
             fontWeight: 600, 
-            color: '#424242',
+            color: 'text.primary',
             mb: 1,
             ml: 1
           }}

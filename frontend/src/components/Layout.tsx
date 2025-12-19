@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Box, CircularProgress } from "@mui/material";
+import { Box, CircularProgress, useTheme } from "@mui/material";
 import { Outlet, Navigate, useLocation } from 'react-router-dom';
 import SideMenu from './SideMenuCustom/SideMenu';
 import Header from './Header';
@@ -8,6 +8,7 @@ import { useUser } from '../contexts/UserContext';
 function Layout() {
   const { user, loading } = useUser();
   const location = useLocation();
+  const theme = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const handleDrawerToggle = () => {
@@ -78,7 +79,7 @@ function Layout() {
         minHeight: '100vh',
         display: 'flex',
         flexDirection: 'column',
-        backgroundColor: '#f6f7fb', // Light gray-blue background
+        backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[900] : '#f6f7fb',
       }}>
         {/* Top app header (sticky) */}
         <Header 

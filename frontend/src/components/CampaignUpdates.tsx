@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Paper, Typography, Chip, Stack, Button } from '@mui/material';
+import { Box, Paper, Typography, Chip, Stack, Button, useTheme, alpha } from '@mui/material';
 import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -64,35 +64,44 @@ const defaultItems: CampaignUpdate[] = [
   },
 ];
 
-const typeStyles = {
+const getTypeStyles = (theme: any) => ({
   primary: {
-    bg: 'rgba(233, 213, 255, 0.5)',
+    bg: theme.palette.mode === 'dark' 
+      ? alpha(theme.palette.secondary.main, 0.2)
+      : 'rgba(233, 213, 255, 0.5)',
     iconBg: '#a855f7',
     icon: <WhatsAppIcon />,
   },
   reminder: {
-    bg: 'rgba(187, 247, 208, 0.6)',
+    bg: theme.palette.mode === 'dark' 
+      ? alpha(theme.palette.success.main, 0.2)
+      : 'rgba(187, 247, 208, 0.6)',
     iconBg: '#22c55e',
     icon: <NotificationsActiveIcon />,
   },
   info: {
-    bg: 'rgba(219, 234, 254, 0.7)',
+    bg: theme.palette.mode === 'dark' 
+      ? alpha(theme.palette.info.main, 0.2)
+      : 'rgba(219, 234, 254, 0.7)',
     iconBg: '#2563eb',
     icon: <InfoOutlinedIcon />,
   },
-} as const;
+});
 
 const CampaignUpdates: React.FC<CampaignUpdatesProps> = ({ items = defaultItems }) => {
   const navigate = useNavigate();
+  const theme = useTheme();
+  const typeStyles = getTypeStyles(theme);
 
   return (
     <Paper
       elevation={0}
       sx={{
         p: 3,
-        bgcolor: '#ffffff',
+        bgcolor: 'background.paper',
         borderRadius: '16px',
-        border: '1px solid #e5e7eb',
+        border: '1px solid',
+        borderColor: 'divider',
         height: '100%',
         direction: 'rtl',
         position: 'relative',
@@ -116,7 +125,7 @@ const CampaignUpdates: React.FC<CampaignUpdatesProps> = ({ items = defaultItems 
             />
           }
           sx={{
-            color: '#7c3aed',
+            color: theme.palette.mode === 'dark' ? '#a78bfa' : '#7c3aed',
             fontWeight: 500,
             textTransform: 'none',
             '& .MuiButton-endIcon': {
@@ -134,7 +143,7 @@ const CampaignUpdates: React.FC<CampaignUpdatesProps> = ({ items = defaultItems 
         component="h2"
         sx={{
           fontWeight: 600,
-          color: '#111827',
+          color: 'text.primary',
           mb: 1,
           mr: 1,
           textAlign: 'right',
@@ -178,7 +187,7 @@ const CampaignUpdates: React.FC<CampaignUpdatesProps> = ({ items = defaultItems 
                   display: 'flex',
                   alignItems: 'flex-start',
                   justifyContent: { xs: 'flex-start', sm: 'flex-end' },
-                  color: '#6b7280',
+                  color: 'text.secondary',
                   fontSize: { xs: '0.75rem', sm: '0.875rem' },
                   pt: { xs: 0, sm: 1 },
                   textAlign: 'right',
@@ -215,7 +224,7 @@ const CampaignUpdates: React.FC<CampaignUpdatesProps> = ({ items = defaultItems 
                     variant="subtitle1"
                     sx={{ 
                       fontWeight: 600, 
-                      color: '#111827', 
+                      color: 'text.primary', 
                       mb: 0.5, 
                       textAlign: 'right',
                       fontSize: { xs: '0.875rem', sm: '1rem' },
@@ -226,7 +235,7 @@ const CampaignUpdates: React.FC<CampaignUpdatesProps> = ({ items = defaultItems 
                   <Typography
                     variant="body2"
                     sx={{ 
-                      color: '#4b5563', 
+                      color: 'text.secondary', 
                       textAlign: 'right',
                       fontSize: { xs: '0.75rem', sm: '0.875rem' },
                     }}
@@ -249,8 +258,12 @@ const CampaignUpdates: React.FC<CampaignUpdatesProps> = ({ items = defaultItems 
                       label={`${item.sentLabel} ${item.sentCount}`}
                       size="small"
                       sx={{
-                        bgcolor: 'rgba(59,130,246,0.06)',
-                        color: '#2563eb',
+                        bgcolor: theme.palette.mode === 'dark' 
+                          ? alpha(theme.palette.primary.main, 0.15)
+                          : 'rgba(59,130,246,0.06)',
+                        color: theme.palette.mode === 'dark' 
+                          ? theme.palette.primary.light
+                          : '#2563eb',
                         fontSize: { xs: '0.7rem', sm: '0.75rem' },
                         height: { xs: 24, sm: 28 },
                       }}
@@ -260,8 +273,12 @@ const CampaignUpdates: React.FC<CampaignUpdatesProps> = ({ items = defaultItems 
                         label={`${item.readLabel} ${item.readCount}`}
                         size="small"
                         sx={{
-                          bgcolor: 'rgba(37,99,235,0.06)',
-                          color: '#1d4ed8',
+                          bgcolor: theme.palette.mode === 'dark' 
+                            ? alpha(theme.palette.info.main, 0.15)
+                            : 'rgba(37,99,235,0.06)',
+                          color: theme.palette.mode === 'dark' 
+                            ? theme.palette.info.light
+                            : '#1d4ed8',
                           fontSize: { xs: '0.7rem', sm: '0.75rem' },
                           height: { xs: 24, sm: 28 },
                         }}
@@ -272,8 +289,12 @@ const CampaignUpdates: React.FC<CampaignUpdatesProps> = ({ items = defaultItems 
                         label={`${item.repliedLabel} ${item.repliedCount}`}
                         size="small"
                         sx={{
-                          bgcolor: 'rgba(34,197,94,0.08)',
-                          color: '#16a34a',
+                          bgcolor: theme.palette.mode === 'dark' 
+                            ? alpha(theme.palette.success.main, 0.15)
+                            : 'rgba(34,197,94,0.08)',
+                          color: theme.palette.mode === 'dark' 
+                            ? theme.palette.success.light
+                            : '#16a34a',
                           fontSize: { xs: '0.7rem', sm: '0.75rem' },
                           height: { xs: 24, sm: 28 },
                         }}

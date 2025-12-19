@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Box, Paper, Typography, Button, ButtonGroup } from '@mui/material';
+import { Box, Paper, Typography, Button, ButtonGroup, useTheme } from '@mui/material';
 import {
   BarChart,
   Bar,
@@ -55,6 +55,7 @@ const DailyResponseChart: React.FC<DailyResponseChartProps> = ({
   period,
   onChangePeriod,
 }) => {
+  const theme = useTheme();
 
   // Custom label component for milestones
   const MilestoneLabel = (props: any) => {
@@ -90,11 +91,14 @@ const DailyResponseChart: React.FC<DailyResponseChartProps> = ({
       return (
         <Box
           sx={{
-            bgcolor: '#ffffff',
-            border: '1px solid #e5e7eb',
+            bgcolor: 'background.paper',
+            border: '1px solid',
+            borderColor: 'divider',
             borderRadius: '8px',
             p: 1.5,
-            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+            boxShadow: theme.palette.mode === 'dark' 
+              ? '0 4px 6px rgba(0, 0, 0, 0.5)'
+              : '0 4px 6px rgba(0, 0, 0, 0.1)',
           }}
         >
           {payload.map((entry: any, index: number) => (
@@ -130,7 +134,7 @@ const DailyResponseChart: React.FC<DailyResponseChartProps> = ({
                 bgcolor: entry.color,
               }}
             />
-            <Typography variant="body2" sx={{ color: '#666', fontSize: '0.875rem' }}>
+            <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>
               {entry.value}
             </Typography>
           </Box>
@@ -144,9 +148,10 @@ const DailyResponseChart: React.FC<DailyResponseChartProps> = ({
       elevation={0}
       sx={{
         p: 3,
-        bgcolor: '#ffffff',
+        bgcolor: 'background.paper',
         borderRadius: '16px',
-        border: '1px solid #e5e7eb',
+        border: '1px solid',
+        borderColor: 'divider',
         height: '100%',
       }}
     >
@@ -155,7 +160,7 @@ const DailyResponseChart: React.FC<DailyResponseChartProps> = ({
         component="h2"
         sx={{
           fontWeight: 600,
-          color: '#424242',
+          color: 'text.primary',
           mb: 1,
           ml: 1,
         }}
@@ -181,19 +186,23 @@ const DailyResponseChart: React.FC<DailyResponseChartProps> = ({
               minWidth: 72,
               px: 2.5,
               fontSize: '0.875rem',
-              borderColor: '#e5e7eb',
+              borderColor: 'divider',
             },
           }}
         >
           <Button
             onClick={() => onChangePeriod('week')}
             sx={{
-              bgcolor: period === 'week' ? '#f3f4f6' : 'transparent',
-              color: period === 'week' ? '#424242' : '#666',
-              borderColor: '#e5e7eb',
+              bgcolor: period === 'week' 
+                ? (theme.palette.mode === 'dark' ? theme.palette.action.selected : '#f3f4f6')
+                : 'transparent',
+              color: period === 'week' ? 'text.primary' : 'text.secondary',
+              borderColor: 'divider',
               '&:hover': {
-                borderColor: '#d1d5db',
-                bgcolor: period === 'week' ? '#f3f4f6' : '#f9fafb',
+                borderColor: 'divider',
+                bgcolor: period === 'week' 
+                  ? (theme.palette.mode === 'dark' ? theme.palette.action.selected : '#f3f4f6')
+                  : (theme.palette.mode === 'dark' ? theme.palette.action.hover : '#f9fafb'),
               },
             }}
           >
@@ -202,12 +211,16 @@ const DailyResponseChart: React.FC<DailyResponseChartProps> = ({
           <Button
             onClick={() => onChangePeriod('month')}
             sx={{
-              bgcolor: period === 'month' ? '#f3f4f6' : 'transparent',
-              color: period === 'month' ? '#424242' : '#666',
-              borderColor: '#e5e7eb',
+              bgcolor: period === 'month' 
+                ? (theme.palette.mode === 'dark' ? theme.palette.action.selected : '#f3f4f6')
+                : 'transparent',
+              color: period === 'month' ? 'text.primary' : 'text.secondary',
+              borderColor: 'divider',
               '&:hover': {
-                borderColor: '#d1d5db',
-                bgcolor: period === 'month' ? '#f3f4f6' : '#f9fafb',
+                borderColor: 'divider',
+                bgcolor: period === 'month' 
+                  ? (theme.palette.mode === 'dark' ? theme.palette.action.selected : '#f3f4f6')
+                  : (theme.palette.mode === 'dark' ? theme.palette.action.hover : '#f9fafb'),
               },
             }}
           >

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Paper, Typography } from '@mui/material';
+import { Box, Paper, Typography, useTheme } from '@mui/material';
 import {
   PieChart,
   Pie,
@@ -27,17 +27,22 @@ const defaultData: PieChartData[] = [
 ];
 
 const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData }) => {
+  const theme = useTheme();
+  
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0];
       return (
         <Box
           sx={{
-            bgcolor: '#ffffff',
-            border: '1px solid #e5e7eb',
+            bgcolor: 'background.paper',
+            border: '1px solid',
+            borderColor: 'divider',
             borderRadius: '8px',
             p: 1.5,
-            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+            boxShadow: theme.palette.mode === 'dark' 
+              ? '0 4px 6px rgba(0, 0, 0, 0.5)'
+              : '0 4px 6px rgba(0, 0, 0, 0.1)',
           }}
         >
           <Typography
@@ -70,7 +75,7 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData 
                 bgcolor: entry.color,
               }}
             />
-            <Typography variant="body2" sx={{ color: '#666', fontSize: '0.875rem' }}>
+            <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>
               {entry.value}: {entry.payload.value}
             </Typography>
           </Box>
@@ -84,9 +89,10 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData 
       elevation={0}
       sx={{
         p: 3,
-        bgcolor: '#ffffff',
+        bgcolor: 'background.paper',
         borderRadius: '16px',
-        border: '1px solid #e5e7eb',
+        border: '1px solid',
+        borderColor: 'divider',
         height: '100%',
       }}
     >
@@ -95,7 +101,7 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData 
         component="h2"
         sx={{
           fontWeight: 600,
-          color: '#424242',
+          color: 'text.primary',
           mb: 1,
           ml: 1,
         }}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Typography, Paper } from '@mui/material';
+import { Box, Typography, Paper, useTheme } from '@mui/material';
 
 type CampaignStatus = 'completed' | 'upcoming';
 
@@ -42,14 +42,16 @@ const defaultItems: CampaignTimelineItem[] = [
 ];
 
 const CampaignTimeline: React.FC<CampaignTimelineProps> = ({ items = defaultItems }) => {
+  const theme = useTheme();
   return (
     <Paper
       elevation={0}
       sx={{
         p: 2.5,
-        bgcolor: '#ffffff',
+        bgcolor: 'background.paper',
         borderRadius: '16px',
-        border: '1px solid #e5e7eb',
+        border: '1px solid',
+        borderColor: 'divider',
         height: '100%',
         direction: 'rtl',
       }}
@@ -59,7 +61,7 @@ const CampaignTimeline: React.FC<CampaignTimelineProps> = ({ items = defaultItem
         component="h2"
         sx={{
           fontWeight: 600,
-          color: '#111827',
+          color: 'text.primary',
           mb: 1,
           mr: 1,
           textAlign: 'right',
@@ -161,7 +163,7 @@ const CampaignTimeline: React.FC<CampaignTimelineProps> = ({ items = defaultItem
                     <Typography
                       variant="body2"
                       sx={{
-                        color: '#6b7280',
+                        color: 'text.secondary',
                         fontSize: '0.875rem',
                       }}
                     >

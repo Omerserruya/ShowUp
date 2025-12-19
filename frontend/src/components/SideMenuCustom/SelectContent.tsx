@@ -5,7 +5,7 @@ import ListItemIcon from '@mui/material/ListItemIcon';
 import EventIcon from '@mui/icons-material/Event';
 import Menu from '@mui/material/Menu';
 import Divider from '@mui/material/Divider';
-import { styled } from '@mui/material/styles';
+import { styled, useTheme, alpha } from '@mui/material/styles';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -18,7 +18,9 @@ import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 
 const EventCard = styled(Paper)(({ theme }) => ({
-  background: 'linear-gradient(135deg, rgba(250, 245, 255, 1) 0%, rgba(239, 246, 255, 1) 100%)',
+  background: theme.palette.mode === 'dark'
+    ? alpha(theme.palette.secondary.main, 0.1)
+    : 'linear-gradient(135deg, rgba(250, 245, 255, 1) 0%, rgba(239, 246, 255, 1) 100%)',
   border: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(193, 186, 222, 0.3)' : 'rgba(201, 192, 237, 0.5)'}`,
   borderRadius: theme.shape.borderRadius * 3,
   padding: theme.spacing(3),
@@ -35,6 +37,7 @@ const EventCard = styled(Paper)(({ theme }) => ({
 export default function SelectContent() {
   const { selectedEvent, setSelectedEvent, events, loading, fetchEvents } = useEvent();
   const navigate = useNavigate();
+  const theme = useTheme();
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
 
@@ -180,7 +183,9 @@ export default function SelectContent() {
             maxHeight: 400,
             direction: 'rtl',
             borderRadius: 2,
-            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
+            boxShadow: theme.palette.mode === 'dark' 
+              ? '0 4px 20px rgba(0, 0, 0, 0.5)'
+              : '0 4px 20px rgba(0, 0, 0, 0.1)',
             border: '1px solid',
             borderColor: 'divider',
             overflow: 'hidden',
@@ -191,7 +196,9 @@ export default function SelectContent() {
           sx={{ 
             px: 2, 
             py: 1.5,
-            background: 'linear-gradient(135deg, rgba(250, 245, 255, 0.5) 0%, rgba(239, 246, 255, 0.5) 100%)',
+            background: theme.palette.mode === 'dark'
+              ? alpha(theme.palette.secondary.main, 0.1)
+              : 'linear-gradient(135deg, rgba(250, 245, 255, 0.5) 0%, rgba(239, 246, 255, 0.5) 100%)',
           }}
         >
           <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'text.secondary', fontSize: '0.875rem' }}>
@@ -214,13 +221,19 @@ export default function SelectContent() {
               sx={{
                 py: 1.5,
                 '&.Mui-selected': {
-                  backgroundColor: 'rgba(196, 181, 253, 0.1)',
+                  backgroundColor: theme.palette.mode === 'dark'
+                    ? alpha(theme.palette.secondary.main, 0.2)
+                    : 'rgba(196, 181, 253, 0.1)',
                   '&:hover': {
-                    backgroundColor: 'rgba(196, 181, 253, 0.15)',
+                    backgroundColor: theme.palette.mode === 'dark'
+                      ? alpha(theme.palette.secondary.main, 0.3)
+                      : 'rgba(196, 181, 253, 0.15)',
                   },
                 },
                 '&:hover': {
-                  backgroundColor: 'rgba(0, 0, 0, 0.04)',
+                  backgroundColor: theme.palette.mode === 'dark'
+                    ? alpha(theme.palette.action.hover, 0.1)
+                    : 'rgba(0, 0, 0, 0.04)',
                 },
               }}
             >
@@ -259,7 +272,9 @@ export default function SelectContent() {
           sx={{
             py: 1.5,
             '&:hover': {
-              backgroundColor: 'rgba(196, 181, 253, 0.1)',
+              backgroundColor: theme.palette.mode === 'dark'
+                ? alpha(theme.palette.secondary.main, 0.2)
+                : 'rgba(196, 181, 253, 0.1)',
             },
           }}
         >

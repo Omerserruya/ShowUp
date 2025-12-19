@@ -20,6 +20,8 @@ import {
   IconButton,
   Popover,
   Button,
+  useTheme,
+  alpha,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import FilterListIcon from '@mui/icons-material/FilterList';
@@ -96,23 +98,28 @@ const ResizableTableCell = styled(TableCell)<{ width: number }>(({ theme, width 
 }));
 
 // Resizer component
-const Resizer = styled('div')({
+const Resizer = styled('div')(({ theme }) => ({
   position: 'absolute',
   right: 0,
   top: 0,
   height: '100%',
   width: '5px',
-  background: 'rgba(0, 0, 0, 0.1)',
+  background: theme.palette.mode === 'dark' 
+    ? alpha(theme.palette.common.white, 0.1)
+    : 'rgba(0, 0, 0, 0.1)',
   cursor: 'col-resize',
   opacity: 0,
   transition: 'opacity 0.3s',
   '&:hover, &.isResizing': {
     opacity: 1,
-    background: 'rgba(0, 0, 0, 0.2)',
+    background: theme.palette.mode === 'dark' 
+      ? alpha(theme.palette.common.white, 0.2)
+      : 'rgba(0, 0, 0, 0.2)',
   }
-});
+}));
 
 export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
+  const theme = useTheme();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
@@ -385,8 +392,12 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
                                   label={statusLabels[guest.status]}
                                   sx={{
                                     backgroundColor: guest.status === 'confirmed' 
-                                      ? '#dcfce7' // Light green background for confirmed
-                                      : `${statusColors[guest.status]}20`,
+                                      ? (theme.palette.mode === 'dark' 
+                                          ? alpha(theme.palette.success.main, 0.2)
+                                          : '#dcfce7')
+                                      : (theme.palette.mode === 'dark'
+                                          ? alpha(statusColors[guest.status] as string, 0.2)
+                                          : `${statusColors[guest.status]}20`),
                                     color: statusColors[guest.status],
                                     fontWeight: 500,
                                     minWidth: 100,

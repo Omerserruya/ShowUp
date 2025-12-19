@@ -139,12 +139,12 @@ export default function MenuContent({ onItemClick }: MenuContentProps) {
       {menuItems.map((item) => {
         const isSelected = location.pathname === item.path;
         return (
-          <ListItem key={item.text} disablePadding>
+        <ListItem key={item.text} disablePadding>
             <MenuItemButton
               selected={isSelected}
               onClick={() => handleNavigation(item.path)}
               dir="rtl"
-            >
+          >
               <ListItemIcon>
                 {item.icon}
               </ListItemIcon>
@@ -157,9 +157,9 @@ export default function MenuContent({ onItemClick }: MenuContentProps) {
                     color: isSelected ? 'white' : 'text.primary',
                   },
                 }}
-              />
+/>
             </MenuItemButton>
-          </ListItem>
+        </ListItem>
         );
       })}
 
