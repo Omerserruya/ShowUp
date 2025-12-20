@@ -287,11 +287,14 @@ function Overview() {
       <Paper 
         elevation={0}
         sx={{
-          p: 3,
-          bgcolor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
-          borderRadius: '16px',
+          borderRadius: 2,
+          backgroundColor: 'white',
+          boxShadow: 'none',
           border: '1px solid',
           borderColor: 'divider',
+          borderWidth: '1px',
+          overflow: 'hidden',
+          p: 3
         }}
       >
         <Typography 

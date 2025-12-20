@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Typography,
@@ -12,18 +12,10 @@ import {
   InputLabel,
   Chip,
   IconButton,
-  Tooltip,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
-  Checkbox,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Tabs,
   Tab,
   Grid,
@@ -31,21 +23,34 @@ import {
   useTheme,
   useMediaQuery,
   InputAdornment,
-  TablePagination,
-  styled,
-  CircularProgress,
-  Menu
+  Card,
+  CardContent,
+  Avatar,
+  LinearProgress,
+  alpha,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Checkbox
 } from '@mui/material';
 import {
   Add as AddIcon,
   Upload as UploadIcon,
   FileDownload as FileDownloadIcon,
   WhatsApp as WhatsAppIcon,
-  TableChart as TableChartIcon,
+  Search as SearchIcon,
+  People as PeopleIcon,
+  AccessTime as AccessTimeIcon,
+  Cancel as CancelIcon,
+  CheckCircle as CheckCircleIcon,
+  Note as NoteIcon,
+  MoreVert as MoreVertIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
-  Search as SearchIcon,
-  FilterList as FilterListIcon
+  TableChart as TableChartIcon
 } from '@mui/icons-material';
 
 // Types
@@ -53,6 +58,7 @@ interface Guest {
   _id: string;
   name: string;
   phone: string;
+  email?: string;
   group: string;
   status: 'pending' | 'confirmed' | 'declined' | 'maybe';
   source: 'manual' | 'whatsapp' | 'excel';
@@ -62,11 +68,14 @@ interface Guest {
 
 // Mock data
 const mockGuests: Guest[] = [
-  { _id: '1', name: 'ישראל ישראלי', phone: '050-1234567', group: 'משפחת כהן', status: 'confirmed', source: 'manual', note: 'אלרגי לבוטנים', confirmedCount: 2 },
-  { _id: '2', name: 'שרה כהן', phone: '052-7654321', group: 'חברים', status: 'pending', source: 'whatsapp', confirmedCount: 0 },
-  { _id: '3', name: 'דוד לוי', phone: '054-9876543', group: 'משפחת כהן', status: 'declined', source: 'excel', note: 'לא יכול להגיע', confirmedCount: 0 },
-  { _id: '4', name: 'רחל אברהם', phone: '053-4567890', group: 'חברים', status: 'maybe', source: 'manual', confirmedCount: 1 },
-  { _id: '5', name: 'יעקב יעקובי', phone: '050-1112233', group: 'משפחת כהן', status: 'confirmed', source: 'whatsapp', note: 'יבוא עם בן/בת זוג', confirmedCount: 2 },
+  { _id: '1', name: 'דני כהן', phone: '050-1234567', email: 'danny.cohen@gmail.com', group: 'משפחת כהן', status: 'confirmed', source: 'manual', note: 'אלרגי לבוטנים', confirmedCount: 3 },
+  { _id: '2', name: 'שירה לוי', phone: '052-9876543', email: 'shira.levi@gmail.com', group: 'חברים', status: 'confirmed', source: 'whatsapp', confirmedCount: 2 },
+  { _id: '3', name: 'יוסי מזרחי', phone: '054-5551234', email: 'yossi.m@gmail.com', group: 'משפחת כהן', status: 'pending', source: 'excel', note: 'צריך אישור נוסף', confirmedCount: 0 },
+  { _id: '4', name: 'מיכל אברהם', phone: '053-7778899', email: 'michal.a@gmail.com', group: 'חברים', status: 'declined', source: 'manual', note: 'לא יכול להגיע', confirmedCount: 0 },
+  { _id: '5', name: 'אבי ישראלי', phone: '050-3334455', email: 'avi.israeli@gmail.com', group: 'משפחת כהן', status: 'confirmed', source: 'whatsapp', note: 'יבוא עם בן/בת זוג', confirmedCount: 4 },
+  { _id: '6', name: 'שרה כהן', phone: '052-7654321', email: 'sara.cohen@gmail.com', group: 'חברים', status: 'pending', source: 'whatsapp', confirmedCount: 0 },
+  { _id: '7', name: 'רחל אברהם', phone: '053-4567890', email: 'rachel.a@gmail.com', group: 'חברים', status: 'maybe', source: 'manual', confirmedCount: 1 },
+  { _id: '8', name: 'יעקב יעקובי', phone: '050-1112233', email: 'yaakov.y@gmail.com', group: 'משפחת כהן', status: 'confirmed', source: 'excel', confirmedCount: 2 },
 ];
 
 // Status colors
@@ -80,229 +89,549 @@ const statusColors = {
 // Status labels
 const statusLabels = {
   pending: 'ממתין',
-  confirmed: 'אישר',
-  declined: 'ביטל',
+  confirmed: 'מאשר הגעה',
+  declined: 'לא מגיע',
   maybe: 'אולי'
 } as const;
 
-// Source icons
-const sourceIcons = {
-  manual: <TableChartIcon fontSize="small" />,
-  whatsapp: <WhatsAppIcon fontSize="small" />,
-  excel: <TableChartIcon fontSize="small" />
-} as const;
-
-// Source labels
-const sourceLabels = {
-  manual: 'ידני',
-  whatsapp: 'וואטסאפ',
-  excel: 'אקסל'
-} as const;
-
-// Custom styled resizable header cell
-const ResizableTableCell = styled(TableCell)<{ width: number }>(({ theme, width }) => ({
-  position: 'relative',
-  width: width,
-  minWidth: 80,
-  boxSizing: 'border-box',
-  cursor: 'default',
-  '&:hover .resizer': {
-    opacity: 1,
-  }
-}));
-
-// Resizer component
-const Resizer = styled('div')({
-  position: 'absolute',
-  right: 0,
-  top: 0,
-  height: '100%',
-  width: '5px',
-  background: 'rgba(0, 0, 0, 0.1)',
-  cursor: 'col-resize',
-  opacity: 0,
-  transition: 'opacity 0.3s',
-  '&:hover, &.isResizing': {
-    opacity: 1,
-    background: 'rgba(0, 0, 0, 0.2)',
-  }
-});
+// Capacity constant
+const EVENT_CAPACITY = 200;
 
 function Guests() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const tableRef = useRef<HTMLTableElement>(null);
   
   // State
-  const [selectedGuests, setSelectedGuests] = useState<string[]>([]);
   const [guestModalOpen, setGuestModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [groupFilter, setGroupFilter] = useState('all');
-  const [sourceFilter, setSourceFilter] = useState('all');
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [filterAnchorEl, setFilterAnchorEl] = useState<null | HTMLElement>(null);
+  const [rowsPerPage] = useState(25);
 
-  // Column definitions with initial widths
-  const [columns, setColumns] = useState([
-    { id: 'name', label: 'שם', width: 200 },
-    { id: 'phone', label: 'טלפון', width: 150 },
-    { id: 'group', label: 'קבוצה', width: 150 },
-    { id: 'status', label: 'סטטוס', width: 150 },
-    { id: 'confirmedCount', label: 'מספר אישורים', width: 120 },
-    { id: 'source', label: 'מקור', width: 100 },
-    { id: 'note', label: 'הערה', width: 200 },
-    { id: 'actions', label: 'פעולות', width: 100 }
-  ]);
-
-  // State for tracking resizing
-  const [resizing, setResizing] = useState<{
-    columnIndex: number;
-    startX: number;
-    startWidth: number;
-  } | null>(null);
+  // Calculate statistics
+  const totalGuests = mockGuests.length;
+  const confirmedGuests = mockGuests.filter(g => g.status === 'confirmed').length;
+  const pendingGuests = mockGuests.filter(g => g.status === 'pending').length;
+  const totalConfirmedCount = mockGuests
+    .filter(g => g.status === 'confirmed')
+    .reduce((sum, g) => sum + g.confirmedCount, 0);
 
   // Filtered guests
   const filteredGuests = mockGuests.filter(guest => {
-    const matchesSearch = guest.name.includes(searchQuery) || guest.phone.includes(searchQuery);
-    const matchesStatus = statusFilter === 'all' || guest.status === statusFilter;
-    const matchesGroup = groupFilter === 'all' || guest.group === groupFilter;
-    const matchesSource = sourceFilter === 'all' || guest.source === sourceFilter;
-    return matchesSearch && matchesStatus && matchesGroup && matchesSource;
+    const matchesSearch = guest.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                         guest.phone.includes(searchQuery) ||
+                         (guest.email && guest.email.toLowerCase().includes(searchQuery.toLowerCase()));
+    const matchesStatus = statusFilter === 'all' 
+      ? true 
+      : statusFilter === 'withNotes' 
+        ? !!guest.note 
+        : guest.status === statusFilter;
+    return matchesSearch && matchesStatus;
   });
 
-  // Pagination
-  const handleChangePage = (event: unknown, newPage: number) => {
-    setPage(newPage);
-  };
-
-  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
-  };
-
-  // Handlers
-  const handleSelectAll = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.checked) {
-      setSelectedGuests(filteredGuests.map(guest => guest._id));
-    } else {
-      setSelectedGuests([]);
-    }
-  };
-
-  const handleSelectGuest = (guestId: string) => {
-    setSelectedGuests(prev => 
-      prev.includes(guestId) 
-        ? prev.filter(id => id !== guestId)
-        : [...prev, guestId]
-    );
-  };
-
-  // Column resizing handlers
-  const handleResizeStart = useCallback((e: React.MouseEvent, columnIndex: number) => {
-    e.preventDefault();
-    const column = columns[columnIndex];
-    setResizing({
-      columnIndex,
-      startX: e.clientX,
-      startWidth: column.width
-    });
-
-    document.addEventListener('mousemove', handleResizeMove);
-    document.addEventListener('mouseup', handleResizeEnd);
-  }, [columns]);
-
-  const handleResizeMove = useCallback((e: MouseEvent) => {
-    if (!resizing) return;
-
-    const { columnIndex, startX, startWidth } = resizing;
-    const newWidth = Math.max(80, startWidth + (e.clientX - startX));
-    
-    setColumns(prevColumns => 
-      prevColumns.map((col, index) => 
-        index === columnIndex ? { ...col, width: newWidth } : col
-      )
-    );
-  }, [resizing]);
-
-  const handleResizeEnd = useCallback(() => {
-    setResizing(null);
-    document.removeEventListener('mousemove', handleResizeMove);
-    document.removeEventListener('mouseup', handleResizeEnd);
-  }, [handleResizeMove]);
-
-  // Cleanup event listeners on unmount
-  useEffect(() => {
-    return () => {
-      if (resizing) {
-        document.removeEventListener('mousemove', handleResizeMove);
-        document.removeEventListener('mouseup', handleResizeEnd);
-      }
-    };
-  }, [resizing, handleResizeMove, handleResizeEnd]);
-
-  const handleFilterClick = (event: React.MouseEvent<HTMLElement>) => {
-    setFilterAnchorEl(event.currentTarget);
-  };
-
-  const handleFilterClose = () => {
-    setFilterAnchorEl(null);
-  };
-
-  const handleStatusFilter = (status: string) => {
-    setStatusFilter(status);
-    handleFilterClose();
-  };
-
   return (
-    <Box sx={{ p: 3 }}>
-      {/* Top Toolbar */}
-      <Stack 
-        direction={{ xs: 'column', sm: 'row' }} 
-        spacing={2} 
-        alignItems={{ xs: 'stretch', sm: 'center' }}
-        justifyContent="space-between"
-        sx={{ mb: 3 }}
+    <Box>
+      {/* Top Section - Full Width White Background */}
+      <Box
+        sx={{
+          backgroundColor: 'white',
+          width: '100%',
+          py: 3,
+          px: { xs: 2, sm: 3, md: 4 }
+        }}
       >
-        <Typography variant="h4" component="h1">
-          Demo Wedding - June 30
-      </Typography>
-        <Stack direction="row" spacing={3}>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setGuestModalOpen(true)}
-          >
-            הוסף אורח
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<UploadIcon />}
-            onClick={() => setImportModalOpen(true)}
-          >
-            ייבוא מאקסל / וואטסאפ
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<FileDownloadIcon />}
-            onClick={() => {/* TODO: Implement export to Excel */}}
-          >
-            ייצוא לאקסל
-          </Button>
-        </Stack>
-      </Stack>
+        {/* Summary Statistics - Pastel cards */}
+        <Grid container spacing={2} sx={{ mb: 3 }}>
+          <Grid item xs={4}>
+            <Paper
+              sx={{
+                p: { xs: 1.5, sm: 2.5 },
+                backgroundColor: alpha('#90caf9', 0.2),
+                borderRadius: 3,
+                boxShadow: 'none',
+                border: '1px solid',
+                borderColor: alpha('#1976d2', 0.2),
+                position: 'relative',
+                minHeight: { xs: 70, sm: 100 }
+              }}
+            >
+              <Typography 
+                variant="h3"
+                sx={{ 
+                  fontWeight: 'bold', 
+                  color: '#1565c0',
+                  position: 'absolute',
+                  top: { xs: 12, sm: 16 },
+                  left: { xs: 12, sm: 16 },
+                  fontSize: { xs: '1.5rem', sm: '2.5rem' }
+                }}
+              >
+                {totalGuests}
+              </Typography>
+              <Box
+                sx={{
+                  position: 'absolute',
+                  bottom: { xs: 8, sm: 16 },
+                  right: { xs: 8, sm: 16 },
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: { xs: 0.5, sm: 1 },
+                  flexDirection: 'row'
+                }}
+              >
+                <Typography 
+                  variant="body2" 
+                  sx={{ 
+                    color: '#1565c0',
+                    fontWeight: 500,
+                    fontSize: { xs: '0.65rem', sm: '0.875rem' },
+                    lineHeight: 1.2
+                  }}
+                >
+                  סך הכל
+                </Typography>
+                <PeopleIcon sx={{ color: '#1565c0', fontSize: { xs: 16, sm: 24 } }} />
+              </Box>
+            </Paper>
+          </Grid>
+          <Grid item xs={4}>
+            <Paper
+              sx={{
+                p: { xs: 1.5, sm: 2.5 },
+                backgroundColor: alpha('#fff59d', 0.3),
+                borderRadius: 3,
+                boxShadow: 'none',
+                border: '1px solid',
+                borderColor: alpha('#f57c00', 0.2),
+                position: 'relative',
+                minHeight: { xs: 80, sm: 100 }
+              }}
+            >
+              <Typography 
+                variant="h3"
+                sx={{ 
+                  fontWeight: 'bold', 
+                  color: '#e65100',
+                  position: 'absolute',
+                  top: { xs: 12, sm: 16 },
+                  left: { xs: 12, sm: 16 },
+                  fontSize: { xs: '1.5rem', sm: '2.5rem' }
+                }}
+              >
+                {pendingGuests}
+              </Typography>
+              <Box
+                sx={{
+                  position: 'absolute',
+                  bottom: { xs: 8, sm: 16 },
+                  right: { xs: 8, sm: 16 },
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: { xs: 0.5, sm: 1 },
+                  flexDirection: 'row'
+                }}
+              >
+                <Typography 
+                  variant="body2" 
+                  sx={{ 
+                    color: '#e65100',
+                    fontWeight: 500,
+                    fontSize: { xs: '0.65rem', sm: '0.875rem' },
+                    lineHeight: 1.2
+                  }}
+                >
+                  ממתינים
+                </Typography>
+                <AccessTimeIcon sx={{ color: '#e65100', fontSize: { xs: 16, sm: 24 } }} />
+              </Box>
+            </Paper>
+          </Grid>
+          <Grid item xs={4}>
+            <Paper
+              sx={{
+                p: { xs: 1.5, sm: 2.5 },
+                backgroundColor: alpha('#a5d6a7', 0.3),
+                borderRadius: 3,
+                boxShadow: 'none',
+                border: '1px solid',
+                borderColor: alpha('#2e7d32', 0.2),
+                position: 'relative',
+                minHeight: { xs: 70, sm: 100 }
+              }}
+            >
+              <Typography 
+                variant="h3"
+                sx={{ 
+                  fontWeight: 'bold', 
+                  color: '#2e7d32',
+                  position: 'absolute',
+                  top: 16,
+                  left: 16
+                }}
+              >
+                {confirmedGuests}
+              </Typography>
+              <Box
+                sx={{
+                  position: 'absolute',
+                  bottom: 16,
+                  right: 16,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  flexDirection: { xs: 'column', sm: 'row' }
+                }}
+              >
+                <Typography 
+                  variant="body2" 
+                  sx={{ 
+                    color: '#2e7d32',
+                    fontWeight: 500,
+                    fontSize: { xs: '0.75rem', sm: '0.875rem' }
+                  }}
+                >
+                  מאשרים הגעה
+                </Typography>
+                <CheckCircleIcon sx={{ color: '#2e7d32', fontSize: { xs: 20, sm: 24 } }} />
+              </Box>
+            </Paper>
+          </Grid>
+        </Grid>
 
-      {/* Search and Filters */}
-      <Box sx={{ mb: 2 }}>
+        {/* Capacity Section */}
+        <Box
+          sx={{
+            p: { xs: 2, sm: 2.5 },
+            mb: 3,
+            borderRadius: 2,
+            backgroundColor: alpha(theme.palette.grey[100], 0.5)
+          }}
+        >
+          <Box sx={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center', 
+            mb: 1.5,
+            flexDirection: 'row',
+            gap: 2
+          }}>
+            <Typography variant="body1" sx={{ fontWeight: 600, fontSize: { xs: '1rem', sm: '1.25rem' } }}>
+              {EVENT_CAPACITY} / {totalConfirmedCount}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
+              קיבולת: {EVENT_CAPACITY} אורחים
+      </Typography>
+          </Box>
+          <LinearProgress
+            variant="determinate"
+            value={(totalConfirmedCount / EVENT_CAPACITY) * 100}
+            sx={{
+              height: 8,
+              borderRadius: 4,
+              backgroundColor: alpha(theme.palette.grey[300], 0.3),
+              '& .MuiLinearProgress-bar': {
+                borderRadius: 4,
+                backgroundColor: '#2e7d32'
+              }
+            }}
+          />
+        </Box>
+
+        {/* Action Buttons */}
+        <Grid container spacing={2} sx={{ mb: 0 }}>
+          <Grid item xs={4}>
+          <Button
+              variant="outlined"
+            onClick={() => setGuestModalOpen(true)}
+              fullWidth
+              sx={{ 
+                borderRadius: 3,
+                backgroundColor: 'white',
+                color: '#000000',
+                fontWeight: 500,
+                py: { xs: 1, sm: 1.5 },
+                px: { xs: 0.5, sm: 1 },
+                border: '1px solid #e0e0e0',
+                boxShadow: 'none',
+                textTransform: 'none',
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: { xs: '0.7rem', sm: '1rem' },
+                '&:hover': {
+                  backgroundColor: '#fafafa',
+                  border: '1px solid #d0d0d0'
+                }
+              }}
+            >
+              <Box sx={{ flex: 1, textAlign: 'center' }}>
+                + הוסף אורח
+              </Box>
+              <Box
+                sx={{
+                  backgroundColor: alpha('#1976d2', 0.2),
+                  borderRadius: 1.5,
+                  p: { xs: 0.5, sm: 0.75 },
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minWidth: { xs: 28, sm: 36 },
+                  height: { xs: 28, sm: 36 },
+                  ml: { xs: 0.5, sm: 1 }
+                }}
+              >
+                <AddIcon sx={{ color: '#1976d2', fontSize: { xs: 16, sm: 20 } }} />
+              </Box>
+          </Button>
+          </Grid>
+          <Grid item xs={4}>
+          <Button
+            variant="outlined"
+            onClick={() => setImportModalOpen(true)}
+              fullWidth
+              sx={{ 
+                borderRadius: 3,
+                backgroundColor: 'white',
+                color: '#000000',
+                fontWeight: 500,
+                py: { xs: 1, sm: 1.5 },
+                px: { xs: 0.5, sm: 1 },
+                border: '1px solid #e0e0e0',
+                boxShadow: 'none',
+                textTransform: 'none',
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: { xs: '0.7rem', sm: '1rem' },
+                '&:hover': {
+                  backgroundColor: '#fafafa',
+                  border: '1px solid #d0d0d0'
+                }
+              }}
+            >
+              <Box sx={{ flex: 1, textAlign: 'center' }}>
+                ייבא מאקסל
+              </Box>
+              <Box
+                sx={{
+                  backgroundColor: '#f5f5dc',
+                  borderRadius: 1.5,
+                  p: { xs: 0.5, sm: 0.75 },
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minWidth: { xs: 28, sm: 36 },
+                  height: { xs: 28, sm: 36 },
+                  ml: { xs: 0.5, sm: 1 }
+                }}
+              >
+                <Box sx={{ position: 'relative', display: 'inline-flex' }}>
+                  <TableChartIcon sx={{ color: '#ff9800', fontSize: { xs: 16, sm: 20 } }} />
+                  <UploadIcon 
+                    sx={{ 
+                      color: '#ff9800', 
+                      fontSize: { xs: 9, sm: 12 },
+                      position: 'absolute',
+                      bottom: -1,
+                      right: -1
+                    }} 
+                  />
+                </Box>
+              </Box>
+          </Button>
+          </Grid>
+          <Grid item xs={4}>
+          <Button
+            variant="outlined"
+            onClick={() => {/* TODO: Implement export to Excel */}}
+              fullWidth
+              sx={{ 
+                borderRadius: 3,
+                backgroundColor: 'white',
+                color: '#000000',
+                fontWeight: 500,
+                py: { xs: 1, sm: 1.5 },
+                px: { xs: 0.5, sm: 1 },
+                border: '1px solid #e0e0e0',
+                boxShadow: 'none',
+                textTransform: 'none',
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: { xs: '0.7rem', sm: '1rem' },
+                '&:hover': {
+                  backgroundColor: '#fafafa',
+                  border: '1px solid #d0d0d0'
+                }
+              }}
+            >
+              <Box sx={{ flex: 1, textAlign: 'center' }}>
+                ייצא לאקסל
+              </Box>
+              <Box
+                sx={{
+                  backgroundColor: '#e1bee7',
+                  borderRadius: 1.5,
+                  p: { xs: 0.5, sm: 0.75 },
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minWidth: { xs: 28, sm: 36 },
+                  height: { xs: 28, sm: 36 },
+                  ml: { xs: 0.5, sm: 1 }
+                }}
+              >
+                <TableChartIcon sx={{ color: '#9c27b0', fontSize: { xs: 16, sm: 20 } }} />
+              </Box>
+            </Button>
+          </Grid>
+        </Grid>
+      </Box>
+
+      {/* Content Section */}
+      <Box sx={{ p: { xs: 2, sm: 3 } }}>
+        {/* Desktop Table View */}
+        {!isMobile ? (
+        <Paper 
+          sx={{ 
+            borderRadius: 2,
+            backgroundColor: 'white',
+            boxShadow: 'none',
+            border: '1px solid',
+            borderColor: 'divider',
+            borderWidth: '1px',
+            overflow: 'hidden',
+            p: 3
+          }}
+        >
+          {/* Quick Filter Buttons */}
+          <Stack direction="row" spacing={1} sx={{ mb: 2 }} flexWrap="wrap" useFlexGap>
+            <Button
+              onClick={() => {
+                setStatusFilter('all');
+                setPage(0);
+              }}
+              sx={{ 
+                borderRadius: 3,
+                minWidth: 80,
+                px: 2,
+                py: 1,
+                textTransform: 'none',
+                backgroundColor: statusFilter === 'all' ? '#5236F7' : '#F2F3F5',
+                color: statusFilter === 'all' ? 'white' : '#363B4D',
+                fontWeight: 500,
+                boxShadow: 'none',
+                '&:hover': {
+                  backgroundColor: statusFilter === 'all' ? '#5236F7' : '#E5E7EB',
+                  boxShadow: 'none'
+                }
+              }}
+            >
+              הכל
+            </Button>
+            <Button
+              onClick={() => {
+                setStatusFilter('confirmed');
+                setPage(0);
+              }}
+              sx={{ 
+                borderRadius: 3,
+                minWidth: 80,
+                px: 2,
+                py: 1,
+                textTransform: 'none',
+                backgroundColor: statusFilter === 'confirmed' ? '#5236F7' : '#F2F3F5',
+                color: statusFilter === 'confirmed' ? 'white' : '#363B4D',
+                fontWeight: 500,
+                boxShadow: 'none',
+                '&:hover': {
+                  backgroundColor: statusFilter === 'confirmed' ? '#5236F7' : '#E5E7EB',
+                  boxShadow: 'none'
+                }
+              }}
+            >
+              אישרו
+            </Button>
+            <Button
+              onClick={() => {
+                setStatusFilter('pending');
+                setPage(0);
+              }}
+              sx={{ 
+                borderRadius: 3,
+                minWidth: 80,
+                px: 2,
+                py: 1,
+                textTransform: 'none',
+                backgroundColor: statusFilter === 'pending' ? '#5236F7' : '#F2F3F5',
+                color: statusFilter === 'pending' ? 'white' : '#363B4D',
+                fontWeight: 500,
+                boxShadow: 'none',
+                '&:hover': {
+                  backgroundColor: statusFilter === 'pending' ? '#5236F7' : '#E5E7EB',
+                  boxShadow: 'none'
+                }
+              }}
+            >
+              ממתינים
+            </Button>
+            <Button
+              onClick={() => {
+                setStatusFilter('declined');
+                setPage(0);
+              }}
+              sx={{ 
+                borderRadius: 3,
+                minWidth: 80,
+                px: 2,
+                py: 1,
+                textTransform: 'none',
+                backgroundColor: statusFilter === 'declined' ? '#5236F7' : '#F2F3F5',
+                color: statusFilter === 'declined' ? 'white' : '#363B4D',
+                fontWeight: 500,
+                boxShadow: 'none',
+                '&:hover': {
+                  backgroundColor: statusFilter === 'declined' ? '#5236F7' : '#E5E7EB',
+                  boxShadow: 'none'
+                }
+              }}
+            >
+              דחו
+            </Button>
+            <Button
+              onClick={() => {
+                setStatusFilter('withNotes');
+                setPage(0);
+              }}
+              sx={{ 
+                borderRadius: 3,
+                minWidth: 120,
+                px: 2,
+                py: 1,
+                textTransform: 'none',
+                backgroundColor: statusFilter === 'withNotes' ? '#5236F7' : '#F2F3F5',
+                color: statusFilter === 'withNotes' ? 'white' : '#363B4D',
+                fontWeight: 500,
+                boxShadow: 'none',
+                '&:hover': {
+                  backgroundColor: statusFilter === 'withNotes' ? '#5236F7' : '#E5E7EB',
+                  boxShadow: 'none'
+                }
+              }}
+            >
+              עם הערות
+            </Button>
+          </Stack>
+
+          {/* Search Bar */}
         <TextField
           fullWidth
-          placeholder="חיפוש לפי שם או טלפון..."
+            placeholder="חיפוש אורח..."
           variant="outlined"
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setPage(0);
+            }}
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
@@ -311,186 +640,471 @@ function Guests() {
             ),
           }}
           size="small"
-        />
-      </Box>
-
-      {/* Guests Table */}
-      <TableContainer sx={{ maxHeight: 600, width: '100%', overflow: 'auto' }}>
-        <Table 
-          ref={tableRef}
-          stickyHeader 
-          aria-label="sticky table" 
-          sx={{ borderCollapse: 'separate', borderSpacing: 0 }}
-        >
-          <TableHead>
-            <TableRow sx={{ 
-              '& th': { 
-                backgroundColor: 'background.default', 
-                color: 'text.primary',
-                fontWeight: 'bold',
-                borderBottom: '2px solid',
-                borderBottomColor: 'divider',
-                whiteSpace: 'nowrap',
-                textAlign: 'right',
-                padding: '16px'
+            sx={{
+              mb: 3,
+              '& .MuiOutlinedInput-root': {
+                borderRadius: 3,
               }
-            }}>
-              <TableCell padding="checkbox">
-                <Checkbox
-                  checked={selectedGuests.length === filteredGuests.length}
-                  indeterminate={selectedGuests.length > 0 && selectedGuests.length < filteredGuests.length}
-                  onChange={handleSelectAll}
-                />
-              </TableCell>
-              {columns.map((column, index) => (
-                <ResizableTableCell 
-                  key={column.id}
-                  width={column.width} 
-                  align="right"
-                >
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1 }}>
-                    {column.label}
-                    {column.id === 'status' && (
-                      <IconButton
-                        size="small"
-                        onClick={handleFilterClick}
-                        sx={{ p: 0.5 }}
-                      >
-                        <FilterListIcon fontSize="small" />
-                      </IconButton>
-                    )}
-                  </Box>
-                  <Resizer 
-                    className={resizing?.columnIndex === index ? 'isResizing' : ''}
-                    onMouseDown={(e) => handleResizeStart(e, index)}
-                  />
-                </ResizableTableCell>
-              ))}
-            </TableRow>
-          </TableHead>
+            }}
+          />
+          <TableContainer
+            sx={{
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 2,
+              overflow: 'hidden'
+            }}
+          >
+            <Table 
+              sx={{ 
+                borderCollapse: 'separate', 
+                borderSpacing: 0
+              }}
+            >
+              <TableHead>
+                <TableRow>
+                  <TableCell padding="checkbox" sx={{ backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>
+                    <Checkbox />
+                  </TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>שם מלא</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>טלפון</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>סטטוס</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>כמות אורחים סה״כ</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>פעולות</TableCell>
+                </TableRow>
+              </TableHead>
           <TableBody>
+                {filteredGuests.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
+                      <Typography variant="body1" color="text.secondary" sx={{ py: 4 }}>
+                        {searchQuery ? 'לא נמצאו תוצאות' : 'אין מוזמנים'}
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredGuests
+                    .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                    .map((guest, index) => (
+                    <TableRow 
+                      key={guest._id} 
+                      hover 
+                      sx={{ 
+                        backgroundColor: 'white',
+                        borderBottom: index < Math.min(rowsPerPage, filteredGuests.length - page * rowsPerPage) - 1 ? '1px solid' : 'none',
+                        borderBottomColor: 'divider'
+                      }}
+                    >
+                      <TableCell padding="checkbox" sx={{ backgroundColor: 'white' }}>
+                        <Checkbox />
+                      </TableCell>
+                      <TableCell align="right" sx={{ backgroundColor: 'white', textAlign: 'right' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexDirection: 'row-reverse', width: '100%' }}>
+                          <Typography variant="body2" sx={{ fontWeight: 500,width:"100%", textAlign: 'right' }}>
+                            {guest.name}
+                          </Typography>
+                          <Avatar
+                            sx={{
+                              width: 32,
+                              height: 32,
+                              bgcolor: statusColors[guest.status],
+                              fontSize: '0.875rem'
+                            }}
+                          >
+                            {guest.name.charAt(0)}
+                          </Avatar>
+                          
+                        </Box>
+                      </TableCell>
+                      <TableCell align="center" sx={{ backgroundColor: 'white' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, justifyContent: 'center' }}>
+                          <WhatsAppIcon sx={{ fontSize: 18, color: '#25D366' }} />
+                          <Typography variant="body2">{guest.phone}</Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell align="center" sx={{ backgroundColor: 'white' }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                          <Chip
+                            icon={guest.status === 'confirmed' ? <CheckCircleIcon /> : 
+                                  guest.status === 'declined' ? <CancelIcon /> : 
+                                  <AccessTimeIcon />}
+                            label={statusLabels[guest.status]}
+                            size="small"
+                            sx={{
+                              backgroundColor: alpha(statusColors[guest.status], 0.1),
+                              color: statusColors[guest.status],
+                              fontWeight: 500,
+                              '& .MuiChip-icon': {
+                                color: statusColors[guest.status]
+                              }
+                            }}
+                          />
+                        </Box>
+                      </TableCell>
+                      <TableCell align="center" sx={{ backgroundColor: 'white' }}>
+                        {guest.status === 'confirmed' && guest.confirmedCount > 0 ? (
+                          <Typography variant="body2" sx={{ fontWeight: 500, color: 'success.main' }}>
+                            {guest.confirmedCount}
+                          </Typography>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">-</Typography>
+                        )}
+                      </TableCell>
+                      <TableCell align="center" sx={{ backgroundColor: 'white' }}>
+                        <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
+                          <IconButton size="small" sx={{ color: '#25D366' }}>
+                            <WhatsAppIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton size="small">
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton size="small" sx={{ color: 'error.main' }}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+          </TableBody>
+        </Table>
+      </TableContainer>
+          
+          {/* Pagination */}
+          <Box sx={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center',
+            p: 2,
+            borderTop: '1px solid',
+            borderColor: 'divider'
+          }}>
+            <Typography variant="body2" color="text.secondary">
+              מציג {page * rowsPerPage + 1}-{Math.min((page + 1) * rowsPerPage, filteredGuests.length)} מתוך {filteredGuests.length}
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => setPage(page - 1)}
+                disabled={page === 0}
+                sx={{ borderRadius: 2 }}
+              >
+                הקודם
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => setPage(page + 1)}
+                disabled={(page + 1) * rowsPerPage >= filteredGuests.length}
+                sx={{ borderRadius: 2 }}
+              >
+                הבא
+              </Button>
+            </Box>
+          </Box>
+        </Paper>
+      ) : (
+        /* Mobile Card View */
+        <Paper 
+          sx={{ 
+            borderRadius: 2,
+            backgroundColor: 'white',
+            boxShadow: 'none',
+            border: '1px solid',
+            borderColor: 'divider',
+            borderWidth: '1px',
+            overflow: 'hidden',
+            p: 3
+          }}
+        >
+          {/* Quick Filter Buttons */}
+          <Stack direction="row" spacing={1} sx={{ mb: 2 }} flexWrap="wrap" useFlexGap>
+            <Button
+              onClick={() => {
+                setStatusFilter('all');
+                setPage(0);
+              }}
+              sx={{ 
+                borderRadius: 3,
+                minWidth: 80,
+                px: 2,
+                py: 1,
+                textTransform: 'none',
+                backgroundColor: statusFilter === 'all' ? '#5236F7' : '#F2F3F5',
+                color: statusFilter === 'all' ? 'white' : '#363B4D',
+                fontWeight: 500,
+                boxShadow: 'none',
+                '&:hover': {
+                  backgroundColor: statusFilter === 'all' ? '#5236F7' : '#E5E7EB',
+                  boxShadow: 'none'
+                }
+              }}
+            >
+              הכל
+            </Button>
+            <Button
+              onClick={() => {
+                setStatusFilter('confirmed');
+                setPage(0);
+              }}
+              sx={{ 
+                borderRadius: 3,
+                minWidth: 80,
+                px: 2,
+                py: 1,
+                textTransform: 'none',
+                backgroundColor: statusFilter === 'confirmed' ? '#5236F7' : '#F2F3F5',
+                color: statusFilter === 'confirmed' ? 'white' : '#363B4D',
+                fontWeight: 500,
+                boxShadow: 'none',
+                '&:hover': {
+                  backgroundColor: statusFilter === 'confirmed' ? '#5236F7' : '#E5E7EB',
+                  boxShadow: 'none'
+                }
+              }}
+            >
+              אישרו
+            </Button>
+            <Button
+              onClick={() => {
+                setStatusFilter('pending');
+                setPage(0);
+              }}
+              sx={{ 
+                borderRadius: 3,
+                minWidth: 80,
+                px: 2,
+                py: 1,
+                textTransform: 'none',
+                backgroundColor: statusFilter === 'pending' ? '#5236F7' : '#F2F3F5',
+                color: statusFilter === 'pending' ? 'white' : '#363B4D',
+                fontWeight: 500,
+                boxShadow: 'none',
+                '&:hover': {
+                  backgroundColor: statusFilter === 'pending' ? '#5236F7' : '#E5E7EB',
+                  boxShadow: 'none'
+                }
+              }}
+            >
+              ממתינים
+            </Button>
+            <Button
+              onClick={() => {
+                setStatusFilter('declined');
+                setPage(0);
+              }}
+              sx={{ 
+                borderRadius: 3,
+                minWidth: 80,
+                px: 2,
+                py: 1,
+                textTransform: 'none',
+                backgroundColor: statusFilter === 'declined' ? '#5236F7' : '#F2F3F5',
+                color: statusFilter === 'declined' ? 'white' : '#363B4D',
+                fontWeight: 500,
+                boxShadow: 'none',
+                '&:hover': {
+                  backgroundColor: statusFilter === 'declined' ? '#5236F7' : '#E5E7EB',
+                  boxShadow: 'none'
+                }
+              }}
+            >
+              דחו
+            </Button>
+            <Button
+              onClick={() => {
+                setStatusFilter('withNotes');
+                setPage(0);
+              }}
+              sx={{ 
+                borderRadius: 3,
+                minWidth: 120,
+                px: 2,
+                py: 1,
+                textTransform: 'none',
+                backgroundColor: statusFilter === 'withNotes' ? '#5236F7' : '#F2F3F5',
+                color: statusFilter === 'withNotes' ? 'white' : '#363B4D',
+                fontWeight: 500,
+                boxShadow: 'none',
+                '&:hover': {
+                  backgroundColor: statusFilter === 'withNotes' ? '#5236F7' : '#E5E7EB',
+                  boxShadow: 'none'
+                }
+              }}
+            >
+              עם הערות
+            </Button>
+          </Stack>
+
+          {/* Search Bar */}
+          <TextField
+            fullWidth
+            placeholder="חיפוש אורח..."
+            variant="outlined"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setPage(0);
+            }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+            }}
+            size="small"
+        sx={{ 
+              mb: 3,
+              '& .MuiOutlinedInput-root': {
+                borderRadius: 3,
+              }
+            }}
+          />
+
+          <Grid container spacing={2}>
             {filteredGuests.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={columns.length + 1} align="center">
-                  {searchQuery ? 'לא נמצאו תוצאות' : 'אין מוזמנים'}
-                </TableCell>
-              </TableRow>
+              <Grid item xs={12}>
+                <Box sx={{ p: 4, textAlign: 'center' }}>
+                  <Typography variant="body1" color="text.secondary">
+                    {searchQuery ? 'לא נמצאו תוצאות' : 'אין מוזמנים'}
+                  </Typography>
+                </Box>
+              </Grid>
             ) : (
               filteredGuests
                 .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                 .map((guest) => (
-                  <TableRow 
-                    hover 
-                    key={guest._id}
-                    selected={selectedGuests.includes(guest._id)}
-                    sx={{ 
-                      '&:last-child td, &:last-child th': { 
-                        borderBottom: 0 
-                      },
-                      '& td': {
-                        padding: '16px',
-                        borderBottom: '1px solid',
-                        borderBottomColor: 'divider'
-                      }
-                    }}
-                  >
-                    <TableCell padding="checkbox">
-                      <Checkbox
-                        checked={selectedGuests.includes(guest._id)}
-                        onChange={() => handleSelectGuest(guest._id)}
-                      />
-                    </TableCell>
-                    <TableCell>{guest.name}</TableCell>
-                    <TableCell>{guest.phone}</TableCell>
-                    <TableCell>{guest.group}</TableCell>
-                    <TableCell>
-                      <Chip
-                        label={statusLabels[guest.status]}
+              <Grid item xs={12} key={guest._id}>
+                <Card
+                  sx={{
+                    borderRadius: 3,
+                    '&:hover': {
+                      boxShadow: theme.shadows[2]
+                    }
+                  }}
+                >
+                  <CardContent>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                      <IconButton size="small">
+                        <MoreVertIcon fontSize="small" />
+                      </IconButton>
+                      <Avatar
                         sx={{
-                          backgroundColor: `${statusColors[guest.status]}20`,
-                          color: statusColors[guest.status],
-                          fontWeight: 500,
-                          minWidth: 80,
-                          height: 24,
-                          '& .MuiChip-label': {
-                            px: 1
-                          }
+                          width: 48,
+                          height: 48,
+                          bgcolor: statusColors[guest.status]
                         }}
-                      />
-                    </TableCell>
-                    <TableCell align="center">
-                      {guest.status === 'confirmed' ? (
-                        <Typography
-                          sx={{
-                            fontWeight: 500,
-                            color: 'success.main'
-                          }}
-                        >
-                          {guest.confirmedCount}
+                      >
+                        {guest.name.charAt(0)}
+                      </Avatar>
+                    </Box>
+                    
+                    <Typography variant="h6" sx={{ mb: 1, fontWeight: 600, textAlign: 'right' }}>
+                      {guest.name}
+                    </Typography>
+                    
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1, justifyContent: 'flex-end' }}>
+                      <WhatsAppIcon sx={{ fontSize: 18, color: '#25D366' }} />
+                      <Typography variant="body2" color="text.secondary">
+                        {guest.phone}
+                      </Typography>
+                    </Box>
+                    
+                    {guest.confirmedCount > 0 && guest.status === 'confirmed' && (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1.5, justifyContent: 'flex-end' }}>
+                        <PeopleIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                        <Typography variant="body2" color="text.secondary">
+                          +{guest.confirmedCount - 1} מלווים
                         </Typography>
-                      ) : (
-                        '-'
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Tooltip title={sourceLabels[guest.source]}>
-                        {sourceIcons[guest.source]}
-                      </Tooltip>
-                    </TableCell>
-                    <TableCell>{guest.note || '-'}</TableCell>
-                    <TableCell align="center">
+                      </Box>
+                    )}
+                    
+                    <Chip
+                      icon={guest.status === 'confirmed' ? <CheckCircleIcon /> : 
+                            guest.status === 'declined' ? <CancelIcon /> : 
+                            <AccessTimeIcon />}
+                      label={statusLabels[guest.status]}
+                      sx={{
+                        backgroundColor: alpha(statusColors[guest.status], 0.1),
+                        color: statusColors[guest.status],
+                        fontWeight: 500,
+                        mb: 1.5,
+                        width: '100%',
+                        justifyContent: 'flex-start',
+                        '& .MuiChip-icon': {
+                          color: statusColors[guest.status]
+                        }
+                      }}
+                    />
+                    
+                    {guest.note && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, textAlign: 'right' }}>
+                        {guest.note}
+                      </Typography>
+                    )}
+                    
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'right' }}>
+                      {guest.status === 'pending' ? 'נשלח היום' : 
+                       guest.status === 'confirmed' ? 'לפני 2 שעות' : 'אתמול'}
+                    </Typography>
+                    
+                    <Box sx={{ display: 'flex', gap: 1, mt: 2, justifyContent: 'flex-end' }}>
+                      <IconButton size="small" sx={{ color: '#25D366' }}>
+                        <WhatsAppIcon fontSize="small" />
+                      </IconButton>
                       <IconButton size="small">
                         <EditIcon fontSize="small" />
                       </IconButton>
-                      <IconButton size="small">
+                      <IconButton size="small" sx={{ color: 'error.main' }}>
                         <DeleteIcon fontSize="small" />
                       </IconButton>
-                    </TableCell>
-                  </TableRow>
-                ))
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
-      <TablePagination
-        sx={{ 
-          borderTop: '1px solid',
-          borderTopColor: 'divider',
-          '.MuiTablePagination-toolbar': {
-            paddingLeft: 1
-          }
-        }}
-        rowsPerPageOptions={[5, 10, 25, 50]}
-        component="div"
-        count={filteredGuests.length}
-        rowsPerPage={rowsPerPage}
-        page={page}
-        onPageChange={handleChangePage}
-        onRowsPerPageChange={handleChangeRowsPerPage}
-        labelRowsPerPage="שורות בעמוד:"
-        labelDisplayedRows={({ from, to, count }) => `${from}-${to} מתוך ${count}`}
-      />
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))
+          )}
+        </Grid>
 
-      {/* Status Filter Menu */}
-      <Menu
-        anchorEl={filterAnchorEl}
-        open={Boolean(filterAnchorEl)}
-        onClose={handleFilterClose}
-        anchorOrigin={{
-          vertical: 'bottom',
-          horizontal: 'right',
-        }}
-        transformOrigin={{
-          vertical: 'top',
-          horizontal: 'right',
-        }}
-      >
-        <MenuItem onClick={() => handleStatusFilter('all')}>הכל</MenuItem>
-        <MenuItem onClick={() => handleStatusFilter('pending')}>ממתין</MenuItem>
-        <MenuItem onClick={() => handleStatusFilter('confirmed')}>אישר</MenuItem>
-        <MenuItem onClick={() => handleStatusFilter('declined')}>ביטל</MenuItem>
-        <MenuItem onClick={() => handleStatusFilter('maybe')}>אולי</MenuItem>
-      </Menu>
+        {/* Pagination */}
+        <Box sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          p: 2,
+          mt: 2,
+          borderTop: '1px solid',
+          borderColor: 'divider'
+        }}>
+          <Typography variant="body2" color="text.secondary">
+            מציג {page * rowsPerPage + 1}-{Math.min((page + 1) * rowsPerPage, filteredGuests.length)} מתוך {filteredGuests.length}
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => setPage(page - 1)}
+              disabled={page === 0}
+              sx={{ borderRadius: 2 }}
+            >
+              הקודם
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => setPage(page + 1)}
+              disabled={(page + 1) * rowsPerPage >= filteredGuests.length}
+              sx={{ borderRadius: 2 }}
+            >
+              הבא
+            </Button>
+          </Box>
+        </Box>
+      </Paper>
+      )}
+      </Box>
 
       {/* Guest Modal */}
       <Dialog 

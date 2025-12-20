@@ -8,15 +8,12 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  TablePagination,
   TextField,
   InputAdornment,
   Chip,
   styled,
   CircularProgress,
   Divider,
-  Menu,
-  MenuItem,
   IconButton,
   Popover,
   Button,
@@ -24,11 +21,11 @@ import {
   alpha,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
-import FilterListIcon from '@mui/icons-material/FilterList';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
 import QuestionAnswerIcon from '@mui/icons-material/QuestionAnswer';
+import { Stack } from '@mui/material';
 
 interface Guest {
   _id: string;
@@ -124,9 +121,8 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editedNote, setEditedNote] = useState('');
-  const [filterAnchorEl, setFilterAnchorEl] = useState<null | HTMLElement>(null);
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [rowsPerPage] = useState(25);
   const tableRef = useRef<HTMLTableElement>(null);
 
   // Column definitions with initial widths
@@ -173,19 +169,6 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
     return bTime - aTime; // Most recent first
   });
 
-  const handleFilterClick = (event: React.MouseEvent<HTMLElement>) => {
-    setFilterAnchorEl(event.currentTarget);
-  };
-
-  const handleFilterClose = () => {
-    setFilterAnchorEl(null);
-  };
-
-  const handleStatusFilter = (status: string) => {
-    setStatusFilter(status);
-    handleFilterClose();
-  };
-
   const handleNoteClick = (guest: Guest) => {
     setEditingNoteId(guest._id);
     setEditedNote(guest.note || '');
@@ -207,11 +190,6 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
 
   const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
-  };
-
-  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
   };
 
   // Column resizing handlers
@@ -259,56 +237,127 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
 
   return (
     <Box sx={{ width: '100%', mt: 2 }}>
-      {/* Search + filter row */}
-      <Box
-        sx={{
-          mb: 3,
-          display: 'flex',
-          gap: 1.5,
-          flexDirection: 'row-reverse',
-          alignItems: 'stretch',
-        }}
-      >
-        <TextField
-          fullWidth
-          placeholder="חיפוש אורח..."
-          variant="outlined"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon />
-              </InputAdornment>
-            ),
-          }}
-          size="small"
-          sx={{
-            maxWidth: 360,
-            '& .MuiOutlinedInput-root': {
-              height: 40,
-              borderRadius: 9999,
-            },
-            '& .MuiOutlinedInput-input': {
-              py: 0,
-            },
-          }}
-        />
+      {/* Quick Filter Buttons */}
+      <Stack direction="row" spacing={1} sx={{ mb: 2 }} flexWrap="wrap" useFlexGap>
         <Button
-          variant="outlined"
-          size="small"
-          startIcon={<FilterListIcon />}
-          onClick={handleFilterClick}
-          sx={{
-            minWidth: 96,
-            height: 40,
-            borderRadius: 9999,
-            px: 2.5,
+          onClick={() => {
+            setStatusFilter('all');
+            setPage(0);
+          }}
+          sx={{ 
+            borderRadius: 3,
+            minWidth: 80,
+            px: 2,
+            py: 1,
+            textTransform: 'none',
+            backgroundColor: statusFilter === 'all' ? '#5236F7' : '#F2F3F5',
+            color: statusFilter === 'all' ? 'white' : '#363B4D',
+            fontWeight: 500,
+            boxShadow: 'none',
+            '&:hover': {
+              backgroundColor: statusFilter === 'all' ? '#5236F7' : '#E5E7EB',
+              boxShadow: 'none'
+            }
           }}
         >
-          סינון
+          הכל
         </Button>
-      </Box>
+        <Button
+          onClick={() => {
+            setStatusFilter('confirmed');
+            setPage(0);
+          }}
+          sx={{ 
+            borderRadius: 3,
+            minWidth: 80,
+            px: 2,
+            py: 1,
+            textTransform: 'none',
+            backgroundColor: statusFilter === 'confirmed' ? '#5236F7' : '#F2F3F5',
+            color: statusFilter === 'confirmed' ? 'white' : '#363B4D',
+            fontWeight: 500,
+            boxShadow: 'none',
+            '&:hover': {
+              backgroundColor: statusFilter === 'confirmed' ? '#5236F7' : '#E5E7EB',
+              boxShadow: 'none'
+            }
+          }}
+        >
+          אישרו
+        </Button>
+        <Button
+          onClick={() => {
+            setStatusFilter('pending');
+            setPage(0);
+          }}
+          sx={{ 
+            borderRadius: 3,
+            minWidth: 80,
+            px: 2,
+            py: 1,
+            textTransform: 'none',
+            backgroundColor: statusFilter === 'pending' ? '#5236F7' : '#F2F3F5',
+            color: statusFilter === 'pending' ? 'white' : '#363B4D',
+            fontWeight: 500,
+            boxShadow: 'none',
+            '&:hover': {
+              backgroundColor: statusFilter === 'pending' ? '#5236F7' : '#E5E7EB',
+              boxShadow: 'none'
+            }
+          }}
+        >
+          ממתינים
+        </Button>
+        <Button
+          onClick={() => {
+            setStatusFilter('declined');
+            setPage(0);
+          }}
+          sx={{ 
+            borderRadius: 3,
+            minWidth: 80,
+            px: 2,
+            py: 1,
+            textTransform: 'none',
+            backgroundColor: statusFilter === 'declined' ? '#5236F7' : '#F2F3F5',
+            color: statusFilter === 'declined' ? 'white' : '#363B4D',
+            fontWeight: 500,
+            boxShadow: 'none',
+            '&:hover': {
+              backgroundColor: statusFilter === 'declined' ? '#5236F7' : '#E5E7EB',
+              boxShadow: 'none'
+            }
+          }}
+        >
+          דחו
+        </Button>
+      </Stack>
+
+      {/* Search Bar */}
+      <TextField
+        fullWidth
+        placeholder="חיפוש אורח..."
+        variant="outlined"
+        value={searchTerm}
+        onChange={(e) => {
+          setSearchTerm(e.target.value);
+          setPage(0);
+        }}
+        InputProps={{
+          startAdornment: (
+            <InputAdornment position="start">
+              <SearchIcon />
+            </InputAdornment>
+          ),
+        }}
+        size="small"
+        sx={{
+          mb: 3,
+          '& .MuiOutlinedInput-root': {
+            borderRadius: 3,
+          }
+        }}
+      />
       
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
@@ -316,12 +365,23 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
         </Box>
       ) : (
         <>
-          <TableContainer sx={{ width: '100%', overflow: 'auto' }}>
+          <TableContainer 
+            sx={{ 
+              width: '100%', 
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 2,
+              overflow: 'hidden'
+            }}
+          >
             <Table 
               ref={tableRef}
               stickyHeader 
               aria-label="sticky table" 
-              sx={{ borderCollapse: 'separate', borderSpacing: 0 }}
+              sx={{ 
+                borderCollapse: 'separate', 
+                borderSpacing: 0
+              }}
             >
               <TableHead>
                 <TableRow sx={{ 
@@ -355,18 +415,23 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
               <TableBody>
                 {filteredGuests.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={columns.length} align="center">
-                      {searchTerm ? 'לא נמצאו תוצאות' : 'אין מוזמנים'}
+                    <TableCell colSpan={columns.length} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
+                      <Typography variant="body1" color="text.secondary" sx={{ py: 4 }}>
+                        {searchTerm ? 'לא נמצאו תוצאות' : 'אין מוזמנים'}
+                      </Typography>
                     </TableCell>
                   </TableRow>
                 ) : (
                   sortedGuests
                     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                    .map((guest) => (
+                    .map((guest, index) => (
                       <TableRow 
                         hover 
                         key={guest._id} 
                         sx={{ 
+                          backgroundColor: 'white',
+                          borderBottom: index < Math.min(rowsPerPage, filteredGuests.length - page * rowsPerPage) - 1 ? '1px solid' : 'none',
+                          borderBottomColor: 'divider',
                           '&:last-child td, &:last-child th': { 
                             borderBottom: 0 
                           }
@@ -378,7 +443,8 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
                             align={column.align || 'right'}
                             sx={{ 
                               width: column.width,
-                              minWidth: 80 
+                              minWidth: 80,
+                              backgroundColor: 'white'
                             }}
                           >
                             {column.id === 'name' ? (
@@ -449,46 +515,43 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
               </TableBody>
             </Table>
           </TableContainer>
-          <TablePagination
-            sx={{ 
-              borderTop: '1px solid',
-              borderTopColor: 'divider',
-              '.MuiTablePagination-toolbar': {
-                paddingLeft: 1
-              }
-            }}
-            rowsPerPageOptions={[5, 10, 25, 50]}
-            component="div"
-            count={filteredGuests.length}
-            rowsPerPage={rowsPerPage}
-            page={page}
-            onPageChange={handleChangePage}
-            onRowsPerPageChange={handleChangeRowsPerPage}
-            labelRowsPerPage="שורות בעמוד:"
-            labelDisplayedRows={({ from, to, count }) => `${from}-${to} מתוך ${count}`}
-          />
+          
+          {/* Pagination */}
+          <Box sx={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center',
+            p: 2,
+            borderTop: '1px solid',
+            borderColor: 'divider'
+          }}>
+            <Typography variant="body2" color="text.secondary">
+              מציג {page * rowsPerPage + 1}-{Math.min((page + 1) * rowsPerPage, filteredGuests.length)} מתוך {filteredGuests.length}
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => setPage(page - 1)}
+                disabled={page === 0}
+                sx={{ borderRadius: 2 }}
+              >
+                הקודם
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => setPage(page + 1)}
+                disabled={(page + 1) * rowsPerPage >= filteredGuests.length}
+                sx={{ borderRadius: 2 }}
+              >
+                הבא
+              </Button>
+            </Box>
+          </Box>
         </>
       )}
 
-      <Menu
-        anchorEl={filterAnchorEl}
-        open={Boolean(filterAnchorEl)}
-        onClose={handleFilterClose}
-        anchorOrigin={{
-          vertical: 'bottom',
-          horizontal: 'right',
-        }}
-        transformOrigin={{
-          vertical: 'top',
-          horizontal: 'right',
-        }}
-      >
-        <MenuItem onClick={() => handleStatusFilter('all')}>הכל</MenuItem>
-        <MenuItem onClick={() => handleStatusFilter('pending')}>לא ענה</MenuItem>
-        <MenuItem onClick={() => handleStatusFilter('confirmed')}>מגיע</MenuItem>
-        <MenuItem onClick={() => handleStatusFilter('declined')}>לא מגיע</MenuItem>
-        <MenuItem onClick={() => handleStatusFilter('maybe')}>אולי</MenuItem>
-      </Menu>
     </Box>
   );
 } 
