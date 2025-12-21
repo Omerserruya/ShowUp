@@ -78,7 +78,10 @@ def list_guests(
         status=status,
     )
     if return_total:
-        return PaginatedResponse(total=total, page=page, page_size=page_size, items=items)
+        # Convert Guest models to GuestOut schemas explicitly
+        from app.schemas.schemas import GuestOut
+        guest_outs = [GuestOut.model_validate(item) for item in items]
+        return PaginatedResponse(total=total, page=page, page_size=page_size, items=guest_outs)
     return items
 
 
@@ -106,6 +109,11 @@ def get_guest_stats(
         Guest.event_id == str(event_id)
     ).scalar()
     total = int(total_result) if total_result else 0
+    
+    # Total guests: count of guest records (number of invitations)
+    total_guests = db.query(Guest).filter(
+        Guest.event_id == str(event_id)
+    ).count()
     
     # Confirmed: sum of guest_count if exists, otherwise import_count, for attending guests
     confirmed_result = db.query(
@@ -136,6 +144,7 @@ def get_guest_stats(
     
     return GuestStatsOut(
         total=total,
+        total_guests=total_guests,
         confirmed=confirmed,
         declined=declined,
         pending=pending

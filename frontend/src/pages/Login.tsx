@@ -12,7 +12,6 @@ import {
   MenuItem,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-import PhoneIcon from '@mui/icons-material/Phone';
 import { useUser } from '../contexts/UserContext';
 import { styled } from '@mui/material/styles';
 import Card from '@mui/material/Card';
@@ -206,7 +205,7 @@ const Login = () => {
         }
         
         setOtpError('');
-        navigate('/home');
+        navigate('/overview');
       } else {
         if (data.error === 'too_many_attempts') {
           setOtpError('יותר מדי ניסיונות. אנא נסה שוב מאוחר יותר');
@@ -350,12 +349,12 @@ const Login = () => {
           xs: 'transparent',
           md: 'linear-gradient(135deg, rgba(147, 197, 253, 0.15) 0%, rgba(191, 219, 254, 0.15) 50%, rgba(219, 234, 254, 0.15) 100%)',
         },
-        py: { xs: 4, md: 8 },
-        px: { xs: 2, md: 0 },
+        py: { xs: 0, md: 8 },
+        px: { xs: 0, md: 0 },
         }}
       >
-      <Container component="main" maxWidth="xs">
-        <StyledCard>
+      <Container component="main" maxWidth={false} sx={{ width: '100%', px: { xs: 0, sm: 3 }, m: { xs: 0, sm: 'auto' }, maxWidth: { xs: '100%', sm: '444px' } }}>
+        <StyledCard sx={{ m: { xs: 0, sm: 0 }, borderRadius: { xs: 0, sm: 16 } }}>
           <CardContent>
             <Box
               sx={{
@@ -365,17 +364,17 @@ const Login = () => {
                 mb: 3,
               }}
             >
-              <IconButton
+              <Box
+                component="img"
+                src="/logo.png"
+                alt="ShowUp Logo"
                 sx={{
-                  bgcolor: 'primary.main',
-                  color: 'white',
-                  '&:hover': { bgcolor: 'primary.dark' },
+                  height: { xs: 60, sm: 80 },
+                  width: 'auto',
                   mb: 2,
+                  objectFit: 'contain',
                 }}
-                size="large"
-              >
-                <PhoneIcon />
-              </IconButton>
+              />
               <Typography component="h1" variant="h5" fontWeight="bold">
                 {showOtpScreen ? 'אימות קוד OTP' : 'התחברות'}
               </Typography>
@@ -414,7 +413,9 @@ const Login = () => {
                     value={formData.countryCode}
                     onChange={(e) => setFormData({ ...formData, countryCode: e.target.value as string })}
                     sx={(theme) => ({
-                      minWidth: 110,
+                      minWidth: { xs: 90, sm: 110 },
+                      width: { xs: 90, sm: 110 },
+                      flexShrink: 0,
                       '& .MuiOutlinedInput-root': {
                         borderRadius: 1.5,
                         height: 40,
@@ -433,12 +434,15 @@ const Login = () => {
                           borderColor: '#3b82f6',
                           boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
                         },
+                        '& .MuiSelect-select': {
+                          fontSize: { xs: 12, sm: 13 },
+                        },
                       },
                     })}
                     SelectProps={{
                       renderValue: (value) => (value as string) || '+972',
                     }}
-                    inputProps={{ style: { direction: 'rtl', textAlign: 'right', fontSize: 13 } }}
+                    inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
                   >
                     {countryOptions.map((option) => (
                       <MenuItem key={option.code + option.dialCode} value={option.dialCode}>
@@ -537,9 +541,12 @@ const Login = () => {
                   sx={{
                     display: 'flex',
                     justifyContent: 'center',
-                    gap: 1.5,
+                    gap: { xs: 1, sm: 1 },
                     mb: 2,
                     direction: 'ltr',
+                    width: { xs: '100%', sm: 'auto' },
+                    flexWrap: { xs: 'nowrap', sm: 'nowrap' },
+                    px: { xs: 1, sm: 0 },
                     '& *': {
                       direction: 'ltr !important' as any,
                     },
@@ -560,18 +567,22 @@ const Login = () => {
                         style: {
                           direction: 'ltr',
                           textAlign: 'center',
-                          fontSize: '24px',
                           fontWeight: 600,
-                          padding: '12px',
                           unicodeBidi: 'bidi-override',
                         },
                       }}
                       sx={(theme) => ({
-                        width: 56,
+                        width: { xs: 48, sm: 50 },
+                        minWidth: { xs: 48, sm: 50 },
+                        flexShrink: 0,
                         direction: 'ltr !important',
+                        '& .MuiInputBase-input': {
+                          fontSize: { xs: '20px', sm: '22px' },
+                          padding: { xs: '8px', sm: '10px' },
+                        },
                         '& .MuiOutlinedInput-root': {
                           borderRadius: 1.5,
-                          height: 56,
+                          height: { xs: 52, sm: 50 },
                           direction: 'ltr !important',
                           bgcolor: theme.palette.mode === 'dark'
                             ? theme.palette.background.paper

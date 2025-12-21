@@ -523,7 +523,7 @@ export default function EventWizard() {
       try {
         setPaymentLoading(true);
         await createEvent();
-        navigate('/home');
+        navigate('/overview');
         return;
       } catch (error) {
         setPaymentErrors({ form: 'שגיאה ביצירת האירוע. אנא נסו שוב.' });

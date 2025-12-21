@@ -142,6 +142,7 @@ function Guests() {
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
   const [guestNotes, setGuestNotes] = useState<Record<string, string>>({});
   const [refreshKey, setRefreshKey] = useState(0);
+  const [statsRefreshKey, setStatsRefreshKey] = useState(0);
 
   // Determine if we need to fetch all guests (when filtering by status)
   // If filtering by status (not 'all'), fetch all matching guests without pagination
@@ -162,18 +163,18 @@ function Guests() {
     shouldFetchAll ? statusFilter : undefined // Pass status filter when fetching filtered results
   );
 
-  // Fetch stats from API
-  const { stats, loading: statsLoading } = useOverviewStats();
+  // Fetch stats from API - only refresh when explicitly needed (not on filter changes)
+  const { stats, loading: statsLoading } = useOverviewStats(statsRefreshKey);
   
-  // Use total from API when filtering, otherwise use stats.total
-  const totalForDisplay = shouldFetchAll && totalGuestsFromAPI > 0 ? totalGuestsFromAPI : (stats?.total || 0);
+  // Use total from API when filtering, otherwise use stats.total_guests (number of invitations)
+  const totalForDisplay = shouldFetchAll && totalGuestsFromAPI > 0 ? totalGuestsFromAPI : (stats?.total_guests || 0);
 
   // Map API guests to component format
   const guests = apiGuests.map(mapGuestFromAPI);
 
   // Calculate statistics from API stats (which now return correct sums)
-  const totalGuests = stats?.total || 0; // Sum of import_count for all guests
-  const totalInvitedPeople = stats?.total || 0; // Sum of import_count (same as total)
+  const totalGuests = stats?.total_guests || 0; // Count of guest records (number of invitations)
+  const totalInvitedPeople = stats?.total || 0; // Sum of import_count (total people invited)
   const confirmedGuests = stats?.approved || 0; // Sum of guest_count (or import_count) for confirmed
   const confirmedPeople = stats?.approved || 0; // Same as confirmedGuests
   const pendingGuests = stats?.pending || 0; // Count of pending guests
@@ -217,6 +218,8 @@ function Guests() {
       setSnackbar({ open: true, message: 'סטטוס עודכן בהצלחה', severity: 'success' });
       // Trigger refresh by updating refreshKey
       setRefreshKey(prev => prev + 1);
+      // Also refresh stats since status changed
+      setStatsRefreshKey(prev => prev + 1);
     } catch (error) {
       console.error('Error updating guest status:', error);
       setSnackbar({ open: true, message: 'שגיאה בעדכון הסטטוס', severity: 'error' });
@@ -237,6 +240,8 @@ function Guests() {
       setSnackbar({ open: true, message: 'אורח נמחק בהצלחה', severity: 'success' });
       // Trigger refresh by updating refreshKey
       setRefreshKey(prev => prev + 1);
+      // Also refresh stats since guest was deleted
+      setStatsRefreshKey(prev => prev + 1);
     } catch (error) {
       console.error('Error deleting guest:', error);
       setSnackbar({ open: true, message: 'שגיאה במחיקת האורח', severity: 'error' });
@@ -262,8 +267,9 @@ function Guests() {
     }
   }, []);
 
-  // Show loading state
-  if (guestsLoading || statsLoading) {
+  // Show loading state only on initial load, not when filtering
+  const isInitialLoad = guestsLoading && apiGuests.length === 0;
+  if (isInitialLoad && statsLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
         <CircularProgress />
@@ -1023,7 +1029,15 @@ function Guests() {
                 </TableRow>
               </TableHead>
           <TableBody>
-            {filteredGuests.length === 0 ? (
+            {guestsLoading ? (
+              <TableRow>
+                <TableCell colSpan={hasTableNumbers ? 9 : 8} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
+                    <CircularProgress size={40} />
+                  </Box>
+                </TableCell>
+              </TableRow>
+            ) : filteredGuests.length === 0 ? (
               <TableRow>
                     <TableCell colSpan={hasTableNumbers ? 9 : 8} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
                       <Typography variant="body1" color="text.secondary" sx={{ py: 4 }}>
@@ -1415,7 +1429,13 @@ function Guests() {
 
           {/* Guest Cards without widget */}
           <Grid container spacing={2}>
-            {filteredGuests.length === 0 ? (
+            {guestsLoading ? (
+              <Grid item xs={12}>
+                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 8 }}>
+                  <CircularProgress size={40} />
+                </Box>
+              </Grid>
+            ) : filteredGuests.length === 0 ? (
               <Grid item xs={12}>
                 <Box sx={{ p: 4, textAlign: 'center' }}>
                   <Typography variant="body1" color="text.secondary">

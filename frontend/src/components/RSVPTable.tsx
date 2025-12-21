@@ -313,7 +313,7 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
             setStatusFilter('declined');
             setPage(0);
           }}
-          sx={{ 
+        sx={{
             borderRadius: 3,
             minWidth: 80,
             px: 2,
@@ -327,37 +327,37 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
               backgroundColor: statusFilter === 'declined' ? '#5236F7' : '#E5E7EB',
               boxShadow: 'none'
             }
-          }}
-        >
+        }}
+      >
           דחו
         </Button>
       </Stack>
 
       {/* Search Bar */}
-      <TextField
-        fullWidth
-        placeholder="חיפוש אורח..."
-        variant="outlined"
-        value={searchTerm}
+        <TextField
+          fullWidth
+          placeholder="חיפוש אורח..."
+          variant="outlined"
+          value={searchTerm}
         onChange={(e) => {
           setSearchTerm(e.target.value);
           setPage(0);
         }}
-        InputProps={{
-          startAdornment: (
-            <InputAdornment position="start">
-              <SearchIcon />
-            </InputAdornment>
-          ),
-        }}
-        size="small"
-        sx={{
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon />
+              </InputAdornment>
+            ),
+          }}
+          size="small"
+          sx={{
           mb: 3,
-          '& .MuiOutlinedInput-root': {
+            '& .MuiOutlinedInput-root': {
             borderRadius: 3,
           }
-        }}
-      />
+          }}
+        />
       
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
@@ -418,7 +418,7 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
                   <TableRow>
                     <TableCell colSpan={columns.length} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
                       <Typography variant="body1" color="text.secondary" sx={{ py: 4 }}>
-                        {searchTerm ? 'לא נמצאו תוצאות' : 'אין מוזמנים'}
+                      {searchTerm ? 'לא נמצאו תוצאות' : 'אין מוזמנים'}
                       </Typography>
                     </TableCell>
                   </TableRow>
@@ -523,7 +523,7 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
             justifyContent: 'space-between', 
             alignItems: 'center',
             p: 2,
-            borderTop: '1px solid',
+              borderTop: '1px solid',
             borderColor: 'divider'
           }}>
             <Typography variant="body2" color="text.secondary">

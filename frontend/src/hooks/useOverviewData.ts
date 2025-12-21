@@ -6,7 +6,8 @@ export interface RSVPStats {
   approved: number;
   declined: number;
   pending: number;
-  total: number;
+  total: number; // Sum of import_count (total people invited)
+  total_guests: number; // Count of guest records (number of invitations)
 }
 
 export interface DailyResponseData {
@@ -27,14 +28,15 @@ export interface DailyResponses {
   milestones: Milestone[];
 }
 
-export function useOverviewStats() {
+export function useOverviewStats(refreshKey?: number) {
   const { selectedEvent } = useEvent();
   const [stats, setStats] = useState<RSVPStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const eventId = selectedEvent?.id;
 
   useEffect(() => {
-    if (!selectedEvent?.id) {
+    if (!eventId) {
       setLoading(false);
       return;
     }
@@ -42,9 +44,18 @@ export function useOverviewStats() {
     setLoading(true);
     setError(null);
 
-    fetchWithAuth(`/api/guests/stats?event_id=${selectedEvent.id}`)
-      .then(res => {
+    fetchWithAuth(`/api/guests/stats?event_id=${eventId}`)
+      .then(async res => {
         if (!res.ok) {
+          // Handle 401 specifically - might need to refresh token or redirect to login
+          if (res.status === 401) {
+            const errorData = await res.json().catch(() => ({ detail: 'Unauthorized' }));
+            console.error('Authentication error:', errorData);
+            // Clear invalid token
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('token');
+            throw new Error('Authentication failed. Please log in again.');
+          }
           throw new Error(`Failed to load stats: ${res.statusText}`);
         }
         return res.json();
@@ -54,7 +65,8 @@ export function useOverviewStats() {
           approved: data.confirmed || 0,
           declined: data.declined || 0,
           pending: data.pending || 0,
-          total: data.total || 0
+          total: data.total || 0,
+          total_guests: data.total_guests || 0
         });
         setLoading(false);
       })
@@ -67,10 +79,11 @@ export function useOverviewStats() {
           approved: 0,
           declined: 0,
           pending: 0,
-          total: 0
+          total: 0,
+          total_guests: 0
         });
       });
-  }, [selectedEvent?.id]);
+  }, [eventId, refreshKey]);
 
   return { stats, loading, error };
 }
@@ -193,8 +206,17 @@ export function useGuests(
     console.log('Fetching guests with URL:', url);
     
     fetchWithAuth(url)
-      .then(res => {
+      .then(async res => {
         if (!res.ok) {
+          // Handle 401 specifically - might need to refresh token or redirect to login
+          if (res.status === 401) {
+            const errorData = await res.json().catch(() => ({ detail: 'Unauthorized' }));
+            console.error('Authentication error:', errorData);
+            // Clear invalid token
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('token');
+            throw new Error('Authentication failed. Please log in again.');
+          }
           throw new Error(`Failed to load guests: ${res.statusText}`);
         }
         return res.json();

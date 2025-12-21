@@ -48,7 +48,7 @@ const OAuthCallback = () => {
       
       // Use a slight delay to ensure the user is set in context before navigation
       setTimeout(() => {
-        navigate('/home');
+        navigate('/overview');
       }, 500);
     } else {
       console.error('Missing required user data in OAuth callback');

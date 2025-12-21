@@ -96,7 +96,7 @@ export default function MenuContent({ onItemClick }: MenuContentProps) {
   const location = useLocation();
   const [adminOpen, setAdminOpen] = useState(false);
 
-  const isDashboardSelected = location.pathname === '/overview' || location.pathname === '/home';
+  const isDashboardSelected = location.pathname === '/overview';
 
   const menuItems = [
     { text: 'רשימת אורחים', icon: <PeopleAltIcon />, path: '/guests' },

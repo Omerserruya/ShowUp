@@ -66,18 +66,17 @@ function App() {
               <AccountProvider>
                 <EventProvider>
                   <BannerProvider>
-                    <SearchProvider>
+                  <SearchProvider>
                       {/* Inactive Event Banner - Full width, above everything (fixed position) */}
                       <InactiveEventBanner />
-                      <Layout />
-                    </SearchProvider>
+                    <Layout />
+                  </SearchProvider>
                   </BannerProvider>
                 </EventProvider>
               </AccountProvider>
             </UserProvider>
           } 
         >
-          <Route path="/home" element={<Home />} />
           <Route path="/overview" element={<Overview />} />
           <Route path="/guests" element={<Guests />} />
           <Route path="/messages" element={<Messages />} />

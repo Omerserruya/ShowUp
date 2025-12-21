@@ -20,7 +20,6 @@ function Layout() {
   const getHeaderContent = () => {
     switch (location.pathname) {
       case '/overview':
-      case '/home':
         return {
           title: 'לוח בקרה',
           subtitle: 'סקירה כללית של האירוע שלך',

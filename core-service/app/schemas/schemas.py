@@ -137,12 +137,13 @@ class PaginatedResponse(BaseModel):
     total: int
     page: int
     page_size: int
-    items: list
+    items: List[GuestOut]
 
 
 # Guest Stats Schemas
 class GuestStatsOut(BaseModel):
-    total: int
+    total: int  # Sum of import_count (total people invited)
+    total_guests: int  # Count of guest records (number of invitations)
     confirmed: int
     declined: int
     pending: int

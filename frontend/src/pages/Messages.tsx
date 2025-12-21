@@ -471,7 +471,7 @@ function Messages() {
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
                 {sentCampaigns} מתוך {totalCampaigns} נשלחו
-              </Typography>
+      </Typography>
             </Stack>
             <LinearProgress 
               variant="determinate" 
@@ -657,16 +657,16 @@ function Messages() {
                       </Stack>
                       <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
                         {campaign.name}
-                      </Typography>
+      </Typography>
                       {isPaused && (
                         <Typography variant="body2" color="warning.main" sx={{ mb: 1 }}>
                           ממתינה לאישור חידוש
-                        </Typography>
+                </Typography>
                       )}
                       {campaign.scheduleTime && (
                         <Typography variant="body2" color="text.secondary">
                           {new Date(campaign.scheduleTime).toLocaleString('he-IL')}
-                        </Typography>
+                </Typography>
                       )}
                     </Box>
                   </Stack>
@@ -683,7 +683,7 @@ function Messages() {
                    >
                      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
                        {processTemplateText(campaign.template, getTemplateVariables())}
-                     </Typography>
+                </Typography>
                    </Box>
 
                   {/* Actions */}
@@ -724,8 +724,8 @@ function Messages() {
                         >
                           שינוי זמן
                         </Button>
-                        <Button
-                          startIcon={<EditIcon />}
+                <Button
+                  startIcon={<EditIcon />}
                           onClick={() => handleEditMessage(campaign)}
                           disabled={isLoading}
                           sx={{
@@ -755,10 +755,10 @@ function Messages() {
                               marginRight: 0.5
                             }
                           }}
-                        >
+                >
                           עריכת הודעה
-                        </Button>
-                        <Button
+                </Button>
+                <Button
                           startIcon={<PauseIcon />}
                           onClick={() => handlePause(campaign)}
                           disabled={isLoading}
@@ -794,7 +794,7 @@ function Messages() {
                         </Button>
                         {campaign.status === 'scheduled' && (
                           <Button
-                            startIcon={<SendIcon />}
+                  startIcon={<SendIcon />}
                             onClick={() => handleSendNow(campaign)}
                             disabled={isLoading}
                             sx={{
@@ -816,9 +816,9 @@ function Messages() {
                                 marginLeft: 0.5
                               }
                             }}
-                          >
+                >
                             שליחה מיידית
-                          </Button>
+                </Button>
                         )}
                       </>
                     ) : (
@@ -883,7 +883,7 @@ function Messages() {
                         >
                           שינוי זמן
                         </Button>
-                        <Button
+          <Button
                           startIcon={<EditIcon />}
                           onClick={() => handleEditMessage(campaign)}
                           disabled={isLoading}
@@ -914,9 +914,9 @@ function Messages() {
                               marginRight: 0.5
                             }
                           }}
-                        >
+          >
                           עריכת הודעה
-                        </Button>
+          </Button>
                       </>
                     )}
                   </Stack>
@@ -960,7 +960,7 @@ function Messages() {
         >
           <Typography variant="body1" color="text.secondary">
             אין קמפיינים להצגה
-          </Typography>
+      </Typography>
         </Paper>
       )}
 
@@ -987,15 +987,15 @@ function Messages() {
                 <Alert severity="info">
                   שים לב: שינוי הזמן ישפיע על כל המוזמנים. הקמפיין יישלח בזמן החדש שתבחר.
                 </Alert>
-                <TextField
+              <TextField
                   type="datetime-local"
                   label="תאריך ושעת שליחה"
                   value={editedTime}
                   onChange={(e) => setEditedTime(e.target.value)}
-                  fullWidth
+                fullWidth
                   InputLabelProps={{ shrink: true }}
                   disabled={saving}
-                />
+              />
                 {editingCampaign && (
                   <Typography variant="body2" color="text.secondary">
                     זמן נוכחי: {editingCampaign.scheduleTime ? new Date(editingCampaign.scheduleTime).toLocaleString('he-IL') : 'לא מתוזמן'}
@@ -1076,13 +1076,13 @@ function Messages() {
                       {processTemplateText(sendNowCampaign.template, getTemplateVariables())}
                     </Typography>
                   </Box>
-                <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" color="text.secondary">
                   ההודעה תישלח ל-<strong>{sendNowCampaign.recipientCount}</strong> מוזמנים עכשיו.
-                </Typography>
+              </Typography>
                 {sendNowCampaign.scheduleTime && (
-                  <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" color="text.secondary">
                     זמן מתוכנן: {new Date(sendNowCampaign.scheduleTime).toLocaleString('he-IL')}
-                  </Typography>
+              </Typography>
                 )}
               </>
             )}
@@ -1115,4 +1115,4 @@ function Messages() {
   );
 }
 
-export default Messages;
+export default Messages; 
