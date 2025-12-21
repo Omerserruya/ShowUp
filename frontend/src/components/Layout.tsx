@@ -4,12 +4,14 @@ import { Outlet, Navigate, useLocation } from 'react-router-dom';
 import SideMenu from './SideMenuCustom/SideMenu';
 import Header from './Header';
 import { useUser } from '../contexts/UserContext';
+import { useBanner } from '../contexts/BannerContext';
 
 function Layout() {
   const { user, loading } = useUser();
   const location = useLocation();
   const theme = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { isBannerVisible } = useBanner();
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -67,7 +69,7 @@ function Layout() {
     return <Navigate to="/login" replace />;
   }
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+    <Box sx={{ display: 'flex', minHeight: '100vh', pt: isBannerVisible ? '48px' : 0 }}>
       {/* Sidebar - Desktop permanent, Mobile drawer */}
       <SideMenu mobileOpen={mobileOpen} onMobileClose={handleDrawerToggle} />
       

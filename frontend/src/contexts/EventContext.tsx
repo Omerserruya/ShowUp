@@ -11,6 +11,7 @@ export interface Event {
   type?: 'wedding' | 'birthday' | 'corporate' | 'custom';
   imageUrl?: string;
   rsvpDeadline?: string;
+  active?: boolean;
   createdAt: string;
   updatedAt?: string;
 }

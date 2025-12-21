@@ -115,15 +115,20 @@ def ensure_tables(conn: psycopg2.extensions.connection):
 
 
 def fetch_and_mark_due(conn: psycopg2.extensions.connection) -> Sequence[Tuple]:
-    """Atomically claim due campaigns by setting status=processing and return them."""
+    """Atomically claim due campaigns by setting status=processing and return them.
+    Only processes campaigns for events where active = true."""
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
             UPDATE campaigns
             SET status = 'processing'
             WHERE id IN (
-              SELECT id FROM campaigns
-              WHERE status = 'pending' AND schedule_time IS NOT NULL AND schedule_time <= NOW()
+              SELECT c.id FROM campaigns c
+              INNER JOIN events e ON c.event_id = e.id
+              WHERE c.status = 'pending' 
+                AND c.schedule_time IS NOT NULL 
+                AND c.schedule_time <= NOW()
+                AND e.active = true
               FOR UPDATE SKIP LOCKED
             )
             RETURNING id, event_id, name, template, channel, schedule_time, status

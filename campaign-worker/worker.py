@@ -50,6 +50,12 @@ def process_campaign(conn, channel, campaign_id: str):
         log_json(logger, logging.ERROR, "Event not found", campaign_id=campaign_id, event_id=event_id)
         return
     
+    # Check if event is active - don't send campaigns for inactive events
+    if not event_data.get("active", True):
+        log_json(logger, logging.INFO, "Event is inactive, skipping campaign", 
+                 campaign_id=campaign_id, event_id=event_id)
+        return
+    
     # Log event data including inviters for debugging
     log_json(logger, logging.INFO, "Fetched event data", 
              event_id=event_id, 

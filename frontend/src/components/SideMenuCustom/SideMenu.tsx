@@ -16,6 +16,7 @@ import ListItemText from '@mui/material/ListItemText';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import InfoRoundedIcon from '@mui/icons-material/InfoRounded';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useBanner } from '../../contexts/BannerContext';
 
 const drawerWidth = 280;
 
@@ -44,6 +45,7 @@ export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenu
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useTheme();
+  const { isBannerVisible } = useBanner();
 
   const bottomMenuItems = [
     { text: 'הגדרות', icon: <SettingsRoundedIcon />, path: '/setting' },
@@ -163,7 +165,9 @@ export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenu
             backgroundColor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
             borderRight: '1px solid',
             borderColor: 'divider',
-            width: drawerWidth
+            width: drawerWidth,
+            zIndex: 1200,
+            pt: isBannerVisible ? '48px' : 0,
           }
         }}
       >

@@ -1,11 +1,14 @@
 import React, { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { Box } from '@mui/material';
 import { UserProvider } from './contexts/UserContext';
 import { EventProvider } from './contexts/EventContext';
 import { AccountProvider } from './contexts/AccountContext';
 import { SearchProvider } from './contexts/SearchContext';
 import ThemeProvider from './theme/ThemeProvider';
 import Layout from './components/Layout';
+import InactiveEventBanner from './components/InactiveEventBanner';
+import { BannerProvider } from './contexts/BannerContext';
 import Home from './pages/Home';
 import Overview from './pages/Overview';
 import Guests from './pages/Guests';
@@ -62,9 +65,13 @@ function App() {
             <UserProvider>
               <AccountProvider>
                 <EventProvider>
-                  <SearchProvider>
-                    <Layout />
-                  </SearchProvider>
+                  <BannerProvider>
+                    <SearchProvider>
+                      {/* Inactive Event Banner - Full width, above everything (fixed position) */}
+                      <InactiveEventBanner />
+                      <Layout />
+                    </SearchProvider>
+                  </BannerProvider>
                 </EventProvider>
               </AccountProvider>
             </UserProvider>
