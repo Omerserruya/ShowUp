@@ -162,7 +162,8 @@ export function useGuests(
   pageSize: number = 10, 
   searchTerm: string = '',
   orderBy: 'last_response' | 'created_at' = 'last_response',
-  onlyWithResponses: boolean = true
+  onlyWithResponses: boolean = true,
+  statusFilter?: string
 ) {
   const { selectedEvent } = useEvent();
   const [guests, setGuests] = useState<any[]>([]);
@@ -179,11 +180,16 @@ export function useGuests(
     setLoading(true);
     setError(null);
 
-    const searchParam = searchTerm ? `&search=${encodeURIComponent(searchTerm)}` : '';
+    // Remove refresh suffix from searchTerm before sending to API
+    const cleanSearchTerm = searchTerm.replace(/_refresh_\d+$/, '');
+    const searchParam = cleanSearchTerm ? `&search=${encodeURIComponent(cleanSearchTerm)}` : '';
     const orderByParam = orderBy ? `&order_by=${orderBy}` : '';
     const onlyWithResponsesParam = onlyWithResponses ? `&only_with_responses=true` : '';
+    const statusParam = statusFilter && statusFilter !== 'all' ? `&status=${encodeURIComponent(statusFilter)}` : '';
+    // Request total count when filtering by status or when pageSize is large (fetching all)
+    const returnTotalParam = (statusFilter && statusFilter !== 'all') || pageSize >= 200 ? `&return_total=true` : '';
     
-    const url = `/api/guests?event_id=${selectedEvent.id}&page=${page}&page_size=${pageSize}${searchParam}${orderByParam}${onlyWithResponsesParam}`;
+    const url = `/api/guests?event_id=${selectedEvent.id}&page=${page}&page_size=${pageSize}${searchParam}${orderByParam}${onlyWithResponsesParam}${statusParam}${returnTotalParam}`;
     console.log('Fetching guests with URL:', url);
     
     fetchWithAuth(url)
@@ -194,10 +200,17 @@ export function useGuests(
         return res.json();
       })
       .then(data => {
-        const guestsList = Array.isArray(data) ? data : [];
-        setGuests(guestsList);
-        // Note: API doesn't return total, so we'll use the length for now
-        setTotal(guestsList.length);
+        // Check if response is paginated (has total field) or just an array
+        if (data && typeof data === 'object' && 'items' in data && 'total' in data) {
+          // Paginated response
+          setGuests(data.items || []);
+          setTotal(data.total || 0);
+        } else {
+          // Array response (backward compatibility)
+          const guestsList = Array.isArray(data) ? data : [];
+          setGuests(guestsList);
+          setTotal(guestsList.length);
+        }
         setLoading(false);
       })
       .catch(err => {
@@ -207,7 +220,7 @@ export function useGuests(
         setGuests([]);
         setTotal(0);
       });
-  }, [selectedEvent?.id, page, pageSize, searchTerm, orderBy, onlyWithResponses]);
+  }, [selectedEvent?.id, page, pageSize, searchTerm, orderBy, onlyWithResponses, statusFilter]);
 
   return { guests, loading, error, total };
 }

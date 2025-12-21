@@ -13,7 +13,7 @@ from sqlalchemy import func, case
 
 from app.db import get_db
 from app.crud import guest as guest_crud, event as event_crud
-from app.schemas.schemas import GuestCreate, GuestOut, GuestUpdate, GuestStatsOut, DailyResponsesOut, DailyResponseData, MilestoneData
+from app.schemas.schemas import GuestCreate, GuestOut, GuestUpdate, GuestStatsOut, DailyResponsesOut, DailyResponseData, MilestoneData, PaginatedResponse
 from app.utils import paginate_params, validate_phone
 from shared.auth.deps import get_current_user_id
 from app.models.models import Guest, Campaign
@@ -50,7 +50,7 @@ def _normalize_import_counts(payload: dict) -> dict:
     return payload
 
 
-@router.get("", response_model=list[GuestOut])
+@router.get("", response_model=Union[list[GuestOut], PaginatedResponse])
 def list_guests(
     event_id: uuid.UUID = Query(...),
     db: Session = Depends(get_db),
@@ -60,12 +60,14 @@ def list_guests(
     search: Optional[str] = Query(None),
     order_by: Optional[str] = Query(None, regex="^(last_response|created_at)$"),
     only_with_responses: bool = Query(False),
+    status: Optional[str] = Query(None, regex="^(pending|confirmed|declined|maybe)$"),
+    return_total: bool = Query(False, description="Return paginated response with total count"),
 ):
     event = event_crud.get_event(db, event_id)
     if not event or not event_crud.is_owner(event, user_id):
         raise HTTPException(status_code=404, detail="Event not found or not permitted")
     page, page_size = paginate_params(page, page_size)
-    items, _ = guest_crud.list_guests(
+    items, total = guest_crud.list_guests(
         db, 
         event_id=event_id, 
         page=page, 
@@ -73,7 +75,10 @@ def list_guests(
         search=search,
         order_by=order_by,
         only_with_responses=only_with_responses,
+        status=status,
     )
+    if return_total:
+        return PaginatedResponse(total=total, page=page, page_size=page_size, items=items)
     return items
 
 
@@ -88,16 +93,42 @@ def get_guest_stats(
     if not event or not event_crud.is_owner(event, user_id):
         raise HTTPException(status_code=404, detail="Event not found or not permitted")
     
-    # Count guests by status
-    total = db.query(Guest).filter(Guest.event_id == str(event_id)).count()
-    confirmed = db.query(Guest).filter(
+    # Calculate statistics based on counts:
+    # - Total: sum of import_count for all guests
+    # - Confirmed: sum of guest_count for attending guests, or import_count if guest_count is None
+    # - Declined: sum of import_count for declined guests
+    # - Pending: count of guests with status 'invited' or 'pending'
+    
+    from sqlalchemy import func, case, or_
+    
+    # Total: sum of all import_count
+    total_result = db.query(func.sum(Guest.import_count)).filter(
+        Guest.event_id == str(event_id)
+    ).scalar()
+    total = int(total_result) if total_result else 0
+    
+    # Confirmed: sum of guest_count if exists, otherwise import_count, for attending guests
+    confirmed_result = db.query(
+        func.sum(
+            case(
+                (Guest.guest_count.isnot(None), Guest.guest_count),
+                else_=Guest.import_count
+            )
+        )
+    ).filter(
         Guest.event_id == str(event_id),
         Guest.status.in_(['attending', 'confirmed'])
-    ).count()
-    declined = db.query(Guest).filter(
+    ).scalar()
+    confirmed = int(confirmed_result) if confirmed_result else 0
+    
+    # Declined: sum of import_count for declined guests
+    declined_result = db.query(func.sum(Guest.import_count)).filter(
         Guest.event_id == str(event_id),
         Guest.status == 'declined'
-    ).count()
+    ).scalar()
+    declined = int(declined_result) if declined_result else 0
+    
+    # Pending: count of guests (not sum of counts)
     pending = db.query(Guest).filter(
         Guest.event_id == str(event_id),
         Guest.status.in_(['invited', 'pending'])

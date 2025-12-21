@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Typography,
@@ -34,7 +34,10 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Checkbox
+  Checkbox,
+  CircularProgress,
+  Snackbar,
+  Alert
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -55,6 +58,9 @@ import {
   Warning as WarningIcon,
   Send as SendIcon
 } from '@mui/icons-material';
+import { useGuests, useOverviewStats } from '../hooks/useOverviewData';
+import { useEvent } from '../contexts/EventContext';
+import { fetchWithAuth } from '../utils/fetchWithAuth';
 
 // Types
 interface Guest {
@@ -62,26 +68,42 @@ interface Guest {
   name: string;
   phone: string;
   email?: string;
-  group: string;
+  group?: string;
   status: 'pending' | 'confirmed' | 'declined' | 'maybe';
   source: 'manual' | 'whatsapp' | 'excel';
   note?: string;
   confirmedCount: number; // Number of people confirmed (including the guest)
   expectedCount?: number; // Expected number of guests
   tableNumber?: number; // Table number
+  lastResponse?: Date;
 }
 
-// Mock data
-const mockGuests: Guest[] = [
-  { _id: '1', name: 'דני כהן', phone: '050-1234567', email: 'danny.cohen@gmail.com', group: 'משפחת כהן', status: 'confirmed', source: 'manual', note: 'אלרגי לבוטנים', confirmedCount: 3, expectedCount: 4, tableNumber: 5 },
-  { _id: '2', name: 'שירה לוי', phone: '052-9876543', email: 'shira.levi@gmail.com', group: 'חברים', status: 'confirmed', source: 'whatsapp', confirmedCount: 2, expectedCount: 2 },
-  { _id: '3', name: 'יוסי מזרחי', phone: '054-5551234', email: 'yossi.m@gmail.com', group: 'משפחת כהן', status: 'pending', source: 'excel', note: 'צריך אישור נוסף', confirmedCount: 0, expectedCount: 2 },
-  { _id: '4', name: 'מיכל אברהם', phone: '053-7778899', email: 'michal.a@gmail.com', group: 'חברים', status: 'declined', source: 'manual', note: 'לא יכול להגיע', confirmedCount: 0, expectedCount: 1 },
-  { _id: '5', name: 'אבי ישראלי', phone: '050-3334455', email: 'avi.israeli@gmail.com', group: 'משפחת כהן', status: 'confirmed', source: 'whatsapp', note: 'יבוא עם בן/בת זוג', confirmedCount: 4, expectedCount: 4, tableNumber: 3 },
-  { _id: '6', name: 'שרה כהן', phone: '052-7654321', email: 'sara.cohen@gmail.com', group: 'חברים', status: 'pending', source: 'whatsapp', confirmedCount: 0, expectedCount: 1 },
-  { _id: '7', name: 'רחל אברהם', phone: '053-4567890', email: 'rachel.a@gmail.com', group: 'חברים', status: 'maybe', source: 'manual', confirmedCount: 1, expectedCount: 2 },
-  { _id: '8', name: 'יעקב יעקובי', phone: '050-1112233', email: 'yaakov.y@gmail.com', group: 'משפחת כהן', status: 'confirmed', source: 'excel', confirmedCount: 2, expectedCount: 2, tableNumber: 7 },
-];
+// Map API guest to component format
+function mapGuestFromAPI(apiGuest: any): Guest {
+  const statusMap: Record<string, 'pending' | 'confirmed' | 'declined' | 'maybe'> = {
+    'invited': 'pending',
+    'pending': 'pending',
+    'attending': 'confirmed',
+    'confirmed': 'confirmed',
+    'declined': 'declined',
+    'maybe': 'maybe'
+  };
+
+  return {
+    _id: apiGuest.id,
+    name: apiGuest.name,
+    phone: apiGuest.phone,
+    email: apiGuest.email,
+    group: apiGuest.group || '',
+    status: statusMap[apiGuest.status] || 'pending',
+    source: 'manual' as const,
+    note: apiGuest.notes,
+    confirmedCount: apiGuest.guest_count || (apiGuest.status === 'confirmed' || apiGuest.status === 'attending' ? apiGuest.import_count || 1 : 0),
+    expectedCount: apiGuest.import_count,
+    tableNumber: apiGuest.table_number,
+    lastResponse: apiGuest.last_response ? new Date(apiGuest.last_response) : undefined
+  };
+}
 
 // Status colors
 const statusColors = {
@@ -105,6 +127,7 @@ const EVENT_CAPACITY = 200;
 function Guests() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const { selectedEvent } = useEvent();
   
   // State
   const [guestModalOpen, setGuestModalOpen] = useState(false);
@@ -116,37 +139,161 @@ function Guests() {
   const [page, setPage] = useState(0);
   const [rowsPerPage] = useState(25);
   const [expandedGuests, setExpandedGuests] = useState<Set<string>>(new Set());
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
+  const [guestNotes, setGuestNotes] = useState<Record<string, string>>({});
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  // Calculate statistics
-  const totalGuests = mockGuests.length;
-  const confirmedGuests = mockGuests.filter(g => g.status === 'confirmed').length;
-  const pendingGuests = mockGuests.filter(g => g.status === 'pending').length;
-  const totalConfirmedCount = mockGuests
-    .filter(g => g.status === 'confirmed')
-    .reduce((sum, g) => sum + g.confirmedCount, 0);
+  // Determine if we need to fetch all guests (when filtering by status)
+  // If filtering by status (not 'all'), fetch all matching guests without pagination
+  const shouldFetchAll = statusFilter !== 'all' && statusFilter !== 'withNotes';
+  const pageSizeForFetch = shouldFetchAll ? 200 : rowsPerPage; // Max allowed by API
+  const pageForFetch = shouldFetchAll ? 1 : page + 1; // Always page 1 when fetching all
+  
+  // Fetch guests from API (paginated or all if filtering)
+  // Add refreshKey to searchQuery to force refetch when needed, but remove it before API call
+  const searchQueryForAPI = searchQuery.replace(/_refresh_\d+$/, ''); // Remove any refresh suffix
+  
+  const { guests: apiGuests, loading: guestsLoading, error: guestsError, total: totalGuestsFromAPI } = useGuests(
+    pageForFetch,
+    pageSizeForFetch,
+    `${searchQueryForAPI}_refresh_${refreshKey}`, // Add refreshKey to trigger refetch
+    'created_at',
+    false, // Get all guests, not just with responses
+    shouldFetchAll ? statusFilter : undefined // Pass status filter when fetching filtered results
+  );
+
+  // Fetch stats from API
+  const { stats, loading: statsLoading } = useOverviewStats();
+  
+  // Use total from API when filtering, otherwise use stats.total
+  const totalForDisplay = shouldFetchAll && totalGuestsFromAPI > 0 ? totalGuestsFromAPI : (stats?.total || 0);
+
+  // Map API guests to component format
+  const guests = apiGuests.map(mapGuestFromAPI);
+
+  // Calculate statistics from API stats (which now return correct sums)
+  const totalGuests = stats?.total || 0; // Sum of import_count for all guests
+  const totalInvitedPeople = stats?.total || 0; // Sum of import_count (same as total)
+  const confirmedGuests = stats?.approved || 0; // Sum of guest_count (or import_count) for confirmed
+  const confirmedPeople = stats?.approved || 0; // Same as confirmedGuests
+  const pendingGuests = stats?.pending || 0; // Count of pending guests
 
   // Get unique groups from guests
-  const uniqueGroups = Array.from(new Set(mockGuests.map(guest => guest.group))).sort();
+  const uniqueGroups = Array.from(new Set(guests.map(guest => guest.group).filter(Boolean))).sort();
 
-  // Filtered guests
-  const filteredGuests = mockGuests.filter(guest => {
-    const matchesSearch = guest.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         guest.phone.includes(searchQuery) ||
-                         (guest.email && guest.email.toLowerCase().includes(searchQuery.toLowerCase()));
+  // Filtered guests (client-side filtering only for group and notes, status filtering is done server-side)
+  const filteredGuests = guests.filter(guest => {
+    // Status filtering is done server-side when statusFilter !== 'all' and !== 'withNotes'
     const matchesStatus = statusFilter === 'all' 
       ? true 
       : statusFilter === 'withNotes' 
         ? !!guest.note 
-        : guest.status === statusFilter;
+        : true; // Status already filtered by API when shouldFetchAll is true
     const matchesGroup = groupFilter === 'all' || guest.group === groupFilter;
-    return matchesSearch && matchesStatus && matchesGroup;
+    return matchesStatus && matchesGroup;
   });
 
   // Check if any guest has a table number
-  const hasTableNumbers = mockGuests.some(guest => guest.tableNumber !== undefined);
+  const hasTableNumbers = guests.some(guest => guest.tableNumber !== undefined);
+
+  // Update guest status
+  const updateGuestStatus = useCallback(async (guestId: string, newStatus: 'pending' | 'confirmed' | 'declined') => {
+    const statusMap: Record<string, string> = {
+      'pending': 'invited',
+      'confirmed': 'attending',
+      'declined': 'declined'
+    };
+
+    try {
+      const response = await fetchWithAuth(`/api/guests/${guestId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: statusMap[newStatus] })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update guest status');
+      }
+
+      setSnackbar({ open: true, message: 'סטטוס עודכן בהצלחה', severity: 'success' });
+      // Trigger refresh by updating refreshKey
+      setRefreshKey(prev => prev + 1);
+    } catch (error) {
+      console.error('Error updating guest status:', error);
+      setSnackbar({ open: true, message: 'שגיאה בעדכון הסטטוס', severity: 'error' });
+    }
+  }, []);
+
+  // Delete guest
+  const deleteGuest = useCallback(async (guestId: string) => {
+    try {
+      const response = await fetchWithAuth(`/api/guests/${guestId}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete guest');
+      }
+
+      setSnackbar({ open: true, message: 'אורח נמחק בהצלחה', severity: 'success' });
+      // Trigger refresh by updating refreshKey
+      setRefreshKey(prev => prev + 1);
+    } catch (error) {
+      console.error('Error deleting guest:', error);
+      setSnackbar({ open: true, message: 'שגיאה במחיקת האורח', severity: 'error' });
+    }
+  }, []);
+
+  // Update guest note
+  const updateGuestNote = useCallback(async (guestId: string, note: string) => {
+    try {
+      const response = await fetchWithAuth(`/api/guests/${guestId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ notes: note })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update guest note');
+      }
+
+      setSnackbar({ open: true, message: 'הערה עודכנה בהצלחה', severity: 'success' });
+    } catch (error) {
+      console.error('Error updating guest note:', error);
+      setSnackbar({ open: true, message: 'שגיאה בעדכון ההערה', severity: 'error' });
+    }
+  }, []);
+
+  // Show loading state
+  if (guestsLoading || statsLoading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  // Show error state
+  if (guestsError) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error">שגיאה בטעינת האורחים: {guestsError}</Alert>
+      </Box>
+    );
+  }
 
   return (
     <Box>
+      {/* Snackbar for notifications */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert onClose={() => setSnackbar({ ...snackbar, open: false })} severity={snackbar.severity} sx={{ width: '100%' }}>
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+
       {/* Top Section - Full Width White Background */}
       <Box
         sx={{
@@ -212,7 +359,7 @@ function Guests() {
                     }}
                   />
                   <Typography sx={{ fontSize: '0.9rem', color: '#111827' }}>
-                    {mockGuests.filter(g => g.status === 'declined').length} לא מגיעים
+                    {stats?.declined || 0} לא מגיעים
                   </Typography>
                 </Box>
 
@@ -261,7 +408,7 @@ function Guests() {
                     color: '#111827',
                   }}
                 >
-                  {totalGuests}
+                  {totalInvitedPeople}
                 </Typography>
               </Box>
             </Box>
@@ -325,7 +472,7 @@ function Guests() {
                     fontSize: { xs: '1.5rem', sm: '2.5rem' }
                   }}
                 >
-                  {totalGuests}
+                  {totalInvitedPeople}
                 </Typography>
 
               </Paper>
@@ -414,7 +561,7 @@ function Guests() {
                     fontSize: { xs: '1.5rem', sm: '2.5rem' }
                   }}
                 >
-                  {confirmedGuests}
+                  {confirmedPeople}
                 </Typography>
                 <Box
                   sx={{
@@ -471,15 +618,15 @@ function Guests() {
             gap: 2
           }}>
             <Typography variant="body1" sx={{ fontWeight: 600, fontSize: { xs: '1rem', sm: '1.25rem' } }}>
-              {EVENT_CAPACITY} / {totalConfirmedCount}
+              {totalGuests} / {EVENT_CAPACITY}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
-              קיבולת: {EVENT_CAPACITY} אורחים
+              קיבולת: {EVENT_CAPACITY} הזמנות
       </Typography>
           </Box>
           <LinearProgress
             variant="determinate"
-            value={(totalConfirmedCount / EVENT_CAPACITY) * 100}
+            value={EVENT_CAPACITY > 0 ? (totalGuests / EVENT_CAPACITY) * 100 : 0}
             sx={{
               height: 8,
               borderRadius: 4,
@@ -886,7 +1033,6 @@ function Guests() {
               </TableRow>
                 ) : (
                   filteredGuests
-                    .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                     .map((guest, index) => (
                     <TableRow 
                       key={guest._id} 
@@ -983,7 +1129,15 @@ function Guests() {
                           <IconButton size="small">
                             <EditIcon fontSize="small" />
                           </IconButton>
-                          <IconButton size="small" sx={{ color: 'error.main' }}>
+                          <IconButton 
+                            size="small" 
+                            sx={{ color: 'error.main' }}
+                            onClick={() => {
+                              if (window.confirm('האם אתה בטוח שברצונך למחוק את האורח?')) {
+                                deleteGuest(guest._id);
+                              }
+                            }}
+                          >
                             <DeleteIcon fontSize="small" />
                           </IconButton>
                         </Box>
@@ -1005,28 +1159,33 @@ function Guests() {
             borderColor: 'divider'
           }}>
             <Typography variant="body2" color="text.secondary">
-              מציג {page * rowsPerPage + 1}-{Math.min((page + 1) * rowsPerPage, filteredGuests.length)} מתוך {filteredGuests.length}
+              {shouldFetchAll 
+                ? `מציג ${filteredGuests.length} מתוך ${totalForDisplay}`
+                : `מציג ${page * rowsPerPage + 1}-${Math.min((page + 1) * rowsPerPage, totalForDisplay)} מתוך ${totalForDisplay}`
+              }
             </Typography>
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button
-                variant="outlined"
-                size="small"
-                onClick={() => setPage(page - 1)}
-                disabled={page === 0}
-                sx={{ borderRadius: 2 }}
-              >
-                הקודם
-              </Button>
-              <Button
-                variant="outlined"
-                size="small"
-                onClick={() => setPage(page + 1)}
-                disabled={(page + 1) * rowsPerPage >= filteredGuests.length}
-                sx={{ borderRadius: 2 }}
-              >
-                הבא
-              </Button>
-            </Box>
+            {!shouldFetchAll && (
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={() => setPage(page - 1)}
+                  disabled={page === 0}
+                  sx={{ borderRadius: 2 }}
+                >
+                  הקודם
+                </Button>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={() => setPage(page + 1)}
+                  disabled={(page + 1) * rowsPerPage >= totalForDisplay}
+                  sx={{ borderRadius: 2 }}
+                >
+                  הבא
+                </Button>
+              </Box>
+            )}
           </Box>
         </Paper>
       ) : (
@@ -1266,7 +1425,6 @@ function Guests() {
               </Grid>
             ) : (
               filteredGuests
-                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                 .map((guest) => {
                   const isExpanded = expandedGuests.has(guest._id);
                   const totalCount = guest.confirmedCount || guest.expectedCount || 1;
@@ -1433,6 +1591,7 @@ function Guests() {
                                       <Button
                                         variant="outlined"
                                         startIcon={<CancelIcon />}
+                                        onClick={() => updateGuestStatus(guest._id, 'declined')}
                                         sx={{
                                           flex: 1,
                                           borderRadius: 2,
@@ -1490,6 +1649,7 @@ function Guests() {
                                       <Button
                                         variant="outlined"
                                         startIcon={<CancelIcon />}
+                                        onClick={() => updateGuestStatus(guest._id, 'declined')}
                                         sx={{
                                           flex: 1,
                                           borderRadius: 2,
@@ -1516,6 +1676,7 @@ function Guests() {
                                       <Button
                                         variant="outlined"
                                         startIcon={<CheckCircleIcon />}
+                                        onClick={() => updateGuestStatus(guest._id, 'confirmed')}
                                         sx={{
                                           flex: 1,
                                           borderRadius: 2,
@@ -1545,6 +1706,7 @@ function Guests() {
                                   <Button
                                     variant="outlined"
                                     startIcon={<CheckCircleIcon />}
+                                    onClick={() => updateGuestStatus(guest._id, 'confirmed')}
                                     fullWidth
                                     sx={{
                                       borderRadius: 2,
@@ -1583,6 +1745,16 @@ function Guests() {
                                 rows={3}
                                 placeholder="הוסף הערה פנימית (רק בשבילך)"
                                 variant="outlined"
+                                value={guestNotes[guest._id] || guest.note || ''}
+                                onChange={(e) => {
+                                  setGuestNotes({ ...guestNotes, [guest._id]: e.target.value });
+                                }}
+                                onBlur={() => {
+                                  const note = guestNotes[guest._id] || '';
+                                  if (note !== (guest.note || '')) {
+                                    updateGuestNote(guest._id, note);
+                                  }
+                                }}
                                 sx={{
                                   '& .MuiOutlinedInput-root': {
                                     borderRadius: 2,
@@ -1624,28 +1796,33 @@ function Guests() {
           borderColor: 'divider'
         }}>
           <Typography variant="body2" color="text.secondary">
-            מציג {page * rowsPerPage + 1}-{Math.min((page + 1) * rowsPerPage, filteredGuests.length)} מתוך {filteredGuests.length}
+            {shouldFetchAll 
+              ? `מציג ${filteredGuests.length} מתוך ${totalForDisplay}`
+              : `מציג ${page * rowsPerPage + 1}-${Math.min((page + 1) * rowsPerPage, totalForDisplay)} מתוך ${totalForDisplay}`
+            }
           </Typography>
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button
-              variant="outlined"
-              size="small"
-              onClick={() => setPage(page - 1)}
-              disabled={page === 0}
-              sx={{ borderRadius: 2 }}
-            >
-              הקודם
-            </Button>
-            <Button
-              variant="outlined"
-              size="small"
-              onClick={() => setPage(page + 1)}
-              disabled={(page + 1) * rowsPerPage >= filteredGuests.length}
-              sx={{ borderRadius: 2 }}
-            >
-              הבא
-            </Button>
-          </Box>
+          {!shouldFetchAll && (
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => setPage(page - 1)}
+                disabled={page === 0}
+                sx={{ borderRadius: 2 }}
+              >
+                הקודם
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => setPage(page + 1)}
+                disabled={(page + 1) * rowsPerPage >= totalForDisplay}
+                sx={{ borderRadius: 2 }}
+              >
+                הבא
+              </Button>
+            </Box>
+          )}
         </Box>
         </>
       )}

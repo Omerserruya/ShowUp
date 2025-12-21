@@ -17,15 +17,34 @@ def list_guests(
     page: int,
     page_size: int,
     search: Optional[str] = None,
+    order_by: Optional[str] = None,
+    only_with_responses: bool = False,
+    status: Optional[str] = None,
 ) -> Tuple[List[Guest], int]:
     query = db.query(Guest).filter(Guest.event_id == str(event_id))
     if search:
         like = f"%{search}%"
         query = query.filter((Guest.name.ilike(like)) | (Guest.phone.ilike(like)))
+    if status:
+        # Map frontend status to backend status
+        status_map = {
+            'pending': ['invited', 'pending'],
+            'confirmed': ['attending', 'confirmed'],
+            'declined': ['declined'],
+            'maybe': ['maybe']
+        }
+        if status in status_map:
+            query = query.filter(Guest.status.in_(status_map[status]))
+    if only_with_responses:
+        query = query.filter(Guest.last_response.isnot(None))
     total = query.count()
+    # Order by
+    if order_by == 'last_response':
+        query = query.order_by(Guest.last_response.desc().nulls_last())
+    else:
+        query = query.order_by(Guest.created_at.desc())
     items = (
-        query.order_by(Guest.created_at.desc())
-        .offset((page - 1) * page_size)
+        query.offset((page - 1) * page_size)
         .limit(page_size)
         .all()
     )
@@ -80,6 +99,9 @@ def update_guest(db: Session, guest: Guest, data: GuestUpdate) -> Guest:
         guest.email = data.email
     if data.status is not None:
         guest.status = data.status
+        # If status is changed to attending/confirmed and guest_count is None, set it to import_count
+        if data.status in ['attending', 'confirmed'] and guest.guest_count is None:
+            guest.guest_count = guest.import_count
     if data.group is not None:
         guest.group = data.group
     if data.import_count is not None:
