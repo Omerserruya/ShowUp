@@ -367,11 +367,12 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
         <>
           <TableContainer 
             sx={{ 
-              width: '100%', 
+              width: { xs: 'calc(100% + 8px)', sm: '100%' }, // Extend width on mobile
               border: '1px solid',
               borderColor: 'divider',
-              borderRadius: 2,
-              overflow: 'hidden'
+              borderRadius: { xs: 0, sm: 2 },
+              overflow: 'auto',
+              mx: { xs: -1, sm: 0 } // Negative margin on mobile to extend to edges
             }}
           >
             <Table 

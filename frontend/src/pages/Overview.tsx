@@ -287,14 +287,17 @@ function Overview() {
       <Paper 
         elevation={0}
         sx={{
-          borderRadius: 2,
+          borderRadius: { xs: 0, sm: 2 },
           backgroundColor: 'white',
           boxShadow: 'none',
           border: '1px solid',
           borderColor: 'divider',
           borderWidth: '1px',
           overflow: 'hidden',
-          p: 3
+          p: { xs: 1, sm: 2, md: 3 },
+          px: { xs: 2, sm: 2, md: 3 }, // Horizontal padding
+          mx: { xs: -1, sm: 0 }, // Negative margin on mobile to extend to edges
+          width: { xs: 'calc(100% + 16px)', sm: '100%' } // Extend width on mobile
         }}
       >
         <Typography 
@@ -304,7 +307,7 @@ function Overview() {
             fontWeight: 600, 
             color: 'text.primary',
             mb: 1,
-            ml: 1
+            ml: { xs: 0, sm: 1 }
           }}
         >
           רשימת אורחים
@@ -314,7 +317,7 @@ function Overview() {
           sx={{ 
             color: 'text.secondary',
             mb: 3,
-            ml: 1
+            ml: { xs: 0, sm: 1 }
           }}
         >
           אורחים אחרונים שענו

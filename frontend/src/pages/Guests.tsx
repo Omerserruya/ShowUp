@@ -50,7 +50,10 @@ import {
   MoreVert as MoreVertIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
-  TableChart as TableChartIcon
+  TableChart as TableChartIcon,
+  ExpandMore as ExpandMoreIcon,
+  Warning as WarningIcon,
+  Send as SendIcon
 } from '@mui/icons-material';
 
 // Types
@@ -64,18 +67,20 @@ interface Guest {
   source: 'manual' | 'whatsapp' | 'excel';
   note?: string;
   confirmedCount: number; // Number of people confirmed (including the guest)
+  expectedCount?: number; // Expected number of guests
+  tableNumber?: number; // Table number
 }
 
 // Mock data
 const mockGuests: Guest[] = [
-  { _id: '1', name: 'דני כהן', phone: '050-1234567', email: 'danny.cohen@gmail.com', group: 'משפחת כהן', status: 'confirmed', source: 'manual', note: 'אלרגי לבוטנים', confirmedCount: 3 },
-  { _id: '2', name: 'שירה לוי', phone: '052-9876543', email: 'shira.levi@gmail.com', group: 'חברים', status: 'confirmed', source: 'whatsapp', confirmedCount: 2 },
-  { _id: '3', name: 'יוסי מזרחי', phone: '054-5551234', email: 'yossi.m@gmail.com', group: 'משפחת כהן', status: 'pending', source: 'excel', note: 'צריך אישור נוסף', confirmedCount: 0 },
-  { _id: '4', name: 'מיכל אברהם', phone: '053-7778899', email: 'michal.a@gmail.com', group: 'חברים', status: 'declined', source: 'manual', note: 'לא יכול להגיע', confirmedCount: 0 },
-  { _id: '5', name: 'אבי ישראלי', phone: '050-3334455', email: 'avi.israeli@gmail.com', group: 'משפחת כהן', status: 'confirmed', source: 'whatsapp', note: 'יבוא עם בן/בת זוג', confirmedCount: 4 },
-  { _id: '6', name: 'שרה כהן', phone: '052-7654321', email: 'sara.cohen@gmail.com', group: 'חברים', status: 'pending', source: 'whatsapp', confirmedCount: 0 },
-  { _id: '7', name: 'רחל אברהם', phone: '053-4567890', email: 'rachel.a@gmail.com', group: 'חברים', status: 'maybe', source: 'manual', confirmedCount: 1 },
-  { _id: '8', name: 'יעקב יעקובי', phone: '050-1112233', email: 'yaakov.y@gmail.com', group: 'משפחת כהן', status: 'confirmed', source: 'excel', confirmedCount: 2 },
+  { _id: '1', name: 'דני כהן', phone: '050-1234567', email: 'danny.cohen@gmail.com', group: 'משפחת כהן', status: 'confirmed', source: 'manual', note: 'אלרגי לבוטנים', confirmedCount: 3, expectedCount: 4, tableNumber: 5 },
+  { _id: '2', name: 'שירה לוי', phone: '052-9876543', email: 'shira.levi@gmail.com', group: 'חברים', status: 'confirmed', source: 'whatsapp', confirmedCount: 2, expectedCount: 2 },
+  { _id: '3', name: 'יוסי מזרחי', phone: '054-5551234', email: 'yossi.m@gmail.com', group: 'משפחת כהן', status: 'pending', source: 'excel', note: 'צריך אישור נוסף', confirmedCount: 0, expectedCount: 2 },
+  { _id: '4', name: 'מיכל אברהם', phone: '053-7778899', email: 'michal.a@gmail.com', group: 'חברים', status: 'declined', source: 'manual', note: 'לא יכול להגיע', confirmedCount: 0, expectedCount: 1 },
+  { _id: '5', name: 'אבי ישראלי', phone: '050-3334455', email: 'avi.israeli@gmail.com', group: 'משפחת כהן', status: 'confirmed', source: 'whatsapp', note: 'יבוא עם בן/בת זוג', confirmedCount: 4, expectedCount: 4, tableNumber: 3 },
+  { _id: '6', name: 'שרה כהן', phone: '052-7654321', email: 'sara.cohen@gmail.com', group: 'חברים', status: 'pending', source: 'whatsapp', confirmedCount: 0, expectedCount: 1 },
+  { _id: '7', name: 'רחל אברהם', phone: '053-4567890', email: 'rachel.a@gmail.com', group: 'חברים', status: 'maybe', source: 'manual', confirmedCount: 1, expectedCount: 2 },
+  { _id: '8', name: 'יעקב יעקובי', phone: '050-1112233', email: 'yaakov.y@gmail.com', group: 'משפחת כהן', status: 'confirmed', source: 'excel', confirmedCount: 2, expectedCount: 2, tableNumber: 7 },
 ];
 
 // Status colors
@@ -107,8 +112,10 @@ function Guests() {
   const [activeTab, setActiveTab] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [groupFilter, setGroupFilter] = useState('all');
   const [page, setPage] = useState(0);
   const [rowsPerPage] = useState(25);
+  const [expandedGuests, setExpandedGuests] = useState<Set<string>>(new Set());
 
   // Calculate statistics
   const totalGuests = mockGuests.length;
@@ -117,6 +124,9 @@ function Guests() {
   const totalConfirmedCount = mockGuests
     .filter(g => g.status === 'confirmed')
     .reduce((sum, g) => sum + g.confirmedCount, 0);
+
+  // Get unique groups from guests
+  const uniqueGroups = Array.from(new Set(mockGuests.map(guest => guest.group))).sort();
 
   // Filtered guests
   const filteredGuests = mockGuests.filter(guest => {
@@ -128,8 +138,12 @@ function Guests() {
       : statusFilter === 'withNotes' 
         ? !!guest.note 
         : guest.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    const matchesGroup = groupFilter === 'all' || guest.group === groupFilter;
+    return matchesSearch && matchesStatus && matchesGroup;
   });
+
+  // Check if any guest has a table number
+  const hasTableNumbers = mockGuests.some(guest => guest.tableNumber !== undefined);
 
   return (
     <Box>
@@ -142,163 +156,302 @@ function Guests() {
           px: { xs: 2, sm: 3, md: 4 }
         }}
       >
-        {/* Summary Statistics - Pastel cards */}
-        <Grid container spacing={2} sx={{ mb: 3 }}>
-          <Grid item xs={4}>
-            <Paper
+        {/* Summary Statistics */}
+        {isMobile ? (
+          <Paper
+            sx={{
+              p: 3,
+              mb: 3,
+              borderRadius: 2,
+              background: 'linear-gradient(to left, #faf5ff, #eff6ff)',
+              boxShadow: 'none',
+              borderRight: '4px solid #5236F7',
+            }}
+          >
+            <Box
               sx={{
-                p: { xs: 1.5, sm: 2.5 },
-                backgroundColor: alpha('#90caf9', 0.2),
-                borderRadius: 3,
-                boxShadow: 'none',
-                border: '1px solid',
-                borderColor: alpha('#1976d2', 0.2),
-                position: 'relative',
-                minHeight: { xs: 70, sm: 100 }
+                display: 'flex',
+                alignItems: 'stretch',
+                width: '100%',
               }}
             >
-              <Typography 
-                variant="h3"
-                sx={{ 
-                  fontWeight: 'bold', 
-                  color: '#1565c0',
-                  position: 'absolute',
-                  top: { xs: 12, sm: 16 },
-                  left: { xs: 12, sm: 16 },
-                  fontSize: { xs: '1.5rem', sm: '2.5rem' }
-                }}
-              >
-                {totalGuests}
-              </Typography>
+              {/* LEFT SIDE – Breakdown */}
               <Box
                 sx={{
-                  position: 'absolute',
-                  bottom: { xs: 8, sm: 16 },
-                  right: { xs: 8, sm: 16 },
+                  flex: 1,
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: { xs: 0.5, sm: 1 },
-                  flexDirection: 'row'
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  gap: 1.5,
+                  pl: 2,
                 }}
               >
+                {/* Coming */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Box
+                    sx={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: '50%',
+                      backgroundColor: '#2e7d32',
+                    }}
+                  />
+                  <Typography sx={{ fontSize: '0.9rem', color: '#111827' }}>
+                    {confirmedGuests} מגיעים
+                  </Typography>
+                </Box>
+
+                {/* Not coming */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Box
+                    sx={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: '50%',
+                      backgroundColor: '#c62828',
+                    }}
+                  />
+                  <Typography sx={{ fontSize: '0.9rem', color: '#111827' }}>
+                    {mockGuests.filter(g => g.status === 'declined').length} לא מגיעים
+                  </Typography>
+                </Box>
+
+                {/* No response */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Box
+                    sx={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: '50%',
+                      backgroundColor: '#f57c00',
+                    }}
+                  />
+                  <Typography sx={{ fontSize: '0.9rem', color: '#111827' }}>
+                    {pendingGuests} ללא מענה
+                  </Typography>
+                </Box>
+              </Box>
+
+              {/* RIGHT SIDE – Total */}
+              <Box
+                sx={{
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  alignItems: 'flex-end',
+                  pr: 2,
+                }}
+              >
+                <Typography
+                  sx={{
+                    fontSize: '0.9rem',
+                    color: '#6b7280',
+                    mb: 0.5,
+                  }}
+                >
+                  סה״כ מוזמנים
+                </Typography>
+
+                <Typography
+                  sx={{
+                    fontWeight: 'bold',
+                    fontSize: '3rem',
+                    lineHeight: 1,
+                    color: '#111827',
+                  }}
+                >
+                  {totalGuests}
+                </Typography>
+              </Box>
+            </Box>
+          </Paper>
+
+        ) : (
+          /* Desktop: Three separate cards */
+          <Grid container spacing={2} sx={{ mb: 3 }}>
+            <Grid item xs={4}>
+              <Paper
+                sx={{
+                  p: { xs: 1.5, sm: 2.5 },
+                  backgroundColor: alpha('#90caf9', 0.2),
+                  borderRadius: 3,
+                  boxShadow: 'none',
+                  border: '1px solid',
+                  borderColor: alpha('#1976d2', 0.2),
+                  position: 'relative',
+                  minHeight: { xs: 80, sm: 100 }
+                }}
+              >                <Box
+                  sx={{
+                    position: 'absolute',
+                    bottom: { xs: 8, sm: 16 },
+                    right: { xs: 8, sm: 16 },
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: { xs: 0.5, sm: 1 },
+                    flexDirection: 'row-reverse'
+                  }}
+                >
+                  <Box
+                    sx={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      backgroundColor: '#1565c0',
+                      flexShrink: 0
+                    }}
+                  />
+                  <Typography 
+                    variant="body2" 
+                    sx={{ 
+                      color: '#1565c0',
+                      fontWeight: 500,
+                      fontSize: { xs: '0.65rem', sm: '0.875rem' },
+                      lineHeight: 1.2
+                    }}
+                  >
+                    סך הכל
+                  </Typography>
+                </Box>
                 <Typography 
-                  variant="body2" 
+                  variant="h3"
                   sx={{ 
+                    fontWeight: 'bold', 
                     color: '#1565c0',
-                    fontWeight: 500,
-                    fontSize: { xs: '0.65rem', sm: '0.875rem' },
-                    lineHeight: 1.2
+                    position: 'absolute',
+                    top: { xs: 12, sm: 16 },
+                    left: { xs: 12, sm: 16 },
+                    fontSize: { xs: '1.5rem', sm: '2.5rem' }
                   }}
                 >
-                  סך הכל
+                  {totalGuests}
                 </Typography>
-                <PeopleIcon sx={{ color: '#1565c0', fontSize: { xs: 16, sm: 24 } }} />
-              </Box>
-            </Paper>
-          </Grid>
-          <Grid item xs={4}>
-            <Paper
-              sx={{
-                p: { xs: 1.5, sm: 2.5 },
-                backgroundColor: alpha('#fff59d', 0.3),
-                borderRadius: 3,
-                boxShadow: 'none',
-                border: '1px solid',
-                borderColor: alpha('#f57c00', 0.2),
-                position: 'relative',
-                minHeight: { xs: 80, sm: 100 }
-              }}
-            >
-              <Typography 
-                variant="h3"
-                sx={{ 
-                  fontWeight: 'bold', 
-                  color: '#e65100',
-                  position: 'absolute',
-                  top: { xs: 12, sm: 16 },
-                  left: { xs: 12, sm: 16 },
-                  fontSize: { xs: '1.5rem', sm: '2.5rem' }
-                }}
-              >
-                {pendingGuests}
-              </Typography>
-              <Box
+
+              </Paper>
+            </Grid>
+            <Grid item xs={4}>
+              <Paper
                 sx={{
-                  position: 'absolute',
-                  bottom: { xs: 8, sm: 16 },
-                  right: { xs: 8, sm: 16 },
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: { xs: 0.5, sm: 1 },
-                  flexDirection: 'row'
+                  p: { xs: 1.5, sm: 2.5 },
+                  backgroundColor: alpha('#fff59d', 0.3),
+                  borderRadius: 3,
+                  boxShadow: 'none',
+                  border: '1px solid',
+                  borderColor: alpha('#f57c00', 0.2),
+                  position: 'relative',
+                  minHeight: { xs: 80, sm: 100 }
                 }}
               >
                 <Typography 
-                  variant="body2" 
+                  variant="h3"
                   sx={{ 
+                    fontWeight: 'bold', 
                     color: '#e65100',
-                    fontWeight: 500,
-                    fontSize: { xs: '0.65rem', sm: '0.875rem' },
-                    lineHeight: 1.2
+                    position: 'absolute',
+                    top: { xs: 12, sm: 16 },
+                    left: { xs: 12, sm: 16 },
+                    fontSize: { xs: '1.5rem', sm: '2.5rem' }
                   }}
                 >
-                  ממתינים
+                  {pendingGuests}
                 </Typography>
-                <AccessTimeIcon sx={{ color: '#e65100', fontSize: { xs: 16, sm: 24 } }} />
-              </Box>
-            </Paper>
-          </Grid>
-          <Grid item xs={4}>
-            <Paper
-              sx={{
-                p: { xs: 1.5, sm: 2.5 },
-                backgroundColor: alpha('#a5d6a7', 0.3),
-                borderRadius: 3,
-                boxShadow: 'none',
-                border: '1px solid',
-                borderColor: alpha('#2e7d32', 0.2),
-                position: 'relative',
-                minHeight: { xs: 70, sm: 100 }
-              }}
-            >
-              <Typography 
-                variant="h3"
-                sx={{ 
-                  fontWeight: 'bold', 
-                  color: '#2e7d32',
-                  position: 'absolute',
-                  top: 16,
-                  left: 16
-                }}
-              >
-                {confirmedGuests}
-              </Typography>
-              <Box
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    bottom: { xs: 8, sm: 16 },
+                    right: { xs: 8, sm: 16 },
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: { xs: 0.5, sm: 1 },
+                    flexDirection: 'row-reverse'
+                  }}
+                >
+                  <Box
+                    sx={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      backgroundColor: '#e65100',
+                      flexShrink: 0
+                    }}
+                  />
+                  <Typography 
+                    variant="body2" 
+                    sx={{ 
+                      color: '#e65100',
+                      fontWeight: 500,
+                      fontSize: { xs: '0.65rem', sm: '0.875rem' },
+                      lineHeight: 1.2
+                    }}
+                  >
+                    ממתינים
+                  </Typography>
+                </Box>
+              </Paper>
+            </Grid>
+            <Grid item xs={4}>
+              <Paper
                 sx={{
-                  position: 'absolute',
-                  bottom: 16,
-                  right: 16,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1,
-                  flexDirection: { xs: 'column', sm: 'row' }
+                  p: { xs: 1.5, sm: 2.5 },
+                  backgroundColor: alpha('#a5d6a7', 0.3),
+                  borderRadius: 3,
+                  boxShadow: 'none',
+                  border: '1px solid',
+                  borderColor: alpha('#2e7d32', 0.2),
+                  position: 'relative',
+                  minHeight: { xs: 80, sm: 100 }
                 }}
               >
                 <Typography 
-                  variant="body2" 
+                  variant="h3"
                   sx={{ 
+                    fontWeight: 'bold', 
                     color: '#2e7d32',
-                    fontWeight: 500,
-                    fontSize: { xs: '0.75rem', sm: '0.875rem' }
+                    position: 'absolute',
+                    top: { xs: 12, sm: 16 },
+                    left: { xs: 12, sm: 16 },
+                    fontSize: { xs: '1.5rem', sm: '2.5rem' }
                   }}
                 >
-                  מאשרים הגעה
+                  {confirmedGuests}
                 </Typography>
-                <CheckCircleIcon sx={{ color: '#2e7d32', fontSize: { xs: 20, sm: 24 } }} />
-              </Box>
-            </Paper>
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    bottom: { xs: 8, sm: 16 },
+                    right: { xs: 8, sm: 16 },
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: { xs: 0.5, sm: 1 },
+                    flexDirection: 'row-reverse'
+                  }}
+                >
+                  <Box
+                    sx={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      backgroundColor: '#2e7d32',
+                      flexShrink: 0
+                    }}
+                  />
+                  <Typography 
+                    variant="body2" 
+                    sx={{ 
+                      color: '#2e7d32',
+                      fontWeight: 500,
+                      fontSize: { xs: '0.65rem', sm: '0.875rem' },
+                      lineHeight: 1.2
+                    }}
+                  >
+                    מאשרים הגעה
+                  </Typography>
+                </Box>
+              </Paper>
+            </Grid>
           </Grid>
-        </Grid>
+        )}
 
         {/* Capacity Section */}
         <Box
@@ -340,7 +493,7 @@ function Guests() {
         </Box>
 
         {/* Action Buttons */}
-        <Grid container spacing={2} sx={{ mb: 0 }}>
+        <Grid container spacing={{ xs: 1, sm: 2 }} sx={{ mb: 0 }}>
           <Grid item xs={4}>
           <Button
               variant="outlined"
@@ -357,7 +510,8 @@ function Guests() {
                 boxShadow: 'none',
                 textTransform: 'none',
                 display: 'flex',
-                justifyContent: 'space-between',
+                justifyContent: 'flex-start',
+                flexDirection: 'row',
                 fontSize: { xs: '0.7rem', sm: '1rem' },
                 '&:hover': {
                   backgroundColor: '#fafafa',
@@ -365,9 +519,6 @@ function Guests() {
                 }
               }}
             >
-              <Box sx={{ flex: 1, textAlign: 'center' }}>
-                + הוסף אורח
-              </Box>
               <Box
                 sx={{
                   backgroundColor: alpha('#1976d2', 0.2),
@@ -378,10 +529,13 @@ function Guests() {
                   justifyContent: 'center',
                   minWidth: { xs: 28, sm: 36 },
                   height: { xs: 28, sm: 36 },
-                  ml: { xs: 0.5, sm: 1 }
+                  mr: { xs: 1, sm: 1.5 }
                 }}
               >
                 <AddIcon sx={{ color: '#1976d2', fontSize: { xs: 16, sm: 20 } }} />
+              </Box>
+              <Box sx={{ flex: 1, textAlign: 'right', mr: {xs:1, md:2}}}>
+                הוסף
               </Box>
           </Button>
           </Grid>
@@ -401,7 +555,8 @@ function Guests() {
                 boxShadow: 'none',
                 textTransform: 'none',
                 display: 'flex',
-                justifyContent: 'space-between',
+                justifyContent: 'flex-start',
+                flexDirection: 'row',
                 fontSize: { xs: '0.7rem', sm: '1rem' },
                 '&:hover': {
                   backgroundColor: '#fafafa',
@@ -409,9 +564,6 @@ function Guests() {
                 }
               }}
             >
-              <Box sx={{ flex: 1, textAlign: 'center' }}>
-                ייבא מאקסל
-              </Box>
               <Box
                 sx={{
                   backgroundColor: '#f5f5dc',
@@ -422,7 +574,7 @@ function Guests() {
                   justifyContent: 'center',
                   minWidth: { xs: 28, sm: 36 },
                   height: { xs: 28, sm: 36 },
-                  ml: { xs: 0.5, sm: 1 }
+                  mr: { xs: 1, sm: 1.5 }
                 }}
               >
                 <Box sx={{ position: 'relative', display: 'inline-flex' }}>
@@ -437,6 +589,9 @@ function Guests() {
                     }} 
                   />
                 </Box>
+              </Box>
+              <Box sx={{ flex: 1, textAlign: 'right', mr: {xs:1, md:2}}}>
+                ייבא
               </Box>
           </Button>
           </Grid>
@@ -456,7 +611,8 @@ function Guests() {
                 boxShadow: 'none',
                 textTransform: 'none',
                 display: 'flex',
-                justifyContent: 'space-between',
+                justifyContent: 'flex-start',
+                flexDirection: 'row',
                 fontSize: { xs: '0.7rem', sm: '1rem' },
                 '&:hover': {
                   backgroundColor: '#fafafa',
@@ -464,9 +620,6 @@ function Guests() {
                 }
               }}
             >
-              <Box sx={{ flex: 1, textAlign: 'center' }}>
-                ייצא לאקסל
-              </Box>
               <Box
                 sx={{
                   backgroundColor: '#e1bee7',
@@ -477,10 +630,13 @@ function Guests() {
                   justifyContent: 'center',
                   minWidth: { xs: 28, sm: 36 },
                   height: { xs: 28, sm: 36 },
-                  ml: { xs: 0.5, sm: 1 }
+                  mr: { xs: 1, sm: 1.5 }
                 }}
               >
                 <TableChartIcon sx={{ color: '#9c27b0', fontSize: { xs: 16, sm: 20 } }} />
+              </Box>
+              <Box sx={{ flex: 1, textAlign: 'right', mr: {xs:1, md:2}}}>
+                ייצא
               </Box>
             </Button>
           </Grid>
@@ -620,26 +776,67 @@ function Guests() {
             >
               עם הערות
             </Button>
+            {/* Group Filter */}
+            <FormControl size="small" sx={{ minWidth: 120 }}>
+              <Select
+                value={groupFilter}
+                onChange={(e) => {
+                  setGroupFilter(e.target.value);
+                  setPage(0);
+                }}
+                displayEmpty
+                sx={{
+                  borderRadius: 3,
+                  minWidth: 120,
+                  px: 2,
+                  py: 1,
+                  backgroundColor: groupFilter === 'all' ? '#F2F3F5' : '#FFFFFF',
+                  color: groupFilter === 'all' ? '#363B4D' : '#111827',
+                  fontWeight: 500,
+                  fontSize: '0.875rem',
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: 'transparent',
+                  },
+                  '&:hover .MuiOutlinedInput-notchedOutline': {
+                    borderColor: 'transparent',
+                  },
+                  '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                    borderColor: 'transparent',
+                  },
+                  '& .MuiSelect-select': {
+                    py: 0,
+                    px: 0,
+                  },
+                }}
+              >
+                <MenuItem value="all">כל הקבוצות</MenuItem>
+                {uniqueGroups.map((group) => (
+                  <MenuItem key={group} value={group}>
+                    {group}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
           </Stack>
 
           {/* Search Bar */}
-        <TextField
-          fullWidth
+          <TextField
+            fullWidth
             placeholder="חיפוש אורח..."
-          variant="outlined"
-          value={searchQuery}
+            variant="outlined"
+            value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
               setPage(0);
             }}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon />
-              </InputAdornment>
-            ),
-          }}
-          size="small"
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon />
+                </InputAdornment>
+              ),
+            }}
+            size="small"
             sx={{
               mb: 3,
               '& .MuiOutlinedInput-root': {
@@ -668,20 +865,25 @@ function Guests() {
                   </TableCell>
                   <TableCell align="right" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>שם מלא</TableCell>
                   <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>טלפון</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>קבוצה</TableCell>
                   <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>סטטוס</TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>כמות אורחים סה״כ</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>כמות אורחים צפויה</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>כמות אורחים שאושרה</TableCell>
+                  {hasTableNumbers && (
+                    <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>מספר שולחן</TableCell>
+                  )}
                   <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>פעולות</TableCell>
                 </TableRow>
               </TableHead>
           <TableBody>
-                {filteredGuests.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
+            {filteredGuests.length === 0 ? (
+              <TableRow>
+                    <TableCell colSpan={hasTableNumbers ? 9 : 8} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
                       <Typography variant="body1" color="text.secondary" sx={{ py: 4 }}>
-                        {searchQuery ? 'לא נמצאו תוצאות' : 'אין מוזמנים'}
+                  {searchQuery ? 'לא נמצאו תוצאות' : 'אין מוזמנים'}
                       </Typography>
-                    </TableCell>
-                  </TableRow>
+                </TableCell>
+              </TableRow>
                 ) : (
                   filteredGuests
                     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
@@ -723,6 +925,9 @@ function Guests() {
                         </Box>
                       </TableCell>
                       <TableCell align="center" sx={{ backgroundColor: 'white' }}>
+                        <Typography variant="body2">{guest.group}</Typography>
+                      </TableCell>
+                      <TableCell align="center" sx={{ backgroundColor: 'white' }}>
                         <Box sx={{ display: 'flex', justifyContent: 'center' }}>
                           <Chip
                             icon={guest.status === 'confirmed' ? <CheckCircleIcon /> : 
@@ -742,7 +947,16 @@ function Guests() {
                         </Box>
                       </TableCell>
                       <TableCell align="center" sx={{ backgroundColor: 'white' }}>
-                        {guest.status === 'confirmed' && guest.confirmedCount > 0 ? (
+                        {guest.expectedCount !== undefined ? (
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {guest.expectedCount}
+                          </Typography>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">-</Typography>
+                        )}
+                      </TableCell>
+                      <TableCell align="center" sx={{ backgroundColor: 'white' }}>
+                        {guest.confirmedCount > 0 ? (
                           <Typography variant="body2" sx={{ fontWeight: 500, color: 'success.main' }}>
                             {guest.confirmedCount}
                           </Typography>
@@ -750,6 +964,17 @@ function Guests() {
                           <Typography variant="body2" color="text.secondary">-</Typography>
                         )}
                       </TableCell>
+                      {hasTableNumbers && (
+                        <TableCell align="center" sx={{ backgroundColor: 'white' }}>
+                          {guest.tableNumber !== undefined ? (
+                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                              {guest.tableNumber}
+                            </Typography>
+                          ) : (
+                            <Typography variant="body2" color="text.secondary">-</Typography>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell align="center" sx={{ backgroundColor: 'white' }}>
                         <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
                           <IconButton size="small" sx={{ color: '#25D366' }}>
@@ -806,163 +1031,230 @@ function Guests() {
         </Paper>
       ) : (
         /* Mobile Card View */
-        <Paper 
-          sx={{ 
-            borderRadius: 2,
-            backgroundColor: 'white',
-            boxShadow: 'none',
-            border: '1px solid',
-            borderColor: 'divider',
-            borderWidth: '1px',
-            overflow: 'hidden',
-            p: 3
-          }}
-        >
-          {/* Quick Filter Buttons */}
-          <Stack direction="row" spacing={1} sx={{ mb: 2 }} flexWrap="wrap" useFlexGap>
-            <Button
-              onClick={() => {
-                setStatusFilter('all');
-                setPage(0);
-              }}
-              sx={{ 
-                borderRadius: 3,
-                minWidth: 80,
-                px: 2,
-                py: 1,
-                textTransform: 'none',
-                backgroundColor: statusFilter === 'all' ? '#5236F7' : '#F2F3F5',
-                color: statusFilter === 'all' ? 'white' : '#363B4D',
-                fontWeight: 500,
-                boxShadow: 'none',
-                '&:hover': {
-                  backgroundColor: statusFilter === 'all' ? '#5236F7' : '#E5E7EB',
-                  boxShadow: 'none'
-                }
-              }}
-            >
-              הכל
-            </Button>
-            <Button
-              onClick={() => {
-                setStatusFilter('confirmed');
-                setPage(0);
-              }}
-              sx={{ 
-                borderRadius: 3,
-                minWidth: 80,
-                px: 2,
-                py: 1,
-                textTransform: 'none',
-                backgroundColor: statusFilter === 'confirmed' ? '#5236F7' : '#F2F3F5',
-                color: statusFilter === 'confirmed' ? 'white' : '#363B4D',
-                fontWeight: 500,
-                boxShadow: 'none',
-                '&:hover': {
-                  backgroundColor: statusFilter === 'confirmed' ? '#5236F7' : '#E5E7EB',
-                  boxShadow: 'none'
-                }
-              }}
-            >
-              אישרו
-            </Button>
-            <Button
-              onClick={() => {
-                setStatusFilter('pending');
-                setPage(0);
-              }}
-              sx={{ 
-                borderRadius: 3,
-                minWidth: 80,
-                px: 2,
-                py: 1,
-                textTransform: 'none',
-                backgroundColor: statusFilter === 'pending' ? '#5236F7' : '#F2F3F5',
-                color: statusFilter === 'pending' ? 'white' : '#363B4D',
-                fontWeight: 500,
-                boxShadow: 'none',
-                '&:hover': {
-                  backgroundColor: statusFilter === 'pending' ? '#5236F7' : '#E5E7EB',
-                  boxShadow: 'none'
-                }
-              }}
-            >
-              ממתינים
-            </Button>
-            <Button
-              onClick={() => {
-                setStatusFilter('declined');
-                setPage(0);
-              }}
-              sx={{ 
-                borderRadius: 3,
-                minWidth: 80,
-                px: 2,
-                py: 1,
-                textTransform: 'none',
-                backgroundColor: statusFilter === 'declined' ? '#5236F7' : '#F2F3F5',
-                color: statusFilter === 'declined' ? 'white' : '#363B4D',
-                fontWeight: 500,
-                boxShadow: 'none',
-                '&:hover': {
-                  backgroundColor: statusFilter === 'declined' ? '#5236F7' : '#E5E7EB',
-                  boxShadow: 'none'
-                }
-              }}
-            >
-              דחו
-            </Button>
-            <Button
-              onClick={() => {
-                setStatusFilter('withNotes');
-                setPage(0);
-              }}
-              sx={{ 
-                borderRadius: 3,
-                minWidth: 120,
-                px: 2,
-                py: 1,
-                textTransform: 'none',
-                backgroundColor: statusFilter === 'withNotes' ? '#5236F7' : '#F2F3F5',
-                color: statusFilter === 'withNotes' ? 'white' : '#363B4D',
-                fontWeight: 500,
-                boxShadow: 'none',
-                '&:hover': {
-                  backgroundColor: statusFilter === 'withNotes' ? '#5236F7' : '#E5E7EB',
-                  boxShadow: 'none'
-                }
-              }}
-            >
-              עם הערות
-            </Button>
-          </Stack>
+        <>
+          {/* Filters and Search Widget */}
+          <Paper 
+            sx={{ 
+              borderRadius: 2,
+              backgroundColor: 'white',
+              boxShadow: 'none',
+              border: '1px solid',
+              borderColor: 'divider',
+              borderWidth: '1px',
+              overflow: 'hidden',
+              p: 3,
+              mb: 2
+            }}
+          >
+            {/* Quick Filter Buttons - Horizontal Scroll */}
+            <Box sx={{ 
+              mb: 2, 
+              overflowX: 'auto',
+              '&::-webkit-scrollbar': {
+                display: 'none'
+              },
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none'
+            }}>
+              <Stack 
+                direction="row" 
+                spacing={1} 
+                sx={{ 
+                  minWidth: 'max-content',
+                  pb: 1
+                }}
+              >
+                {/* Group Filter - First */}
+                <FormControl size="small" sx={{ minWidth: 120, flexShrink: 0 }}>
+                  <Select
+                    value={groupFilter}
+                    onChange={(e) => {
+                      setGroupFilter(e.target.value);
+                      setPage(0);
+                    }}
+                    displayEmpty
+                    sx={{
+                      borderRadius: 3,
+                      minWidth: 120,
+                      px: 2,
+                      py: 1,
+                      backgroundColor: groupFilter === 'all' ? '#F2F3F5' : '#FFFFFF',
+                      color: groupFilter === 'all' ? '#363B4D' : '#111827',
+                      fontWeight: 500,
+                      fontSize: '0.875rem',
+                      '& .MuiOutlinedInput-notchedOutline': {
+                        borderColor: 'transparent',
+                      },
+                      '&:hover .MuiOutlinedInput-notchedOutline': {
+                        borderColor: 'transparent',
+                      },
+                      '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                        borderColor: 'transparent',
+                      },
+                      '& .MuiSelect-select': {
+                        py: 0,
+                        px: 0,
+                      },
+                    }}
+                  >
+                    <MenuItem value="all">כל הקבוצות</MenuItem>
+                    {uniqueGroups.map((group) => (
+                      <MenuItem key={group} value={group}>
+                        {group}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <Button
+                  onClick={() => {
+                    setStatusFilter('all');
+                    setPage(0);
+                  }}
+                  sx={{ 
+                    borderRadius: 3,
+                    minWidth: 80,
+                    px: 2,
+                    py: 1,
+                    textTransform: 'none',
+                    backgroundColor: statusFilter === 'all' ? '#5236F7' : '#F2F3F5',
+                    color: statusFilter === 'all' ? 'white' : '#363B4D',
+                    fontWeight: 500,
+                    boxShadow: 'none',
+                    flexShrink: 0,
+                    '&:hover': {
+                      backgroundColor: statusFilter === 'all' ? '#5236F7' : '#E5E7EB',
+                      boxShadow: 'none'
+                    }
+                  }}
+                >
+                  הכל
+                </Button>
+                <Button
+                  onClick={() => {
+                    setStatusFilter('confirmed');
+                    setPage(0);
+                  }}
+                  sx={{ 
+                    borderRadius: 3,
+                    minWidth: 80,
+                    px: 2,
+                    py: 1,
+                    textTransform: 'none',
+                    backgroundColor: statusFilter === 'confirmed' ? '#5236F7' : '#F2F3F5',
+                    color: statusFilter === 'confirmed' ? 'white' : '#363B4D',
+                    fontWeight: 500,
+                    boxShadow: 'none',
+                    flexShrink: 0,
+                    '&:hover': {
+                      backgroundColor: statusFilter === 'confirmed' ? '#5236F7' : '#E5E7EB',
+                      boxShadow: 'none'
+                    }
+                  }}
+                >
+                  אישרו
+                </Button>
+                <Button
+                  onClick={() => {
+                    setStatusFilter('pending');
+                    setPage(0);
+                  }}
+                  sx={{ 
+                    borderRadius: 3,
+                    minWidth: 80,
+                    px: 2,
+                    py: 1,
+                    textTransform: 'none',
+                    backgroundColor: statusFilter === 'pending' ? '#5236F7' : '#F2F3F5',
+                    color: statusFilter === 'pending' ? 'white' : '#363B4D',
+                    fontWeight: 500,
+                    boxShadow: 'none',
+                    flexShrink: 0,
+                    '&:hover': {
+                      backgroundColor: statusFilter === 'pending' ? '#5236F7' : '#E5E7EB',
+                      boxShadow: 'none'
+                    }
+                  }}
+                >
+                  ממתינים
+                </Button>
+                <Button
+                  onClick={() => {
+                    setStatusFilter('declined');
+                    setPage(0);
+                  }}
+                  sx={{ 
+                    borderRadius: 3,
+                    minWidth: 80,
+                    px: 2,
+                    py: 1,
+                    textTransform: 'none',
+                    backgroundColor: statusFilter === 'declined' ? '#5236F7' : '#F2F3F5',
+                    color: statusFilter === 'declined' ? 'white' : '#363B4D',
+                    fontWeight: 500,
+                    boxShadow: 'none',
+                    flexShrink: 0,
+                    '&:hover': {
+                      backgroundColor: statusFilter === 'declined' ? '#5236F7' : '#E5E7EB',
+                      boxShadow: 'none'
+                    }
+                  }}
+                >
+                  דחו
+                </Button>
+                <Button
+                  onClick={() => {
+                    setStatusFilter('withNotes');
+                    setPage(0);
+                  }}
+                  sx={{ 
+                    borderRadius: 3,
+                    minWidth: 120,
+                    px: 2,
+                    py: 1,
+                    textTransform: 'none',
+                    backgroundColor: statusFilter === 'withNotes' ? '#5236F7' : '#F2F3F5',
+                    color: statusFilter === 'withNotes' ? 'white' : '#363B4D',
+                    fontWeight: 500,
+                    boxShadow: 'none',
+                    flexShrink: 0,
+                    '&:hover': {
+                      backgroundColor: statusFilter === 'withNotes' ? '#5236F7' : '#E5E7EB',
+                      boxShadow: 'none'
+                    }
+                  }}
+                >
+                  עם הערות
+                </Button>
+              </Stack>
+            </Box>
 
-          {/* Search Bar */}
-          <TextField
-            fullWidth
-            placeholder="חיפוש אורח..."
-            variant="outlined"
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setPage(0);
-            }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon />
-                </InputAdornment>
-              ),
-            }}
-            size="small"
-        sx={{ 
-              mb: 3,
-              '& .MuiOutlinedInput-root': {
-                borderRadius: 3,
-              }
-            }}
-          />
+            {/* Search Bar */}
+            <TextField
+              fullWidth
+              placeholder="חיפוש אורח..."
+              variant="outlined"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPage(0);
+              }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon />
+                  </InputAdornment>
+                ),
+              }}
+              size="small"
+              sx={{ 
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 3,
+                }
+              }}
+            />
+          </Paper>
 
+          {/* Guest Cards without widget */}
           <Grid container spacing={2}>
             {filteredGuests.length === 0 ? (
               <Grid item xs={12}>
@@ -975,96 +1267,349 @@ function Guests() {
             ) : (
               filteredGuests
                 .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                .map((guest) => (
-              <Grid item xs={12} key={guest._id}>
-                <Card
-                  sx={{
-                    borderRadius: 3,
-                    '&:hover': {
-                      boxShadow: theme.shadows[2]
-                    }
-                  }}
-                >
-                  <CardContent>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-                      <IconButton size="small">
-                        <MoreVertIcon fontSize="small" />
-                      </IconButton>
-                      <Avatar
+                .map((guest) => {
+                  const isExpanded = expandedGuests.has(guest._id);
+                  const totalCount = guest.confirmedCount || guest.expectedCount || 1;
+                  const hasResponded = guest.status !== 'pending';
+                  
+                  return (
+                    <Grid item xs={12} key={guest._id}>
+                      <Card
                         sx={{
-                          width: 48,
-                          height: 48,
-                          bgcolor: statusColors[guest.status]
+                          borderRadius: 2,
+                          backgroundColor: 'white',
+                          boxShadow: 'none',
+                          border: '1px solid',
+                          borderColor: alpha('#E0E0E0', 0.5),
+                          '&:hover': {
+                            boxShadow: theme.shadows[1]
+                          }
                         }}
                       >
-                        {guest.name.charAt(0)}
-                      </Avatar>
-                    </Box>
-                    
-                    <Typography variant="h6" sx={{ mb: 1, fontWeight: 600, textAlign: 'right' }}>
-                      {guest.name}
-                    </Typography>
-                    
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1, justifyContent: 'flex-end' }}>
-                      <WhatsAppIcon sx={{ fontSize: 18, color: '#25D366' }} />
-                      <Typography variant="body2" color="text.secondary">
-                        {guest.phone}
-                      </Typography>
-                    </Box>
-                    
-                    {guest.confirmedCount > 0 && guest.status === 'confirmed' && (
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1.5, justifyContent: 'flex-end' }}>
-                        <PeopleIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-                        <Typography variant="body2" color="text.secondary">
-                          +{guest.confirmedCount - 1} מלווים
-                        </Typography>
-                      </Box>
-                    )}
-                    
-                    <Chip
-                      icon={guest.status === 'confirmed' ? <CheckCircleIcon /> : 
-                            guest.status === 'declined' ? <CancelIcon /> : 
-                            <AccessTimeIcon />}
-                      label={statusLabels[guest.status]}
-                      sx={{
-                        backgroundColor: alpha(statusColors[guest.status], 0.1),
-                        color: statusColors[guest.status],
-                        fontWeight: 500,
-                        mb: 1.5,
-                        width: '100%',
-                        justifyContent: 'flex-start',
-                        '& .MuiChip-icon': {
-                          color: statusColors[guest.status]
-                        }
-                      }}
-                    />
-                    
-                    {guest.note && (
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, textAlign: 'right' }}>
-                        {guest.note}
-                      </Typography>
-                    )}
-                    
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'right' }}>
-                      {guest.status === 'pending' ? 'נשלח היום' : 
-                       guest.status === 'confirmed' ? 'לפני 2 שעות' : 'אתמול'}
-                    </Typography>
-                    
-                    <Box sx={{ display: 'flex', gap: 1, mt: 2, justifyContent: 'flex-end' }}>
-                      <IconButton size="small" sx={{ color: '#25D366' }}>
-                        <WhatsAppIcon fontSize="small" />
-                      </IconButton>
-                      <IconButton size="small">
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                      <IconButton size="small" sx={{ color: 'error.main' }}>
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </Box>
-                  </CardContent>
-                </Card>
-              </Grid>
-            ))
+                        <CardContent 
+                          onClick={() => {
+                            const newExpanded = new Set(expandedGuests);
+                            if (isExpanded) {
+                              newExpanded.delete(guest._id);
+                            } else {
+                              newExpanded.add(guest._id);
+                            }
+                            setExpandedGuests(newExpanded);
+                          }}
+                          sx={{ 
+                            p: 2, 
+                            '&:last-child': { pb: 2 },
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, flexDirection: 'row-reverse' }}>
+                            {/* WhatsApp Icon on left */}
+                            <Box
+                              sx={{
+                                width: 40,
+                                height: 40,
+                                borderRadius: '50%',
+                                backgroundColor: '#25D366',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0
+                              }}
+                            >
+                              <WhatsAppIcon sx={{ fontSize: 20, color: 'white' }} />
+                            </Box>
+                            
+                            {/* Content - Right aligned */}
+                            <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', width: '100%' }}>
+                              {/* Name */}
+                              <Typography variant="body1" sx={{ fontWeight: 600, mb: 0.25, textAlign: 'right', width: '100%' }}>
+                                {guest.name}
+                              </Typography>
+                              
+                              {/* Phone */}
+                              <Typography variant="body2" color="text.secondary" sx={{ mb: 1, textAlign: 'right', width: '100%' }}>
+                                {guest.phone}
+                              </Typography>
+                              
+                              {/* Status Chip and Total Count */}
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, justifyContent: 'flex-end', flexWrap: 'wrap', width: '100%', flexDirection: 'row-reverse' }}>
+                                <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'right' }}>
+                                  {totalCount} אורחים
+                                </Typography>
+                                <Chip
+                                  icon={guest.status === 'confirmed' ? <CheckCircleIcon /> : 
+                                        guest.status === 'declined' ? <CancelIcon /> : 
+                                        <AccessTimeIcon />}
+                                  label={statusLabels[guest.status]}
+                                  size="small"
+                                  sx={{
+                                    backgroundColor: alpha(statusColors[guest.status], 0.1),
+                                    color: statusColors[guest.status],
+                                    fontWeight: 500,
+                                    '& .MuiChip-icon': {
+                                      color: statusColors[guest.status]
+                                    }
+                                  }}
+                                />
+
+                              </Box>
+                              
+                              {/* Response status with expand icon */}
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, justifyContent: 'flex-end', width: '100%', flexDirection: 'row-reverse' }}>
+                                <ExpandMoreIcon 
+                                  sx={{ 
+                                    transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                    transition: 'transform 0.3s',
+                                    color: 'text.secondary',
+                                    flexShrink: 0
+                                  }}
+                                />
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexDirection: 'row-reverse' }}>
+                                  {!hasResponded && (
+                                    <WarningIcon sx={{ fontSize: 16, color: '#f57c00' }} />
+                                  )}
+                                  <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'right' }}>
+                                    {hasResponded 
+                                      ? `הגיב${guest.status === 'confirmed' ? 'ה' : ''} לפני ${guest.status === 'confirmed' ? 'יומיים' : guest.status === 'declined' ? '3 ימים' : 'שבוע'}`
+                                      : `הודעה נשלחה לפני ${guest.status === 'pending' ? '5 ימים' : 'יומיים'}`}
+                                  </Typography>
+                                </Box>
+                              </Box>
+                            </Box>
+                          </Box>
+                        </CardContent>
+                        
+                        {/* Expanded Content */}
+                        {isExpanded && (
+                          <Box sx={{ 
+                            borderTop: '1px solid', 
+                            borderColor: alpha('#E0E0E0', 0.5), 
+                            p: 1.5,
+                            backgroundColor: alpha('#F5F5F9', 0.5)
+                          }}>
+                            {/* Response History */}
+                            <Box sx={{ mb: 2 }}>
+                              <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontWeight: 600 }}>
+                                היסטוריית תגובות
+                              </Typography>
+                              <Box
+                                sx={{
+                                  p: 1.5,
+                                  borderRadius: 2,
+                                  backgroundColor: 'white'
+                                }}
+                              >
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexDirection: 'row-reverse' }}>
+                                  <Box sx={{ flex: 1 }}>
+                                    <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5, textAlign: 'right' }}>
+                                      {guest.status === 'confirmed' ? 'אישרה הגעה' : 
+                                       guest.status === 'declined' ? 'דיווח שלא מגיע' : 
+                                       'הזמנה נשלחה'}
+                                    </Typography>
+                                    {guest.status === 'pending' && (
+                                      <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'right', display: 'block' }}>
+                                        נקרא ב-WhatsApp, לא הגיב
+                                      </Typography>
+                                    )}
+                                  </Box>
+                                  <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
+                                    {guest.status === 'confirmed' ? '20/12/2024' : 
+                                     guest.status === 'declined' ? '17/12/2024' : 
+                                     '15/12/2024'}
+                                  </Typography>
+                                </Box>
+                              </Box>
+                            </Box>
+
+                            {/* Quick Actions */}
+                            <Box sx={{ mb: 2 }}>
+                              <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontWeight: 600 }}>
+                                {guest.status === 'pending' ? 'פעולות מומלצות' : 'פעולות מהירות'}
+                              </Typography>
+                              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                {guest.status === 'confirmed' ? (
+                                  <>
+                                    <Box sx={{ display: 'flex', gap: 1 }}>
+                                      <Button
+                                        variant="outlined"
+                                        startIcon={<CancelIcon />}
+                                        sx={{
+                                          flex: 1,
+                                          borderRadius: 2,
+                                          textTransform: 'none',
+                                          justifyContent: 'flex-start',
+                                          borderColor: alpha('#D32F2F', 0.5),
+                                          borderWidth: 1,
+                                          backgroundColor: alpha('#FFEBEE', 0.5),
+                                          color: '#D32F2F',
+                                          boxShadow: 'none',
+                                          py: 1.5,
+                                          '& .MuiButton-startIcon': {
+                                            ml: 1.5
+                                          },
+                                          '&:hover': {
+                                            borderColor: alpha('#D32F2F', 0.7),
+                                            backgroundColor: alpha('#FFEBEE', 0.7),
+                                            boxShadow: 'none'
+                                          }
+                                        }}
+                                      >
+                                        סמן כלא מגיע
+                                      </Button>
+                                      <Button
+                                        variant="outlined"
+                                        startIcon={<PeopleIcon />}
+                                        sx={{
+                                          flex: 1,
+                                          borderRadius: 2,
+                                          textTransform: 'none',
+                                          justifyContent: 'flex-start',
+                                          borderColor: alpha('#D0D0D0', 0.6),
+                                          borderWidth: 1,
+                                          backgroundColor: 'white',
+                                          color: '#111827',
+                                          boxShadow: 'none',
+                                          py: 1.5,
+                                          '& .MuiButton-startIcon': {
+                                            ml: 1.5
+                                          },
+                                          '&:hover': {
+                                            borderColor: alpha('#C0C0C0', 0.8),
+                                            backgroundColor: alpha('#F5F5F5', 0.3),
+                                            boxShadow: 'none'
+                                          }
+                                        }}
+                                      >
+                                        שנה כמות
+                                      </Button>
+                                    </Box>
+                                  </>
+                                ) : guest.status === 'pending' ? (
+                                  <>
+                                    <Box sx={{ display: 'flex', gap: 1 }}>
+                                      <Button
+                                        variant="outlined"
+                                        startIcon={<CancelIcon />}
+                                        sx={{
+                                          flex: 1,
+                                          borderRadius: 2,
+                                          textTransform: 'none',
+                                          justifyContent: 'flex-start',
+                                          borderColor: alpha('#D32F2F', 0.5),
+                                          borderWidth: 1,
+                                          backgroundColor: alpha('#FFEBEE', 0.5),
+                                          color: '#D32F2F',
+                                          boxShadow: 'none',
+                                          py: 1.5,
+                                          '& .MuiButton-startIcon': {
+                                            ml: 1.5
+                                          },
+                                          '&:hover': {
+                                            borderColor: alpha('#D32F2F', 0.7),
+                                            backgroundColor: alpha('#FFEBEE', 0.7),
+                                            boxShadow: 'none'
+                                          }
+                                        }}
+                                      >
+                                        סמן לא מגיע
+                                      </Button>
+                                      <Button
+                                        variant="outlined"
+                                        startIcon={<CheckCircleIcon />}
+                                        sx={{
+                                          flex: 1,
+                                          borderRadius: 2,
+                                          textTransform: 'none',
+                                          justifyContent: 'flex-start',
+                                          borderColor: alpha('#4CAF50', 0.4),
+                                          borderWidth: 1,
+                                          backgroundColor: alpha('#E8F5E9', 0.5),
+                                          color: '#2E7D32',
+                                          boxShadow: 'none',
+                                          py: 1.5,
+                                          '& .MuiButton-startIcon': {
+                                            ml: 1.5
+                                          },
+                                          '&:hover': {
+                                            borderColor: alpha('#4CAF50', 0.6),
+                                            backgroundColor: alpha('#E8F5E9', 0.7),
+                                            boxShadow: 'none'
+                                          }
+                                        }}
+                                      >
+                                        סמן מגיע
+                                      </Button>
+                                    </Box>
+                                  </>
+                                ) : (
+                                  <Button
+                                    variant="outlined"
+                                    startIcon={<CheckCircleIcon />}
+                                    fullWidth
+                                    sx={{
+                                      borderRadius: 2,
+                                      textTransform: 'none',
+                                      justifyContent: 'flex-start',
+                                      borderColor: alpha('#4CAF50', 0.4),
+                                      borderWidth: 1,
+                                      backgroundColor: alpha('#E8F5E9', 0.5),
+                                      color: '#2E7D32',
+                                      boxShadow: 'none',
+                                      py: 1.5,
+                                      '& .MuiButton-startIcon': {
+                                        ml: 1.5
+                                      },
+                                      '&:hover': {
+                                        borderColor: alpha('#4CAF50', 0.6),
+                                        backgroundColor: alpha('#E8F5E9', 0.7),
+                                        boxShadow: 'none'
+                                      }
+                                    }}
+                                  >
+                                    שנה ל"מגיע"
+                                  </Button>
+                                )}
+                              </Box>
+                            </Box>
+
+                            {/* Private Note */}
+                            <Box>
+                              <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontWeight: 600 }}>
+                                הערה פרטית
+                              </Typography>
+                              <TextField
+                                fullWidth
+                                multiline
+                                rows={3}
+                                placeholder="הוסף הערה פנימית (רק בשבילך)"
+                                variant="outlined"
+                                sx={{
+                                  '& .MuiOutlinedInput-root': {
+                                    borderRadius: 2,
+                                    backgroundColor: 'white',
+                                    borderColor: alpha('#E0E0E0', 0.3),
+                                    '& fieldset': {
+                                      borderColor: alpha('#E0E0E0', 0.3),
+                                    },
+                                    '&:hover fieldset': {
+                                      borderColor: alpha('#E0E0E0', 0.5),
+                                    },
+                                    '&.Mui-focused fieldset': {
+                                      borderColor: alpha('#E0E0E0', 0.5),
+                                    }
+                                  }
+                                }}
+                              />
+                              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block', textAlign: 'right' }}>
+                                ההערה לא תישלח לאורח
+                              </Typography>
+                            </Box>
+                          </Box>
+                        )}
+                      </Card>
+                    </Grid>
+                  );
+                })
           )}
         </Grid>
 
@@ -1102,7 +1647,7 @@ function Guests() {
             </Button>
           </Box>
         </Box>
-      </Paper>
+        </>
       )}
       </Box>
 
