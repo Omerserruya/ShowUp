@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Box, 
   Typography, 
@@ -158,6 +159,7 @@ function mapCampaignsToUpdates(campaigns: any[]): CampaignUpdate[] {
 
 function Overview() {
   const theme = useTheme();
+  const navigate = useNavigate();
   const { selectedEvent } = useEvent();
   const [dailyPeriod, setDailyPeriod] = useState<'week' | 'month'>('week');
   const { stats, loading: statsLoading, error: statsError } = useOverviewStats();
@@ -215,6 +217,7 @@ function Overview() {
             count={stats?.approved || 0}
             color="linear-gradient(135deg, #22c55e 0%, #16a34a 100%)"
             icon={<CheckCircleOutlineIcon sx={{ color: '#ffffff' }} />}
+            onClick={() => navigate('/guests?filter=confirmed')}
           />
         </Grid>
         
@@ -226,6 +229,7 @@ function Overview() {
             count={stats?.declined || 0}
             color="linear-gradient(135deg, #ef4444 0%, #dc2626 100%)"
             icon={<CancelOutlinedIcon sx={{ color: '#ffffff' }} />}
+            onClick={() => navigate('/guests?filter=declined')}
           />
         </Grid>
         
@@ -237,6 +241,7 @@ function Overview() {
             count={stats?.pending || 0}
             color="linear-gradient(135deg, #f59e0b 0%, #d97706 100%)"
             icon={<QuestionMarkIcon sx={{ color: '#ffffff' }} />}
+            onClick={() => navigate('/guests?filter=pending')}
           />
         </Grid>
         
@@ -248,6 +253,7 @@ function Overview() {
             count={stats?.total || 0}
             color="linear-gradient(135deg, #a855f7 0%, #9333ea 100%)"
             icon={<PeopleIcon sx={{ color: '#ffffff' }} />}
+            onClick={() => navigate('/guests?filter=all')}
           />
         </Grid>
       </Grid>

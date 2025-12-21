@@ -17,6 +17,7 @@ interface StatusCardProps {
   count: number;
   color: string; // Can be any color format: hex, rgb, rgba, named color, etc.
   icon: React.ReactNode;
+  onClick?: () => void;
 }
 
 const StatusCard: React.FC<StatusCardProps> = ({
@@ -24,7 +25,8 @@ const StatusCard: React.FC<StatusCardProps> = ({
   description,
   count,
   color,
-  icon
+  icon,
+  onClick
 }) => {
   const theme = useTheme();
   
@@ -123,12 +125,14 @@ const StatusCard: React.FC<StatusCardProps> = ({
   
   return (
     <Card 
+      onClick={onClick}
       sx={{ 
         ...cardStyle,
         ...(isGradientColor 
           ? { background: backgroundColor }
           : { bgcolor: backgroundColor }
-        ), 
+        ),
+        cursor: onClick ? 'pointer' : 'default',
       }}
     >
       <CardContent sx={{ p: { xs: 0.75, sm: 2 }, pl: { xs: 0.75, sm: 1 }, height: '100%', position: 'relative' }}>

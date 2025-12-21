@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -34,10 +35,10 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Checkbox,
   CircularProgress,
   Snackbar,
-  Alert
+  Alert,
+  Autocomplete
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -128,13 +129,26 @@ function Guests() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { selectedEvent } = useEvent();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const tableRef = useRef<HTMLDivElement>(null);
   
+  // Initialize statusFilter from URL query parameter
+  const getInitialStatusFilter = () => {
+    const searchParams = new URLSearchParams(location.search);
+    const filter = searchParams.get('filter');
+    if (filter && ['all', 'confirmed', 'declined', 'pending'].includes(filter)) {
+      return filter;
+    }
+    return 'all';
+  };
+
   // State
   const [guestModalOpen, setGuestModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState(getInitialStatusFilter);
   const [groupFilter, setGroupFilter] = useState('all');
   const [page, setPage] = useState(0);
   const [rowsPerPage] = useState(25);
@@ -143,6 +157,37 @@ function Guests() {
   const [guestNotes, setGuestNotes] = useState<Record<string, string>>({});
   const [refreshKey, setRefreshKey] = useState(0);
   const [statsRefreshKey, setStatsRefreshKey] = useState(0);
+  
+  // Editing state
+  const [editingGuest, setEditingGuest] = useState<string | null>(null);
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [editValues, setEditValues] = useState<Record<string, any>>({});
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingGuestData, setEditingGuestData] = useState<Guest | null>(null);
+  
+  // Mobile editing state
+  const [mobileEditingGuest, setMobileEditingGuest] = useState<string | null>(null);
+  
+  // Read filter from URL query parameter on mount and when URL changes
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const filter = searchParams.get('filter');
+    if (filter && ['all', 'confirmed', 'declined', 'pending'].includes(filter)) {
+      // Only update if filter is different from current statusFilter
+      if (filter !== statusFilter) {
+        setStatusFilter(filter);
+        setPage(0);
+        // Force refresh by incrementing refreshKey to trigger useGuests refetch
+        setRefreshKey(prev => prev + 1);
+      }
+      // Scroll to table after a short delay to ensure it's rendered
+      setTimeout(() => {
+        if (tableRef.current) {
+          tableRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 300);
+    }
+  }, [location.search, statusFilter]); // Include statusFilter to detect changes
 
   // Determine if we need to fetch all guests (when filtering by status)
   // If filtering by status (not 'all'), fetch all matching guests without pagination
@@ -160,7 +205,7 @@ function Guests() {
     `${searchQueryForAPI}_refresh_${refreshKey}`, // Add refreshKey to trigger refetch
     'created_at',
     false, // Get all guests, not just with responses
-    shouldFetchAll ? statusFilter : undefined // Pass status filter when fetching filtered results
+    shouldFetchAll ? statusFilter : undefined // Pass status filter when fetching filtered results (API expects 'confirmed', 'pending', 'declined')
   );
 
   // Fetch stats from API - only refresh when explicitly needed (not on filter changes)
@@ -264,6 +309,76 @@ function Guests() {
     } catch (error) {
       console.error('Error updating guest note:', error);
       setSnackbar({ open: true, message: 'שגיאה בעדכון ההערה', severity: 'error' });
+    }
+  }, []);
+
+  // Update guest field (inline editing)
+  const updateGuestField = useCallback(async (guestId: string, field: string, value: any) => {
+    try {
+      // Map frontend field names to API field names
+      const fieldMap: Record<string, string> = {
+        'name': 'name',
+        'phone': 'phone',
+        'group': 'group',
+        'expectedCount': 'import_count',
+        'confirmedCount': 'guest_count',
+        'tableNumber': 'table_number',
+        'email': 'email'
+      };
+      
+      const apiField = fieldMap[field] || field;
+      const apiData: Record<string, any> = { [apiField]: value };
+      
+      const response = await fetchWithAuth(`/api/guests/${guestId}`, {
+        method: 'PUT',
+        body: JSON.stringify(apiData)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update guest');
+      }
+
+      setSnackbar({ open: true, message: 'האורח עודכן בהצלחה', severity: 'success' });
+      setRefreshKey(prev => prev + 1);
+      setStatsRefreshKey(prev => prev + 1);
+      setEditingGuest(null);
+      setEditingField(null);
+    } catch (error) {
+      console.error('Error updating guest:', error);
+      setSnackbar({ open: true, message: 'שגיאה בעדכון האורח', severity: 'error' });
+    }
+  }, []);
+
+  // Update guest (full update from modal)
+  const updateGuest = useCallback(async (guestId: string, guestData: Partial<Guest>) => {
+    try {
+      const updateData: Record<string, any> = {};
+      
+      if (guestData.name !== undefined) updateData.name = guestData.name;
+      if (guestData.phone !== undefined) updateData.phone = guestData.phone;
+      if (guestData.email !== undefined) updateData.email = guestData.email;
+      if (guestData.group !== undefined) updateData.group = guestData.group;
+      if (guestData.expectedCount !== undefined) updateData.import_count = guestData.expectedCount;
+      if (guestData.confirmedCount !== undefined) updateData.guest_count = guestData.confirmedCount;
+      if (guestData.tableNumber !== undefined) updateData.table_number = guestData.tableNumber;
+      
+      const response = await fetchWithAuth(`/api/guests/${guestId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updateData)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update guest');
+      }
+
+      setSnackbar({ open: true, message: 'האורח עודכן בהצלחה', severity: 'success' });
+      setRefreshKey(prev => prev + 1);
+      setStatsRefreshKey(prev => prev + 1);
+      setEditModalOpen(false);
+      setEditingGuestData(null);
+    } catch (error) {
+      console.error('Error updating guest:', error);
+      setSnackbar({ open: true, message: 'שגיאה בעדכון האורח', severity: 'error' });
     }
   }, []);
 
@@ -998,6 +1113,7 @@ function Guests() {
             }}
           />
           <TableContainer
+            ref={tableRef}
             sx={{
               border: '1px solid',
               borderColor: 'divider',
@@ -1013,9 +1129,6 @@ function Guests() {
             >
               <TableHead>
                 <TableRow>
-                  <TableCell padding="checkbox" sx={{ backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>
-                    <Checkbox />
-                  </TableCell>
                   <TableCell align="right" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>שם מלא</TableCell>
                   <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>טלפון</TableCell>
                   <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>קבוצה</TableCell>
@@ -1031,7 +1144,7 @@ function Guests() {
           <TableBody>
             {guestsLoading ? (
               <TableRow>
-                <TableCell colSpan={hasTableNumbers ? 9 : 8} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
+                <TableCell colSpan={hasTableNumbers ? 8 : 7} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
                   <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
                     <CircularProgress size={40} />
                   </Box>
@@ -1039,7 +1152,7 @@ function Guests() {
               </TableRow>
             ) : filteredGuests.length === 0 ? (
               <TableRow>
-                    <TableCell colSpan={hasTableNumbers ? 9 : 8} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
+                    <TableCell colSpan={hasTableNumbers ? 8 : 7} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
                       <Typography variant="body1" color="text.secondary" sx={{ py: 4 }}>
                   {searchQuery ? 'לא נמצאו תוצאות' : 'אין מוזמנים'}
                       </Typography>
@@ -1057,90 +1170,370 @@ function Guests() {
                         borderBottomColor: 'divider'
                       }}
                     >
-                      <TableCell padding="checkbox" sx={{ backgroundColor: 'white' }}>
-                        <Checkbox />
-                      </TableCell>
                       <TableCell align="right" sx={{ backgroundColor: 'white', textAlign: 'right' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexDirection: 'row-reverse', width: '100%' }}>
-                          <Typography variant="body2" sx={{ fontWeight: 500,width:"100%", textAlign: 'right' }}>
-                            {guest.name}
-                          </Typography>
-                          <Avatar
-                            sx={{
-                              width: 32,
-                              height: 32,
-                              bgcolor: statusColors[guest.status],
-                              fontSize: '0.875rem'
-                            }}
-                          >
-                            {guest.name.charAt(0)}
-                          </Avatar>
-                          
-                        </Box>
-                      </TableCell>
-                      <TableCell align="center" sx={{ backgroundColor: 'white' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, justifyContent: 'center' }}>
-                          <WhatsAppIcon sx={{ fontSize: 18, color: '#25D366' }} />
-                          <Typography variant="body2">{guest.phone}</Typography>
-                        </Box>
-                      </TableCell>
-                      <TableCell align="center" sx={{ backgroundColor: 'white' }}>
-                        <Typography variant="body2">{guest.group}</Typography>
-                      </TableCell>
-                      <TableCell align="center" sx={{ backgroundColor: 'white' }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                          <Chip
-                            icon={guest.status === 'confirmed' ? <CheckCircleIcon /> : 
-                                  guest.status === 'declined' ? <CancelIcon /> : 
-                                  <AccessTimeIcon />}
-                            label={statusLabels[guest.status]}
+                        {editingGuest === guest._id && editingField === 'name' ? (
+                          <TextField
                             size="small"
-                            sx={{
-                              backgroundColor: alpha(statusColors[guest.status], 0.1),
-                              color: statusColors[guest.status],
-                              fontWeight: 500,
-                              '& .MuiChip-icon': {
-                                color: statusColors[guest.status]
+                            value={editValues[`${guest._id}_name`] ?? guest.name}
+                            onChange={(e) => setEditValues({ ...editValues, [`${guest._id}_name`]: e.target.value })}
+                            onBlur={() => {
+                              const newValue = editValues[`${guest._id}_name`];
+                              if (newValue && newValue !== guest.name) {
+                                updateGuestField(guest._id, 'name', newValue);
+                              } else {
+                                setEditingGuest(null);
+                                setEditingField(null);
                               }
                             }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const newValue = editValues[`${guest._id}_name`];
+                                if (newValue && newValue !== guest.name) {
+                                  updateGuestField(guest._id, 'name', newValue);
+                                } else {
+                                  setEditingGuest(null);
+                                  setEditingField(null);
+                                }
+                              } else if (e.key === 'Escape') {
+                                setEditingGuest(null);
+                                setEditingField(null);
+                              }
+                            }}
+                            autoFocus
+                            sx={{ width: '100%' }}
                           />
-                        </Box>
-                      </TableCell>
-                      <TableCell align="center" sx={{ backgroundColor: 'white' }}>
-                        {guest.expectedCount !== undefined ? (
-                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                            {guest.expectedCount}
-                          </Typography>
                         ) : (
-                          <Typography variant="body2" color="text.secondary">-</Typography>
+                          <Box 
+                            sx={{ display: 'flex', alignItems: 'center', gap: 1, flexDirection: 'row-reverse', width: '100%', cursor: 'pointer' }}
+                            onDoubleClick={() => {
+                              setEditingGuest(guest._id);
+                              setEditingField('name');
+                              setEditValues({ ...editValues, [`${guest._id}_name`]: guest.name });
+                            }}
+                          >
+                            <Typography variant="body2" sx={{ fontWeight: 500, width: "100%", textAlign: 'right' }}>
+                              {guest.name}
+                            </Typography>
+                            <Avatar
+                              sx={{
+                                width: 32,
+                                height: 32,
+                                bgcolor: statusColors[guest.status],
+                                fontSize: '0.875rem'
+                              }}
+                            >
+                              {guest.name.charAt(0)}
+                            </Avatar>
+                          </Box>
                         )}
                       </TableCell>
                       <TableCell align="center" sx={{ backgroundColor: 'white' }}>
-                        {guest.confirmedCount > 0 ? (
-                          <Typography variant="body2" sx={{ fontWeight: 500, color: 'success.main' }}>
-                            {guest.confirmedCount}
-                          </Typography>
+                        {editingGuest === guest._id && editingField === 'phone' ? (
+                          <TextField
+                            size="small"
+                            value={editValues[`${guest._id}_phone`] ?? guest.phone}
+                            onChange={(e) => setEditValues({ ...editValues, [`${guest._id}_phone`]: e.target.value })}
+                            onBlur={() => {
+                              const newValue = editValues[`${guest._id}_phone`];
+                              if (newValue && newValue !== guest.phone) {
+                                updateGuestField(guest._id, 'phone', newValue);
+                              } else {
+                                setEditingGuest(null);
+                                setEditingField(null);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const newValue = editValues[`${guest._id}_phone`];
+                                if (newValue && newValue !== guest.phone) {
+                                  updateGuestField(guest._id, 'phone', newValue);
+                                } else {
+                                  setEditingGuest(null);
+                                  setEditingField(null);
+                                }
+                              } else if (e.key === 'Escape') {
+                                setEditingGuest(null);
+                                setEditingField(null);
+                              }
+                            }}
+                            autoFocus
+                            sx={{ width: '100%' }}
+                          />
                         ) : (
-                          <Typography variant="body2" color="text.secondary">-</Typography>
+                          <Typography 
+                            variant="body2" 
+                            sx={{ cursor: 'pointer' }}
+                            onDoubleClick={() => {
+                              setEditingGuest(guest._id);
+                              setEditingField('phone');
+                              setEditValues({ ...editValues, [`${guest._id}_phone`]: guest.phone });
+                            }}
+                          >
+                            {guest.phone}
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell align="center" sx={{ backgroundColor: 'white' }}>
+                        {editingGuest === guest._id && editingField === 'group' ? (
+                          <Autocomplete
+                            freeSolo
+                            size="small"
+                            options={uniqueGroups}
+                            value={editValues[`${guest._id}_group`] ?? guest.group ?? ''}
+                            onChange={(event, newValue) => {
+                              const value = typeof newValue === 'string' ? newValue : newValue || '';
+                              setEditValues({ ...editValues, [`${guest._id}_group`]: value });
+                              updateGuestField(guest._id, 'group', value);
+                            }}
+                            onBlur={() => {
+                              const value = editValues[`${guest._id}_group`] ?? guest.group ?? '';
+                              if (value !== guest.group) {
+                                updateGuestField(guest._id, 'group', value);
+                              } else {
+                                setEditingGuest(null);
+                                setEditingField(null);
+                              }
+                            }}
+                            onInputChange={(event, newInputValue) => {
+                              setEditValues({ ...editValues, [`${guest._id}_group`]: newInputValue });
+                            }}
+                            renderInput={(params) => (
+                              <TextField
+                                {...params}
+                                autoFocus
+                                sx={{ width: 150 }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    const value = editValues[`${guest._id}_group`] ?? guest.group ?? '';
+                                    if (value !== guest.group) {
+                                      updateGuestField(guest._id, 'group', value);
+                                    } else {
+                                      setEditingGuest(null);
+                                      setEditingField(null);
+                                    }
+                                  } else if (e.key === 'Escape') {
+                                    setEditingGuest(null);
+                                    setEditingField(null);
+                                  }
+                                }}
+                              />
+                            )}
+                          />
+                        ) : (
+                          <Typography 
+                            variant="body2" 
+                            sx={{ cursor: 'pointer' }}
+                            onDoubleClick={() => {
+                              setEditingGuest(guest._id);
+                              setEditingField('group');
+                              setEditValues({ ...editValues, [`${guest._id}_group`]: guest.group ?? '' });
+                            }}
+                          >
+                            {guest.group || '-'}
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell align="center" sx={{ backgroundColor: 'white' }}>
+                        {editingGuest === guest._id && editingField === 'status' ? (
+                          <FormControl size="small" sx={{ minWidth: 120 }}>
+                            <Select
+                              value={editValues[`${guest._id}_status`] ?? guest.status}
+                              onChange={(e) => {
+                                const newValue = e.target.value as 'pending' | 'confirmed' | 'declined';
+                                updateGuestStatus(guest._id, newValue);
+                                setEditingGuest(null);
+                                setEditingField(null);
+                              }}
+                              onBlur={() => {
+                                setEditingGuest(null);
+                                setEditingField(null);
+                              }}
+                              autoFocus
+                            >
+                              <MenuItem value="pending">ממתין</MenuItem>
+                              <MenuItem value="confirmed">מאשר הגעה</MenuItem>
+                              <MenuItem value="declined">דחה</MenuItem>
+                            </Select>
+                          </FormControl>
+                        ) : (
+                          <Box 
+                            sx={{ display: 'flex', justifyContent: 'center', cursor: 'pointer' }}
+                            onClick={() => {
+                              setEditingGuest(guest._id);
+                              setEditingField('status');
+                              setEditValues({ ...editValues, [`${guest._id}_status`]: guest.status });
+                            }}
+                          >
+                            <Chip
+                              icon={guest.status === 'confirmed' ? <CheckCircleIcon /> : 
+                                    guest.status === 'declined' ? <CancelIcon /> : 
+                                    <AccessTimeIcon />}
+                              label={statusLabels[guest.status]}
+                              size="small"
+                              sx={{
+                                backgroundColor: alpha(statusColors[guest.status], 0.1),
+                                color: statusColors[guest.status],
+                                fontWeight: 500,
+                                '& .MuiChip-icon': {
+                                  color: statusColors[guest.status]
+                                }
+                              }}
+                            />
+                          </Box>
+                        )}
+                      </TableCell>
+                      <TableCell align="center" sx={{ backgroundColor: 'white' }}>
+                        {editingGuest === guest._id && editingField === 'expectedCount' ? (
+                          <TextField
+                            size="small"
+                            type="number"
+                            value={editValues[`${guest._id}_expectedCount`] ?? guest.expectedCount ?? ''}
+                            onChange={(e) => setEditValues({ ...editValues, [`${guest._id}_expectedCount`]: parseInt(e.target.value) || 0 })}
+                            onBlur={() => {
+                              const newValue = editValues[`${guest._id}_expectedCount`];
+                              if (newValue !== undefined && newValue !== guest.expectedCount) {
+                                updateGuestField(guest._id, 'expectedCount', newValue);
+                              } else {
+                                setEditingGuest(null);
+                                setEditingField(null);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const newValue = editValues[`${guest._id}_expectedCount`];
+                                if (newValue !== undefined && newValue !== guest.expectedCount) {
+                                  updateGuestField(guest._id, 'expectedCount', newValue);
+                                } else {
+                                  setEditingGuest(null);
+                                  setEditingField(null);
+                                }
+                              } else if (e.key === 'Escape') {
+                                setEditingGuest(null);
+                                setEditingField(null);
+                              }
+                            }}
+                            autoFocus
+                            sx={{ width: 80 }}
+                          />
+                        ) : (
+                          <Typography 
+                            variant="body2" 
+                            sx={{ fontWeight: 500, cursor: 'pointer' }}
+                            onDoubleClick={() => {
+                              setEditingGuest(guest._id);
+                              setEditingField('expectedCount');
+                              setEditValues({ ...editValues, [`${guest._id}_expectedCount`]: guest.expectedCount ?? 0 });
+                            }}
+                          >
+                            {guest.expectedCount !== undefined ? guest.expectedCount : '-'}
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell align="center" sx={{ backgroundColor: 'white' }}>
+                        {editingGuest === guest._id && editingField === 'confirmedCount' ? (
+                          <TextField
+                            size="small"
+                            type="number"
+                            value={editValues[`${guest._id}_confirmedCount`] ?? guest.confirmedCount ?? ''}
+                            onChange={(e) => setEditValues({ ...editValues, [`${guest._id}_confirmedCount`]: parseInt(e.target.value) || 0 })}
+                            onBlur={() => {
+                              const newValue = editValues[`${guest._id}_confirmedCount`];
+                              if (newValue !== undefined && newValue !== guest.confirmedCount) {
+                                updateGuestField(guest._id, 'confirmedCount', newValue);
+                              } else {
+                                setEditingGuest(null);
+                                setEditingField(null);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const newValue = editValues[`${guest._id}_confirmedCount`];
+                                if (newValue !== undefined && newValue !== guest.confirmedCount) {
+                                  updateGuestField(guest._id, 'confirmedCount', newValue);
+                                } else {
+                                  setEditingGuest(null);
+                                  setEditingField(null);
+                                }
+                              } else if (e.key === 'Escape') {
+                                setEditingGuest(null);
+                                setEditingField(null);
+                              }
+                            }}
+                            autoFocus
+                            sx={{ width: 80 }}
+                          />
+                        ) : (
+                          <Typography 
+                            variant="body2" 
+                            sx={{ fontWeight: 500, color: guest.confirmedCount > 0 ? 'success.main' : 'text.secondary', cursor: 'pointer' }}
+                            onDoubleClick={() => {
+                              setEditingGuest(guest._id);
+                              setEditingField('confirmedCount');
+                              setEditValues({ ...editValues, [`${guest._id}_confirmedCount`]: guest.confirmedCount ?? 0 });
+                            }}
+                          >
+                            {guest.confirmedCount > 0 ? guest.confirmedCount : '-'}
+                          </Typography>
                         )}
                       </TableCell>
                       {hasTableNumbers && (
                         <TableCell align="center" sx={{ backgroundColor: 'white' }}>
-                          {guest.tableNumber !== undefined ? (
-                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                              {guest.tableNumber}
-                            </Typography>
+                          {editingGuest === guest._id && editingField === 'tableNumber' ? (
+                            <TextField
+                              size="small"
+                              type="number"
+                              value={editValues[`${guest._id}_tableNumber`] ?? guest.tableNumber ?? ''}
+                              onChange={(e) => setEditValues({ ...editValues, [`${guest._id}_tableNumber`]: parseInt(e.target.value) || undefined })}
+                              onBlur={() => {
+                                const newValue = editValues[`${guest._id}_tableNumber`];
+                                if (newValue !== guest.tableNumber) {
+                                  updateGuestField(guest._id, 'tableNumber', newValue || undefined);
+                                } else {
+                                  setEditingGuest(null);
+                                  setEditingField(null);
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  const newValue = editValues[`${guest._id}_tableNumber`];
+                                  if (newValue !== guest.tableNumber) {
+                                    updateGuestField(guest._id, 'tableNumber', newValue || undefined);
+                                  } else {
+                                    setEditingGuest(null);
+                                    setEditingField(null);
+                                  }
+                                } else if (e.key === 'Escape') {
+                                  setEditingGuest(null);
+                                  setEditingField(null);
+                                }
+                              }}
+                              autoFocus
+                              sx={{ width: 80 }}
+                            />
                           ) : (
-                            <Typography variant="body2" color="text.secondary">-</Typography>
+                            <Typography 
+                              variant="body2" 
+                              sx={{ fontWeight: 500, cursor: 'pointer' }}
+                              onDoubleClick={() => {
+                                setEditingGuest(guest._id);
+                                setEditingField('tableNumber');
+                                setEditValues({ ...editValues, [`${guest._id}_tableNumber`]: guest.tableNumber ?? '' });
+                              }}
+                            >
+                              {guest.tableNumber !== undefined ? guest.tableNumber : '-'}
+                            </Typography>
                           )}
                         </TableCell>
                       )}
                       <TableCell align="center" sx={{ backgroundColor: 'white' }}>
                         <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
-                          <IconButton size="small" sx={{ color: '#25D366' }}>
-                            <WhatsAppIcon fontSize="small" />
-                          </IconButton>
-                          <IconButton size="small">
+                          <IconButton 
+                            size="small"
+                            onClick={() => {
+                              setEditingGuestData(guest);
+                              setEditModalOpen(true);
+                            }}
+                          >
                             <EditIcon fontSize="small" />
                           </IconButton>
                           <IconButton 
@@ -1428,7 +1821,7 @@ function Guests() {
           </Paper>
 
           {/* Guest Cards without widget */}
-          <Grid container spacing={2}>
+          <Grid container spacing={2} ref={tableRef}>
             {guestsLoading ? (
               <Grid item xs={12}>
                 <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 8 }}>
@@ -1465,7 +1858,11 @@ function Guests() {
                         }}
                       >
                         <CardContent 
-                          onClick={() => {
+                          onClick={(e) => {
+                            // Don't toggle expand if clicking on edit button or in edit mode
+                            if ((e.target as HTMLElement).closest('.edit-button') || mobileEditingGuest === guest._id) {
+                              return;
+                            }
                             const newExpanded = new Set(expandedGuests);
                             if (isExpanded) {
                               newExpanded.delete(guest._id);
@@ -1477,84 +1874,243 @@ function Guests() {
                           sx={{ 
                             p: 2, 
                             '&:last-child': { pb: 2 },
-                            cursor: 'pointer'
+                            cursor: mobileEditingGuest === guest._id ? 'default' : 'pointer',
+                            position: 'relative'
                           }}
                         >
-                          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, flexDirection: 'row-reverse' }}>
-                            {/* WhatsApp Icon on left */}
-                            <Box
-                              sx={{
-                                width: 40,
-                                height: 40,
-                                borderRadius: '50%',
-                                backgroundColor: '#25D366',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                flexShrink: 0
-                              }}
-                            >
-                              <WhatsAppIcon sx={{ fontSize: 20, color: 'white' }} />
-                            </Box>
-                            
-                            {/* Content - Right aligned */}
-                            <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', width: '100%' }}>
-                              {/* Name */}
-                              <Typography variant="body1" sx={{ fontWeight: 600, mb: 0.25, textAlign: 'right', width: '100%' }}>
-                                {guest.name}
-                              </Typography>
-                              
-                              {/* Phone */}
-                              <Typography variant="body2" color="text.secondary" sx={{ mb: 1, textAlign: 'right', width: '100%' }}>
-                                {guest.phone}
-                              </Typography>
-                              
-                              {/* Status Chip and Total Count */}
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, justifyContent: 'flex-end', flexWrap: 'wrap', width: '100%', flexDirection: 'row-reverse' }}>
-                                <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'right' }}>
-                                  {totalCount} אורחים
-                                </Typography>
-                                <Chip
-                                  icon={guest.status === 'confirmed' ? <CheckCircleIcon /> : 
-                                        guest.status === 'declined' ? <CancelIcon /> : 
-                                        <AccessTimeIcon />}
-                                  label={statusLabels[guest.status]}
-                                  size="small"
-                                  sx={{
-                                    backgroundColor: alpha(statusColors[guest.status], 0.1),
-                                    color: statusColors[guest.status],
-                                    fontWeight: 500,
-                                    '& .MuiChip-icon': {
-                                      color: statusColors[guest.status]
-                                    }
+                          {mobileEditingGuest === guest._id ? (
+                            /* Edit Mode */
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+                              <TextField
+                                size="small"
+                                fullWidth
+                                label="שם מלא"
+                                value={editValues[`${guest._id}_mobile_name`] ?? guest.name}
+                                onChange={(e) => setEditValues({ ...editValues, [`${guest._id}_mobile_name`]: e.target.value })}
+                                sx={{ backgroundColor: 'white' }}
+                              />
+                              <TextField
+                                size="small"
+                                fullWidth
+                                label="מספר טלפון"
+                                value={editValues[`${guest._id}_mobile_phone`] ?? guest.phone}
+                                onChange={(e) => setEditValues({ ...editValues, [`${guest._id}_mobile_phone`]: e.target.value })}
+                                sx={{ backgroundColor: 'white' }}
+                              />
+                              <FormControl fullWidth size="small">
+                                <InputLabel>סטטוס</InputLabel>
+                                <Select
+                                  value={editValues[`${guest._id}_mobile_status`] ?? guest.status}
+                                  onChange={(e) => {
+                                    const newStatus = e.target.value as 'pending' | 'confirmed' | 'declined';
+                                    setEditValues({ ...editValues, [`${guest._id}_mobile_status`]: newStatus });
+                                    updateGuestStatus(guest._id, newStatus);
                                   }}
+                                  label="סטטוס"
+                                  sx={{ backgroundColor: 'white' }}
+                                >
+                                  <MenuItem value="pending">ממתין</MenuItem>
+                                  <MenuItem value="confirmed">מאשר הגעה</MenuItem>
+                                  <MenuItem value="declined">דחה</MenuItem>
+                                </Select>
+                              </FormControl>
+                              <Box sx={{ display: 'flex', gap: 1 }}>
+                                <TextField
+                                  size="small"
+                                  fullWidth
+                                  type="number"
+                                  label="כמות צפויה"
+                                  value={editValues[`${guest._id}_mobile_expectedCount`] ?? guest.expectedCount ?? ''}
+                                  onChange={(e) => setEditValues({ ...editValues, [`${guest._id}_mobile_expectedCount`]: parseInt(e.target.value) || 0 })}
+                                  sx={{ backgroundColor: 'white' }}
                                 />
-
+                                <TextField
+                                  size="small"
+                                  fullWidth
+                                  type="number"
+                                  label="כמות שאושרה"
+                                  value={editValues[`${guest._id}_mobile_confirmedCount`] ?? guest.confirmedCount ?? ''}
+                                  onChange={(e) => setEditValues({ ...editValues, [`${guest._id}_mobile_confirmedCount`]: parseInt(e.target.value) || 0 })}
+                                  sx={{ backgroundColor: 'white' }}
+                                />
+                              </Box>
+                              <Autocomplete
+                                freeSolo
+                                size="small"
+                                fullWidth
+                                options={uniqueGroups}
+                                value={editValues[`${guest._id}_mobile_group`] ?? guest.group ?? ''}
+                                onChange={(event, newValue) => {
+                                  const value = typeof newValue === 'string' ? newValue : newValue || '';
+                                  setEditValues({ ...editValues, [`${guest._id}_mobile_group`]: value });
+                                }}
+                                onInputChange={(event, newInputValue) => {
+                                  setEditValues({ ...editValues, [`${guest._id}_mobile_group`]: newInputValue });
+                                }}
+                                renderInput={(params) => (
+                                  <TextField
+                                    {...params}
+                                    label="קבוצה"
+                                    sx={{ backgroundColor: 'white' }}
+                                  />
+                                )}
+                              />
+                              {guest.tableNumber !== undefined && (
+                                <TextField
+                                  size="small"
+                                  fullWidth
+                                  type="number"
+                                  label="מספר שולחן"
+                                  value={editValues[`${guest._id}_mobile_tableNumber`] ?? guest.tableNumber ?? ''}
+                                  onChange={(e) => setEditValues({ ...editValues, [`${guest._id}_mobile_tableNumber`]: parseInt(e.target.value) || undefined })}
+                                  sx={{ backgroundColor: 'white' }}
+                                />
+                              )}
+                              <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                                <Button
+                                  variant="outlined"
+                                  fullWidth
+                                  onClick={() => {
+                                    setMobileEditingGuest(null);
+                                  }}
+                                  sx={{ borderRadius: 2, py: 1.25 }}
+                                >
+                                  ביטול
+                                </Button>
+                                <Button
+                                  variant="contained"
+                                  fullWidth
+                                  onClick={() => {
+                                    const updatedData: Partial<Guest> = {
+                                      name: editValues[`${guest._id}_mobile_name`] ?? guest.name,
+                                      phone: editValues[`${guest._id}_mobile_phone`] ?? guest.phone,
+                                      group: editValues[`${guest._id}_mobile_group`] ?? guest.group,
+                                      expectedCount: editValues[`${guest._id}_mobile_expectedCount`] ?? guest.expectedCount,
+                                      confirmedCount: editValues[`${guest._id}_mobile_confirmedCount`] ?? guest.confirmedCount,
+                                      tableNumber: editValues[`${guest._id}_mobile_tableNumber`] ?? guest.tableNumber,
+                                    };
+                                    updateGuest(guest._id, updatedData);
+                                    setMobileEditingGuest(null);
+                                  }}
+                                  sx={{ borderRadius: 2, py: 1.25 }}
+                                >
+                                  שמור
+                                </Button>
+                              </Box>
+                            </Box>
+                          ) : (
+                            /* View Mode */
+                            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, flexDirection: 'row-reverse', position: 'relative' }}>
+                              {/* Edit Button */}
+                              <IconButton
+                                className="edit-button"
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setMobileEditingGuest(guest._id);
+                                  setEditValues({
+                                    ...editValues,
+                                    [`${guest._id}_mobile_name`]: guest.name,
+                                    [`${guest._id}_mobile_phone`]: guest.phone,
+                                    [`${guest._id}_mobile_group`]: guest.group ?? '',
+                                    [`${guest._id}_mobile_expectedCount`]: guest.expectedCount ?? '',
+                                    [`${guest._id}_mobile_confirmedCount`]: guest.confirmedCount ?? '',
+                                    [`${guest._id}_mobile_tableNumber`]: guest.tableNumber ?? '',
+                                    [`${guest._id}_mobile_status`]: guest.status
+                                  });
+                                }}
+                                sx={{
+                                  position: 'absolute',
+                                  top: 0,
+                                  left: 0,
+                                  backgroundColor: 'background.default',
+                                  color: 'text.secondary',
+                                  '&:hover': {
+                                    backgroundColor: 'action.hover'
+                                  },
+                                  zIndex: 1,
+                                  width: 32,
+                                  height: 32
+                                }}
+                              >
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                              
+                              {/* WhatsApp Icon on left */}
+                              <Box
+                                sx={{
+                                  width: 40,
+                                  height: 40,
+                                  borderRadius: '50%',
+                                  backgroundColor: '#25D366',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  flexShrink: 0,
+                                  ml: 5 // Add margin to avoid overlap with edit button
+                                }}
+                              >
+                                <WhatsAppIcon sx={{ fontSize: 20, color: 'white' }} />
                               </Box>
                               
-                              {/* Response status with expand icon */}
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, justifyContent: 'flex-end', width: '100%', flexDirection: 'row-reverse' }}>
-                                <ExpandMoreIcon 
-                                  sx={{ 
-                                    transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                                    transition: 'transform 0.3s',
-                                    color: 'text.secondary',
-                                    flexShrink: 0
-                                  }}
-                                />
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexDirection: 'row-reverse' }}>
-                                  {!hasResponded && (
-                                    <WarningIcon sx={{ fontSize: 16, color: '#f57c00' }} />
-                                  )}
-                                  <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'right' }}>
-                                    {hasResponded 
-                                      ? `הגיב${guest.status === 'confirmed' ? 'ה' : ''} לפני ${guest.status === 'confirmed' ? 'יומיים' : guest.status === 'declined' ? '3 ימים' : 'שבוע'}`
-                                      : `הודעה נשלחה לפני ${guest.status === 'pending' ? '5 ימים' : 'יומיים'}`}
+                              {/* Content - Right aligned */}
+                              <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', width: '100%' }}>
+                                {/* Name */}
+                                <Typography variant="body1" sx={{ fontWeight: 600, mb: 0.25, textAlign: 'right', width: '100%' }}>
+                                  {guest.name}
+                                </Typography>
+                                
+                                {/* Phone */}
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1, textAlign: 'right', width: '100%' }}>
+                                  {guest.phone}
+                                </Typography>
+                                
+                                {/* Status Chip and Total Count */}
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, justifyContent: 'flex-end', flexWrap: 'wrap', width: '100%', flexDirection: 'row-reverse' }}>
+                                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'right' }}>
+                                    {totalCount} אורחים
                                   </Typography>
+                                  <Chip
+                                    icon={guest.status === 'confirmed' ? <CheckCircleIcon /> : 
+                                          guest.status === 'declined' ? <CancelIcon /> : 
+                                          <AccessTimeIcon />}
+                                    label={statusLabels[guest.status]}
+                                    size="small"
+                                    sx={{
+                                      backgroundColor: alpha(statusColors[guest.status], 0.1),
+                                      color: statusColors[guest.status],
+                                      fontWeight: 500,
+                                      '& .MuiChip-icon': {
+                                        color: statusColors[guest.status]
+                                      }
+                                    }}
+                                  />
+                                </Box>
+                                
+                                {/* Response status with expand icon */}
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, justifyContent: 'flex-end', width: '100%', flexDirection: 'row-reverse' }}>
+                                  <ExpandMoreIcon 
+                                    sx={{ 
+                                      transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                      transition: 'transform 0.3s',
+                                      color: 'text.secondary',
+                                      flexShrink: 0
+                                    }}
+                                  />
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexDirection: 'row-reverse' }}>
+                                    {!hasResponded && (
+                                      <WarningIcon sx={{ fontSize: 16, color: '#f57c00' }} />
+                                    )}
+                                    <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'right' }}>
+                                      {hasResponded 
+                                        ? `הגיב${guest.status === 'confirmed' ? 'ה' : ''} לפני ${guest.status === 'confirmed' ? 'יומיים' : guest.status === 'declined' ? '3 ימים' : 'שבוע'}`
+                                        : `הודעה נשלחה לפני ${guest.status === 'pending' ? '5 ימים' : 'יומיים'}`}
+                                    </Typography>
+                                  </Box>
                                 </Box>
                               </Box>
                             </Box>
-                          </Box>
+                          )}
                         </CardContent>
                         
                         {/* Expanded Content */}
@@ -1958,6 +2514,130 @@ function Guests() {
         <DialogActions>
           <Button onClick={() => setImportModalOpen(false)}>ביטול</Button>
           <Button variant="contained">ייבוא</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Guest Modal */}
+      <Dialog 
+        open={editModalOpen} 
+        onClose={() => {
+          setEditModalOpen(false);
+          setEditingGuestData(null);
+        }}
+        maxWidth="sm"
+        fullWidth
+        dir="rtl"
+      >
+        <DialogTitle>עריכת אורח</DialogTitle>
+        <DialogContent>
+          {editingGuestData && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
+              <TextField
+                label="שם מלא"
+                fullWidth
+                value={editValues[`${editingGuestData._id}_modal_name`] ?? editingGuestData.name}
+                onChange={(e) => setEditValues({ ...editValues, [`${editingGuestData._id}_modal_name`]: e.target.value })}
+              />
+              <TextField
+                label="מספר טלפון"
+                fullWidth
+                value={editValues[`${editingGuestData._id}_modal_phone`] ?? editingGuestData.phone}
+                onChange={(e) => setEditValues({ ...editValues, [`${editingGuestData._id}_modal_phone`]: e.target.value })}
+              />
+              <TextField
+                label="אימייל"
+                fullWidth
+                type="email"
+                value={editValues[`${editingGuestData._id}_modal_email`] ?? editingGuestData.email ?? ''}
+                onChange={(e) => setEditValues({ ...editValues, [`${editingGuestData._id}_modal_email`]: e.target.value })}
+              />
+              <Autocomplete
+                freeSolo
+                fullWidth
+                options={uniqueGroups}
+                value={editValues[`${editingGuestData._id}_modal_group`] ?? editingGuestData.group ?? ''}
+                onChange={(event, newValue) => {
+                  const value = typeof newValue === 'string' ? newValue : newValue || '';
+                  setEditValues({ ...editValues, [`${editingGuestData._id}_modal_group`]: value });
+                }}
+                onInputChange={(event, newInputValue) => {
+                  setEditValues({ ...editValues, [`${editingGuestData._id}_modal_group`]: newInputValue });
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="קבוצה"
+                  />
+                )}
+              />
+              <TextField
+                label="כמות אורחים צפויה"
+                fullWidth
+                type="number"
+                value={editValues[`${editingGuestData._id}_modal_expectedCount`] ?? editingGuestData.expectedCount ?? ''}
+                onChange={(e) => setEditValues({ ...editValues, [`${editingGuestData._id}_modal_expectedCount`]: parseInt(e.target.value) || 0 })}
+              />
+              <TextField
+                label="כמות אורחים שאושרה"
+                fullWidth
+                type="number"
+                value={editValues[`${editingGuestData._id}_modal_confirmedCount`] ?? editingGuestData.confirmedCount ?? ''}
+                onChange={(e) => setEditValues({ ...editValues, [`${editingGuestData._id}_modal_confirmedCount`]: parseInt(e.target.value) || 0 })}
+              />
+              <TextField
+                label="מספר שולחן"
+                fullWidth
+                type="number"
+                value={editValues[`${editingGuestData._id}_modal_tableNumber`] ?? editingGuestData.tableNumber ?? ''}
+                onChange={(e) => setEditValues({ ...editValues, [`${editingGuestData._id}_modal_tableNumber`]: parseInt(e.target.value) || undefined })}
+              />
+              <FormControl fullWidth>
+                <InputLabel>סטטוס</InputLabel>
+                <Select
+                  value={editValues[`${editingGuestData._id}_modal_status`] ?? editingGuestData.status}
+                  onChange={(e) => setEditValues({ ...editValues, [`${editingGuestData._id}_modal_status`]: e.target.value })}
+                  label="סטטוס"
+                >
+                  <MenuItem value="pending">ממתין</MenuItem>
+                  <MenuItem value="confirmed">מאשר הגעה</MenuItem>
+                  <MenuItem value="declined">דחה</MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button 
+            onClick={() => {
+              setEditModalOpen(false);
+              setEditingGuestData(null);
+            }}
+          >
+            ביטול
+          </Button>
+          <Button 
+            variant="contained"
+            onClick={() => {
+              if (editingGuestData) {
+                const updatedData: Partial<Guest> = {
+                  name: editValues[`${editingGuestData._id}_modal_name`] ?? editingGuestData.name,
+                  phone: editValues[`${editingGuestData._id}_modal_phone`] ?? editingGuestData.phone,
+                  email: editValues[`${editingGuestData._id}_modal_email`] ?? editingGuestData.email,
+                  group: editValues[`${editingGuestData._id}_modal_group`] ?? editingGuestData.group,
+                  expectedCount: editValues[`${editingGuestData._id}_modal_expectedCount`] ?? editingGuestData.expectedCount,
+                  confirmedCount: editValues[`${editingGuestData._id}_modal_confirmedCount`] ?? editingGuestData.confirmedCount,
+                  tableNumber: editValues[`${editingGuestData._id}_modal_tableNumber`] ?? editingGuestData.tableNumber,
+                };
+                const newStatus = editValues[`${editingGuestData._id}_modal_status`] ?? editingGuestData.status;
+                if (newStatus !== editingGuestData.status) {
+                  updateGuestStatus(editingGuestData._id, newStatus as 'pending' | 'confirmed' | 'declined');
+                }
+                updateGuest(editingGuestData._id, updatedData);
+              }
+            }}
+          >
+            שמור
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>
