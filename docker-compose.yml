@@ -222,6 +222,22 @@ services:
       core-service:
         condition: service_started
 
+  otp-worker:
+    build:
+      context: ./otp-worker
+      dockerfile: Dockerfile
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=${RABBITMQ_PORT}
+      - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
+      - OTP_QUEUE_NAME=${OTP_QUEUE_NAME}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+    depends_on:
+      rabbitmq:
+        condition: service_started
+
 
 networks:
   default:
