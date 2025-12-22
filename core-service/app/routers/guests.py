@@ -7,6 +7,7 @@ import datetime as dt
 from typing import Optional, List, Union, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Body
+from fastapi.responses import StreamingResponse, Response
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case
@@ -297,6 +298,167 @@ def get_daily_responses(
     return DailyResponsesOut(
         data=daily_data,
         milestones=milestones
+    )
+
+
+@router.get("/export")
+def export_guests(
+    event_id: uuid.UUID = Query(...),
+    export_format: str = Query("csv"),
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """
+    Export guests for an event as CSV or XLSX.
+
+    - CSV: UTF-8 with BOM, so Hebrew displays correctly in Excel.
+    - XLSX: basic styled sheet, RTL, with Hebrew headers.
+    """
+    # Validate export_format
+    if export_format not in ("csv", "xlsx"):
+        raise HTTPException(status_code=422, detail=f"Invalid export_format: {export_format}. Must be 'csv' or 'xlsx'")
+    
+    event = event_crud.get_event(db, event_id)
+    if not event or not event_crud.is_owner(event, user_id):
+        raise HTTPException(status_code=404, detail="Event not found or not permitted")
+
+    # Fetch all guests for this event (no pagination)
+    guests, _total = guest_crud.list_guests(
+        db=db,
+        event_id=event_id,
+        page=1,
+        page_size=10_000,  # safe upper bound
+        search=None,
+        order_by="created_at",
+        only_with_responses=False,
+        status=None,
+    )
+
+    # Define columns we want to export
+    headers = [
+        "שם מלא",
+        "טלפון",
+        "אימייל",
+        "קבוצה",
+        "סטטוס",
+        "כמות מוזמנים (Import)",
+        "כמות שאישרו (Guest Count)",
+        "מספר שולחן",
+        "תאריך יצירה",
+        "עדכון אחרון",
+    ]
+
+    # Helper to map status to Hebrew label
+    status_hebrew = {
+        "invited": "מוזמן",
+        "pending": "ממתין",
+        "attending": "מאשר הגעה",
+        "confirmed": "מאשר הגעה",
+        "declined": "לא מגיע",
+        "maybe": "אולי",
+    }
+
+    if export_format == "csv":
+        # Build CSV in memory with UTF-8 BOM so Excel handles Hebrew properly
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(headers)
+
+        for g in guests:
+            writer.writerow([
+                g.name,
+                g.phone,
+                g.email or "",
+                g.group or "",
+                status_hebrew.get(g.status, g.status or ""),
+                g.import_count,
+                g.guest_count or "",
+                g.table_number or "",
+                g.created_at.isoformat() if getattr(g, "created_at", None) else "",
+                g.last_response.isoformat() if g.last_response else "",
+            ])
+
+        csv_text = output.getvalue()
+        # Prefix BOM so Excel recognizes UTF-8 Hebrew properly
+        csv_bytes = ("\ufeff" + csv_text).encode("utf-8-sig")
+
+        return Response(
+            content=csv_bytes,
+            media_type="text/csv; charset=utf-8",
+            headers={
+                "Content-Disposition": 'attachment; filename="guests.csv"',
+            },
+        )
+
+    # XLSX export
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+    except ImportError:
+        raise HTTPException(status_code=500, detail="openpyxl is not installed on server")
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "אורחים"
+    # Right-to-left for Hebrew
+    ws.sheet_view.rightToLeft = True
+
+    # Header row styling
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="1E3A8A")  # deep blue
+    header_alignment = Alignment(horizontal="center", vertical="center")
+
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+
+    # Data rows
+    for g in guests:
+        ws.append([
+            g.name,
+            g.phone,
+            g.email or "",
+            g.group or "",
+            status_hebrew.get(g.status, g.status or ""),
+            g.import_count,
+            g.guest_count or "",
+            g.table_number or "",
+            g.created_at.isoformat() if getattr(g, "created_at", None) else "",
+            g.last_response.isoformat() if g.last_response else "",
+        ])
+
+    # Auto width (roughly)
+    for col in ws.columns:
+        max_length = 0
+        col_letter = col[0].column_letter  # type: ignore[attr-defined]
+        for cell in col:
+            try:
+                cell_len = len(str(cell.value)) if cell.value is not None else 0
+                if cell_len > max_length:
+                    max_length = cell_len
+            except Exception:
+                continue
+        ws.column_dimensions[col_letter].width = max(10, min(max_length + 2, 40))
+
+    # Align text right for Hebrew text columns
+    rtl_alignment = Alignment(horizontal="right", vertical="center")
+    for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=8):
+        for cell in row:
+            cell.alignment = rtl_alignment
+
+    # Serialize workbook to bytes
+    output_stream = io.BytesIO()
+    wb.save(output_stream)
+    output_stream.seek(0)
+
+    return StreamingResponse(
+        output_stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": 'attachment; filename="guests.xlsx"',
+        },
     )
 
 

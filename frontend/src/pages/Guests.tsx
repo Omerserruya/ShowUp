@@ -38,7 +38,8 @@ import {
   CircularProgress,
   Snackbar,
   Alert,
-  Autocomplete
+  Autocomplete,
+  Menu
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -62,6 +63,7 @@ import {
 import { useGuests, useOverviewStats } from '../hooks/useOverviewData';
 import { useEvent } from '../contexts/EventContext';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
+import { countryOptions, normalizePhoneNumber } from '../utils/countryOptions';
 
 // Types
 interface Guest {
@@ -166,10 +168,26 @@ function Guests() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingGuestData, setEditingGuestData] = useState<Guest | null>(null);
   
+  // New guest (manual add)
+  const [newGuest, setNewGuest] = useState({
+    name: '',
+    phone: '',
+    countryCode: '+972',
+    group: '',
+    status: 'pending' as 'pending' | 'confirmed' | 'declined' | 'maybe',
+    expectedCount: 1 as number | string,
+    confirmedCount: '' as number | string,
+    tableNumber: '' as number | string,
+    note: ''
+  });
+  const [savingNewGuest, setSavingNewGuest] = useState(false);
+  
   // Mobile editing & swipe state
   const [mobileEditingGuest, setMobileEditingGuest] = useState<string | null>(null);
   const [swipeStartX, setSwipeStartX] = useState<number | null>(null);
   const [swipedGuestId, setSwipedGuestId] = useState<string | null>(null);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportMenuAnchor, setExportMenuAnchor] = useState<null | HTMLElement>(null);
   
   // Read filter from URL query parameter on mount and when URL changes
   useEffect(() => {
@@ -313,6 +331,130 @@ function Guests() {
       setSnackbar({ open: true, message: 'שגיאה בעדכון ההערה', severity: 'error' });
     }
   }, []);
+
+  // Export guests (CSV/XLSX)
+  const handleExport = useCallback(async (format: 'csv' | 'xlsx') => {
+    if (!selectedEvent?.id) return;
+    setExportMenuAnchor(null); // Close menu
+    try {
+      setExportLoading(true);
+      const params = new URLSearchParams({
+        event_id: selectedEvent.id,
+        export_format: format,
+      });
+      const response = await fetchWithAuth(`/api/guests/export?${params.toString()}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Export error response:', errorText);
+        throw new Error(`Failed to export guests: ${response.status} ${errorText}`);
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = format === 'csv' ? 'guests.csv' : 'guests.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error exporting guests:', error);
+      setSnackbar({ open: true, message: 'שגיאה ביצוא האורחים', severity: 'error' });
+    } finally {
+      setExportLoading(false);
+    }
+  }, [selectedEvent?.id]);
+
+  // Create new guest (manual add)
+  const createGuest = useCallback(async () => {
+    if (!selectedEvent?.id) return;
+
+    const trimmedName = newGuest.name.trim();
+    const trimmedPhone = newGuest.phone.trim();
+
+    if (!trimmedName || !trimmedPhone) {
+      setSnackbar({ open: true, message: 'שם ומספר טלפון הם שדות חובה', severity: 'error' });
+      return;
+    }
+
+    // Normalize phone number with country code
+    const fullPhoneNumber = normalizePhoneNumber(trimmedPhone, newGuest.countryCode);
+
+    const payload: Record<string, any> = {
+      name: trimmedName,
+      phone: fullPhoneNumber,
+    };
+
+    if (newGuest.group) {
+      payload.group = newGuest.group;
+    }
+
+    // Map frontend status to backend status
+    const statusMap: Record<string, string> = {
+      pending: 'invited',
+      confirmed: 'attending',
+      declined: 'declined',
+      maybe: 'maybe',
+    };
+    payload.status = statusMap[newGuest.status] || 'invited';
+
+    // Numeric fields – only send valid positive integers
+    if (newGuest.expectedCount !== '') {
+      const expected = Number(newGuest.expectedCount);
+      if (Number.isFinite(expected) && expected >= 1) {
+        payload.import_count = expected;
+      }
+    }
+    if (newGuest.confirmedCount !== '') {
+      const confirmed = Number(newGuest.confirmedCount);
+      if (Number.isFinite(confirmed) && confirmed >= 1) {
+        payload.guest_count = confirmed;
+      }
+    }
+    if (newGuest.tableNumber !== '') {
+      const tableNum = Number(newGuest.tableNumber);
+      if (Number.isFinite(tableNum) && tableNum >= 1) {
+        payload.table_number = tableNum;
+      }
+    }
+
+    if (newGuest.note) {
+      payload.notes = newGuest.note;
+    }
+
+    try {
+      setSavingNewGuest(true);
+      const response = await fetchWithAuth(`/api/guests?event_id=${selectedEvent.id}`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create guest');
+      }
+
+      setSnackbar({ open: true, message: 'האורח נוסף בהצלחה', severity: 'success' });
+      setGuestModalOpen(false);
+      setNewGuest({
+        name: '',
+        phone: '',
+        countryCode: '+972',
+        group: '',
+        status: 'pending',
+        expectedCount: 1,
+        confirmedCount: '',
+        tableNumber: '',
+        note: ''
+      });
+      setRefreshKey(prev => prev + 1);
+      setStatsRefreshKey(prev => prev + 1);
+    } catch (error) {
+      console.error('Error creating guest:', error);
+      setSnackbar({ open: true, message: 'שגיאה בהוספת האורח', severity: 'error' });
+    } finally {
+      setSavingNewGuest(false);
+    }
+  }, [newGuest, selectedEvent?.id]);
 
   // Update guest field (inline editing)
   const updateGuestField = useCallback(async (guestId: string, field: string, value: any) => {
@@ -884,10 +1026,11 @@ function Guests() {
           </Button>
           </Grid>
           <Grid item xs={4}>
-          <Button
-            variant="outlined"
-            onClick={() => {/* TODO: Implement export to Excel */}}
+            <Button
+              variant="outlined"
               fullWidth
+              disabled={exportLoading}
+              onClick={(e) => setExportMenuAnchor(e.currentTarget)}
               sx={{ 
                 borderRadius: 3,
                 backgroundColor: 'white',
@@ -924,9 +1067,36 @@ function Guests() {
                 <TableChartIcon sx={{ color: '#9c27b0', fontSize: { xs: 16, sm: 20 } }} />
               </Box>
               <Box sx={{ flex: 1, textAlign: 'right', mr: {xs:1, md:2}}}>
-                ייצא
+                {exportLoading ? 'מייצא...' : 'ייצוא'}
               </Box>
             </Button>
+            <Menu
+              anchorEl={exportMenuAnchor}
+              open={Boolean(exportMenuAnchor)}
+              onClose={() => setExportMenuAnchor(null)}
+              disableAutoFocusItem
+              anchorOrigin={{
+                vertical: 'bottom',
+                horizontal: 'right',
+              }}
+              transformOrigin={{
+                vertical: 'top',
+                horizontal: 'right',
+              }}
+            >
+              <MenuItem onClick={() => handleExport('csv')} disabled={exportLoading}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                  <FileDownloadIcon sx={{ fontSize: 20 }} />
+                  <Typography>ייצוא ל-CSV</Typography>
+                </Box>
+              </MenuItem>
+              <MenuItem onClick={() => handleExport('xlsx')} disabled={exportLoading}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                  <TableChartIcon sx={{ fontSize: 20 }} />
+                  <Typography>ייצוא ל-Excel</Typography>
+                </Box>
+              </MenuItem>
+            </Menu>
           </Grid>
         </Grid>
       </Box>
@@ -2529,43 +2699,194 @@ function Guests() {
       >
         <DialogTitle>הוספת אורח חדש</DialogTitle>
         <DialogContent>
-          <Stack spacing={2} sx={{ mt: 2 }}>
-            <TextField
-              fullWidth
-              label="שם"
-              required
-            />
-            <TextField
-              fullWidth
-              label="טלפון"
-              required
-            />
-            <FormControl fullWidth>
-              <InputLabel>קבוצה</InputLabel>
-              <Select label="קבוצה">
-                <MenuItem value="משפחת כהן">משפחת כהן</MenuItem>
-                <MenuItem value="חברים">חברים</MenuItem>
-              </Select>
-            </FormControl>
-            <FormControl fullWidth>
-              <InputLabel>סטטוס</InputLabel>
-              <Select label="סטטוס">
-                {Object.entries(statusLabels).map(([value, label]) => (
-                  <MenuItem key={value} value={value}>{label}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+          <Stack spacing={2.5} sx={{ mt: 2 }}>
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="שם מלא"
+                  required
+                  value={newGuest.name}
+                  onChange={(e) => setNewGuest(prev => ({ ...prev, name: e.target.value }))}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <Box sx={{ display: 'flex', flexDirection: 'row-reverse', gap: 1 }}>
+                  <TextField
+                    select
+                    value={newGuest.countryCode}
+                    onChange={(e) => setNewGuest(prev => ({ ...prev, countryCode: e.target.value }))}
+                    sx={{
+                      minWidth: { xs: 90, sm: 110 },
+                      width: { xs: 90, sm: 110 },
+                      flexShrink: 0,
+                      '& .MuiOutlinedInput-root': {
+                        borderRadius: 1.5,
+                        height: 56,
+                        bgcolor: '#f9fafb',
+                        '& fieldset': {
+                          borderColor: '#e0e0e0',
+                        },
+                        '&:hover fieldset': {
+                          borderColor: '#d1d5db',
+                        },
+                        '&.Mui-focused fieldset': {
+                          borderColor: '#3b82f6',
+                          boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
+                        },
+                        '& .MuiSelect-select': {
+                          fontSize: { xs: 12, sm: 13 },
+                        },
+                      },
+                    }}
+                    SelectProps={{
+                      renderValue: (value) => (value as string) || '+972',
+                    }}
+                    inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
+                  >
+                    {countryOptions.map((option) => (
+                      <MenuItem key={option.code + option.dialCode} value={option.dialCode}>
+                        {option.flag} {option.name} ({option.dialCode})
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    fullWidth
+                    label="מספר טלפון"
+                    required
+                    type="tel"
+                    inputMode="numeric"
+                    value={newGuest.phone}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                      const onlyDigits = e.target.value.replace(/\D/g, '');
+                      setNewGuest(prev => ({ ...prev, phone: onlyDigits }));
+                    }}
+                    inputProps={{
+                      style: { direction: 'rtl', textAlign: 'right' },
+                      pattern: '[0-9]*',
+                    }}
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        borderRadius: 1.5,
+                        bgcolor: '#f9fafb',
+                        '& fieldset': {
+                          borderColor: '#e0e0e0',
+                        },
+                        '&:hover fieldset': {
+                          borderColor: '#d1d5db',
+                        },
+                        '&.Mui-focused fieldset': {
+                          borderColor: '#3b82f6',
+                          boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
+                        },
+                      },
+                    }}
+                  />
+                </Box>
+              </Grid>
+            </Grid>
+
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6}>
+                <Autocomplete
+                  freeSolo
+                  fullWidth
+                  options={uniqueGroups}
+                  value={newGuest.group}
+                  onChange={(event, newValue) => {
+                    const value = typeof newValue === 'string' ? newValue : newValue || '';
+                    setNewGuest(prev => ({ ...prev, group: value }));
+                  }}
+                  onInputChange={(event, newInputValue) => {
+                    setNewGuest(prev => ({ ...prev, group: newInputValue }));
+                  }}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="קבוצה"
+                      placeholder="לדוגמה: משפחה, חברים, עבודה"
+                      fullWidth
+                    />
+                  )}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth>
+                  <InputLabel>סטטוס</InputLabel>
+                  <Select
+                    label="סטטוס"
+                    value={newGuest.status}
+                    onChange={(e) =>
+                      setNewGuest(prev => ({ ...prev, status: e.target.value as 'pending' | 'confirmed' | 'declined' | 'maybe' }))
+                    }
+                  >
+                    <MenuItem value="pending">ממתין</MenuItem>
+                    <MenuItem value="confirmed">מאשר הגעה</MenuItem>
+                    <MenuItem value="declined">לא מגיע</MenuItem>
+                    <MenuItem value="maybe">אולי</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+            </Grid>
+
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  fullWidth
+                  type="number"
+                  label="כמות מוזמנים"
+                  value={newGuest.expectedCount}
+                  onChange={(e) =>
+                    setNewGuest(prev => ({ ...prev, expectedCount: e.target.value }))
+                  }
+                  inputProps={{ min: 1 }}
+                />
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  fullWidth
+                  type="number"
+                  label="כמות שאישרו"
+                  value={newGuest.confirmedCount}
+                  onChange={(e) =>
+                    setNewGuest(prev => ({ ...prev, confirmedCount: e.target.value }))
+                  }
+                  inputProps={{ min: 1 }}
+                />
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  fullWidth
+                  type="number"
+                  label="מספר שולחן"
+                  value={newGuest.tableNumber}
+                  onChange={(e) =>
+                    setNewGuest(prev => ({ ...prev, tableNumber: e.target.value }))
+                  }
+                  inputProps={{ min: 1 }}
+                />
+              </Grid>
+            </Grid>
+
             <TextField
               fullWidth
               label="הערה"
               multiline
               rows={3}
+              value={newGuest.note}
+              onChange={(e) => setNewGuest(prev => ({ ...prev, note: e.target.value }))}
             />
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setGuestModalOpen(false)}>ביטול</Button>
-          <Button variant="contained">שמירה</Button>
+          <Button 
+            variant="contained" 
+            onClick={createGuest}
+            disabled={savingNewGuest}
+          >
+            {savingNewGuest ? 'שומר...' : 'שמירה'}
+          </Button>
         </DialogActions>
       </Dialog>
 
