@@ -10,8 +10,8 @@ export const fetchWithAuth = async (
   
   const headers = new Headers(options.headers || {});
   
-  // Set Content-Type if not already set (only for requests with body)
-  if (!headers.has('Content-Type') && options.body) {
+  // Set Content-Type if not already set (only for JSON-like bodies, not FormData)
+  if (!headers.has('Content-Type') && options.body && !(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
   

@@ -188,6 +188,8 @@ function Guests() {
   const [swipedGuestId, setSwipedGuestId] = useState<string | null>(null);
   const [exportLoading, setExportLoading] = useState(false);
   const [exportMenuAnchor, setExportMenuAnchor] = useState<null | HTMLElement>(null);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
   
   // Read filter from URL query parameter on mount and when URL changes
   useEffect(() => {
@@ -364,6 +366,95 @@ function Guests() {
       setExportLoading(false);
     }
   }, [selectedEvent?.id]);
+
+  // Download import template
+  const handleDownloadTemplate = useCallback((format: 'csv' | 'xlsx') => {
+    const headers = ['שם מלא', 'טלפון', 'אימייל', 'קבוצה', 'כמות מוזמנים', 'מספר שולחן'];
+    const exampleRows = [
+      ['יוסי כהן', '0501234567', 'yossi@example.com', 'משפחה', '2', '5'],
+      ['שרה לוי', '502345678', 'sara@example.com', 'חברים', '1', ''],
+      ['דוד ישראלי', '503456789', '', 'עבודה', '3', '10'],
+    ];
+
+    if (format === 'csv') {
+      // Create CSV with UTF-8 BOM
+      const csvContent = [
+        headers.join(','),
+        ...exampleRows.map(row => row.map(cell => `"${cell}"`).join(','))
+      ].join('\n');
+      
+      const csvWithBOM = '\ufeff' + csvContent;
+      const blob = new Blob([csvWithBOM], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'תבנית_ייבוא_אורחים.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } else {
+      // For XLSX, we'll use the export endpoint with empty data or create a simple CSV
+      // Since we don't have openpyxl in frontend, we'll create CSV that can be opened in Excel
+      const csvContent = [
+        headers.join(','),
+        ...exampleRows.map(row => row.map(cell => `"${cell}"`).join(','))
+      ].join('\n');
+      
+      const csvWithBOM = '\ufeff' + csvContent;
+      const blob = new Blob([csvWithBOM], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'תבנית_ייבוא_אורחים.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    }
+  }, []);
+
+  // Import guests from CSV/XLSX
+  const handleImportFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null;
+    setImportFile(file);
+  }, []);
+
+  const handleImportGuests = useCallback(async () => {
+    if (!selectedEvent?.id) return;
+    if (!importFile) {
+      setSnackbar({ open: true, message: 'אנא בחר קובץ לייבוא', severity: 'error' });
+      return;
+    }
+
+    try {
+      setImporting(true);
+      const formData = new FormData();
+      formData.append('file', importFile);
+
+      const response = await fetchWithAuth(`/api/guests/bulk?event_id=${selectedEvent.id}`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Import error response:', errorText);
+        throw new Error(`Failed to import guests: ${response.status} ${errorText}`);
+      }
+
+      setSnackbar({ open: true, message: 'האורחים יובאו בהצלחה', severity: 'success' });
+      setImportModalOpen(false);
+      setImportFile(null);
+      setRefreshKey(prev => prev + 1);
+      setStatsRefreshKey(prev => prev + 1);
+    } catch (error) {
+      console.error('Error importing guests:', error);
+      setSnackbar({ open: true, message: 'שגיאה בייבוא האורחים', severity: 'error' });
+    } finally {
+      setImporting(false);
+    }
+  }, [importFile, selectedEvent?.id]);
 
   // Create new guest (manual add)
   const createGuest = useCallback(async () => {
@@ -2898,44 +2989,71 @@ function Guests() {
         fullWidth
       >
         <DialogTitle>ייבוא אורחים</DialogTitle>
-        <DialogContent>
+          <DialogContent>
           <Tabs
             value={activeTab}
             onChange={(_, newValue) => setActiveTab(newValue)}
             sx={{ mb: 2 }}
           >
-            <Tab label="העלאת קובץ אקסל" />
+            <Tab label="העלאת קובץ (Excel / CSV)" />
             <Tab label="הדבקה ידנית" />
           </Tabs>
           
           {activeTab === 0 ? (
             <Box sx={{ textAlign: 'center', py: 4 }}>
               <input
-                accept=".xlsx,.xls"
+                accept=".xlsx,.xls,.csv"
                 style={{ display: 'none' }}
                 id="excel-upload"
                 type="file"
+                onChange={handleImportFileChange}
               />
-              <label htmlFor="excel-upload">
-                <Button
-                  variant="contained"
-                  component="span"
-                  startIcon={<UploadIcon />}
-                >
-                  בחר קובץ אקסל
-                </Button>
-              </label>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                או גרור קובץ לכאן
-              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
+                <label htmlFor="excel-upload">
+                  <Button
+                    variant="contained"
+                    component="span"
+                    startIcon={<UploadIcon />}
+                  >
+                    {importFile ? importFile.name : 'בחר קובץ'}
+                  </Button>
+                </label>
+                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">
+                    או הורד תבנית:
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<FileDownloadIcon />}
+                    onClick={() => handleDownloadTemplate('csv')}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    CSV
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<FileDownloadIcon />}
+                    onClick={() => handleDownloadTemplate('xlsx')}
+                    sx={{ textTransform: 'none' }}
+                  >
+                    Excel
+                  </Button>
+                </Box>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  קבצים נתמכים: XLSX, XLS, CSV. שדות חובה: שם מלא, טלפון.
+                </Typography>
+              </Box>
             </Box>
           ) : (
             <TextField
               fullWidth
               multiline
               rows={6}
-              placeholder="הדבק כאן את רשימת האורחים (שם, טלפון, קבוצה)"
+              placeholder="(בקרוב) הדבקה ידנית של רשימת אורחים"
               sx={{ mt: 2 }}
+              disabled
             />
           )}
           
@@ -2950,7 +3068,13 @@ function Guests() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setImportModalOpen(false)}>ביטול</Button>
-          <Button variant="contained">ייבוא</Button>
+          <Button 
+            variant="contained" 
+            onClick={handleImportGuests}
+            disabled={importing || !importFile}
+          >
+            {importing ? 'מייבא...' : 'ייבוא'}
+          </Button>
         </DialogActions>
       </Dialog>
 
