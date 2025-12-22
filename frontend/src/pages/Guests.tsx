@@ -136,7 +136,8 @@ function Guests() {
   // Initialize statusFilter from URL query parameter
   const getInitialStatusFilter = () => {
     const searchParams = new URLSearchParams(location.search);
-    const filter = searchParams.get('filter');
+    // Support both "filter" and legacy/mistyped "filtering" params
+    const filter = searchParams.get('filter') || searchParams.get('filtering');
     if (filter && ['all', 'confirmed', 'declined', 'pending'].includes(filter)) {
       return filter;
     }
@@ -165,29 +166,30 @@ function Guests() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingGuestData, setEditingGuestData] = useState<Guest | null>(null);
   
-  // Mobile editing state
+  // Mobile editing & swipe state
   const [mobileEditingGuest, setMobileEditingGuest] = useState<string | null>(null);
+  const [swipeStartX, setSwipeStartX] = useState<number | null>(null);
+  const [swipedGuestId, setSwipedGuestId] = useState<string | null>(null);
   
   // Read filter from URL query parameter on mount and when URL changes
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
-    const filter = searchParams.get('filter');
+    const filter = searchParams.get('filter') || searchParams.get('filtering');
     if (filter && ['all', 'confirmed', 'declined', 'pending'].includes(filter)) {
-      // Only update if filter is different from current statusFilter
-      if (filter !== statusFilter) {
-        setStatusFilter(filter);
-        setPage(0);
-        // Force refresh by incrementing refreshKey to trigger useGuests refetch
-        setRefreshKey(prev => prev + 1);
-      }
+      // Apply filter from URL
+      setStatusFilter(filter);
+      setPage(0);
+      setRefreshKey(prev => prev + 1);
       // Scroll to table after a short delay to ensure it's rendered
       setTimeout(() => {
         if (tableRef.current) {
           tableRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
       }, 300);
+      // Clear filter param from URL so subsequent local filters are not overridden
+      navigate(location.pathname, { replace: true });
     }
-  }, [location.search, statusFilter]); // Include statusFilter to detect changes
+  }, [location.search, navigate, location.pathname]);
 
   // Determine if we need to fetch all guests (when filtering by status)
   // If filtering by status (not 'all'), fetch all matching guests without pagination
@@ -358,9 +360,27 @@ function Guests() {
       if (guestData.phone !== undefined) updateData.phone = guestData.phone;
       if (guestData.email !== undefined) updateData.email = guestData.email;
       if (guestData.group !== undefined) updateData.group = guestData.group;
-      if (guestData.expectedCount !== undefined) updateData.import_count = guestData.expectedCount;
-      if (guestData.confirmedCount !== undefined) updateData.guest_count = guestData.confirmedCount;
-      if (guestData.tableNumber !== undefined) updateData.table_number = guestData.tableNumber;
+      // Numeric fields – only send valid positive integers (backend enforces ge=1)
+      if (guestData.expectedCount !== undefined && guestData.expectedCount !== null) {
+        const expected = Number(guestData.expectedCount);
+        if (Number.isFinite(expected) && expected >= 1) {
+          updateData.import_count = expected;
+        }
+      }
+      if (guestData.confirmedCount !== undefined && guestData.confirmedCount !== null) {
+        const confirmed = Number(guestData.confirmedCount);
+        if (Number.isFinite(confirmed) && confirmed >= 1) {
+          updateData.guest_count = confirmed;
+        }
+      }
+      if (guestData.tableNumber !== undefined) {
+        const tableNum = guestData.tableNumber === null ? null : Number(guestData.tableNumber);
+        if (tableNum === null) {
+          updateData.table_number = null;
+        } else if (Number.isFinite(tableNum) && tableNum >= 1) {
+          updateData.table_number = tableNum;
+        }
+      }
       
       const response = await fetchWithAuth(`/api/guests/${guestId}`, {
         method: 'PUT',
@@ -1845,18 +1865,76 @@ function Guests() {
                   
                   return (
                     <Grid item xs={12} key={guest._id}>
-                      <Card
+                      {/* Swipe container with red delete background on the right */}
+                      <Box
                         sx={{
-                          borderRadius: 2,
-                          backgroundColor: 'white',
-                          boxShadow: 'none',
+                          position: 'relative',
+                          overflow: 'hidden',
+                          borderRadius: 3,
                           border: '1px solid',
                           borderColor: alpha('#E0E0E0', 0.5),
-                          '&:hover': {
-                            boxShadow: theme.shadows[1]
-                          }
+                          backgroundColor: 'transparent',
                         }}
                       >
+                        <Box
+                          sx={{
+                            position: 'absolute',
+                            top: 0,
+                            bottom: 0,
+                            right: 0,
+                            width: 80,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: '#EF4444',
+                            borderTopRightRadius: 2,
+                            borderBottomRightRadius: 2,
+                          }}
+                        >
+                          <IconButton
+                            onClick={() => {
+                              if (window.confirm('האם אתה בטוח שברצונך למחוק את האורח?')) {
+                                deleteGuest(guest._id);
+                              }
+                            }}
+                            sx={{ color: 'white' }}
+                          >
+                            <DeleteIcon />
+                          </IconButton>
+                        </Box>
+
+                        <Card
+                          sx={{
+                            position: 'relative',
+                            borderRadius: 2,
+                            backgroundColor: 'white',
+                            boxShadow: 'none',
+                            transform: swipedGuestId === guest._id ? 'translateX(-80px)' : 'translateX(0)',
+                            transition: 'transform 0.2s ease-out',
+                            '&:hover': {
+                              boxShadow: theme.shadows[1]
+                            }
+                          }}
+                          onTouchStart={(e) => {
+                            if (e.touches.length === 1) {
+                              setSwipeStartX(e.touches[0].clientX);
+                            }
+                          }}
+                          onTouchEnd={(e) => {
+                            if (swipeStartX === null) return;
+                            const endX = e.changedTouches[0].clientX;
+                            const deltaX = endX - swipeStartX;
+                            // Swipe left to reveal delete (small threshold for better UX)
+                            if (deltaX < -20) {
+                              setSwipedGuestId(guest._id);
+                            }
+                            // Swipe right to close
+                            if (deltaX > 20 && swipedGuestId === guest._id) {
+                              setSwipedGuestId(null);
+                            }
+                            setSwipeStartX(null);
+                          }}
+                        >
                         <CardContent 
                           onClick={(e) => {
                             // Don't toggle expand if clicking on edit button or in edit mode
@@ -1981,14 +2059,49 @@ function Guests() {
                                   variant="contained"
                                   fullWidth
                                   onClick={() => {
-                                    const updatedData: Partial<Guest> = {
-                                      name: editValues[`${guest._id}_mobile_name`] ?? guest.name,
-                                      phone: editValues[`${guest._id}_mobile_phone`] ?? guest.phone,
-                                      group: editValues[`${guest._id}_mobile_group`] ?? guest.group,
-                                      expectedCount: editValues[`${guest._id}_mobile_expectedCount`] ?? guest.expectedCount,
-                                      confirmedCount: editValues[`${guest._id}_mobile_confirmedCount`] ?? guest.confirmedCount,
-                                      tableNumber: editValues[`${guest._id}_mobile_tableNumber`] ?? guest.tableNumber,
-                                    };
+                                    const updatedData: Partial<Guest> = {};
+
+                                    const nameValue = editValues[`${guest._id}_mobile_name`];
+                                    const phoneValue = editValues[`${guest._id}_mobile_phone`];
+                                    const groupValue = editValues[`${guest._id}_mobile_group`];
+                                    const expectedRaw = editValues[`${guest._id}_mobile_expectedCount`];
+                                    const confirmedRaw = editValues[`${guest._id}_mobile_confirmedCount`];
+                                    const tableRaw = editValues[`${guest._id}_mobile_tableNumber`];
+
+                                    if (nameValue !== undefined && nameValue !== guest.name) {
+                                      updatedData.name = nameValue;
+                                    }
+                                    if (phoneValue !== undefined && phoneValue !== guest.phone) {
+                                      updatedData.phone = phoneValue;
+                                    }
+                                    if (groupValue !== undefined && groupValue !== guest.group) {
+                                      updatedData.group = groupValue;
+                                    }
+
+                                    const expected = expectedRaw ?? guest.expectedCount;
+                                    if (expected !== undefined && expected !== null) {
+                                      const n = Number(expected);
+                                      if (Number.isFinite(n) && n >= 1) {
+                                        updatedData.expectedCount = n;
+                                      }
+                                    }
+
+                                    const confirmed = confirmedRaw ?? guest.confirmedCount;
+                                    if (confirmed !== undefined && confirmed !== null) {
+                                      const n = Number(confirmed);
+                                      if (Number.isFinite(n) && n >= 1) {
+                                        updatedData.confirmedCount = n;
+                                      }
+                                    }
+
+                                    const table = tableRaw ?? guest.tableNumber;
+                                    if (table !== undefined) {
+                                      const n = Number(table);
+                                      if (Number.isFinite(n) && n >= 1) {
+                                        updatedData.tableNumber = n;
+                                      }
+                                    }
+
                                     updateGuest(guest._id, updatedData);
                                     setMobileEditingGuest(null);
                                   }}
@@ -2112,7 +2225,7 @@ function Guests() {
                             </Box>
                           )}
                         </CardContent>
-                        
+
                         {/* Expanded Content */}
                         {isExpanded && (
                           <Box sx={{ 
@@ -2354,7 +2467,10 @@ function Guests() {
                             </Box>
                           </Box>
                         )}
+                        {/* Delete action overlay on the right when swiped */}
+                        {/* right-side delete background is rendered in parent swipe container */}
                       </Card>
+                      </Box>
                     </Grid>
                   );
                 })

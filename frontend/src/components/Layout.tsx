@@ -1,16 +1,22 @@
 import React, { useState } from 'react';
-import { Box, CircularProgress, useTheme } from "@mui/material";
-import { Outlet, Navigate, useLocation } from 'react-router-dom';
+import { Box, CircularProgress, useTheme, Paper, BottomNavigation, BottomNavigationAction } from "@mui/material";
+import { Outlet, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import SideMenu from './SideMenuCustom/SideMenu';
 import Header from './Header';
 import { useUser } from '../contexts/UserContext';
 import { useBanner } from '../contexts/BannerContext';
+import BarChartIcon from '@mui/icons-material/BarChart';
+import PeopleAltIcon from '@mui/icons-material/PeopleAlt';
+import SendIcon from '@mui/icons-material/Send';
+import PersonIcon from '@mui/icons-material/Person';
 
 function Layout() {
   const { user, loading } = useUser();
   const location = useLocation();
+  const navigate = useNavigate();
   const theme = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [bottomNavValue, setBottomNavValue] = useState(location.pathname);
   const { isBannerVisible } = useBanner();
 
   const handleDrawerToggle = () => {
@@ -94,8 +100,72 @@ function Layout() {
           flexGrow: 1,
           width: '100%',
           margin: '0',
+          pb: { xs: 8, md: 0 }, // space for bottom nav on mobile
         }}>
           <Outlet />
+        </Box>
+
+        {/* Floating bottom navigation - mobile only */}
+        <Box
+          sx={{
+            display: { xs: 'flex', md: 'none' },
+            justifyContent: 'center',
+            alignItems: 'center',
+            pb: 2,
+          }}
+        >
+          <Paper
+            elevation={6}
+            sx={{
+              position: 'fixed',
+              bottom: isBannerVisible ? 56 : 16,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: 'calc(100% - 16px)',
+              maxWidth: 480,
+              borderRadius: 999,
+              px: 1.5,
+              py: 0.75,
+              backdropFilter: 'blur(10px)',
+              backgroundColor: 'rgba(255,255,255,0.94)',
+              boxShadow: '0 10px 30px rgba(15,23,42,0.15)',
+            }}
+          >
+            <BottomNavigation
+              showLabels
+              value={bottomNavValue}
+              onChange={(_, newValue) => {
+                setBottomNavValue(newValue);
+                if (newValue === '/overview' || newValue === '/guests' || newValue === '/messages' || newValue === '/profile') {
+                  navigate(newValue);
+                }
+              }}
+              sx={{
+                background: 'transparent',
+              }}
+            >
+              <BottomNavigationAction
+                label="ראשי"
+                value="/overview"
+                icon={<BarChartIcon />}
+              />
+              <BottomNavigationAction
+                label="אורחים"
+                value="/guests"
+                icon={<PeopleAltIcon />}
+              />
+              <BottomNavigationAction
+                label="קמפיינים"
+                value="/messages"
+                icon={<SendIcon />}
+              />
+              <BottomNavigationAction
+                label="אני"
+                value="/profile"
+                icon={<PersonIcon />}
+              />
+            </BottomNavigation>
+          </Paper>
         </Box>
       </Box>
     </Box>

@@ -34,7 +34,7 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
   // Load selected event from localStorage on mount
   const [selectedEvent, setSelectedEventState] = useState<Event | null>(() => {
     const saved = localStorage.getItem('selected_event_id');
-    return saved ? { id: saved } as Event : null;
+    return saved ? ({ id: saved } as Event) : null;
   });
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(false);
@@ -72,9 +72,19 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
         const foundEvent = events.find(e => e.id === savedEventId);
         if (foundEvent) {
           setSelectedEventState(foundEvent);
+          return;
         } else {
           localStorage.removeItem('selected_event_id');
         }
+      }
+
+      // No saved event or saved one not found – auto-select the newest event (by createdAt)
+      const latestEvent = [...events].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      )[0];
+      if (latestEvent) {
+        // Use full setter so it also updates localStorage
+        setSelectedEvent(latestEvent);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

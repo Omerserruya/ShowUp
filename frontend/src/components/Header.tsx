@@ -20,13 +20,12 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, onMenuClick }) => {
         position: 'sticky',
         top: 0,
         zIndex: 1100,
-        // Let the page background show through so header blends with page
         backgroundColor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
         borderBottom: '1px solid',
         borderColor: 'divider',
-        pl: { xs: 1, sm: 4 }, // Left padding (right side in RTL)
-        pr: { xs: 1, sm: 1 }, // Right padding (left side in RTL) - minimal to stick title to right
-        py: 1.5, // make header taller
+        pl: { xs: 1.5, sm: 4 },
+        pr: { xs: 1.5, sm: 1 },
+        py: 1.5,
       }}
     >
       <Stack
@@ -43,14 +42,16 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, onMenuClick }) => {
           sx={{
             flexGrow: 0,
             flexShrink: 0,
-            ml: 'auto', // push text block to the far right
-            mr: 0, // Stick to right edge
+            ml: 'auto',
+            // leave room for hamburger on the right in mobile
+            pr: { xs: 6, sm: 6},
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'flex-end',
             textAlign: 'right',
             gap: 0.5,
-            width: 'fit-content', // Only take needed width
+            width: 'fit-content',
+            maxWidth: { xs: 'calc(100% - 72px)', sm: '100%' }, // don't go under the burger on mobile
           }}
         >
           {title && (
@@ -82,20 +83,39 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, onMenuClick }) => {
           )}
         </Box>
 
-        {/* Mobile: Hamburger menu, Desktop: Color mode toggle */}
-        <Box sx={{ position: 'absolute', left: 0, display: 'flex', alignItems: 'center', gap: 1 }}>
+        {/* Mobile: Hamburger menu on right */}
+        <Box
+          sx={{
+            position: 'absolute',
+            right: 8,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            display: { xs: 'flex', md: 'none' },
+            alignItems: 'center',
+          }}
+        >
           <IconButton
             onClick={onMenuClick}
             sx={{
-              display: { xs: 'flex', md: 'none' },
               color: 'text.primary',
             }}
           >
             <MenuIcon />
           </IconButton>
-          <Box sx={{ display: { xs: 'none', md: 'block' } }}>
-            <ColorModeIconDropdown />
-          </Box>
+        </Box>
+
+        {/* Desktop: Color mode toggle on left */}
+        <Box
+          sx={{
+            position: 'absolute',
+            left: 16,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            display: { xs: 'none', md: 'flex' },
+            alignItems: 'center',
+          }}
+        >
+          <ColorModeIconDropdown />
         </Box>
       </Stack>
     </Box>

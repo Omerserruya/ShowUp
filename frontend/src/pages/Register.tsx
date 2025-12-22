@@ -466,10 +466,15 @@ const Register = () => {
                   placeholder="הזינו מספר טלפון"
                   value={formData.phone}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                    setFormData({ ...formData, phone: e.target.value });
+                    const onlyDigits = e.target.value.replace(/\D/g, '');
+                    setFormData({ ...formData, phone: onlyDigits });
                     setFormError('');
                   }}
-                  inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
+                  inputProps={{
+                    style: { direction: 'rtl', textAlign: 'right' },
+                    inputMode: 'numeric',
+                    pattern: '[0-9]*',
+                  }}
                   error={!!errors.phone}
                   helperText={errors.phone}
                   sx={(theme) => ({
