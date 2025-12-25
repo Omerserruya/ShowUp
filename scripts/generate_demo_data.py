@@ -192,7 +192,7 @@ def create_campaigns(conn, event_id, event_date):
     campaign_schedules = [
         (event_date - timedelta(days=90), CAMPAIGN_TEMPLATES[0], "sent"),  # Save the date - 90 days before
         (event_date - timedelta(days=60), CAMPAIGN_TEMPLATES[1], "sent"),  # Initial invite - 60 days before
-        (event_date - timedelta(days=30), CAMPAIGN_TEMPLATES[2], "sent"),  # First reminder - 30 days before
+        (event_date - timedelta(days=30), CAMPAIGN_TEMPLATES[2], "pending"),  # First reminder - 30 days before
         (event_date - timedelta(days=7), CAMPAIGN_TEMPLATES[3], "pending"),  # Second reminder - 7 days before
         (event_date + timedelta(days=1), CAMPAIGN_TEMPLATES[4], "pending"),  # Thank you - 1 day after
     ]
