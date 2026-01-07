@@ -360,6 +360,69 @@ def get_daily_responses(
     )
 
 
+@router.get("/import-template")
+def download_import_template(
+    event_id: uuid.UUID = Query(...),
+    export_format: str = Query("xlsx"),
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """
+    Download a blank import template (CSV or XLSX) with the required headers only.
+    """
+    if export_format not in ("csv", "xlsx"):
+        raise HTTPException(status_code=422, detail=f"Invalid export_format: {export_format}. Must be 'csv' or 'xlsx'")
+
+    event = event_crud.get_event(db, event_id)
+    if not event or not event_crud.is_owner(event, user_id):
+        raise HTTPException(status_code=404, detail="Event not found or not permitted")
+
+    headers = ["שם מלא", "טלפון", "אימייל", "קבוצה", "כמות מוזמנים", "מספר שולחן"]
+
+    if export_format == "csv":
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(headers)
+        csv_text = output.getvalue()
+        csv_bytes = ("\ufeff" + csv_text).encode("utf-8-sig")
+        return Response(
+            content=csv_bytes,
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="guest_import_template.csv"'},
+        )
+
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+    except ImportError:
+        raise HTTPException(status_code=500, detail="openpyxl is not installed on server")
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "תבנית ייבוא"
+    ws.sheet_view.rightToLeft = True
+
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="1E3A8A")
+    header_alignment = Alignment(horizontal="center", vertical="center")
+
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    return Response(
+        content=output.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="guest_import_template.xlsx"'},
+    )
+
+
 @router.get("/export")
 def export_guests(
     event_id: uuid.UUID = Query(...),

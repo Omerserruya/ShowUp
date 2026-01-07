@@ -58,7 +58,8 @@ import {
   TableChart as TableChartIcon,
   ExpandMore as ExpandMoreIcon,
   Warning as WarningIcon,
-  Send as SendIcon
+  Send as SendIcon,
+  ContentCopy as ContentCopyIcon
 } from '@mui/icons-material';
 import { useGuests, useOverviewStats } from '../hooks/useOverviewData';
 import { useEvent } from '../contexts/EventContext';
@@ -145,7 +146,7 @@ function Guests() {
     }
     return 'all';
   };
-
+  
   // State
   const [guestModalOpen, setGuestModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -190,6 +191,10 @@ function Guests() {
   const [exportMenuAnchor, setExportMenuAnchor] = useState<null | HTMLElement>(null);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
+  const [deleteConfirmGuestId, setDeleteConfirmGuestId] = useState<string | null>(null);
+  const [changeCountGuestId, setChangeCountGuestId] = useState<string | null>(null);
+  const [changeCountValues, setChangeCountValues] = useState<{ expectedCount: number | string; confirmedCount: number | string }>({ expectedCount: '', confirmedCount: '' });
+  const [copiedPhone, setCopiedPhone] = useState(false);
   
   // Read filter from URL query parameter on mount and when URL changes
   useEffect(() => {
@@ -368,51 +373,35 @@ function Guests() {
   }, [selectedEvent?.id]);
 
   // Download import template
-  const handleDownloadTemplate = useCallback((format: 'csv' | 'xlsx') => {
-    const headers = ['שם מלא', 'טלפון', 'אימייל', 'קבוצה', 'כמות מוזמנים', 'מספר שולחן'];
-    const exampleRows = [
-      ['יוסי כהן', '0501234567', 'yossi@example.com', 'משפחה', '2', '5'],
-      ['שרה לוי', '502345678', 'sara@example.com', 'חברים', '1', ''],
-      ['דוד ישראלי', '503456789', '', 'עבודה', '3', '10'],
-    ];
-
-    if (format === 'csv') {
-      // Create CSV with UTF-8 BOM
-      const csvContent = [
-        headers.join(','),
-        ...exampleRows.map(row => row.map(cell => `"${cell}"`).join(','))
-      ].join('\n');
-      
-      const csvWithBOM = '\ufeff' + csvContent;
-      const blob = new Blob([csvWithBOM], { type: 'text/csv;charset=utf-8;' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'תבנית_ייבוא_אורחים.csv';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } else {
-      // For XLSX, we'll use the export endpoint with empty data or create a simple CSV
-      // Since we don't have openpyxl in frontend, we'll create CSV that can be opened in Excel
-      const csvContent = [
-        headers.join(','),
-        ...exampleRows.map(row => row.map(cell => `"${cell}"`).join(','))
-      ].join('\n');
-      
-      const csvWithBOM = '\ufeff' + csvContent;
-      const blob = new Blob([csvWithBOM], { type: 'application/vnd.ms-excel;charset=utf-8;' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'תבנית_ייבוא_אורחים.xlsx';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+  const handleDownloadTemplate = useCallback(async (format: 'csv' | 'xlsx') => {
+    if (!selectedEvent?.id) {
+      setSnackbar({ open: true, message: 'לא נבחר אירוע', severity: 'error' });
+      return;
     }
-  }, []);
+
+    try {
+      const response = await fetchWithAuth(`/api/guests/import-template?event_id=${selectedEvent.id}&export_format=${format}`, {
+        method: 'GET',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to download template');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `תבנית_ייבוא_אורחים.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading template:', error);
+      setSnackbar({ open: true, message: 'שגיאה בהורדת התבנית', severity: 'error' });
+    }
+  }, [selectedEvent?.id]);
 
   // Import guests from CSV/XLSX
   const handleImportFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
@@ -455,6 +444,50 @@ function Guests() {
       setImporting(false);
     }
   }, [importFile, selectedEvent?.id]);
+
+  // Copy phone number to clipboard
+  const handleCopyPhone = useCallback(async () => {
+    const phoneNumber = '+972-50-1234567';
+    
+    // Try modern clipboard API first
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(phoneNumber);
+        setCopiedPhone(true);
+        setSnackbar({ open: true, message: 'מספר הטלפון הועתק ללוח', severity: 'success' });
+        setTimeout(() => setCopiedPhone(false), 2000);
+        return;
+      } catch (error) {
+        console.error('Clipboard API failed, trying fallback:', error);
+      }
+    }
+    
+    // Fallback method for older browsers or non-HTTPS contexts
+    try {
+      const textArea = document.createElement('textarea');
+      textArea.value = phoneNumber;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      
+      if (successful) {
+        setCopiedPhone(true);
+        setSnackbar({ open: true, message: 'מספר הטלפון הועתק ללוח', severity: 'success' });
+        setTimeout(() => setCopiedPhone(false), 2000);
+      } else {
+        throw new Error('execCommand copy failed');
+      }
+    } catch (error) {
+      console.error('Failed to copy phone number:', error);
+      setSnackbar({ open: true, message: 'שגיאה בהעתקת מספר הטלפון', severity: 'error' });
+    }
+  }, []);
 
   // Create new guest (manual add)
   const createGuest = useCallback(async () => {
@@ -647,8 +680,8 @@ function Guests() {
 
   // Show error state
   if (guestsError) {
-    return (
-      <Box sx={{ p: 3 }}>
+  return (
+    <Box sx={{ p: 3 }}>
         <Alert severity="error">שגיאה בטעינת האורחים: {guestsError}</Alert>
       </Box>
     );
@@ -719,7 +752,7 @@ function Guests() {
                   />
                   <Typography sx={{ fontSize: '0.9rem', color: '#111827' }}>
                     {confirmedGuests} מגיעים
-                  </Typography>
+      </Typography>
                 </Box>
 
                 {/* Not coming */}
@@ -1117,8 +1150,8 @@ function Guests() {
           </Button>
           </Grid>
           <Grid item xs={4}>
-            <Button
-              variant="outlined"
+          <Button
+            variant="outlined"
               fullWidth
               disabled={exportLoading}
               onClick={(e) => setExportMenuAnchor(e.currentTarget)}
@@ -1160,7 +1193,7 @@ function Guests() {
               <Box sx={{ flex: 1, textAlign: 'right', mr: {xs:1, md:2}}}>
                 {exportLoading ? 'מייצא...' : 'ייצוא'}
               </Box>
-            </Button>
+          </Button>
             <Menu
               anchorEl={exportMenuAnchor}
               open={Boolean(exportMenuAnchor)}
@@ -1191,6 +1224,109 @@ function Guests() {
           </Grid>
         </Grid>
       </Box>
+
+      {/* Delete confirmation dialog */}
+      <Dialog
+        open={!!deleteConfirmGuestId}
+        onClose={() => setDeleteConfirmGuestId(null)}
+      >
+        <DialogTitle>מחיקת אורח</DialogTitle>
+        <DialogContent>
+          <Typography>
+            האם אתה בטוח שברצונך למחוק את האורח?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmGuestId(null)}>
+            ביטול
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={() => {
+              if (deleteConfirmGuestId) {
+                deleteGuest(deleteConfirmGuestId);
+                setDeleteConfirmGuestId(null);
+              }
+            }}
+          >
+            מחיקה
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Change count dialog */}
+      <Dialog
+        open={!!changeCountGuestId}
+        onClose={() => setChangeCountGuestId(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>שנה כמות</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <TextField
+              label="כמות צפויה"
+              type="number"
+              inputMode="numeric"
+              fullWidth
+              value={changeCountValues.expectedCount}
+              onChange={(e) => {
+                const val = e.target.value === '' ? '' : parseInt(e.target.value) || 0;
+                setChangeCountValues({ ...changeCountValues, expectedCount: val });
+              }}
+              inputProps={{ min: 1 }}
+            />
+            <TextField
+              label="כמות שאושרה"
+              type="number"
+              inputMode="numeric"
+              fullWidth
+              value={changeCountValues.confirmedCount}
+              onChange={(e) => {
+                const val = e.target.value === '' ? '' : parseInt(e.target.value) || 0;
+                setChangeCountValues({ ...changeCountValues, confirmedCount: val });
+              }}
+              inputProps={{ min: 1 }}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setChangeCountGuestId(null)}>
+            ביטול
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              if (changeCountGuestId) {
+                const updatedData: Partial<Guest> = {};
+                
+                const expected = changeCountValues.expectedCount;
+                if (expected !== undefined && expected !== null && expected !== '') {
+                  const n = Number(expected);
+                  if (Number.isFinite(n) && n >= 1) {
+                    updatedData.expectedCount = n;
+                  }
+                }
+                
+                const confirmed = changeCountValues.confirmedCount;
+                if (confirmed !== undefined && confirmed !== null && confirmed !== '') {
+                  const n = Number(confirmed);
+                  if (Number.isFinite(n) && n >= 1) {
+                    updatedData.confirmedCount = n;
+                  }
+                }
+                
+                updateGuest(changeCountGuestId, updatedData);
+                setChangeCountGuestId(null);
+                setChangeCountValues({ expectedCount: '', confirmedCount: '' });
+              }
+            }}
+          >
+            שמור
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Content Section */}
       <Box sx={{ p: { xs: 2, sm: 3 } }}>
@@ -1366,26 +1502,26 @@ function Guests() {
                 ))}
               </Select>
             </FormControl>
-          </Stack>
+      </Stack>
 
           {/* Search Bar */}
-          <TextField
-            fullWidth
+        <TextField
+          fullWidth
             placeholder="חיפוש אורח..."
-            variant="outlined"
-            value={searchQuery}
+          variant="outlined"
+          value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
               setPage(0);
             }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon />
-                </InputAdornment>
-              ),
-            }}
-            size="small"
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon />
+              </InputAdornment>
+            ),
+          }}
+          size="small"
             sx={{
               mb: 3,
               '& .MuiOutlinedInput-root': {
@@ -1394,7 +1530,7 @@ function Guests() {
             }}
           />
           <TableContainer
-            ref={tableRef}
+          ref={tableRef}
             sx={{
               border: '1px solid',
               borderColor: 'divider',
@@ -1420,8 +1556,8 @@ function Guests() {
                     <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>מספר שולחן</TableCell>
                   )}
                   <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>פעולות</TableCell>
-                </TableRow>
-              </TableHead>
+            </TableRow>
+          </TableHead>
           <TableBody>
             {guestsLoading ? (
               <TableRow>
@@ -1439,13 +1575,13 @@ function Guests() {
                       </Typography>
                 </TableCell>
               </TableRow>
-                ) : (
-                  filteredGuests
+            ) : (
+              filteredGuests
                     .map((guest, index) => (
-                    <TableRow 
-                      key={guest._id} 
+                  <TableRow 
+                    key={guest._id}
                       hover 
-                      sx={{ 
+                    sx={{ 
                         backgroundColor: 'white',
                         borderBottom: index < Math.min(rowsPerPage, filteredGuests.length - page * rowsPerPage) - 1 ? '1px solid' : 'none',
                         borderBottomColor: 'divider'
@@ -1553,7 +1689,7 @@ function Guests() {
                             {guest.phone}
                           </Typography>
                         )}
-                      </TableCell>
+                    </TableCell>
                       <TableCell align="center" sx={{ backgroundColor: 'white' }}>
                         {editingGuest === guest._id && editingField === 'group' ? (
                           <Autocomplete
@@ -1645,24 +1781,24 @@ function Guests() {
                               setEditValues({ ...editValues, [`${guest._id}_status`]: guest.status });
                             }}
                           >
-                            <Chip
+                      <Chip
                               icon={guest.status === 'confirmed' ? <CheckCircleIcon /> : 
                                     guest.status === 'declined' ? <CancelIcon /> : 
                                     <AccessTimeIcon />}
-                              label={statusLabels[guest.status]}
+                        label={statusLabels[guest.status]}
                               size="small"
-                              sx={{
+                        sx={{
                                 backgroundColor: alpha(statusColors[guest.status], 0.1),
-                                color: statusColors[guest.status],
-                                fontWeight: 500,
+                          color: statusColors[guest.status],
+                          fontWeight: 500,
                                 '& .MuiChip-icon': {
                                   color: statusColors[guest.status]
-                                }
-                              }}
-                            />
+                          }
+                        }}
+                      />
                           </Box>
                         )}
-                      </TableCell>
+                    </TableCell>
                       <TableCell align="center" sx={{ backgroundColor: 'white' }}>
                         {editingGuest === guest._id && editingField === 'expectedCount' ? (
                           <TextField
@@ -1697,7 +1833,7 @@ function Guests() {
                             sx={{ width: 80 }}
                           />
                         ) : (
-                          <Typography 
+                        <Typography
                             variant="body2" 
                             sx={{ fontWeight: 500, cursor: 'pointer' }}
                             onDoubleClick={() => {
@@ -1707,7 +1843,7 @@ function Guests() {
                             }}
                           >
                             {guest.expectedCount !== undefined ? guest.expectedCount : '-'}
-                          </Typography>
+                        </Typography>
                         )}
                       </TableCell>
                       <TableCell align="center" sx={{ backgroundColor: 'white' }}>
@@ -1755,8 +1891,8 @@ function Guests() {
                           >
                             {guest.confirmedCount > 0 ? guest.confirmedCount : '-'}
                           </Typography>
-                        )}
-                      </TableCell>
+                      )}
+                    </TableCell>
                       {hasTableNumbers && (
                         <TableCell align="center" sx={{ backgroundColor: 'white' }}>
                           {editingGuest === guest._id && editingField === 'tableNumber' ? (
@@ -1804,7 +1940,7 @@ function Guests() {
                               {guest.tableNumber !== undefined ? guest.tableNumber : '-'}
                             </Typography>
                           )}
-                        </TableCell>
+                    </TableCell>
                       )}
                       <TableCell align="center" sx={{ backgroundColor: 'white' }}>
                         <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
@@ -1815,24 +1951,20 @@ function Guests() {
                               setEditModalOpen(true);
                             }}
                           >
-                            <EditIcon fontSize="small" />
-                          </IconButton>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
                           <IconButton 
                             size="small" 
                             sx={{ color: 'error.main' }}
-                            onClick={() => {
-                              if (window.confirm('האם אתה בטוח שברצונך למחוק את האורח?')) {
-                                deleteGuest(guest._id);
-                              }
-                            }}
+                            onClick={() => setDeleteConfirmGuestId(guest._id)}
                           >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
                         </Box>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
+                    </TableCell>
+                  </TableRow>
+                ))
+            )}
           </TableBody>
         </Table>
       </TableContainer>
@@ -1843,7 +1975,7 @@ function Guests() {
             justifyContent: 'space-between', 
             alignItems: 'center',
             p: 2,
-            borderTop: '1px solid',
+          borderTop: '1px solid',
             borderColor: 'divider'
           }}>
             <Typography variant="body2" color="text.secondary">
@@ -2153,11 +2285,7 @@ function Guests() {
                           }}
                         >
                           <IconButton
-                            onClick={() => {
-                              if (window.confirm('האם אתה בטוח שברצונך למחוק את האורח?')) {
-                                deleteGuest(guest._id);
-                              }
-                            }}
+                            onClick={() => setDeleteConfirmGuestId(guest._id)}
                             sx={{ color: 'white' }}
                           >
                             <DeleteIcon />
@@ -2260,7 +2388,12 @@ function Guests() {
                                   type="number"
                                   label="כמות צפויה"
                                   value={editValues[`${guest._id}_mobile_expectedCount`] ?? guest.expectedCount ?? ''}
-                                  onChange={(e) => setEditValues({ ...editValues, [`${guest._id}_mobile_expectedCount`]: parseInt(e.target.value) || 0 })}
+                                inputMode="numeric"
+                                onChange={(e) => {
+                                  const digitsOnly = e.target.value.replace(/\D/g, '');
+                                  const numericValue = digitsOnly === '' ? '' : Number(digitsOnly);
+                                  setEditValues({ ...editValues, [`${guest._id}_mobile_expectedCount`]: numericValue });
+                                }}
                                   sx={{ backgroundColor: 'white' }}
                                 />
                                 <TextField
@@ -2269,7 +2402,12 @@ function Guests() {
                                   type="number"
                                   label="כמות שאושרה"
                                   value={editValues[`${guest._id}_mobile_confirmedCount`] ?? guest.confirmedCount ?? ''}
-                                  onChange={(e) => setEditValues({ ...editValues, [`${guest._id}_mobile_confirmedCount`]: parseInt(e.target.value) || 0 })}
+                                inputMode="numeric"
+                                onChange={(e) => {
+                                  const digitsOnly = e.target.value.replace(/\D/g, '');
+                                  const numericValue = digitsOnly === '' ? '' : Number(digitsOnly);
+                                  setEditValues({ ...editValues, [`${guest._id}_mobile_confirmedCount`]: numericValue });
+                                }}
                                   sx={{ backgroundColor: 'white' }}
                                 />
                               </Box>
@@ -2339,7 +2477,7 @@ function Guests() {
                                       updatedData.group = groupValue;
                                     }
 
-                                    const expected = expectedRaw ?? guest.expectedCount;
+                                    const expected = expectedRaw === '' ? undefined : (expectedRaw ?? guest.expectedCount);
                                     if (expected !== undefined && expected !== null) {
                                       const n = Number(expected);
                                       if (Number.isFinite(n) && n >= 1) {
@@ -2347,7 +2485,7 @@ function Guests() {
                                       }
                                     }
 
-                                    const confirmed = confirmedRaw ?? guest.confirmedCount;
+                                    const confirmed = confirmedRaw === '' ? undefined : (confirmedRaw ?? guest.confirmedCount);
                                     if (confirmed !== undefined && confirmed !== null) {
                                       const n = Number(confirmed);
                                       if (Number.isFinite(n) && n >= 1) {
@@ -2568,6 +2706,13 @@ function Guests() {
                                       <Button
                                         variant="outlined"
                                         startIcon={<PeopleIcon />}
+                                        onClick={() => {
+                                          setChangeCountGuestId(guest._id);
+                                          setChangeCountValues({
+                                            expectedCount: guest.expectedCount ?? '',
+                                            confirmedCount: guest.confirmedCount ?? '',
+                                          });
+                                        }}
                                         sx={{
                                           flex: 1,
                                           borderRadius: 2,
@@ -2793,10 +2938,10 @@ function Guests() {
           <Stack spacing={2.5} sx={{ mt: 2 }}>
             <Grid container spacing={2}>
               <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
+            <TextField
+              fullWidth
                   label="שם מלא"
-                  required
+              required
                   value={newGuest.name}
                   onChange={(e) => setNewGuest(prev => ({ ...prev, name: e.target.value }))}
                 />
@@ -2841,10 +2986,10 @@ function Guests() {
                       </MenuItem>
                     ))}
                   </TextField>
-                  <TextField
-                    fullWidth
+            <TextField
+              fullWidth
                     label="מספר טלפון"
-                    required
+              required
                     type="tel"
                     inputMode="numeric"
                     value={newGuest.phone}
@@ -2902,8 +3047,8 @@ function Guests() {
                 />
               </Grid>
               <Grid item xs={12} sm={6}>
-                <FormControl fullWidth>
-                  <InputLabel>סטטוס</InputLabel>
+            <FormControl fullWidth>
+              <InputLabel>סטטוס</InputLabel>
                   <Select
                     label="סטטוס"
                     value={newGuest.status}
@@ -2915,8 +3060,8 @@ function Guests() {
                     <MenuItem value="confirmed">מאשר הגעה</MenuItem>
                     <MenuItem value="declined">לא מגיע</MenuItem>
                     <MenuItem value="maybe">אולי</MenuItem>
-                  </Select>
-                </FormControl>
+              </Select>
+            </FormControl>
               </Grid>
             </Grid>
 
@@ -2989,18 +3134,48 @@ function Guests() {
         fullWidth
       >
         <DialogTitle>ייבוא אורחים</DialogTitle>
-          <DialogContent>
-          <Tabs
-            value={activeTab}
-            onChange={(_, newValue) => setActiveTab(newValue)}
-            sx={{ mb: 2 }}
-          >
-            <Tab label="העלאת קובץ (Excel / CSV)" />
-            <Tab label="הדבקה ידנית" />
-          </Tabs>
-          
-          {activeTab === 0 ? (
-            <Box sx={{ textAlign: 'center', py: 4 }}>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, py: 2 }}>
+            {/* Step 1: Download Template */}
+            <Box>
+              <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 600 }}>
+                1. מורידים את התבנית
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<FileDownloadIcon />}
+                  onClick={() => handleDownloadTemplate('csv')}
+                  sx={{ textTransform: 'none' }}
+                >
+                  הורד תבנית CSV
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<FileDownloadIcon />}
+                  onClick={() => handleDownloadTemplate('xlsx')}
+                  sx={{ textTransform: 'none' }}
+                >
+                  הורד תבנית Excel
+                </Button>
+              </Box>
+            </Box>
+
+            {/* Step 2: Fill or Match */}
+            <Box>
+              <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 600 }}>
+                2. ממלאים בהתאם או מתאימים
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                מלאו את התבנית או התאימו את הקובץ הקיים שלכם לכותרות. שדות חובה: שם מלא, טלפון.
+              </Typography>
+            </Box>
+
+            {/* Step 3: Upload */}
+            <Box>
+              <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 600 }}>
+                3. מעלים לכאן
+              </Typography>
               <input
                 accept=".xlsx,.xls,.csv"
                 style={{ display: 'none' }}
@@ -3008,63 +3183,60 @@ function Guests() {
                 type="file"
                 onChange={handleImportFileChange}
               />
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
-                <label htmlFor="excel-upload">
-                  <Button
-                    variant="contained"
-                    component="span"
-                    startIcon={<UploadIcon />}
-                  >
-                    {importFile ? importFile.name : 'בחר קובץ'}
-                  </Button>
-                </label>
-                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
-                  <Typography variant="body2" color="text.secondary">
-                    או הורד תבנית:
-                  </Typography>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    startIcon={<FileDownloadIcon />}
-                    onClick={() => handleDownloadTemplate('csv')}
-                    sx={{ textTransform: 'none' }}
-                  >
-                    CSV
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    startIcon={<FileDownloadIcon />}
-                    onClick={() => handleDownloadTemplate('xlsx')}
-                    sx={{ textTransform: 'none' }}
-                  >
-                    Excel
-                  </Button>
-                </Box>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                  קבצים נתמכים: XLSX, XLS, CSV. שדות חובה: שם מלא, טלפון.
-                </Typography>
-              </Box>
+              <label htmlFor="excel-upload">
+                <Button
+                  variant="contained"
+                  component="span"
+                  startIcon={<UploadIcon />}
+                  fullWidth
+                  sx={{ textTransform: 'none' }}
+                >
+                  {importFile ? importFile.name : 'בחר קובץ להעלאה'}
+                </Button>
+              </label>
             </Box>
-          ) : (
-            <TextField
-              fullWidth
-              multiline
-              rows={6}
-              placeholder="(בקרוב) הדבקה ידנית של רשימת אורחים"
-              sx={{ mt: 2 }}
-              disabled
-            />
-          )}
-          
-          <Divider sx={{ my: 3 }} />
-          
-          <Typography variant="subtitle2" gutterBottom>
-            מספר וואטסאפ לייבוא:
-        </Typography>
-          <Typography variant="body2" color="text.secondary">
-            שלח את רשימת אנשי הקשר למספר: +972-50-1234567
-        </Typography>
+
+            {/* Divider with "או" */}
+            <Divider 
+              sx={{ 
+                my: 3,
+                '&::before, &::after': {
+                  borderColor: '#3b82f6',
+                }
+              }}
+            >
+              <Typography variant="body2" sx={{ color: '#3b82f6', fontWeight: 600, px: 2 }}>
+                או
+              </Typography>
+            </Divider>
+
+            {/* WhatsApp Option */}
+            <Box>
+              <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 600 }}>
+                שלחו את אנשי הקשר שלכם למספר:
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                <Typography variant="body1" sx={{ color: '#25D366', fontWeight: 600 }}>
+                  +972-50-1234567
+                </Typography>
+                <IconButton
+                  size="small"
+                  onClick={handleCopyPhone}
+                  sx={{ 
+                    color: '#25D366',
+                    '&:hover': {
+                      backgroundColor: alpha('#25D366', 0.1)
+                    }
+                  }}
+                >
+                  <ContentCopyIcon fontSize="small" />
+                </IconButton>
+              </Box>
+              <Typography variant="body2" color="text.secondary">
+                ומיד תראה ותוכלו לערוך בטבלה
+              </Typography>
+            </Box>
+          </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setImportModalOpen(false)}>ביטול</Button>

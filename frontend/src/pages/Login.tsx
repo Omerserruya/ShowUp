@@ -561,7 +561,7 @@ const Login = () => {
                     <TextField
                       key={index}
                       id={`otp-input-${index}`}
-                      type="text"
+                      type="tel"
                       inputMode="numeric"
                       value={otp[index]}
                       onChange={(e) => handleOtpInputChange(index, e.target.value)}
@@ -569,6 +569,7 @@ const Login = () => {
                       onPaste={(e) => handleOtpPaste(e, index)}
                       inputProps={{
                         maxLength: 1,
+                        pattern: '[0-9]*',
                         style: {
                           direction: 'ltr',
                           textAlign: 'center',

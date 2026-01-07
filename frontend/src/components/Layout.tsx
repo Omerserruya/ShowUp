@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Box, CircularProgress, useTheme, Paper, BottomNavigation, BottomNavigationAction } from "@mui/material";
 import { Outlet, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import SideMenu from './SideMenuCustom/SideMenu';
@@ -18,6 +18,10 @@ function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [bottomNavValue, setBottomNavValue] = useState(location.pathname);
   const { isBannerVisible } = useBanner();
+
+  useEffect(() => {
+    setBottomNavValue(location.pathname);
+  }, [location.pathname]);
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -118,6 +122,7 @@ function Layout() {
             elevation={6}
             sx={{
               position: 'fixed',
+              zIndex: (theme) => theme.zIndex.appBar + 1,
               bottom: isBannerVisible ? 56 : 16,
               left: '50%',
               transform: 'translateX(-50%)',
