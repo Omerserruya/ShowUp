@@ -29,6 +29,7 @@ RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT"))
 RABBITMQ_USER = os.getenv("RABBITMQ_USER")
 RABBITMQ_PASSWORD = os.getenv("RABBITMQ_PASSWORD")
 WEBHOOK_QUEUE = os.getenv("WEBHOOK_QUEUE")
+CONTACT_IMPORT_QUEUE = os.getenv("CONTACT_IMPORT_QUEUE", "contact_import_queue")
 PORT = int(os.getenv("PORT"))
 
 # WhatsApp message schema
@@ -171,8 +172,8 @@ def extract_message_data(message: Dict[str, Any], category: str) -> Dict[str, An
             "media_type": message.get("type") if message.get("type") in ["image", "audio", "video", "document"] else None
         }
 
-def enqueue_to_rabbitmq(topic: str, message_data: Dict[str, Any]) -> bool:
-    """Enqueue message to RabbitMQ webhook_queue with topic"""
+def enqueue_to_rabbitmq(topic: str, message_data: Dict[str, Any], queue_name: Optional[str] = None) -> bool:
+    """Enqueue message to RabbitMQ queue with topic"""
     try:
         # Build connection URL from individual parameters
         connection_url = f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASSWORD}@{RABBITMQ_HOST}:{RABBITMQ_PORT}/"
@@ -180,8 +181,11 @@ def enqueue_to_rabbitmq(topic: str, message_data: Dict[str, Any]) -> bool:
         connection = pika.BlockingConnection(pika.URLParameters(connection_url))
         channel = connection.channel()
         
+        # Use specified queue or default to WEBHOOK_QUEUE
+        target_queue = queue_name or WEBHOOK_QUEUE
+        
         # Declare queue
-        channel.queue_declare(queue=WEBHOOK_QUEUE, durable=True)
+        channel.queue_declare(queue=target_queue, durable=True)
         
         # Prepare message with topic
         tagged_message = {
@@ -193,7 +197,7 @@ def enqueue_to_rabbitmq(topic: str, message_data: Dict[str, Any]) -> bool:
         # Publish message
         channel.basic_publish(
             exchange='',
-            routing_key=WEBHOOK_QUEUE,
+            routing_key=target_queue,
             body=json.dumps(tagged_message),
             properties=pika.BasicProperties(
                 delivery_mode=2,  # Make message persistent
@@ -202,7 +206,7 @@ def enqueue_to_rabbitmq(topic: str, message_data: Dict[str, Any]) -> bool:
         )
         
         connection.close()
-        logger.info(f"Message enqueued to {WEBHOOK_QUEUE} with topic '{topic}'")
+        logger.info(f"Message enqueued to {target_queue} with topic '{topic}'")
         return True
     except Exception as e:
         logger.error(f"Error enqueueing to RabbitMQ: {e}")
@@ -326,22 +330,20 @@ async def handle_whatsapp_webhook(request: Request):
                         "received_at": datetime.utcnow().isoformat()
                     }
                     
-                    # Handle contacts specially - enqueue each contact individually
+                    # Handle contacts specially - push FULL original message to contact_import_queue
                     if category == "contacts":
-                        contacts = extracted_data.get("contacts", [])
-                        for i, contact in enumerate(contacts):
-                            contact_payload = {
-                                **queue_payload,
-                                "contact_index": i,
-                                "payload": {
-                                    **message,
-                                    "extracted_data": {"contact": contact}
-                                }
-                            }
-                            
-                            if enqueue_to_rabbitmq("contacts", contact_payload):
-                                processed_count += 1
-                                logger.info(f"Enqueued contact {i+1}/{len(contacts)} with topic 'contacts' from message {message_id}")
+                        # Push the FULL original message payload (not parsed contacts) to contact_import_queue
+                        # Include message_id for idempotency
+                        contact_import_payload = {
+                            "message_id": message_id,  # For idempotency
+                            "sender_phone": sender,
+                            "raw_message": message,  # Full original message payload
+                            "received_at": datetime.utcnow().isoformat()
+                        }
+                        
+                        if enqueue_to_rabbitmq("contact_import", contact_import_payload, queue_name=CONTACT_IMPORT_QUEUE):
+                            processed_count += 1
+                            logger.info(f"Enqueued contact import message {message_id} to {CONTACT_IMPORT_QUEUE} with {len(message.get('contacts', []))} contact(s)")
                     else:
                         # Enqueue single message with topic
                         if enqueue_to_rabbitmq(category, queue_payload):

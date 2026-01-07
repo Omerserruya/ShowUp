@@ -101,3 +101,49 @@ class Campaign(Base):
     event: Mapped[Event] = relationship("Event", back_populates="campaigns")
 
 
+class GuestImport(Base):
+    __tablename__ = "guest_imports"
+
+    try:
+        id: Mapped[uuid.UUID] = mapped_column(
+            PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        )
+        event_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
+    except Exception:  # pragma: no cover
+        id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+        event_id = Column(String(36), ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
+
+    source = Column(String(50), nullable=False, default="whatsapp")  # e.g., "whatsapp", "csv", "manual"
+    raw_payload = Column(Text, nullable=False)  # Full message as JSON
+    status = Column(String(20), nullable=False, default="pending")  # pending, processing, completed, failed
+    message_id = Column(String(128), nullable=True, unique=True)  # WhatsApp message ID for idempotency
+    
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    contacts: Mapped[List["GuestImportContact"]] = relationship("GuestImportContact", back_populates="import_record", cascade="all, delete-orphan")
+
+
+class GuestImportContact(Base):
+    __tablename__ = "guest_import_contacts"
+
+    try:
+        id: Mapped[uuid.UUID] = mapped_column(
+            PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        )
+        import_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("guest_imports.id", ondelete="CASCADE"), nullable=False)
+    except Exception:  # pragma: no cover
+        id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+        import_id = Column(String(36), ForeignKey("guest_imports.id", ondelete="CASCADE"), nullable=False)
+
+    name = Column(String(200), nullable=True)  # Contact name (formatted_name from WhatsApp)
+    phone = Column(String(20), nullable=True)  # Primary phone number
+    email = Column(String(100), nullable=True)  # Primary email if exists
+    status = Column(String(20), nullable=False, default="pending")  # pending, validated, imported, failed
+    validation_errors = Column(Text, nullable=True)  # JSON array of validation errors
+    
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    import_record: Mapped["GuestImport"] = relationship("GuestImport", back_populates="contacts")
+
+
