@@ -115,7 +115,7 @@ def send_no_active_event_message(channel, sender_phone: str):
     message = {
         "platform": "WA",
         "recipient": sender_phone,
-        "message_type": "text",
+        "message_type": "free_text",
         "text": NO_ACTIVE_EVENT_MESSAGE,
         "source": "contact_import_worker",
     }
