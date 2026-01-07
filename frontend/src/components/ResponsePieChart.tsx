@@ -1,11 +1,10 @@
 import React from 'react';
-import { Box, Paper, Typography, useTheme } from '@mui/material';
+import { Box, Paper, Typography, useTheme, useMediaQuery } from '@mui/material';
 import {
   PieChart,
   Pie,
   Cell,
   ResponsiveContainer,
-  Legend,
   Tooltip,
 } from 'recharts';
 
@@ -28,6 +27,7 @@ const defaultData: PieChartData[] = [
 
 const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData }) => {
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
@@ -61,26 +61,41 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData 
     return null;
   };
 
-  const CustomLegend = (props: any) => {
-    const { payload } = props;
+  const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, name, value }: any) => {
+    const RADIAN = Math.PI / 180;
+    const radius = innerRadius + (outerRadius - innerRadius) * 0.65;
+    const x = cx + radius * Math.cos(-midAngle * RADIAN);
+    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
     return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 2 }}>
-        {payload?.map((entry: any, index: number) => (
-          <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <Box
-              sx={{
-                width: 12,
-                height: 12,
-                borderRadius: '50%',
-                bgcolor: entry.color,
-              }}
-            />
-            <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>
-              {entry.value}: {entry.payload.value}
-            </Typography>
-          </Box>
-        ))}
-      </Box>
+      <g>
+        <text
+          x={x}
+          y={y - 6}
+          fill="#ffffff"
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontSize={13}
+          fontWeight={700}
+          stroke="#1f2937"
+          strokeWidth={0.5}
+        >
+          {name}
+        </text>
+        <text
+          x={x}
+          y={y + 13}
+          fill="#ffffff"
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontSize={15}
+          fontWeight={700}
+          stroke="#1f2937"
+          strokeWidth={0.5}
+        >
+          {value}
+        </text>
+      </g>
     );
   };
 
@@ -88,12 +103,15 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData 
     <Paper
       elevation={0}
       sx={{
-        p: 3,
+        p: { xs: 3, md: 2.5 },
         bgcolor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
         borderRadius: '16px',
         border: '1px solid',
         borderColor: 'divider',
-        height: '100%',
+        height: { xs: 'auto', md: '100%' },
+        width: '100%',
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
       <Typography
@@ -102,7 +120,7 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData 
         sx={{
           fontWeight: 600,
           color: 'text.primary',
-          mb: 1,
+          mb: { xs: 1, md: 0.5 },
           ml: 1,
         }}
       >
@@ -112,22 +130,23 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData 
         variant="body2"
         sx={{
           color: 'text.secondary',
-          mb: 3,
+          mb: { xs: 2, md: 1.5 },
           ml: 1,
         }}
       >
         התפלגות תשובות האורחים
       </Typography>
 
-      <Box sx={{ width: '100%', height: 300 }}>
-        <ResponsiveContainer width="100%" height="100%">
+      <Box sx={{ width: '100%', flex: 1, minHeight: { xs: 300, md: 280 }, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <ResponsiveContainer width="100%" height={isMobile ? 300 : '100%'}>
           <PieChart>
             <Pie
               data={data}
               cx="50%"
               cy="50%"
+              label={renderCustomLabel}
               labelLine={false}
-              outerRadius={80}
+              outerRadius={isMobile ? 120 : 130}
               fill="#8884d8"
               dataKey="value"
             >
@@ -136,7 +155,6 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData 
               ))}
             </Pie>
             <Tooltip content={<CustomTooltip />} />
-            <Legend content={<CustomLegend />} />
           </PieChart>
         </ResponsiveContainer>
       </Box>

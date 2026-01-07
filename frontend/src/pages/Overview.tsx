@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Box, 
@@ -26,13 +26,13 @@ import StatusCard from '../components/StatusCard';
 import EventTimeline from '../components/EventTimeline';
 import MessageStatistics from '../components/MessageStatistics';
 import RSVPTable from '../components/RSVPTable';
-import DailyResponseChart from '../components/DailyResponseChart';
 import ResponsePieChart from '../components/ResponsePieChart';
+import EventCountdown from '../components/EventCountdown';
 import CampaignTimeline, { CampaignTimelineItem } from '../components/CampaignTimeline';
 import CampaignUpdates, { CampaignUpdate } from '../components/CampaignUpdates';
 
 // Import hooks
-import { useOverviewStats, useDailyResponses, useCampaigns, useGuests } from '../hooks/useOverviewData';
+import { useOverviewStats, useCampaigns, useGuests } from '../hooks/useOverviewData';
 import { useEvent } from '../contexts/EventContext';
 
 // Helper function to map API guest to component format
@@ -161,9 +161,7 @@ function Overview() {
   const theme = useTheme();
   const navigate = useNavigate();
   const { selectedEvent } = useEvent();
-  const [dailyPeriod, setDailyPeriod] = useState<'week' | 'month'>('week');
   const { stats, loading: statsLoading, error: statsError } = useOverviewStats();
-  const { data: dailyData, loading: dailyLoading } = useDailyResponses(dailyPeriod);
   const { campaigns, loading: campaignsLoading } = useCampaigns();
   const { guests, loading: guestsLoading } = useGuests(1, 10, '');
 
@@ -179,7 +177,7 @@ function Overview() {
   }
 
   // Show loading state
-  if (statsLoading || dailyLoading || campaignsLoading || guestsLoading) {
+  if (statsLoading || campaignsLoading || guestsLoading) {
     return (
       <Box sx={{ p: 4, direction: 'rtl', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
         <CircularProgress />
@@ -199,6 +197,9 @@ function Overview() {
     { name: 'טרם אישרו', value: stats.pending, color: '#fb923c' },
   ] : [];
 
+  // Get event date - check both event_date and date fields
+  const eventDate = (selectedEvent as any)?.event_date || (selectedEvent as any)?.date;
+
   return (
     <Box sx={{ p: { xs: 1, sm: 4 }, direction: 'rtl' }}>
       {statsError && (
@@ -206,6 +207,11 @@ function Overview() {
           {statsError}
         </Alert>
       )}
+
+      {/* Countdown for mobile - show FIRST before stats */}
+      <Box sx={{ mb: { xs: 0, md: 0 }, display: { xs: 'block', md: 'none' } }}>
+        <EventCountdown eventDate={eventDate} />
+      </Box>
 
       {/* Status Cards */}
       <Grid container spacing={{ xs: 1, sm: 1.5 }} sx={{ mb: 4 }}>
@@ -258,20 +264,20 @@ function Overview() {
         </Grid>
       </Grid>
 
-      {/* Daily Response Charts Section */}
-      <Grid container spacing={3} sx={{ mb: 4, display: { xs: 'none', md: 'flex' } }}>
-        {/* Daily Response Bar Chart - 2/3 width */}
-        <Grid item xs={12} md={8}>
-          <DailyResponseChart 
-            data={dailyData?.data || []} 
-            milestones={dailyData?.milestones || []}
-            period={dailyPeriod}
-            onChangePeriod={setDailyPeriod}
-          />
+      {/* Pie Chart for mobile - show after stats */}
+      <Box sx={{ mb: 4, display: { xs: 'block', md: 'none' } }}>
+        <ResponsePieChart data={pieData} />
+      </Box>
+
+      {/* Countdown and Pie Chart Section - Desktop only */}
+      <Grid container spacing={3} sx={{ mb: 4, display: { xs: 'none', md: 'flex' }, alignItems: 'stretch' }}>
+        {/* Countdown - 2/3 width */}
+        <Grid item xs={12} md={8} sx={{ display: 'flex' }}>
+          <EventCountdown eventDate={eventDate} />
         </Grid>
         
         {/* Response Pie Chart - 1/3 width */}
-        <Grid item xs={12} md={4}>
+        <Grid item xs={12} md={4} sx={{ display: 'flex' }}>
           <ResponsePieChart data={pieData} />
         </Grid>
       </Grid>

@@ -374,13 +374,8 @@ function Guests() {
 
   // Download import template
   const handleDownloadTemplate = useCallback(async (format: 'csv' | 'xlsx') => {
-    if (!selectedEvent?.id) {
-      setSnackbar({ open: true, message: 'לא נבחר אירוע', severity: 'error' });
-      return;
-    }
-
     try {
-      const response = await fetchWithAuth(`/api/guests/import-template?event_id=${selectedEvent.id}&export_format=${format}`, {
+      const response = await fetchWithAuth(`/api/guests/import-template?export_format=${format}`, {
         method: 'GET',
       });
 
@@ -401,7 +396,7 @@ function Guests() {
       console.error('Error downloading template:', error);
       setSnackbar({ open: true, message: 'שגיאה בהורדת התבנית', severity: 'error' });
     }
-  }, [selectedEvent?.id]);
+  }, []);
 
   // Import guests from CSV/XLSX
   const handleImportFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
@@ -445,9 +440,12 @@ function Guests() {
     }
   }, [importFile, selectedEvent?.id]);
 
+  // Get WhatsApp number from environment variable
+  const whatsappNumber = process.env.REACT_APP_WHATSAPP_NUMBER || '+972-50-1234567';
+  
   // Copy phone number to clipboard
   const handleCopyPhone = useCallback(async () => {
-    const phoneNumber = '+972-50-1234567';
+    const phoneNumber = whatsappNumber;
     
     // Try modern clipboard API first
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -3136,6 +3134,102 @@ function Guests() {
         <DialogTitle>ייבוא אורחים</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, py: 2 }}>
+            {/* WhatsApp Option - First */}
+            <Box
+              sx={{
+                p: 3,
+                borderRadius: 2,
+                backgroundColor: alpha('#25D366', 0.05),
+                border: `1px solid ${alpha('#25D366', 0.2)}`,
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                <Box
+                  sx={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: '50%',
+                    backgroundColor: '#25D366',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <WhatsAppIcon sx={{ fontSize: 28, color: 'white' }} />
+                </Box>
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 0.5 }}>
+                    ייבוא דרך וואטסאפ
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                    שלחו את אנשי הקשר שלכם למספר:
+                  </Typography>
+                </Box>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                <Typography variant="h6" sx={{ color: '#25D366', fontWeight: 600, fontFamily: 'monospace' }}>
+                  {whatsappNumber}
+                </Typography>
+                <IconButton
+                  size="small"
+                  onClick={handleCopyPhone}
+                  sx={{ 
+                    color: '#25D366',
+                    '&:hover': {
+                      backgroundColor: alpha('#25D366', 0.1)
+                    }
+                  }}
+                >
+                  <ContentCopyIcon fontSize="small" />
+                </IconButton>
+              </Box>
+              <Button
+                variant="contained"
+                fullWidth
+                size="large"
+                startIcon={<WhatsAppIcon sx={{ fontSize: 24 }} />}
+                href={`https://wa.me/${whatsappNumber.replace(/[^0-9]/g, '')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                sx={{
+                  backgroundColor: '#25D366',
+                  color: 'white',
+                  textTransform: 'none',
+                  fontSize: '1rem',
+                  fontWeight: 600,
+                  py: 1.5,
+                  mb: 1.5,
+                  boxShadow: '0 4px 12px rgba(37, 211, 102, 0.3)',
+                  '&:hover': {
+                    backgroundColor: '#128C7E',
+                    boxShadow: '0 6px 16px rgba(37, 211, 102, 0.4)',
+                    transform: 'translateY(-2px)',
+                  },
+                  transition: 'all 0.2s ease-in-out',
+                }}
+              >
+                פתח ב-WhatsApp
+              </Button>
+              <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
+                ומיד תראה ותוכלו לערוך בטבלה
+              </Typography>
+            </Box>
+
+            {/* Divider with "או" */}
+            <Divider 
+              sx={{ 
+                my: 2,
+                '&::before, &::after': {
+                  borderColor: '#3b82f6',
+                }
+              }}
+            >
+              <Typography variant="body2" sx={{ color: '#3b82f6', fontWeight: 600, px: 2 }}>
+                או
+              </Typography>
+            </Divider>
+
             {/* Step 1: Download Template */}
             <Box>
               <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 600 }}>
@@ -3195,47 +3289,6 @@ function Guests() {
                 </Button>
               </label>
             </Box>
-
-            {/* Divider with "או" */}
-            <Divider 
-              sx={{ 
-                my: 3,
-                '&::before, &::after': {
-                  borderColor: '#3b82f6',
-                }
-              }}
-            >
-              <Typography variant="body2" sx={{ color: '#3b82f6', fontWeight: 600, px: 2 }}>
-                או
-              </Typography>
-            </Divider>
-
-            {/* WhatsApp Option */}
-            <Box>
-              <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 600 }}>
-                שלחו את אנשי הקשר שלכם למספר:
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                <Typography variant="body1" sx={{ color: '#25D366', fontWeight: 600 }}>
-                  +972-50-1234567
-                </Typography>
-                <IconButton
-                  size="small"
-                  onClick={handleCopyPhone}
-                  sx={{ 
-                    color: '#25D366',
-                    '&:hover': {
-                      backgroundColor: alpha('#25D366', 0.1)
-                    }
-                  }}
-                >
-                  <ContentCopyIcon fontSize="small" />
-                </IconButton>
-              </Box>
-              <Typography variant="body2" color="text.secondary">
-                ומיד תראה ותוכלו לערוך בטבלה
-              </Typography>
-            </Box>
           </Box>
         </DialogContent>
         <DialogActions>
@@ -3265,9 +3318,9 @@ function Guests() {
         <DialogContent>
           {editingGuestData && (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
-              <TextField
+            <TextField
                 label="שם מלא"
-                fullWidth
+              fullWidth
                 value={editValues[`${editingGuestData._id}_modal_name`] ?? editingGuestData.name}
                 onChange={(e) => setEditValues({ ...editValues, [`${editingGuestData._id}_modal_name`]: e.target.value })}
               />

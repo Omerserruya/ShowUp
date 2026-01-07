@@ -5,6 +5,7 @@ import io
 import uuid
 import datetime as dt
 from typing import Optional, List, Union, Any
+from enum import Enum
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Body
 from fastapi.responses import StreamingResponse, Response
@@ -21,6 +22,11 @@ from app.models.models import Guest, Campaign
 
 
 router = APIRouter(prefix="/guests", tags=["guests"])
+
+
+class ExportFormat(str, Enum):
+    csv = "csv"
+    xlsx = "xlsx"
 
 
 def normalize_phone_for_import(phone: str) -> str:
@@ -362,24 +368,16 @@ def get_daily_responses(
 
 @router.get("/import-template")
 def download_import_template(
-    event_id: uuid.UUID = Query(...),
-    export_format: str = Query("xlsx"),
-    db: Session = Depends(get_db),
+    export_format: ExportFormat = Query(ExportFormat.xlsx),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """
     Download a blank import template (CSV or XLSX) with the required headers only.
+    No event_id required - this is just a template file.
     """
-    if export_format not in ("csv", "xlsx"):
-        raise HTTPException(status_code=422, detail=f"Invalid export_format: {export_format}. Must be 'csv' or 'xlsx'")
-
-    event = event_crud.get_event(db, event_id)
-    if not event or not event_crud.is_owner(event, user_id):
-        raise HTTPException(status_code=404, detail="Event not found or not permitted")
-
     headers = ["שם מלא", "טלפון", "אימייל", "קבוצה", "כמות מוזמנים", "מספר שולחן"]
 
-    if export_format == "csv":
+    if export_format == ExportFormat.csv:
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow(headers)
