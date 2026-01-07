@@ -116,7 +116,7 @@ def get_db_connection():
         sys.exit(1)
 
 
-def create_user(conn, phone="+972521234567", first_name="משתמש", last_name="הדגמא", email="demo@example.com"):
+def create_user(conn, phone="+972525401686", first_name="משתמש", last_name="הדגמא", email="demo@example.com"):
     """Create a demo user in the users table."""
     user_id = uuid.uuid4()
     now = datetime.now(timezone.utc)

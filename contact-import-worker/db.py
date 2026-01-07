@@ -42,49 +42,56 @@ def connect() -> psycopg2.extensions.connection:
 
 def ensure_schema(conn: psycopg2.extensions.connection):
     """Ensure guest_imports and guest_import_contacts tables exist."""
-    with conn.cursor() as cur:
-        # Create guest_imports table
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS guest_imports (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-                source VARCHAR(50) NOT NULL DEFAULT 'whatsapp',
-                raw_payload TEXT NOT NULL,
-                status VARCHAR(20) NOT NULL DEFAULT 'pending',
-                message_id VARCHAR(128) UNIQUE,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            );
-            """
-        )
-        
-        # Create guest_import_contacts table
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS guest_import_contacts (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                import_id UUID NOT NULL REFERENCES guest_imports(id) ON DELETE CASCADE,
-                name VARCHAR(200),
-                phone VARCHAR(20),
-                email VARCHAR(100),
-                status VARCHAR(20) NOT NULL DEFAULT 'pending',
-                validation_errors TEXT,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            );
-            """
-        )
-        
-        # Create indexes for performance
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_guest_imports_message_id ON guest_imports(message_id);"
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_guest_imports_event_id ON guest_imports(event_id);"
-        )
-        cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_guest_import_contacts_import_id ON guest_import_contacts(import_id);"
-        )
+    try:
+        with conn.cursor() as cur:
+            # Create guest_imports table
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS guest_imports (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+                    source VARCHAR(50) NOT NULL DEFAULT 'whatsapp',
+                    raw_payload TEXT NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    message_id VARCHAR(128) UNIQUE,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+                """
+            )
+            logger.info("Created/verified guest_imports table")
+            
+            # Create guest_import_contacts table
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS guest_import_contacts (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    import_id UUID NOT NULL REFERENCES guest_imports(id) ON DELETE CASCADE,
+                    name VARCHAR(200),
+                    phone VARCHAR(20),
+                    email VARCHAR(100),
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    validation_errors TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+                """
+            )
+            logger.info("Created/verified guest_import_contacts table")
+            
+            # Create indexes for performance
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_guest_imports_message_id ON guest_imports(message_id);"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_guest_imports_event_id ON guest_imports(event_id);"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_guest_import_contacts_import_id ON guest_import_contacts(import_id);"
+            )
+            logger.info("Created/verified indexes for guest_imports tables")
+    except Exception as e:
+        logger.error(f"Error ensuring schema: {e}", exc_info=True)
+        raise
 
 
 def normalize_phone(phone: str | None) -> str | None:

@@ -271,7 +271,7 @@ def process_contact_import(conn, channel, message: Dict[str, Any]):
             logger,
             logging.ERROR,
             "Failed to process contact import",
-            message=message,
+            message_data=message,
             error=str(e),
             exc_info=True
         )
@@ -286,11 +286,14 @@ def main():
     # Connect to database
     conn = db_connect()
     
-    # Ensure schema exists
+    # Ensure schema exists - critical, so exit if it fails
     try:
         ensure_schema(conn)
+        log_json(logger, logging.INFO, "Database schema ensured")
     except Exception as e:
-        log_json(logger, logging.ERROR, "Failed ensuring schema", error=str(e))
+        log_json(logger, logging.ERROR, "Failed ensuring schema - exiting", error=str(e), exc_info=True)
+        conn.close()
+        raise
     
     # Connect to RabbitMQ
     rabbit = mq_connect()
