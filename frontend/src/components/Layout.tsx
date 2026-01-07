@@ -5,8 +5,8 @@ import SideMenu from './SideMenuCustom/SideMenu';
 import Header from './Header';
 import { useUser } from '../contexts/UserContext';
 import { useBanner } from '../contexts/BannerContext';
-import BarChartIcon from '@mui/icons-material/BarChart';
-import PeopleAltIcon from '@mui/icons-material/PeopleAlt';
+import HomeIcon from '@mui/icons-material/Home';
+import PeopleIcon from '@mui/icons-material/People';
 import SendIcon from '@mui/icons-material/Send';
 import PersonIcon from '@mui/icons-material/Person';
 
@@ -152,12 +152,12 @@ function Layout() {
               <BottomNavigationAction
                 label="ראשי"
                 value="/overview"
-                icon={<BarChartIcon />}
+                icon={<HomeIcon />}
               />
               <BottomNavigationAction
                 label="אורחים"
                 value="/guests"
-                icon={<PeopleAltIcon />}
+                icon={<PeopleIcon />}
               />
               <BottomNavigationAction
                 label="קמפיינים"
