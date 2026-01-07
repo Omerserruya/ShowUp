@@ -23,6 +23,7 @@ import {
   InputLabel,
   Skeleton,
   LinearProgress,
+  Grid,
 } from '@mui/material';
 import {
   Send as SendIcon,
@@ -32,9 +33,18 @@ import {
   AccessTime as AccessTimeIcon,
   WhatsApp as WhatsAppIcon,
   FilterList as FilterListIcon,
+  CalendarToday as CalendarIcon,
+  People as PeopleIcon,
+  BarChart as BarChartIcon,
+  CheckCircle as CheckCircleIcon,
+  Schedule as ClockIcon,
+  AutoAwesome as SparklesIcon,
+  Add as PlusIcon,
+  ChevronRight as ChevronRightIcon,
+  Create as PencilIcon,
 } from '@mui/icons-material';
 import { useEvent } from '../contexts/EventContext';
-import { useCampaigns } from '../hooks/useOverviewData';
+import { useCampaigns, useOverviewStats } from '../hooks/useOverviewData';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 
 // Helper function to process template with variables
@@ -101,6 +111,7 @@ function Messages() {
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { selectedEvent } = useEvent();
   const { campaigns: apiCampaigns, loading: campaignsLoading, error: campaignsError } = useCampaigns();
+  const { stats } = useOverviewStats();
   
   // State
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -435,10 +446,22 @@ function Messages() {
   const pastCampaigns = filteredCampaigns.filter(c => isPast(c));
   const upcomingCampaigns = filteredCampaigns.filter(c => !isPast(c));
   
-  // Calculate progress
+  // Calculate statistics
   const totalCampaigns = campaigns.length;
   const sentCampaigns = campaigns.filter(c => c.status === 'sent').length;
-  const progressPercentage = totalCampaigns > 0 ? (sentCampaigns / totalCampaigns) * 100 : 0;
+  const totalSent = sentCampaigns * recipientCount; // Total messages sent
+  const responseRate = stats && stats.total > 0 
+    ? Math.round(((stats.approved + stats.declined) / stats.total) * 100)
+    : 0;
+  
+  // Calculate response percentage for each campaign (mock for now)
+  const getCampaignResponseRate = (campaign: Campaign): number => {
+    if (campaign.status === 'sent') {
+      // For sent campaigns, use overall response rate or calculate based on recipients
+      return responseRate;
+    }
+    return 0;
+  };
 
   if (campaignsLoading) {
     return (
@@ -459,126 +482,263 @@ function Messages() {
   }
 
   return (
-    <Box sx={{ p: { xs: 2, sm: 4 }, direction: 'rtl' }}>
-      {/* Header */}
-      <Box sx={{ mb: 4 }}>
-        <Stack spacing={2}>
-          {/* Progress Bar */}
-          <Box>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                התקדמות קמפיינים
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                {sentCampaigns} מתוך {totalCampaigns} נשלחו
-      </Typography>
-            </Stack>
-            <LinearProgress 
-              variant="determinate" 
-              value={progressPercentage} 
-              sx={{ 
-                height: 8, 
-                borderRadius: 1,
-                backgroundColor: alpha('#2196f3', 0.1),
-                '& .MuiLinearProgress-bar': {
-                  borderRadius: 1,
-                  backgroundColor: '#2196f3',
-                }
-              }} 
-            />
+    <Box 
+      sx={{ 
+        maxWidth: '64rem',
+        mx: 'auto',
+        px: { xs: 2, sm: 4 },
+        py: { xs: 3, sm: 6 },
+        pb: { xs: 24, sm: 6 },
+        direction: 'rtl',
+      }}
+    >
+      {/* Header Card with Description */}
+      <Paper
+        elevation={0}
+        sx={{
+          background: 'linear-gradient(to bottom right, rgba(147, 51, 234, 0.1), rgba(236, 72, 153, 0.1))',
+          border: '1px solid',
+          borderColor: alpha('#9333ea', 0.2),
+          borderRadius: 3,
+          p: 3,
+          mb: 3,
+        }}
+      >
+        <Stack direction="row" spacing={2} alignItems="flex-start">
+          <Box
+            sx={{
+              bgcolor: 'rgba(255, 255, 255, 0.8)',
+              backdropFilter: 'blur(10px)',
+              borderRadius: '50%',
+              p: 1.5,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <SendIcon sx={{ fontSize: 24, color: '#9333ea' }} />
           </Box>
-          
-          {/* Filter */}
-          <Stack direction="row" justifyContent="flex-end" alignItems="center">
-            <FormControl size="small" sx={{ minWidth: 120 }}>
-              <InputLabel>סינון</InputLabel>
-              <Select
-                value={filterStatus}
-                label="סינון"
-                onChange={(e) => setFilterStatus(e.target.value)}
-                startAdornment={<FilterListIcon sx={{ ml: 1, mr: 0.5, fontSize: 18 }} />}
-              >
-                <MenuItem value="all">הכל</MenuItem>
-                <MenuItem value="sent">נשלחו</MenuItem>
-                <MenuItem value="scheduled">מתוזמנים</MenuItem>
-                <MenuItem value="paused">מושהים</MenuItem>
-              </Select>
-            </FormControl>
-          </Stack>
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, color: 'text.primary', mb: 1 }}>
+              עמוד קמפיינים
+            </Typography>
+            <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.7 }}>
+              עמוד הקמפיינים מאפשר לך לנהל את סבבי ההודעות שנשלחים לאורחים לאורך חיי האירוע – מההזמנה הראשונית ועד לתזכורות ועדכונים חשובים.
+      </Typography>
+          </Box>
         </Stack>
-      </Box>
+      </Paper>
 
-      {/* Past Campaigns */}
-      {pastCampaigns.length > 0 && (
-        <Box sx={{ mb: 4 }}>
+      {/* Statistics Cards */}
+      <Grid container spacing={1.5} sx={{ mb: 3 }}>
+        <Grid item xs={4}>
+          <Paper
+            elevation={0}
+            sx={{
+              bgcolor: 'rgba(255, 255, 255, 0.8)',
+              backdropFilter: 'blur(10px)',
+              border: '1px solid',
+              borderColor: alpha('#9333ea', 0.2),
+              borderRadius: 3,
+              p: 2,
+              textAlign: 'center',
+            }}
+          >
+            <Typography variant="h4" sx={{ fontWeight: 700, color: '#9333ea', mb: 0.5 }}>
+              {totalCampaigns}
+      </Typography>
+            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+              קמפיינים
+                </Typography>
+          </Paper>
+        </Grid>
+        <Grid item xs={4}>
+          <Paper
+            elevation={0}
+            sx={{
+              bgcolor: 'rgba(255, 255, 255, 0.8)',
+              backdropFilter: 'blur(10px)',
+              border: '1px solid',
+              borderColor: alpha('#3b82f6', 0.2),
+              borderRadius: 3,
+              p: 2,
+              textAlign: 'center',
+            }}
+          >
+            <Typography variant="h4" sx={{ fontWeight: 700, color: '#3b82f6', mb: 0.5 }}>
+              {totalSent}
+                </Typography>
+            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+              נשלחו
+                </Typography>
+          </Paper>
+        </Grid>
+        <Grid item xs={4}>
+          <Paper
+            elevation={0}
+            sx={{
+              bgcolor: 'rgba(255, 255, 255, 0.8)',
+              backdropFilter: 'blur(10px)',
+              border: '1px solid',
+              borderColor: alpha('#22c55e', 0.2),
+              borderRadius: 3,
+              p: 2,
+              textAlign: 'center',
+            }}
+          >
+            <Typography variant="h4" sx={{ fontWeight: 700, color: '#22c55e', mb: 0.5 }}>
+              {responseRate}%
+            </Typography>
+            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+              אחוז מענה
+            </Typography>
+          </Paper>
+          </Grid>
+      </Grid>
+
+      {/* Create Campaign Button */}
+          <Button
+        fullWidth
+        variant="contained"
+        startIcon={<PlusIcon />}
+        sx={{
+          background: 'linear-gradient(to right, #9333ea, #ec4899)',
+          color: 'white',
+          height: 56,
+          fontSize: '1rem',
+          fontWeight: 500,
+          borderRadius: 3,
+          boxShadow: '0 10px 30px rgba(147, 51, 234, 0.2)',
+          mb: 3,
+          '&:hover': {
+            background: 'linear-gradient(to right, #7e22ce, #db2777)',
+            boxShadow: '0 10px 30px rgba(147, 51, 234, 0.3)',
+          },
+          '& .MuiButton-startIcon': {
+            marginRight: 0,
+            marginLeft: 0.5,
+          },
+        }}
+      >
+        יצירת קמפיין חדש
+          </Button>
+
+      {/* My Campaigns Section */}
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary', mb: 2, px: 0.5 }}>
+          הקמפיינים שלי
+      </Typography>
+
+        <Stack spacing={2}>
+          {/* Past Campaigns (Sent) */}
           {pastCampaigns.map((campaign) => {
             const statusColors = getStatusColor(campaign);
+            const responseRate = getCampaignResponseRate(campaign);
             return (
               <Paper
                 key={campaign.id}
                 elevation={0}
                 sx={{
-                  p: 3,
-                  mb: 2,
-                  backgroundColor: 'white',
-                  borderRadius: 2,
+                  p: 2.5,
+                  backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                  backdropFilter: 'blur(10px)',
                   border: '1px solid',
-                  borderColor: 'divider',
-                  opacity: 0.85,
+                  borderColor: alpha('#9333ea', 0.2),
+                  borderRadius: 3,
+                  transition: 'all 0.3s',
+                  '&:hover': {
+                    boxShadow: '0 10px 30px rgba(147, 51, 234, 0.15)',
+                  },
                 }}
               >
-                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
-                  <Box sx={{ flex: 1 }}>
-                    <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1.5 }}>
-                      <Chip
+                <Stack direction="row" spacing={2} alignItems="flex-start">
+                  <Box
+                    sx={{
+                      borderRadius: 2,
+                      p: 1.5,
+                      background: 'linear-gradient(to bottom right, rgba(147, 51, 234, 0.1), rgba(236, 72, 153, 0.1))',
+                    }}
+                  >
+                    <CheckCircleIcon sx={{ fontSize: 24, color: '#22c55e' }} />
+                  </Box>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} sx={{ mb: 1 }}>
+                      <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary' }}>
+                        {campaign.name}
+                      </Typography>
+                  <Chip
                         label={getStatusLabel(campaign)}
                         size="small"
                         sx={{
-                          backgroundColor: statusColors.bg,
+                          bgcolor: statusColors.bg,
                           color: statusColors.color,
+                          border: '1px solid',
+                          borderColor: statusColors.color,
                           fontWeight: 500,
                         }}
                       />
-                      <Typography variant="body2" color="text.secondary">
-                        {getTimeLabel(campaign)}
-                      </Typography>
-                      {campaign.channel === 'whatsapp' && (
-                        <WhatsAppIcon sx={{ fontSize: 18, color: '#25D366', ml: 0.5 }} />
-                      )}
                     </Stack>
-                    <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
-                      {campaign.name}
+                    <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
+                      {campaign.template.substring(0, 100)}...
                     </Typography>
+                    <Stack direction="row" spacing={2} sx={{ mb: 2, flexWrap: 'wrap' }}>
+                      <Stack direction="row" spacing={0.5} alignItems="center">
+                        <CalendarIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                          {campaign.scheduleTime ? new Date(campaign.scheduleTime).toLocaleDateString('he-IL') : 'לא מתוזמן'}
+                        </Typography>
+                      </Stack>
+                      <Stack direction="row" spacing={0.5} alignItems="center">
+                        <PeopleIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                          {campaign.recipientCount} נמענים
+                        </Typography>
+                      </Stack>
+                      <Stack direction="row" spacing={0.5} alignItems="center">
+                        <BarChartIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                          {responseRate}% הגיבו
+                        </Typography>
+                      </Stack>
+                    </Stack>
+                    <Box sx={{ mt: 1.5 }}>
                       <Box
                         sx={{
-                          p: 2,
-                          backgroundColor: alpha('#2196f3', 0.08),
-                          borderRadius: 1,
-                          border: '1px solid',
-                          borderColor: alpha('#2196f3', 0.2),
-                          mb: 2,
+                          height: 8,
+                          bgcolor: alpha('#e5e7eb', 0.5),
+                          borderRadius: '999px',
+                          overflow: 'hidden',
                         }}
                       >
-                        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-                          {processTemplateText(campaign.template, getTemplateVariables())}
-                        </Typography>
+                        <Box
+                          sx={{
+                            height: '100%',
+                            width: `${responseRate}%`,
+                            background: 'linear-gradient(to right, #9333ea, #ec4899)',
+                            borderRadius: '999px',
+                            transition: 'width 0.5s',
+                          }}
+                        />
                       </Box>
-                    {campaign.scheduleTime && (
-                      <Typography variant="body2" color="text.secondary">
-                        נשלחה ב-{new Date(campaign.scheduleTime).toLocaleString('he-IL')}
-                      </Typography>
-                    )}
+                    </Box>
                   </Box>
+                  <IconButton
+                    size="small"
+                    sx={{
+                      flexShrink: 0,
+                      '&:hover': {
+                        bgcolor: alpha('#9333ea', 0.1),
+                      },
+                    }}
+                  >
+                    <ChevronRightIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+                  </IconButton>
                 </Stack>
               </Paper>
             );
           })}
-        </Box>
-      )}
 
-      {/* Upcoming Campaigns */}
-      {upcomingCampaigns.length > 0 && (
-        <>
+          {/* Upcoming Campaigns */}
           {upcomingCampaigns.map((campaign) => {
             const statusColors = getStatusColor(campaign);
             const isNextCampaign = isNext(campaign, filteredCampaigns);
@@ -590,30 +750,48 @@ function Messages() {
                 key={campaign.id}
                 elevation={0}
                 sx={{
-                  p: 3,
-                  mb: 2,
-                  backgroundColor: isNextCampaign ? alpha('#5236F7', 0.02) : 'white',
-                  borderRadius: 2,
+                  p: 2.5,
+                  backgroundColor: isNextCampaign 
+                    ? 'rgba(147, 51, 234, 0.1)' 
+                    : 'rgba(255, 255, 255, 0.8)',
+                  backdropFilter: 'blur(10px)',
                   border: '1px solid',
-                  borderColor: isNextCampaign ? alpha('#5236F7', 0.3) : 'divider',
-                  borderWidth: isNextCampaign ? 2 : 1,
+                  borderColor: isNextCampaign 
+                    ? alpha('#9333ea', 0.5)
+                    : alpha('#9333ea', 0.2),
+                  borderRadius: 3,
+                  boxShadow: isNextCampaign 
+                    ? '0 10px 30px rgba(147, 51, 234, 0.25), 0 0 0 2px rgba(147, 51, 234, 0.2)'
+                    : 'none',
+                  transition: 'all 0.3s',
                   position: 'relative',
+                  '&:hover': {
+                    boxShadow: isNextCampaign
+                      ? '0 10px 30px rgba(147, 51, 234, 0.3), 0 0 0 2px rgba(147, 51, 234, 0.3)'
+                      : '0 10px 30px rgba(147, 51, 234, 0.15)',
+                  },
                 }}
               >
                 {isNextCampaign && (
-                  <Chip
-                    label="הבא בתור"
-                    size="small"
+                  <Box
                     sx={{
-                      position: 'absolute',
-                      top: -10,
-                      right: 16,
-                      backgroundColor: '#5236F7',
-                      color: 'white',
-                      fontWeight: 600,
-                      zIndex: 1,
+                      mb: 1.5,
+                      bgcolor: 'rgba(255, 255, 255, 0.8)',
+                      backdropFilter: 'blur(10px)',
+                      px: 1.5,
+                      py: 0.75,
+                      borderRadius: '999px',
+                      width: 'fit-content',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.5,
                     }}
-                  />
+                  >
+                    <SparklesIcon sx={{ fontSize: 16, color: '#9333ea' }} />
+                    <Typography variant="caption" sx={{ fontWeight: 700, color: '#9333ea' }}>
+                      הקמפיין הבא בתור
+                    </Typography>
+                  </Box>
                 )}
                 {isLoading && (
                   <Box
@@ -627,324 +805,104 @@ function Messages() {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      borderRadius: 2,
+                      borderRadius: 3,
                       zIndex: 1,
                     }}
                   >
                     <CircularProgress size={40} />
                   </Box>
                 )}
-                <Stack spacing={2}>
-                  {/* Header */}
-                  <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
-                    <Box sx={{ flex: 1 }}>
-                      <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1.5 }} flexWrap="wrap" useFlexGap>
-                        <Chip
-                          label={getStatusLabel(campaign)}
-                          size="small"
-                          sx={{
-                            backgroundColor: statusColors.bg,
-                            color: statusColors.color,
-                            fontWeight: 500,
-                          }}
-                        />
-                        <Typography variant="body2" color="text.secondary">
-                          {getTimeLabel(campaign)}
-                        </Typography>
-                        {campaign.channel === 'whatsapp' && (
-                          <WhatsAppIcon sx={{ fontSize: 18, color: '#25D366', ml: 0.5 }} />
-                        )}
-                      </Stack>
-                      <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
-                        {campaign.name}
-      </Typography>
-                      {isPaused && (
-                        <Typography variant="body2" color="warning.main" sx={{ mb: 1 }}>
-                          ממתינה לאישור חידוש
-                </Typography>
-                      )}
-                      {campaign.scheduleTime && (
-                        <Typography variant="body2" color="text.secondary">
-                          {new Date(campaign.scheduleTime).toLocaleString('he-IL')}
-                </Typography>
-                      )}
-                    </Box>
-                  </Stack>
-
-                   {/* Message Content */}
-                   <Box
-                     sx={{
-                       p: 2,
-                       backgroundColor: alpha('#2196f3', 0.08),
-                       borderRadius: 1,
-                       border: '1px solid',
-                       borderColor: alpha('#2196f3', 0.2),
-                     }}
-                   >
-                     <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-                       {processTemplateText(campaign.template, getTemplateVariables())}
-                </Typography>
-                   </Box>
-
-                  {/* Actions */}
-                  <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                    {!isPaused ? (
-                      <>
-                        <Button
-                          startIcon={<AccessTimeIcon />}
-                          onClick={() => handleEditTime(campaign)}
-                          disabled={isLoading}
-                          sx={{
-                            borderRadius: 3,
-                            minWidth: 120,
-                            px: 2,
-                            py: 1,
-                            textTransform: 'none',
-                            backgroundColor: isNextCampaign ? '#FFFFFF' : '#F2F3F5',
-                            color: isNextCampaign ? '#111827' : '#363B4D',
-                            fontWeight: 500,
-                            boxShadow: 'none',
-                            ...(isNextCampaign && {
-                              border: '1.5px solid',
-                              borderColor: alpha('#5236F7', 0.3),
-                            }),
-                            '&:hover': {
-                              backgroundColor: isNextCampaign ? '#F9FAFB' : '#E5E7EB',
-                              ...(isNextCampaign && {
-                                borderColor: alpha('#5236F7', 0.5),
-                                backgroundColor: alpha('#5236F7', 0.05),
-                              }),
-                              boxShadow: 'none'
-                            },
-                            '& .MuiButton-startIcon': {
-                              marginLeft: 0,
-                              marginRight: 0.5
-                            }
-                          }}
-                        >
-                          שינוי זמן
-                        </Button>
-                <Button
-                  startIcon={<EditIcon />}
-                          onClick={() => handleEditMessage(campaign)}
-                          disabled={isLoading}
-                          sx={{
-                            borderRadius: 3,
-                            minWidth: 120,
-                            px: 2,
-                            py: 1,
-                            textTransform: 'none',
-                            backgroundColor: isNextCampaign ? '#FFFFFF' : '#F2F3F5',
-                            color: isNextCampaign ? '#111827' : '#363B4D',
-                            fontWeight: 500,
-                            boxShadow: 'none',
-                            ...(isNextCampaign && {
-                              border: '1.5px solid',
-                              borderColor: alpha('#5236F7', 0.3),
-                            }),
-                            '&:hover': {
-                              backgroundColor: isNextCampaign ? '#F9FAFB' : '#E5E7EB',
-                              ...(isNextCampaign && {
-                                borderColor: alpha('#5236F7', 0.5),
-                                backgroundColor: alpha('#5236F7', 0.05),
-                              }),
-                              boxShadow: 'none'
-                            },
-                            '& .MuiButton-startIcon': {
-                              marginLeft: 0,
-                              marginRight: 0.5
-                            }
-                          }}
-                >
-                          עריכת הודעה
-                </Button>
-                <Button
-                          startIcon={<PauseIcon />}
-                          onClick={() => handlePause(campaign)}
-                          disabled={isLoading}
-                          sx={{
-                            borderRadius: 3,
-                            minWidth: 100,
-                            px: 2,
-                            py: 1,
-                            textTransform: 'none',
-                            backgroundColor: isNextCampaign ? '#FFFFFF' : '#F2F3F5',
-                            color: isNextCampaign ? '#111827' : '#363B4D',
-                            fontWeight: 500,
-                            boxShadow: 'none',
-                            ...(isNextCampaign && {
-                              border: '1.5px solid',
-                              borderColor: alpha('#5236F7', 0.3),
-                            }),
-                            '&:hover': {
-                              backgroundColor: isNextCampaign ? '#F9FAFB' : '#E5E7EB',
-                              ...(isNextCampaign && {
-                                borderColor: alpha('#5236F7', 0.5),
-                                backgroundColor: alpha('#5236F7', 0.05),
-                              }),
-                              boxShadow: 'none'
-                            },
-                            '& .MuiButton-startIcon': {
-                              marginLeft: 0,
-                              marginRight: 0.5
-                            }
-                          }}
-                        >
-                          השהייה
-                        </Button>
-                        {campaign.status === 'scheduled' && (
-                          <Button
-                  startIcon={<SendIcon />}
-                            onClick={() => handleSendNow(campaign)}
-                            disabled={isLoading}
-                            sx={{
-                              borderRadius: 3,
-                              minWidth: 140,
-                              px: 2,
-                              py: 1,
-                              textTransform: 'none',
-                              backgroundColor: '#5236F7',
-                              color: 'white',
-                              fontWeight: 500,
-                              boxShadow: 'none',
-                              '&:hover': {
-                                backgroundColor: '#4328E8',
-                                boxShadow: 'none'
-                              },
-                              '& .MuiButton-startIcon': {
-                                marginRight: 0,
-                                marginLeft: 0.5
-                              }
-                            }}
-                >
-                            שליחה מיידית
-                </Button>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        <Button
-                          startIcon={<PlayArrowIcon />}
-                          onClick={() => handleResume(campaign)}
-                          disabled={isLoading}
-                          sx={{
-                            borderRadius: 3,
-                            minWidth: 130,
-                            px: 2,
-                            py: 1,
-                            textTransform: 'none',
-                            backgroundColor: '#3b82f6',
-                            color: 'white',
-                            fontWeight: 500,
-                            boxShadow: 'none',
-                            '&:hover': {
-                              backgroundColor: '#2563eb',
-                              boxShadow: 'none'
-                            },
-                            '& .MuiButton-startIcon': {
-                              marginLeft: 0,
-                              marginRight: 0.5
-                            }
-                          }}
-                        >
-                          חידוש שליחה
-                        </Button>
-                        <Button
-                          startIcon={<AccessTimeIcon />}
-                          onClick={() => handleEditTime(campaign)}
-                          disabled={isLoading}
-                          sx={{
-                            borderRadius: 3,
-                            minWidth: 120,
-                            px: 2,
-                            py: 1,
-                            textTransform: 'none',
-                            backgroundColor: isNextCampaign ? '#FFFFFF' : '#F2F3F5',
-                            color: isNextCampaign ? '#111827' : '#363B4D',
-                            fontWeight: 500,
-                            boxShadow: 'none',
-                            ...(isNextCampaign && {
-                              border: '1.5px solid',
-                              borderColor: alpha('#5236F7', 0.3),
-                            }),
-                            '&:hover': {
-                              backgroundColor: isNextCampaign ? '#F9FAFB' : '#E5E7EB',
-                              ...(isNextCampaign && {
-                                borderColor: alpha('#5236F7', 0.5),
-                                backgroundColor: alpha('#5236F7', 0.05),
-                              }),
-                              boxShadow: 'none'
-                            },
-                            '& .MuiButton-startIcon': {
-                              marginLeft: 0,
-                              marginRight: 0.5
-                            }
-                          }}
-                        >
-                          שינוי זמן
-                        </Button>
-          <Button
-                          startIcon={<EditIcon />}
-                          onClick={() => handleEditMessage(campaign)}
-                          disabled={isLoading}
-                          sx={{
-                            borderRadius: 3,
-                            minWidth: 120,
-                            px: 2,
-                            py: 1,
-                            textTransform: 'none',
-                            backgroundColor: isNextCampaign ? '#FFFFFF' : '#F2F3F5',
-                            color: isNextCampaign ? '#111827' : '#363B4D',
-                            fontWeight: 500,
-                            boxShadow: 'none',
-                            ...(isNextCampaign && {
-                              border: '1.5px solid',
-                              borderColor: alpha('#5236F7', 0.3),
-                            }),
-                            '&:hover': {
-                              backgroundColor: isNextCampaign ? '#F9FAFB' : '#E5E7EB',
-                              ...(isNextCampaign && {
-                                borderColor: alpha('#5236F7', 0.5),
-                                backgroundColor: alpha('#5236F7', 0.05),
-                              }),
-                              boxShadow: 'none'
-                            },
-                            '& .MuiButton-startIcon': {
-                              marginLeft: 0,
-                              marginRight: 0.5
-                            }
-                          }}
-          >
-                          עריכת הודעה
-          </Button>
-                      </>
-                    )}
-                  </Stack>
-
-                  {/* Footer Info */}
+                <Stack direction="row" spacing={2} alignItems="flex-start">
                   <Box
                     sx={{
-                      pt: 2,
-                      borderTop: '1px solid',
-                      borderColor: 'divider',
+                      borderRadius: 2,
+                      p: 1.5,
+                      background: isNextCampaign
+                        ? 'linear-gradient(to bottom right, rgba(147, 51, 234, 0.2), rgba(236, 72, 153, 0.2))'
+                        : 'linear-gradient(to bottom right, rgba(147, 51, 234, 0.1), rgba(236, 72, 153, 0.1))',
                     }}
                   >
-                    {isPaused ? (
-                      <Typography variant="body2" color="text.secondary">
-                        הקמפיין מושהה. לא ישלח כלום עד שתחדש אותו.
-                      </Typography>
+                    {campaign.status === 'sent' ? (
+                      <CheckCircleIcon sx={{ fontSize: 24, color: '#22c55e' }} />
+                    ) : campaign.status === 'scheduled' ? (
+                      <SendIcon sx={{ fontSize: 24, color: '#3b82f6' }} />
                     ) : (
-                      <Typography variant="body2" color="text.secondary">
-                        ההודעה תישלח ל-{campaign.recipientCount} מוזמנים. ניתן לשנות בכל עת.
-                      </Typography>
+                      <ClockIcon sx={{ fontSize: 24, color: '#9333ea' }} />
                     )}
                   </Box>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} sx={{ mb: 1 }}>
+                      <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary' }}>
+                        {campaign.name}
+                      </Typography>
+                      <Chip
+                        label={getStatusLabel(campaign)}
+                        size="small"
+                        sx={{
+                          bgcolor: statusColors.bg,
+                          color: statusColors.color,
+                          border: '1px solid',
+                          borderColor: statusColors.color,
+                          fontWeight: 500,
+                        }}
+                      />
+                    </Stack>
+                    <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
+                      {campaign.template.substring(0, 100)}...
+                    </Typography>
+                    <Stack direction="row" spacing={2} sx={{ mb: 2, flexWrap: 'wrap' }}>
+                      <Stack direction="row" spacing={0.5} alignItems="center">
+                        <CalendarIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                          {campaign.scheduleTime ? new Date(campaign.scheduleTime).toLocaleDateString('he-IL') : 'לא מתוזמן'}
+                        </Typography>
+                      </Stack>
+                    </Stack>
+                    {isNextCampaign && campaign.status === 'scheduled' && (
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<PencilIcon sx={{ fontSize: 14 }} />}
+                        onClick={() => handleEditMessage(campaign)}
+                        disabled={isLoading}
+                        sx={{
+                          mt: 1.5,
+                          height: 32,
+                          fontSize: '0.75rem',
+                          borderColor: alpha('#9333ea', 0.3),
+                          color: '#9333ea',
+                          '&:hover': {
+                            bgcolor: alpha('#9333ea', 0.1),
+                            borderColor: alpha('#9333ea', 0.5),
+                            color: '#7e22ce',
+                          },
+                          '& .MuiButton-startIcon': {
+                            marginRight: 0,
+                            marginLeft: 0.25,
+                          },
+                        }}
+                      >
+                        ערוך קמפיין
+                      </Button>
+                    )}
+                  </Box>
+                  <IconButton
+                    size="small"
+                    sx={{
+                      flexShrink: 0,
+                      '&:hover': {
+                        bgcolor: alpha('#9333ea', 0.1),
+                      },
+                    }}
+                  >
+                    <ChevronRightIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+                  </IconButton>
                 </Stack>
               </Paper>
             );
           })}
-        </>
-      )}
+        </Stack>
+      </Box>
 
       {filteredCampaigns.length === 0 && (
         <Paper
@@ -952,17 +910,98 @@ function Messages() {
           sx={{
             p: 4,
             textAlign: 'center',
-            backgroundColor: 'white',
-            borderRadius: 2,
+            backgroundColor: 'rgba(255, 255, 255, 0.8)',
+            backdropFilter: 'blur(10px)',
+            borderRadius: 3,
             border: '1px solid',
-            borderColor: 'divider',
+            borderColor: alpha('#9333ea', 0.2),
           }}
         >
           <Typography variant="body1" color="text.secondary">
             אין קמפיינים להצגה
-      </Typography>
+          </Typography>
         </Paper>
       )}
+
+      {/* What Can You Do Here Card */}
+      <Paper
+        elevation={0}
+        sx={{
+          p: 2.5,
+          backgroundColor: 'rgba(255, 255, 255, 0.6)',
+          backdropFilter: 'blur(10px)',
+          border: '1px solid',
+          borderColor: alpha('#9333ea', 0.2),
+          borderRadius: 3,
+          mt: 3,
+        }}
+      >
+        <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary', mb: 2 }}>
+          מה אפשר לעשות כאן?
+        </Typography>
+        <Stack spacing={1.5}>
+          <Stack direction="row" spacing={1.5} alignItems="flex-start">
+            <Box
+              sx={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                bgcolor: '#9333ea',
+                mt: 0.75,
+                flexShrink: 0,
+              }}
+            />
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              ליצור קמפיין חדש לשליחת הודעות לאורחים
+            </Typography>
+          </Stack>
+          <Stack direction="row" spacing={1.5} alignItems="flex-start">
+            <Box
+              sx={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                bgcolor: '#9333ea',
+                mt: 0.75,
+                flexShrink: 0,
+              }}
+            />
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              לתזמן שליחה מראש (למשל: תזכורת שבוע לפני האירוע)
+            </Typography>
+          </Stack>
+          <Stack direction="row" spacing={1.5} alignItems="flex-start">
+            <Box
+              sx={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                bgcolor: '#9333ea',
+                mt: 0.75,
+                flexShrink: 0,
+              }}
+            />
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              לעקוב אחרי סטטוס כל קמפיין – ממתין, נשלח או הושלם
+            </Typography>
+          </Stack>
+          <Stack direction="row" spacing={1.5} alignItems="flex-start">
+            <Box
+              sx={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                bgcolor: '#9333ea',
+                mt: 0.75,
+                flexShrink: 0,
+              }}
+            />
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              לראות אילו אורחים קיבלו את ההודעה ואילו עדיין לא הגיבו
+            </Typography>
+          </Stack>
+        </Stack>
+      </Paper>
 
       {/* Edit Dialog */}
       <Dialog
