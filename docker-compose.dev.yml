@@ -8,16 +8,35 @@ services:
       - CORE_SERVICE_URL=${BACKEND_PROTOCOL}://${CORE_SERVICE_HOST}:${CORE_SERVICE_PORT}
       - AUB_SERVICE_URL=${BACKEND_PROTOCOL}://${AUB_SERVICE_HOST}:${AUB_SERVICE_PORT}/
       - WEBHOOK_HANDLER_URL=${BACKEND_PROTOCOL}://${WEBHOOK_HANDLER_HOST}:${WEBHOOK_HANDLER_PORT}/
+      - FRONTEND_DEV_URL=http://frontend-dev:3000
       - DOLLAR=$ # To escape $ in envsubst
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./frontend/build:/usr/share/nginx/html:ro
-      - ./nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf.template
-    command: /bin/sh -c "envsubst '$$CORE_SERVICE_URL $$AUB_SERVICE_URL $$WEBHOOK_HANDLER_URL $$DOLLAR' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'"
+      - ./nginx/conf.d/dev.conf:/etc/nginx/conf.d/default.conf.template
+    command: /bin/sh -c "envsubst '$$CORE_SERVICE_URL $$AUB_SERVICE_URL $$WEBHOOK_HANDLER_URL $$FRONTEND_DEV_URL $$DOLLAR' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'"
     depends_on:
+      - frontend-dev
       - aub-service
       - core-service
       - webhook-hendler
+
+  frontend-dev:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - HOST=0.0.0.0
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+      - REACT_APP_API_URL=http://localhost:${HTTP_PORT}
+      - REACT_APP_GOOGLE_PLACES_API_KEY=${REACT_APP_GOOGLE_PLACES_API_KEY}
+    stdin_open: true
+    tty: true
 
   postgres:
     image: postgres:15
@@ -75,7 +94,6 @@ services:
       - postgres
       - rabbitmq
 
-  # aub-service:
   aub-service:
     build:
       context: ./aub-service
@@ -127,7 +145,6 @@ services:
       - rabbitmq
       - postgres
 
-
   schedule-service:
     build:
       context: ./scheduler-service
@@ -150,7 +167,6 @@ services:
       - postgres
       - rabbitmq
 
-      
   campaign-worker:
     build:
       context: ./campaign-worker
@@ -172,8 +188,6 @@ services:
       - postgres
       - rabbitmq
 
-
-  # webhook-hendler:
   webhook-hendler:
     build:
       context: ./webhook-hendler
@@ -193,7 +207,6 @@ services:
     depends_on:
       - rabbitmq
 
-     
   webhook-worker:
     build:
       context: ./webhook-worker
@@ -222,26 +235,10 @@ services:
       core-service:
         condition: service_started
 
-  otp-worker:
-    build:
-      context: ./otp-worker
-      dockerfile: Dockerfile
-    environment:
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_PORT=${RABBITMQ_PORT}
-      - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
-      - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
-      - OTP_QUEUE_NAME=${OTP_QUEUE_NAME}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-    depends_on:
-      rabbitmq:
-        condition: service_started
-
-
 networks:
   default:
     driver: bridge
 volumes:
   pgdata:
   redisdata:
+

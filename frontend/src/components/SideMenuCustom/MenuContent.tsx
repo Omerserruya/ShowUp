@@ -6,7 +6,7 @@ import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import PeopleAltIcon from '@mui/icons-material/PeopleAlt';
-import SmsIcon from '@mui/icons-material/Sms';
+import SendIcon from '@mui/icons-material/Send';
 import EventSeatIcon from '@mui/icons-material/EventSeat';
 import PersonIcon from '@mui/icons-material/Person';
 import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
@@ -16,18 +16,92 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
 import Divider from '@mui/material/Divider';
+import { styled } from '@mui/material/styles';
+import Button from '@mui/material/Button';
+import Box from '@mui/material/Box';
 import { useNavigate, useLocation } from 'react-router-dom';
 
-export default function MenuContent() {
+const DashboardButton = styled(Button)<{ selected?: boolean }>(({ theme, selected }) => ({
+  background: selected 
+    ? 'linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%)'
+    : 'transparent',
+  color: selected ? 'white' : theme.palette.text.primary,
+  borderRadius: theme.shape.borderRadius,
+  padding: theme.spacing(1.25, 2),
+  textTransform: 'none',
+  fontWeight: selected ? 500 : 400,
+  width: '100%',
+  justifyContent: 'flex-start',
+  gap: theme.spacing(1),
+  minHeight: 48,
+  height: 48,
+  fontSize: '0.9375rem',
+  '&:hover': {
+    background: selected
+      ? 'linear-gradient(90deg, #2563eb 0%, #7c3aed 100%)'
+      : 'rgba(0, 0, 0, 0.04)',
+  },
+  '& .MuiButton-startIcon': {
+    marginRight: 0,
+    marginLeft: theme.spacing(1),
+    color: selected ? 'white' : theme.palette.text.secondary,
+  },
+}));
+
+const MenuItemButton = styled(ListItemButton)<{ selected?: boolean }>(({ theme, selected }) => ({
+  borderRadius: theme.shape.borderRadius,
+  margin: theme.spacing(0.5, 1),
+  minHeight: 48,
+  height: 48,
+  padding: theme.spacing(1.25, 2),
+  backgroundColor: selected 
+    ? 'transparent'
+    : 'transparent',
+  background: selected 
+    ? 'linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%)'
+    : 'transparent',
+  color: selected ? 'white' : theme.palette.text.primary,
+  '&.Mui-selected': {
+    backgroundColor: 'transparent',
+    background: 'linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%)',
+    color: 'white',
+    '&:hover': {
+      backgroundColor: 'transparent',
+      background: 'linear-gradient(90deg, #2563eb 0%, #7c3aed 100%)',
+    },
+    '& .MuiListItemIcon-root': {
+      color: 'white',
+    },
+  },
+  '&:hover': {
+    backgroundColor: selected
+      ? 'transparent'
+      : 'rgba(0, 0, 0, 0.04)',
+    background: selected
+      ? 'linear-gradient(90deg, #2563eb 0%, #7c3aed 100%)'
+      : undefined,
+  },
+  '& .MuiListItemIcon-root': {
+    color: selected ? 'white' : theme.palette.text.secondary,
+    minWidth: 40,
+  },
+}));
+
+interface MenuContentProps {
+  onItemClick?: () => void;
+}
+
+export default function MenuContent({ onItemClick }: MenuContentProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [adminOpen, setAdminOpen] = useState(false);
 
+  const isDashboardSelected = location.pathname === '/overview';
+
   const menuItems = [
-    { text: 'סטטוס', icon: <BarChartIcon />, path: '/overview' },
-    { text: 'רשימת מוזמנים', icon: <PeopleAltIcon />, path: '/guests' },
-    { text: 'שליחת הודעות', icon: <SmsIcon />, path: '/messages' },
-    { text: 'הושבה', icon: <EventSeatIcon />, path: '/seating' },
+    { text: 'רשימת אורחים', icon: <PeopleAltIcon />, path: '/guests' },
+    { text: 'ניהול קמפיינים', icon: <SendIcon />, path: '/messages' },
+    { text: 'סידור מושבים', icon: <EventSeatIcon />, path: '/seating' },
     { text: 'הפרופיל שלי', icon: <PersonIcon />, path: '/profile' },
   ];
 
@@ -42,21 +116,52 @@ export default function MenuContent() {
     setAdminOpen(!adminOpen);
   };
 
+  const handleNavigation = (path: string) => {
+    navigate(path);
+    onItemClick?.();
+  };
+
   return (
-    <List>
-      {menuItems.map((item) => (
+    <List sx={{ px: 1 }}>
+      {/* Dashboard Button */}
+      <ListItem disablePadding sx={{ mb: 1 }}>
+        <DashboardButton
+          startIcon={<BarChartIcon />}
+          onClick={() => handleNavigation('/overview')}
+          fullWidth
+          selected={isDashboardSelected}
+        >
+          לוח בקרה
+        </DashboardButton>
+      </ListItem>
+
+      {/* Regular Menu Items */}
+      {menuItems.map((item) => {
+        const isSelected = location.pathname === item.path;
+        return (
         <ListItem key={item.text} disablePadding>
-          <ListItemButton
-            selected={location.pathname === item.path}
-            onClick={() => navigate(item.path)}
+            <MenuItemButton
+              selected={isSelected}
+              onClick={() => handleNavigation(item.path)}
+              dir="rtl"
           >
-            <ListItemIcon>{item.icon}</ListItemIcon>
-            <ListItemText primary={item.text} 
-                      sx={{ display: 'flex', justifyContent: 'right' }} // remove margin between         
+              <ListItemIcon>
+                {item.icon}
+              </ListItemIcon>
+              <ListItemText 
+                primary={item.text}
+                sx={{ 
+                  textAlign: 'right',
+                  '& .MuiListItemText-primary': {
+                    fontSize: '0.9375rem',
+                    color: isSelected ? 'white' : 'text.primary',
+                  },
+                }}
 />
-          </ListItemButton>
+            </MenuItemButton>
         </ListItem>
-      ))}
+        );
+      })}
 
       <Divider sx={{ my: 1 }} />
 
@@ -76,7 +181,7 @@ export default function MenuContent() {
             <ListItem key={item.text} disablePadding sx={{ pr: 4 }}>
               <ListItemButton
                 selected={location.pathname === item.path}
-                onClick={() => navigate(item.path)}
+                onClick={() => handleNavigation(item.path)}
               >
                 <ListItemIcon>{item.icon}</ListItemIcon>
                 <ListItemText primary={item.text} sx={{ display: 'flex', justifyContent: 'right' }} />

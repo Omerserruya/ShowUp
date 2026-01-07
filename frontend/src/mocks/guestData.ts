@@ -4,6 +4,7 @@ export interface Guest {
   eventId: string;
   name: string;
   phone: string;
+  email?: string;
   group?: string;
   status: 'pending' | 'confirmed' | 'declined' | 'maybe';
   source: 'manual' | 'imported' | 'whatsapp';
@@ -11,6 +12,8 @@ export interface Guest {
   reminderSentAt?: Date;
   confirmedCount?: number;
   assignedSeat?: string;
+  lastResponse?: string | Date;
+  avatarUrl?: string;
 }
 
 export interface Table {
@@ -59,55 +62,64 @@ export const mockGuests: Guest[] = [
   {
     _id: '1',
     eventId: 'event1',
-    name: 'ישראל ישראלי',
+    name: 'שרה לוי',
     phone: '050-1234567',
+    email: 'sarah@example.com',
     group: 'משפחת ישראלי',
     status: 'confirmed',
     source: 'whatsapp',
     note: 'מגיע עם בן/בת זוג',
-    confirmedCount: 2
+    confirmedCount: 2,
+    lastResponse: '12/05/2024'
   },
   {
     _id: '2',
     eventId: 'event1',
-    name: 'שרה כהן',
-    phone: '052-7654321',
+    name: 'יוסי כהן',
+    phone: '052-9876543',
+    email: 'yossi@example.com',
     group: 'משפחת כהן',
-    status: 'pending',
+    status: 'confirmed',
     source: 'manual',
-    note: ''
+    note: '',
+    confirmedCount: 1,
+    lastResponse: '11/05/2024'
   },
   {
     _id: '3',
     eventId: 'event1',
-    name: 'דוד לוי',
-    phone: '054-9876543',
+    name: 'מיכל אברהם',
+    phone: '054-5556677',
+    email: 'michal@example.com',
     group: 'משפחת לוי',
     status: 'declined',
     source: 'imported',
-    note: 'לא יכול להגיע'
+    note: 'לא יכול להגיע',
+    lastResponse: '10/05/2024'
   },
   {
     _id: '4',
     eventId: 'event1',
-    name: 'רחל אברהם',
-    phone: '053-4567890',
+    name: 'דוד מזרחי',
+    phone: '053-1112233',
+    email: 'david@example.com',
     group: 'משפחת אברהם',
-    status: 'maybe',
+    status: 'confirmed',
     source: 'whatsapp',
     note: 'תאשר בהמשך',
-    confirmedCount: 1
+    confirmedCount: 3,
+    lastResponse: '09/05/2024'
   },
   {
     _id: '5',
     eventId: 'event1',
-    name: 'יעקב יעקובי',
-    phone: '050-1112233',
+    name: 'רונית שמש',
+    phone: '055-9998877',
+    email: 'ronit@example.com',
     group: 'משפחת יעקובי',
-    status: 'confirmed',
+    status: 'pending',
     source: 'whatsapp',
-    note: 'יבוא עם בן/בת זוג',
-    confirmedCount: 2
+    note: '',
   }
 ];
 

@@ -2,6 +2,8 @@ import * as React from 'react';
 import { styled, useTheme } from '@mui/material/styles';
 import MuiDrawer, { drawerClasses } from '@mui/material/Drawer';
 import Box from '@mui/material/Box';
+import IconButton from '@mui/material/IconButton';
+import CloseIcon from '@mui/icons-material/Close';
 import MenuContent from './MenuContent';
 import UserCard from './UserCard';
 import Divider from '@mui/material/Divider';
@@ -14,8 +16,9 @@ import ListItemText from '@mui/material/ListItemText';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import InfoRoundedIcon from '@mui/icons-material/InfoRounded';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useBanner } from '../../contexts/BannerContext';
 
-const drawerWidth = 240;
+const drawerWidth = 280;
 
 const Drawer = styled(MuiDrawer)({
   width: drawerWidth,
@@ -33,10 +36,16 @@ const LogoContainer = styled(Box)({
   alignItems: 'center'
 });
 
-export default function SideMenu() {
+interface SideMenuProps {
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
+}
+
+export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenuProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const theme = useTheme();
+  const { isBannerVisible } = useBanner();
 
   const bottomMenuItems = [
     { text: 'הגדרות', icon: <SettingsRoundedIcon />, path: '/setting' },
@@ -44,27 +53,33 @@ export default function SideMenu() {
   ];
 
 
-  return (
-    <Drawer
-      variant="permanent"
-      anchor="right"
-      
-      sx={{
-        display: { xs: 'none', md: 'block' },
-        '& .MuiDrawer-paper': {
-          backgroundColor: 'background.paper',
-          borderRight: '1px solid',
-          borderColor: 'divider',
-          width: drawerWidth
-        }
-      }}
-    >
+  const drawerContent = (
       <Box sx={{ 
         display: 'flex', 
         flexDirection: 'column', 
         height: '100%',
-        position: 'relative'
+        position: 'relative',
+        backgroundColor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff'
       }}>
+      {/* Close button for mobile */}
+      <Box sx={{ 
+        display: { xs: 'flex', md: 'none' },
+        justifyContent: 'flex-start',
+        alignItems: 'center',
+        p: 1,
+        borderBottom: '1px solid',
+        borderColor: 'divider',
+      }}>
+        <IconButton
+          onClick={onMobileClose}
+          sx={{
+            color: 'text.primary',
+          }}
+        >
+          <CloseIcon />
+        </IconButton>
+      </Box>
+
         <LogoContainer>
           <img 
             src={'./logo.png'}
@@ -83,7 +98,7 @@ export default function SideMenu() {
           overflowY: 'auto',
         }}>
           <SelectContent />
-          <MenuContent />
+        <MenuContent onItemClick={onMobileClose} />
         </Box>
 
         <Box sx={{ 
@@ -91,14 +106,17 @@ export default function SideMenu() {
           bottom: 0,
           left: 0,
           right: 0,
-          backgroundColor: 'background.paper'
+          backgroundColor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff'
         }}>
           <List dense>
             {bottomMenuItems.map((item) => (
               <ListItem key={item.text} disablePadding>
                 <ListItemButton
                   selected={location.pathname === item.path}
-                  onClick={() => navigate(item.path)}
+                onClick={() => {
+                  navigate(item.path);
+                  onMobileClose?.();
+                }}
                 >
                   <ListItemIcon>{item.icon}</ListItemIcon>
                   <ListItemText primary={item.text} sx={{ display: 'flex', justifyContent: 'right' }} />
@@ -110,6 +128,51 @@ export default function SideMenu() {
           <UserCard />
         </Box>
       </Box>
+  );
+
+  return (
+    <>
+      {/* Mobile drawer - full screen */}
+      <MuiDrawer
+        variant="temporary"
+        open={mobileOpen}
+        onClose={onMobileClose}
+        anchor="right"
+        ModalProps={{
+          keepMounted: true, // Better open performance on mobile.
+        }}
+        sx={{
+          display: { xs: 'block', md: 'none' },
+          '& .MuiDrawer-paper': {
+            boxSizing: 'border-box',
+            width: '100%',
+            maxWidth: '100vw',
+            backgroundColor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
+            borderRight: 'none',
+          },
+        }}
+      >
+        {drawerContent}
+      </MuiDrawer>
+
+      {/* Desktop permanent drawer */}
+      <Drawer
+        variant="permanent"
+        anchor="right"
+        sx={{
+          display: { xs: 'none', md: 'block' },
+          '& .MuiDrawer-paper': {
+            backgroundColor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
+            borderRight: '1px solid',
+            borderColor: 'divider',
+            width: drawerWidth,
+            zIndex: 1200,
+            pt: isBannerVisible ? '48px' : 0,
+          }
+        }}
+      >
+        {drawerContent}
     </Drawer>
+    </>
   );
 }

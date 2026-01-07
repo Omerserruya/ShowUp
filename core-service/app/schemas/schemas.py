@@ -137,6 +137,33 @@ class PaginatedResponse(BaseModel):
     total: int
     page: int
     page_size: int
-    items: list
+    items: List[GuestOut]
+
+
+# Guest Stats Schemas
+class GuestStatsOut(BaseModel):
+    total: int  # Sum of import_count (total people invited)
+    total_guests: int  # Count of guest records (number of invitations)
+    confirmed: int
+    declined: int
+    pending: int
+
+
+class DailyResponseData(BaseModel):
+    date: str
+    dateLabel: str
+    confirmed: int
+    declined: int
+
+
+class MilestoneData(BaseModel):
+    date: str
+    dateLabel: str
+    label: str
+
+
+class DailyResponsesOut(BaseModel):
+    data: List[DailyResponseData]
+    milestones: List[MilestoneData]
 
 

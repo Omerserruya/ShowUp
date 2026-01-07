@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { fetchWithAuth } from '../utils/fetchWithAuth';
 
 export interface Event {
   id: string;
@@ -10,6 +11,7 @@ export interface Event {
   type?: 'wedding' | 'birthday' | 'corporate' | 'custom';
   imageUrl?: string;
   rsvpDeadline?: string;
+  active?: boolean;
   createdAt: string;
   updatedAt?: string;
 }
@@ -29,19 +31,69 @@ interface EventContextType {
 const EventContext = createContext<EventContextType | undefined>(undefined);
 
 export function EventProvider({ children }: { children: React.ReactNode }) {
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  // Load selected event from localStorage on mount
+  const [selectedEvent, setSelectedEventState] = useState<Event | null>(() => {
+    const saved = localStorage.getItem('selected_event_id');
+    return saved ? ({ id: saved } as Event) : null;
+  });
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Custom setter that also saves to localStorage
+  const setSelectedEvent = (event: Event | null) => {
+    setSelectedEventState(event);
+    if (event) {
+      localStorage.setItem('selected_event_id', event.id);
+    } else {
+      localStorage.removeItem('selected_event_id');
+    }
+  };
 
   useEffect(() => {
     fetchEvents();
   }, []);
 
+  // When events are loaded, try to restore selected event
+  useEffect(() => {
+    if (events.length > 0 && selectedEvent?.id) {
+      const foundEvent = events.find(e => e.id === selectedEvent.id);
+      if (foundEvent) {
+        setSelectedEventState(foundEvent);
+      } else {
+        // Selected event not found, clear it
+        setSelectedEventState(null);
+        localStorage.removeItem('selected_event_id');
+      }
+    } else if (events.length > 0 && !selectedEvent) {
+      // If no event is selected but we have events, try to restore from localStorage
+      const savedEventId = localStorage.getItem('selected_event_id');
+      if (savedEventId) {
+        const foundEvent = events.find(e => e.id === savedEventId);
+        if (foundEvent) {
+          setSelectedEventState(foundEvent);
+          return;
+        } else {
+          localStorage.removeItem('selected_event_id');
+        }
+      }
+
+      // No saved event or saved one not found – auto-select the newest event (by createdAt)
+      const latestEvent = [...events].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      )[0];
+      if (latestEvent) {
+        // Use full setter so it also updates localStorage
+        setSelectedEvent(latestEvent);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events]);
+
   const fetchEvents = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/events');
+      const response = await fetchWithAuth('/api/events');
       if (!response.ok) throw new Error('Failed to fetch events');
       const data = await response.json();
       setEvents(data);
@@ -56,9 +108,8 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
   const addEvent = async (event: Event) => {
     setLoading(true);
     try {
-      const response = await fetch('/api/events', {
+      const response = await fetchWithAuth('/api/events', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(event),
       });
       if (!response.ok) throw new Error('Failed to add event');
@@ -75,9 +126,8 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
   const updateEvent = async (event: Event) => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/events/${event.id}`, {
+      const response = await fetchWithAuth(`/api/events/${event.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(event),
       });
       if (!response.ok) throw new Error('Failed to update event');
@@ -93,7 +143,7 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
   const deleteEvent = async (eventId: string) => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/events/${eventId}`, {
+      const response = await fetchWithAuth(`/api/events/${eventId}`, {
         method: 'DELETE',
       });
       if (!response.ok) throw new Error('Failed to delete event');

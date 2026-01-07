@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { fetchWithAuth } from '../utils/fetchWithAuth';
 
 export interface Account {
   _id: string;
@@ -31,11 +32,7 @@ export const AccountProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const accountId = localStorage.getItem('account_id');
     if (accountId) {
       try {
-        const response = await fetch(`/api/accounts/${accountId}`, {
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+        const response = await fetchWithAuth(`/api/accounts/${accountId}`, {
           cache: 'no-cache',
         });
 
