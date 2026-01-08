@@ -86,7 +86,8 @@ def ensure_tables(conn: psycopg2.extensions.connection):
                 table_number INTEGER CHECK (table_number >= 1 AND table_number <= 128),
                 notes TEXT,
                 last_response TIMESTAMP,
-                created_at TIMESTAMP DEFAULT NOW()
+                created_at TIMESTAMP DEFAULT NOW(),
+                guest_group VARCHAR(100)
             );
             """
         )
@@ -96,6 +97,12 @@ def ensure_tables(conn: psycopg2.extensions.connection):
             """
             ALTER TABLE guests
             ADD COLUMN IF NOT EXISTS import_count INTEGER NOT NULL DEFAULT 1 CHECK (import_count >= 1)
+            """
+        )
+        cur.execute(
+            """
+            ALTER TABLE guests
+            ADD COLUMN IF NOT EXISTS guest_group VARCHAR(100)
             """
         )
         
