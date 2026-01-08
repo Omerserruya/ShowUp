@@ -315,7 +315,7 @@ export function ImportedGuestsReviewScreen() {
         </Card>
 
         {/* Action Buttons */}
-        <Stack direction="row" spacing={3} sx={{ mb: 2 }}>
+        <Stack direction="row">
           <Button
             variant="contained"
             fullWidth
@@ -367,7 +367,6 @@ export function ImportedGuestsReviewScreen() {
           >
             דחה הכל
           </Button>
-
         </Stack>
 
         {/* Guest Cards */}
