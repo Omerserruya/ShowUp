@@ -329,7 +329,7 @@ export function ImportedGuestsReviewScreen() {
               textTransform: 'none',
               py: 0.5,
               px: 1,
-              my: 1,
+              mx: 1,
               gap: 1.5,
               flexDirection: 'row-reverse',
               '&:hover': {
@@ -356,7 +356,7 @@ export function ImportedGuestsReviewScreen() {
               textTransform: 'none',
               py: 0.5,
               px: 1,
-              my: 1,
+              mx: 1,
               gap: 1.5,
               flexDirection: 'row-reverse',
               '& .MuiButton-endIcon': {
