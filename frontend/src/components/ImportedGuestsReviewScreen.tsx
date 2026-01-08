@@ -44,6 +44,16 @@ export function ImportedGuestsReviewScreen() {
   // Flatten all contacts from all imports
   const allContacts: GuestImportContact[] = imports.flatMap((imp) => imp.contacts || []);
 
+  // Navigate back if all contacts are processed
+  React.useEffect(() => {
+    if (allContacts.length === 0 && !loading) {
+      const timer = setTimeout(() => {
+        navigate('/guests');
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [allContacts.length, loading, navigate]);
+
   const handleEdit = (contactId: string, contact: GuestImportContact) => {
     setEditingContact(contactId);
     setEditValues({
@@ -146,16 +156,6 @@ export function ImportedGuestsReviewScreen() {
       </Box>
     );
   }
-
-  // Navigate back if all contacts are processed
-  React.useEffect(() => {
-    if (allContacts.length === 0 && !loading) {
-      const timer = setTimeout(() => {
-        navigate('/guests');
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [allContacts.length, loading, navigate]);
 
   // If all contacts are processed, show empty state
   if (allContacts.length === 0 && !loading) {
