@@ -425,6 +425,18 @@ export function ImportedGuestsReviewScreen() {
 
                   {/* Name, Phone and Avatar */}
                   <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, mb: 2, pr: validation.status !== 'ok' ? 8 : 0 }}>
+                  <Avatar
+                      sx={{
+                        width: 48,
+                        height: 48,
+                        bgcolor: '#5236F7',
+                        fontSize: '1.25rem',
+                        fontWeight: 600,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {(contact.name || '?').charAt(0)}
+                    </Avatar>
                     <Box sx={{ flex: 1 }}>
                       {/* Name */}
                       {isEditingName ? (
@@ -486,18 +498,6 @@ export function ImportedGuestsReviewScreen() {
                         </Box>
                       )}
                     </Box>
-                    <Avatar
-                      sx={{
-                        width: 48,
-                        height: 48,
-                        bgcolor: '#5236F7',
-                        fontSize: '1.25rem',
-                        fontWeight: 600,
-                        flexShrink: 0,
-                      }}
-                    >
-                      {(contact.name || '?').charAt(0)}
-                    </Avatar>
                   </Box>
 
                   {/* Details Container - Light gray background */}
