@@ -254,7 +254,7 @@ function Guests() {
   const pendingGuests = stats?.pending || 0; // Count of pending guests
 
   // Get unique groups from guests
-  const uniqueGroups = Array.from(new Set(guests.map(guest => guest.group).filter(Boolean))).sort();
+  const uniqueGroups = Array.from(new Set(guests.map(guest => guest.group).filter((g): g is string => Boolean(g)))).sort();
 
   // Filtered guests (client-side filtering only for group and notes, status filtering is done server-side)
   const filteredGuests = guests.filter(guest => {
