@@ -271,7 +271,15 @@ export function ImportedGuestsSection({ onRefresh, uniqueGroups, hasTableNumbers
                     {/* Phone */}
                     <TableCell align="center" sx={{ backgroundColor: 'white' }}>
                       <Typography variant="body2">
-                        {contact.phone || '-'}
+                        {(() => {
+                          // Format phone number: if it starts with +972, show it as 972+ (RTL)
+                          const phone = contact.phone || '';
+                          if (phone.startsWith('+972')) {
+                            const rest = phone.substring(4).trim();
+                            return `${rest} 972+`;
+                          }
+                          return phone || '-';
+                        })()}
                       </Typography>
                     </TableCell>
 

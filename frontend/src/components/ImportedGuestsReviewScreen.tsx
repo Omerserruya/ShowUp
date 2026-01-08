@@ -22,6 +22,10 @@ import {
   DialogContent,
   DialogActions,
   DialogContentText,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material';
 import {
   CheckCircle as CheckCircleIcon,
@@ -33,6 +37,7 @@ import {
   Restaurant as RestaurantIcon,
   Info as InfoIcon,
   MoreVert as MoreVertIcon,
+  Edit as EditIcon,
 } from '@mui/icons-material';
 import { Autocomplete } from '@mui/material';
 import { useGuestImports, approveGuestImportContact, rejectGuestImportContact, GuestImportContact } from '../hooks/useGuestImports';
@@ -54,6 +59,8 @@ export function ImportedGuestsReviewScreen() {
   const [editValues, setEditValues] = useState<Record<string, any>>({});
   const [processing, setProcessing] = useState<Set<string>>(new Set());
   const [approveAllDialogOpen, setApproveAllDialogOpen] = useState(false);
+  const [fullEditMode, setFullEditMode] = useState<Set<string>>(new Set()); // Full edit mode for contacts
+  const [menuAnchor, setMenuAnchor] = useState<{ contactId: string; anchor: HTMLElement } | null>(null);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
     message: '',
@@ -268,37 +275,37 @@ export function ImportedGuestsReviewScreen() {
         </Toolbar>
       </AppBar>
 
-      <Box sx={{ p: 2 }}>
+      <Box sx={{ p: 1.5 }}>
         {/* Summary Card */}
         <Card
           sx={{
-            mb: 2,
+            mb: 1.5,
             borderRadius: 3,
             background: 'linear-gradient(180deg, #5236F7 0%, #6B4CE6 100%)',
             color: 'white',
             boxShadow: 'none',
           }}
         >
-          <CardContent sx={{ p: 3 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-              <Typography variant="h5" sx={{ fontWeight: 700, fontSize: '1.5rem' }}>
+          <CardContent sx={{ p: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+              <Typography variant="h5" sx={{ fontWeight: 700, fontSize: '1.35rem' }}>
                 {totalContacts} אורחים חדשים
               </Typography>
               <Box
                 sx={{
                   backgroundColor: 'rgba(255, 255, 255, 0.2)',
                   borderRadius: '50%',
-                  width: 48,
-                  height: 48,
+                  width: 40,
+                  height: 40,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
-                <WhatsAppIcon sx={{ fontSize: 28, color: 'white' }} />
+                <WhatsAppIcon sx={{ fontSize: 24, color: 'white' }} />
               </Box>
             </Box>
-            <Typography variant="body2" sx={{ mb: 2, opacity: 0.9 }}>
+            <Typography variant="body2" sx={{ mb: 1.5, opacity: 0.9, fontSize: '0.875rem' }}>
               נתקבלו מהבוט • דורש אישור
             </Typography>
             <LinearProgress
@@ -308,36 +315,34 @@ export function ImportedGuestsReviewScreen() {
                 height: 4,
                 borderRadius: 2,
                 backgroundColor: 'rgba(255, 255, 255, 0.3)',
-                mb: 1,
+                mb: 0.75,
                 '& .MuiLinearProgress-bar': {
                   backgroundColor: 'white',
                 },
               }}
             />
-            <Typography variant="body2" sx={{ opacity: 0.9 }}>
+            <Typography variant="body2" sx={{ opacity: 0.9, fontSize: '0.875rem' }}>
               {approvedCount} מתוך {totalContacts} אושרו
             </Typography>
           </CardContent>
         </Card>
 
         {/* Action Buttons */}
-        <Stack direction="row">
+        <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
           <Button
             variant="contained"
             fullWidth
             endIcon={<CheckCircleIcon />}
             onClick={handleApproveAll}
             disabled={processing.size > 0}
+            size="small"
             sx={{
               borderRadius: 3,
               backgroundColor: '#5236F7',
               color: 'white',
               textTransform: 'none',
-              py: 0.5,
-              px: 1,
-              mx: 1,
-              mb: 1,
-              gap: 1.5,
+              py: 0.75,
+              gap: 1,
               flexDirection: 'row-reverse',
               '&:hover': {
                 backgroundColor: '#4529D9',
@@ -356,16 +361,14 @@ export function ImportedGuestsReviewScreen() {
             endIcon={<CancelIcon />}
             onClick={handleRejectAll}
             disabled={processing.size > 0}
+            size="small"
             sx={{
               borderRadius: 3,
               borderColor: 'divider',
               color: 'text.primary',
               textTransform: 'none',
-              py: 0.5,
-              px: 1,
-              mx: 1,
-              mb: 1,
-              gap: 1.5,
+              py: 0.75,
+              gap: 1,
               flexDirection: 'row-reverse',
               '& .MuiButton-endIcon': {
                 marginLeft: 0,
@@ -378,19 +381,47 @@ export function ImportedGuestsReviewScreen() {
         </Stack>
 
         {/* Guest Cards */}
-        <Stack spacing={2}>
+        <Stack spacing={1.5}>
           {allContacts.map((contact) => {
             const isProcessing = processing.has(contact.id);
             const validation = getValidationStatus(contact);
-            const isEditingName = editingContact === contact.id && editingField === 'name';
-            const isEditingPhone = editingContact === contact.id && editingField === 'phone';
-            const isEditingGroup = editingContact === contact.id && editingField === 'group';
-            const isEditingExpectedCount = editingContact === contact.id && editingField === 'expectedCount';
-            const isEditingTableNumber = editingContact === contact.id && editingField === 'tableNumber';
+            const isFullEditMode = fullEditMode.has(contact.id);
+            const isEditingName = isFullEditMode || (editingContact === contact.id && editingField === 'name');
+            const isEditingPhone = isFullEditMode || (editingContact === contact.id && editingField === 'phone');
 
             const expectedCount = editValues[`${contact.id}_expectedCount`] ?? 0;
             const group = editValues[`${contact.id}_group`] ?? '';
             const tableNumber = editValues[`${contact.id}_tableNumber`] ?? '';
+
+            const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, contactId: string) => {
+              setMenuAnchor({ contactId, anchor: event.currentTarget });
+            };
+
+            const handleMenuClose = () => {
+              setMenuAnchor(null);
+            };
+
+            const handleEditAll = (contactId: string) => {
+              setFullEditMode((prev) => new Set(prev).add(contactId));
+              setEditValues({
+                ...editValues,
+                [`${contactId}_name`]: contact.name ?? '',
+                [`${contactId}_phone`]: contact.phone ?? '',
+                [`${contactId}_group`]: group,
+                [`${contactId}_expectedCount`]: expectedCount,
+                [`${contactId}_tableNumber`]: tableNumber,
+              });
+              handleMenuClose();
+            };
+
+            const handleSaveAll = (contactId: string) => {
+              // Save all changes
+              setFullEditMode((prev) => {
+                const next = new Set(prev);
+                next.delete(contactId);
+                return next;
+              });
+            };
 
             return (
               <Card
@@ -404,7 +435,7 @@ export function ImportedGuestsReviewScreen() {
                   position: 'relative',
                 }}
               >
-                <CardContent sx={{ p: 2.5, position: 'relative' }}>
+                <CardContent sx={{ p: 2, position: 'relative' }}>
                   {/* Status Chip - Absolute positioned in top left */}
                   {validation.status !== 'ok' && (
                     <Chip
@@ -412,9 +443,11 @@ export function ImportedGuestsReviewScreen() {
                       size="small"
                       sx={{
                         position: 'absolute',
-                        top: 12,
-                        left: 12,
+                        top: 8,
+                        left: 8,
                         zIndex: 1,
+                        height: 24,
+                        fontSize: '0.7rem',
                         backgroundColor: validation.status === 'warning' ? alpha('#ff9800', 0.1) : alpha('#f44336', 0.1),
                         color: validation.status === 'warning' ? '#ff9800' : '#f44336',
                         fontWeight: 500,
@@ -425,30 +458,13 @@ export function ImportedGuestsReviewScreen() {
 
                   {/* Name, Phone and Avatar */}
                   <Box
-                    dir="rtl"
                     sx={{
-                      display: 'flex',
-                      flexDirection: 'row-reverse',
-                      alignItems: 'flex-start',
-                      gap: 2,
-                      mb: 2,
-                      pr: validation.status !== 'ok' ? 8 : 0,
+                      mb: 1.5,
+                      textAlign: 'right',
+                      direction: 'rtl',
                     }}
                   >
-                    <Avatar
-                      sx={{
-                        width: 48,
-                        height: 48,
-                        bgcolor: '#5236F7',
-                        fontSize: '1.25rem',
-                        fontWeight: 600,
-                        flexShrink: 0,
-                      }}
-                    >
-                      {(contact.name || '?').charAt(0)}
-                    </Avatar>
-
-                    <Box sx={{ flex: 1, textAlign: 'right' }}>
+                    <Box sx={{ textAlign: 'right' }}>
                       {/* Name */}
                       {isEditingName ? (
                         <TextField
@@ -470,12 +486,12 @@ export function ImportedGuestsReviewScreen() {
                             }
                           }}
                           autoFocus
-                          sx={{ mb: 1 }}
+                          sx={{ mb: 0.5 }}
                         />
                       ) : (
                         <Typography
                           variant="h6"
-                          sx={{ fontWeight: 600, cursor: 'pointer', mb: 1 }}
+                          sx={{ fontWeight: 600, cursor: 'pointer', mb: 0.5, textAlign: 'right', fontSize: '1.1rem' }}
                           onDoubleClick={() =>
                             handleEdit(contact.id, 'name', contact.name)
                           }
@@ -512,18 +528,26 @@ export function ImportedGuestsReviewScreen() {
                             display: 'flex',
                             alignItems: 'center',
                             gap: 0.5,
-                            flexDirection: 'row-reverse',
+                            direction: 'rtl',
                           }}
                         >
-                          <PhoneIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                          <PhoneIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                           <Typography
                             variant="body2"
-                            sx={{ color: 'text.primary', cursor: 'pointer' }}
+                            sx={{ color: 'text.primary', cursor: 'pointer', direction: 'rtl', textAlign: 'right', fontSize: '0.875rem' }}
                             onDoubleClick={() =>
                               handleEdit(contact.id, 'phone', contact.phone)
                             }
                           >
-                            {contact.phone || '-'}
+                            {(() => {
+                              // Format phone number: if it starts with +972, show it as 972+ (RTL)
+                              const phone = contact.phone || '';
+                              if (phone.startsWith('+972')) {
+                                const rest = phone.substring(4).trim();
+                                return `${rest} 972+`;
+                              }
+                              return phone || '-';
+                            })()}
                           </Typography>
                         </Box>
                       )}
@@ -536,144 +560,92 @@ export function ImportedGuestsReviewScreen() {
                     sx={{
                       backgroundColor: '#F8F9FA',
                       borderRadius: 2,
-                      p: 2,
-                      mb: 2,
+                      p: 1.5,
+                      mb: 1.5,
                     }}
                   >
-                    {/* Group */}
-                    <Box sx={{ mb: 1.5 }}>
-                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500, display: 'block', mb: 0.5 }}>
+                    {/* Group - Always editable */}
+                    <Box sx={{ mb: 1 }}>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500, display: 'block', mb: 0.5, fontSize: '0.75rem' }}>
                         קבוצה
                       </Typography>
-                      {isEditingGroup ? (
-                        <Autocomplete
-                          freeSolo
-                          size="small"
-                          options={uniqueGroups}
-                          value={group}
-                          onChange={(event, newValue) => {
-                            const value = typeof newValue === 'string' ? newValue : newValue || '';
-                            setEditValues({ ...editValues, [`${contact.id}_group`]: value });
-                            handleSaveEdit(contact.id, 'group');
-                          }}
-                          onBlur={() => {
-                            handleSaveEdit(contact.id, 'group');
-                          }}
-                          onInputChange={(event, newInputValue) => {
-                            setEditValues({ ...editValues, [`${contact.id}_group`]: newInputValue });
-                          }}
-                          renderInput={(params) => (
-                            <TextField
-                              {...params}
-                              autoFocus
-                              fullWidth
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  handleSaveEdit(contact.id, 'group');
-                                } else if (e.key === 'Escape') {
-                                  setEditingContact(null);
-                                  setEditingField(null);
-                                }
-                              }}
-                            />
-                          )}
-                        />
-                      ) : (
-                        <Typography
-                          variant="body2"
-                          sx={{ cursor: 'pointer', color: group ? 'text.primary' : 'text.secondary' }}
-                          onDoubleClick={() => handleEdit(contact.id, 'group', group)}
-                        >
-                          {group || 'לא צוין'}
-                        </Typography>
-                      )}
+                      <Autocomplete
+                        freeSolo
+                        size="small"
+                        options={uniqueGroups}
+                        value={group}
+                        onChange={(event, newValue) => {
+                          const value = typeof newValue === 'string' ? newValue : newValue || '';
+                          setEditValues({ ...editValues, [`${contact.id}_group`]: value });
+                        }}
+                        onInputChange={(event, newInputValue) => {
+                          setEditValues({ ...editValues, [`${contact.id}_group`]: newInputValue });
+                        }}
+                        renderInput={(params) => (
+                          <TextField
+                            {...params}
+                            fullWidth
+                          />
+                        )}
+                      />
                     </Box>
 
-                    {/* Expected Count */}
-                    <Box sx={{ mb: 1.5 }}>
-                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500, display: 'block', mb: 0.5 }}>
+                    {/* Expected Count - Always editable */}
+                    <Box sx={{ mb: 1 }}>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500, display: 'block', mb: 0.5, fontSize: '0.75rem' }}>
                         מספר אורחים צפויים
                       </Typography>
-                      {isEditingExpectedCount ? (
-                        <TextField
-                          fullWidth
-                          size="small"
-                          type="number"
-                          value={expectedCount}
-                          onChange={(e) => setEditValues({ ...editValues, [`${contact.id}_expectedCount`]: parseInt(e.target.value) || 0 })}
-                          onBlur={() => handleSaveEdit(contact.id, 'expectedCount')}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              handleSaveEdit(contact.id, 'expectedCount');
-                            } else if (e.key === 'Escape') {
-                              setEditingContact(null);
-                              setEditingField(null);
-                            }
-                          }}
-                          autoFocus
-                        />
-                      ) : (
-                        <Typography
-                          variant="body2"
-                          sx={{ cursor: 'pointer', color: expectedCount > 0 ? 'text.primary' : 'text.secondary' }}
-                          onDoubleClick={() => handleEdit(contact.id, 'expectedCount', expectedCount)}
-                        >
-                          {expectedCount > 0 ? expectedCount : 'לא צוין'}
-                        </Typography>
-                      )}
+                      <TextField
+                        fullWidth
+                        size="small"
+                        type="number"
+                        value={expectedCount}
+                        onChange={(e) => setEditValues({ ...editValues, [`${contact.id}_expectedCount`]: parseInt(e.target.value) || 0 })}
+                      />
                     </Box>
 
-                    {/* Table Number */}
+                    {/* Table Number - Always editable */}
                     <Box>
-                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500, display: 'block', mb: 0.5 }}>
+                      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500, display: 'block', mb: 0.5, fontSize: '0.75rem' }}>
                         מספר שולחן
                       </Typography>
-                      {isEditingTableNumber ? (
-                        <TextField
-                          fullWidth
-                          size="small"
-                          type="number"
-                          value={tableNumber}
-                          onChange={(e) => setEditValues({ ...editValues, [`${contact.id}_tableNumber`]: parseInt(e.target.value) || undefined })}
-                          onBlur={() => handleSaveEdit(contact.id, 'tableNumber')}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              handleSaveEdit(contact.id, 'tableNumber');
-                            } else if (e.key === 'Escape') {
-                              setEditingContact(null);
-                              setEditingField(null);
-                            }
-                          }}
-                          autoFocus
-                        />
-                      ) : (
-                        <Typography
-                          variant="body2"
-                          sx={{ cursor: 'pointer', color: tableNumber ? 'text.primary' : 'text.secondary' }}
-                          onDoubleClick={() => handleEdit(contact.id, 'tableNumber', tableNumber)}
-                        >
-                          {tableNumber || 'לא צוין'}
-                        </Typography>
-                      )}
+                      <TextField
+                        fullWidth
+                        size="small"
+                        type="number"
+                        value={tableNumber}
+                        onChange={(e) => setEditValues({ ...editValues, [`${contact.id}_tableNumber`]: parseInt(e.target.value) || undefined })}
+                      />
                     </Box>
                   </Box>
 
                   {/* Actions */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <IconButton size="small" sx={{ color: 'text.secondary' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1 }}>
+                    <IconButton 
+                      size="small" 
+                      sx={{ color: 'text.secondary' }}
+                      onClick={(e) => handleMenuOpen(e, contact.id)}
+                    >
                       <MoreVertIcon />
                     </IconButton>
                     <Button
                       variant="contained"
                       endIcon={<CheckCircleIcon />}
-                      onClick={() => handleApprove(contact.id)}
+                      onClick={() => {
+                        if (isFullEditMode) {
+                          handleSaveAll(contact.id);
+                        }
+                        handleApprove(contact.id);
+                      }}
                       disabled={isProcessing}
+                      size="small"
                       sx={{
                         borderRadius: 2,
                         background: 'linear-gradient(90deg, #5236F7 0%, #6B4CE6 100%)',
                         color: 'white',
                         textTransform: 'none',
-                        px: 3,
+                        px: 2.5,
+                        py: 0.75,
                         flexDirection: 'row-reverse',
                         '&:hover': {
                           background: 'linear-gradient(90deg, #4529D9 0%, #5A3FD4 100%)',
@@ -684,9 +656,45 @@ export function ImportedGuestsReviewScreen() {
                         },
                       }}
                     >
-                      {isProcessing ? 'מעבד...' : 'אשר'}
+                      {isProcessing ? 'מעבד...' : isFullEditMode ? 'שמור ואשר' : 'אשר'}
                     </Button>
                   </Box>
+
+                  {/* Menu for three dots */}
+                  <Menu
+                    anchorEl={menuAnchor?.contactId === contact.id ? menuAnchor.anchor : null}
+                    open={menuAnchor?.contactId === contact.id}
+                    onClose={handleMenuClose}
+                    anchorOrigin={{
+                      vertical: 'bottom',
+                      horizontal: 'left',
+                    }}
+                    transformOrigin={{
+                      vertical: 'top',
+                      horizontal: 'left',
+                    }}
+                  >
+                    <MenuItem
+                      onClick={() => handleEditAll(contact.id)}
+                    >
+                      <ListItemIcon>
+                        <EditIcon fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>עריכה</ListItemText>
+                    </MenuItem>
+                    <MenuItem
+                      onClick={() => {
+                        handleReject(contact.id);
+                        handleMenuClose();
+                      }}
+                      sx={{ color: 'error.main' }}
+                    >
+                      <ListItemIcon>
+                        <CancelIcon fontSize="small" sx={{ color: 'error.main' }} />
+                      </ListItemIcon>
+                      <ListItemText>מחיקה</ListItemText>
+                    </MenuItem>
+                  </Menu>
                 </CardContent>
               </Card>
             );
