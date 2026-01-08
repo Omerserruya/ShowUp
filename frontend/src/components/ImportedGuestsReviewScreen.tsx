@@ -60,6 +60,33 @@ export function ImportedGuestsReviewScreen() {
   // Flatten all contacts from all imports
   const allContacts: GuestImportContact[] = imports.flatMap((imp) => imp.contacts || []);
 
+  // Helper function to get validation status (must be defined before use)
+  const getValidationStatus = (contact: GuestImportContact) => {
+    let errors: string[] = [];
+    if (contact.validation_errors) {
+      try {
+        errors = JSON.parse(contact.validation_errors);
+        if (!Array.isArray(errors)) {
+          errors = [contact.validation_errors];
+        }
+      } catch {
+        errors = [contact.validation_errors];
+      }
+    }
+    if (errors.length > 0) {
+      return { status: 'error', message: errors.join(', ') };
+    }
+    if (!contact.name) {
+      return { status: 'warning', message: 'חסר שם' };
+    }
+    // Check if required fields are filled
+    const expectedCount = editValues[`${contact.id}_expectedCount`] ?? 0;
+    if (!expectedCount || expectedCount === 0) {
+      return { status: 'warning', message: 'דורש בדיקה' };
+    }
+    return { status: 'ok', message: '' };
+  };
+
   // Calculate statistics
   const totalContacts = allContacts.length;
   const approvedCount = 0; // Will be updated when we track approvals
@@ -88,32 +115,6 @@ export function ImportedGuestsReviewScreen() {
       return () => clearTimeout(timer);
     }
   }, [allContacts.length, loading, navigate]);
-
-  const getValidationStatus = (contact: GuestImportContact) => {
-    let errors: string[] = [];
-    if (contact.validation_errors) {
-      try {
-        errors = JSON.parse(contact.validation_errors);
-        if (!Array.isArray(errors)) {
-          errors = [contact.validation_errors];
-        }
-      } catch {
-        errors = [contact.validation_errors];
-      }
-    }
-    if (errors.length > 0) {
-      return { status: 'error', message: errors.join(', ') };
-    }
-    if (!contact.name) {
-      return { status: 'warning', message: 'חסר שם' };
-    }
-    // Check if required fields are filled
-    const expectedCount = editValues[`${contact.id}_expectedCount`] ?? 0;
-    if (!expectedCount || expectedCount === 0) {
-      return { status: 'warning', message: 'דורש בדיקה' };
-    }
-    return { status: 'ok', message: '' };
-  };
 
   const handleEdit = (contactId: string, field: string, currentValue: any) => {
     setEditingContact(contactId);
