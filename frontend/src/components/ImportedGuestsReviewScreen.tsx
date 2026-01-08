@@ -315,30 +315,7 @@ export function ImportedGuestsReviewScreen() {
         </Card>
 
         {/* Action Buttons */}
-        <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
-          <Button
-            variant="outlined"
-            fullWidth
-            endIcon={<CancelIcon />}
-            onClick={handleRejectAll}
-            disabled={processing.size > 0}
-            sx={{
-              borderRadius: 2,
-              borderColor: 'divider',
-              color: 'text.primary',
-              textTransform: 'none',
-              py: 1.5,
-              px: 2,
-              gap: 1.5,
-              flexDirection: 'row-reverse',
-              '& .MuiButton-endIcon': {
-                marginLeft: 0,
-                marginRight: 0,
-              },
-            }}
-          >
-            דחה הכל
-          </Button>
+        <Stack direction="row" spacing={3} sx={{ mb: 2 }}>
           <Button
             variant="contained"
             fullWidth
@@ -346,12 +323,13 @@ export function ImportedGuestsReviewScreen() {
             onClick={handleApproveAll}
             disabled={processing.size > 0}
             sx={{
-              borderRadius: 2,
+              borderRadius: 3,
               backgroundColor: '#5236F7',
               color: 'white',
               textTransform: 'none',
-              py: 1.5,
-              px: 2,
+              py: 0.5,
+              px: 1,
+              my: 1,
               gap: 1.5,
               flexDirection: 'row-reverse',
               '&:hover': {
@@ -365,6 +343,31 @@ export function ImportedGuestsReviewScreen() {
           >
             אשר הכל
           </Button>
+          <Button
+            variant="outlined"
+            fullWidth
+            endIcon={<CancelIcon />}
+            onClick={handleRejectAll}
+            disabled={processing.size > 0}
+            sx={{
+              borderRadius: 3,
+              borderColor: 'divider',
+              color: 'text.primary',
+              textTransform: 'none',
+              py: 0.5,
+              px: 1,
+              my: 1,
+              gap: 1.5,
+              flexDirection: 'row-reverse',
+              '& .MuiButton-endIcon': {
+                marginLeft: 0,
+                marginRight: 0,
+              },
+            }}
+          >
+            דחה הכל
+          </Button>
+
         </Stack>
 
         {/* Guest Cards */}
