@@ -10,7 +10,7 @@ interface ImportedGuestsWidgetProps {
 
 /**
  * Mobile widget showing count of pending imported guests
- * Displays between action buttons and filters
+ * Displays as a separate widget before filters, styled like the filter widget
  */
 export function ImportedGuestsWidget({ onClick }: ImportedGuestsWidgetProps) {
   const { summary, loading } = useGuestImportSummary();
@@ -34,12 +34,13 @@ export function ImportedGuestsWidget({ onClick }: ImportedGuestsWidgetProps) {
       onClick={onClick}
       fullWidth
       sx={{
-        p: 2,
+        p: 2.5,
         mb: 2,
         borderRadius: 2,
-        backgroundColor: alpha('#fff9c4', 0.4),
+        backgroundColor: 'white',
+        boxShadow: 'none',
         border: '1px solid',
-        borderColor: alpha('#f57c00', 0.3),
+        borderColor: 'divider',
         textAlign: 'right',
         textTransform: 'none',
         display: 'flex',
@@ -47,14 +48,15 @@ export function ImportedGuestsWidget({ onClick }: ImportedGuestsWidgetProps) {
         justifyContent: 'space-between',
         gap: 2,
         '&:hover': {
-          backgroundColor: alpha('#fff9c4', 0.6),
+          backgroundColor: alpha('#5236F7', 0.05),
+          borderColor: alpha('#5236F7', 0.3),
         },
       }}
     >
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }}>
         <Box
           sx={{
-            backgroundColor: alpha('#f57c00', 0.2),
+            backgroundColor: alpha('#5236F7', 0.1),
             borderRadius: 1.5,
             p: 1,
             display: 'flex',
@@ -62,10 +64,10 @@ export function ImportedGuestsWidget({ onClick }: ImportedGuestsWidgetProps) {
             justifyContent: 'center',
           }}
         >
-          <WhatsAppIcon sx={{ color: '#f57c00', fontSize: 24 }} />
+          <WhatsAppIcon sx={{ color: '#5236F7', fontSize: 24 }} />
         </Box>
         <Box sx={{ flex: 1, textAlign: 'right' }}>
-          <Typography variant="body1" sx={{ fontWeight: 600, mb: 0.5 }}>
+          <Typography variant="body1" sx={{ fontWeight: 600, mb: 0.5, color: 'text.primary' }}>
             יש לך {summary.pending_count} אורחים שיובאו מ-WhatsApp
           </Typography>
           <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>
@@ -73,8 +75,7 @@ export function ImportedGuestsWidget({ onClick }: ImportedGuestsWidgetProps) {
           </Typography>
         </Box>
       </Box>
-      <ArrowForwardIcon sx={{ color: '#f57c00' }} />
+      <ArrowForwardIcon sx={{ color: '#5236F7' }} />
     </Paper>
   );
 }
-

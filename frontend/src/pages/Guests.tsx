@@ -1225,10 +1225,6 @@ function Guests() {
         </Grid>
 
 
-        {/* Imported Guests Widget - Mobile */}
-        {isMobile && (
-          <ImportedGuestsWidget onClick={() => navigate('/guests/imported')} />
-        )}
       </Box>
 
       {/* Delete confirmation dialog */}
@@ -2026,6 +2022,11 @@ function Guests() {
       ) : (
         /* Mobile Card View */
         <>
+          {/* Imported Guests Widget - Mobile */}
+          {isMobile && (
+            <ImportedGuestsWidget onClick={() => navigate('/guests/imported')} />
+          )}
+
           {/* Filters and Search Widget */}
           <Paper 
             sx={{ 
