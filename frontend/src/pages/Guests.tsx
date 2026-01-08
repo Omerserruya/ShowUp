@@ -1224,10 +1224,6 @@ function Guests() {
           </Grid>
         </Grid>
 
-        {/* Imported Guests Section - Desktop */}
-        {!isMobile && (
-          <ImportedGuestsSection onRefresh={() => setRefreshKey(prev => prev + 1)} />
-        )}
 
         {/* Imported Guests Widget - Mobile */}
         {isMobile && (
@@ -1340,6 +1336,15 @@ function Guests() {
 
       {/* Content Section */}
       <Box sx={{ p: { xs: 2, sm: 3 } }}>
+        {/* Imported Guests Section - Desktop */}
+        {!isMobile && (
+          <ImportedGuestsSection 
+            onRefresh={() => setRefreshKey(prev => prev + 1)} 
+            uniqueGroups={uniqueGroups}
+            hasTableNumbers={hasTableNumbers}
+          />
+        )}
+
         {/* Desktop Table View */}
         {!isMobile ? (
         <Paper 
