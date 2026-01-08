@@ -37,10 +37,9 @@ export function ImportedGuestsWidget({ onClick }: ImportedGuestsWidgetProps) {
         p: 2.5,
         mb: 2,
         borderRadius: 2,
-        backgroundColor: 'white',
+        backgroundColor: '#5236F7',
         boxShadow: 'none',
-        border: '1px solid',
-        borderColor: 'divider',
+        border: 'none',
         textAlign: 'right',
         textTransform: 'none',
         display: 'flex',
@@ -48,15 +47,15 @@ export function ImportedGuestsWidget({ onClick }: ImportedGuestsWidgetProps) {
         justifyContent: 'space-between',
         gap: 2,
         '&:hover': {
-          backgroundColor: alpha('#5236F7', 0.05),
-          borderColor: alpha('#5236F7', 0.3),
+          backgroundColor: '#4529D9',
+          boxShadow: 'none',
         },
       }}
     >
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }}>
         <Box
           sx={{
-            backgroundColor: alpha('#5236F7', 0.1),
+            backgroundColor: 'rgba(255, 255, 255, 0.2)',
             borderRadius: 1.5,
             p: 1,
             display: 'flex',
@@ -64,18 +63,18 @@ export function ImportedGuestsWidget({ onClick }: ImportedGuestsWidgetProps) {
             justifyContent: 'center',
           }}
         >
-          <WhatsAppIcon sx={{ color: '#5236F7', fontSize: 24 }} />
+          <WhatsAppIcon sx={{ color: 'white', fontSize: 24 }} />
         </Box>
         <Box sx={{ flex: 1, textAlign: 'right' }}>
-          <Typography variant="body1" sx={{ fontWeight: 600, mb: 0.5, color: 'text.primary' }}>
+          <Typography variant="body1" sx={{ fontWeight: 600, mb: 0.5, color: 'white' }}>
             יש לך {summary.pending_count} אורחים שיובאו מ-WhatsApp
           </Typography>
-          <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>
+          <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: '0.875rem' }}>
             נדרש אישור והשלמת פרטים
           </Typography>
         </Box>
       </Box>
-      <ArrowForwardIcon sx={{ color: '#5236F7' }} />
+      <ArrowForwardIcon sx={{ color: 'white' }} />
     </Paper>
   );
 }
