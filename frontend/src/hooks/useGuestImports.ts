@@ -48,8 +48,12 @@ export function useGuestImports() {
     setLoading(true);
     setError(null);
 
-    fetchWithAuth(`/api/guest-imports?status=pending&event_id=${selectedEvent.id}`)
+    const url = `/api/guest-imports?status=pending&event_id=${selectedEvent.id}`;
+    console.log('Fetching guest imports from:', url);
+    
+    fetchWithAuth(url)
       .then(async (res) => {
+        console.log('Guest imports response status:', res.status, res.statusText);
         if (!res.ok) {
           if (res.status === 401) {
             localStorage.removeItem('access_token');
@@ -58,11 +62,14 @@ export function useGuestImports() {
           }
           // If endpoint doesn't exist (404), return empty array
           if (res.status === 404) {
+            console.warn('Guest imports endpoint not found (404) - API may not be implemented yet');
             return [];
           }
           // Check if response is HTML (404 page)
           const contentType = res.headers.get('content-type');
+          console.log('Response content-type:', contentType);
           if (contentType && contentType.includes('text/html')) {
+            console.warn('Received HTML response (likely 404 page) - API may not be implemented yet');
             return [];
           }
           throw new Error(`Failed to load guest imports: ${res.statusText}`);
@@ -70,13 +77,20 @@ export function useGuestImports() {
         const contentType = res.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {
           // Response is not JSON, likely HTML error page
+          console.warn('Response is not JSON - API may not be implemented yet');
           return [];
         }
         return res.json();
       })
       .then((data) => {
+        console.log('Guest imports data received:', data);
         // API might return array or paginated response
         const importsList = Array.isArray(data) ? data : (data.items || []);
+        console.log('Processed imports list:', importsList);
+        console.log('Total imports:', importsList.length);
+        if (importsList.length > 0) {
+          console.log('First import contacts:', importsList[0]?.contacts);
+        }
         setImports(importsList);
         setLoading(false);
       })

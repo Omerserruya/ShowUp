@@ -47,8 +47,17 @@ export function ImportedGuestsSection({ onRefresh }: ImportedGuestsSectionProps)
   // Flatten all contacts from all imports
   const allContacts: GuestImportContact[] = imports.flatMap((imp) => imp.contacts || []);
 
+  // Debug logging
+  React.useEffect(() => {
+    console.log('ImportedGuestsSection - imports:', imports);
+    console.log('ImportedGuestsSection - allContacts:', allContacts);
+    console.log('ImportedGuestsSection - loading:', loading);
+    console.log('ImportedGuestsSection - error:', error);
+  }, [imports, allContacts, loading, error]);
+
   // If no pending imports, don't render
   if (!loading && allContacts.length === 0) {
+    console.log('ImportedGuestsSection - Not rendering: no contacts found');
     return null;
   }
 
