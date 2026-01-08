@@ -147,16 +147,18 @@ export function ImportedGuestsReviewScreen() {
     );
   }
 
-  // If all contacts are processed, navigate back
-  if (allContacts.length === 0 && !loading) {
-    // Use useEffect to navigate after render
-    React.useEffect(() => {
+  // Navigate back if all contacts are processed
+  React.useEffect(() => {
+    if (allContacts.length === 0 && !loading) {
       const timer = setTimeout(() => {
         navigate('/guests');
       }, 100);
       return () => clearTimeout(timer);
-    }, [navigate]);
-    
+    }
+  }, [allContacts.length, loading, navigate]);
+
+  // If all contacts are processed, show empty state
+  if (allContacts.length === 0 && !loading) {
     return (
       <Box>
         <AppBar position="static" sx={{ backgroundColor: 'white', color: 'black' }}>
