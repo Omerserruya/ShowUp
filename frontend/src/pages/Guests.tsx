@@ -65,6 +65,8 @@ import { useGuests, useOverviewStats } from '../hooks/useOverviewData';
 import { useEvent } from '../contexts/EventContext';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { countryOptions, normalizePhoneNumber } from '../utils/countryOptions';
+import { ImportedGuestsSection } from '../components/ImportedGuestsSection';
+import { ImportedGuestsWidget } from '../components/ImportedGuestsWidget';
 
 // Types
 interface Guest {
@@ -1221,6 +1223,16 @@ function Guests() {
             </Menu>
           </Grid>
         </Grid>
+
+        {/* Imported Guests Section - Desktop */}
+        {!isMobile && (
+          <ImportedGuestsSection onRefresh={() => setRefreshKey(prev => prev + 1)} />
+        )}
+
+        {/* Imported Guests Widget - Mobile */}
+        {isMobile && (
+          <ImportedGuestsWidget onClick={() => navigate('/guests/imported')} />
+        )}
       </Box>
 
       {/* Delete confirmation dialog */}
