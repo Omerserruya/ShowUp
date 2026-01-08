@@ -424,8 +424,18 @@ export function ImportedGuestsReviewScreen() {
                   )}
 
                   {/* Name, Phone and Avatar */}
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, mb: 2, pr: validation.status !== 'ok' ? 8 : 0 }}>
-                  <Avatar
+                  <Box
+                    dir="rtl"
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'row-reverse',
+                      alignItems: 'flex-start',
+                      gap: 2,
+                      mb: 2,
+                      pr: validation.status !== 'ok' ? 8 : 0,
+                    }}
+                  >
+                    <Avatar
                       sx={{
                         width: 48,
                         height: 48,
@@ -437,19 +447,24 @@ export function ImportedGuestsReviewScreen() {
                     >
                       {(contact.name || '?').charAt(0)}
                     </Avatar>
-                    <Box sx={{ flex: 1 }}>
+
+                    <Box sx={{ flex: 1, textAlign: 'right' }}>
                       {/* Name */}
                       {isEditingName ? (
                         <TextField
                           fullWidth
                           size="small"
                           value={editValues[`${contact.id}_name`] ?? contact.name ?? ''}
-                          onChange={(e) => setEditValues({ ...editValues, [`${contact.id}_name`]: e.target.value })}
+                          onChange={(e) =>
+                            setEditValues({
+                              ...editValues,
+                              [`${contact.id}_name`]: e.target.value,
+                            })
+                          }
                           onBlur={() => handleSaveEdit(contact.id, 'name')}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              handleSaveEdit(contact.id, 'name');
-                            } else if (e.key === 'Escape') {
+                            if (e.key === 'Enter') handleSaveEdit(contact.id, 'name');
+                            else if (e.key === 'Escape') {
                               setEditingContact(null);
                               setEditingField(null);
                             }
@@ -461,7 +476,9 @@ export function ImportedGuestsReviewScreen() {
                         <Typography
                           variant="h6"
                           sx={{ fontWeight: 600, cursor: 'pointer', mb: 1 }}
-                          onDoubleClick={() => handleEdit(contact.id, 'name', contact.name)}
+                          onDoubleClick={() =>
+                            handleEdit(contact.id, 'name', contact.name)
+                          }
                         >
                           {contact.name || 'ללא שם'}
                         </Typography>
@@ -473,12 +490,16 @@ export function ImportedGuestsReviewScreen() {
                           fullWidth
                           size="small"
                           value={editValues[`${contact.id}_phone`] ?? contact.phone ?? ''}
-                          onChange={(e) => setEditValues({ ...editValues, [`${contact.id}_phone`]: e.target.value })}
+                          onChange={(e) =>
+                            setEditValues({
+                              ...editValues,
+                              [`${contact.id}_phone`]: e.target.value,
+                            })
+                          }
                           onBlur={() => handleSaveEdit(contact.id, 'phone')}
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              handleSaveEdit(contact.id, 'phone');
-                            } else if (e.key === 'Escape') {
+                            if (e.key === 'Enter') handleSaveEdit(contact.id, 'phone');
+                            else if (e.key === 'Escape') {
                               setEditingContact(null);
                               setEditingField(null);
                             }
@@ -486,12 +507,21 @@ export function ImportedGuestsReviewScreen() {
                           autoFocus
                         />
                       ) : (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 0.5,
+                            flexDirection: 'row-reverse',
+                          }}
+                        >
                           <PhoneIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
                           <Typography
                             variant="body2"
                             sx={{ color: 'text.primary', cursor: 'pointer' }}
-                            onDoubleClick={() => handleEdit(contact.id, 'phone', contact.phone)}
+                            onDoubleClick={() =>
+                              handleEdit(contact.id, 'phone', contact.phone)
+                            }
                           >
                             {contact.phone || '-'}
                           </Typography>
@@ -499,6 +529,7 @@ export function ImportedGuestsReviewScreen() {
                       )}
                     </Box>
                   </Box>
+
 
                   {/* Details Container - Light gray background */}
                   <Box
