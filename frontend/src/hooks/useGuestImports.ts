@@ -56,7 +56,21 @@ export function useGuestImports() {
             localStorage.removeItem('token');
             throw new Error('Authentication failed. Please log in again.');
           }
+          // If endpoint doesn't exist (404), return empty array
+          if (res.status === 404) {
+            return [];
+          }
+          // Check if response is HTML (404 page)
+          const contentType = res.headers.get('content-type');
+          if (contentType && contentType.includes('text/html')) {
+            return [];
+          }
           throw new Error(`Failed to load guest imports: ${res.statusText}`);
+        }
+        const contentType = res.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          // Response is not JSON, likely HTML error page
+          return [];
         }
         return res.json();
       })
@@ -103,7 +117,21 @@ export function useGuestImportSummary() {
             localStorage.removeItem('token');
             throw new Error('Authentication failed. Please log in again.');
           }
+          // If endpoint doesn't exist (404), return default summary
+          if (res.status === 404) {
+            return { pending_count: 0, total_count: 0 };
+          }
+          // Check if response is HTML (404 page)
+          const contentType = res.headers.get('content-type');
+          if (contentType && contentType.includes('text/html')) {
+            return { pending_count: 0, total_count: 0 };
+          }
           throw new Error(`Failed to load guest import summary: ${res.statusText}`);
+        }
+        const contentType = res.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          // Response is not JSON, likely HTML error page
+          return { pending_count: 0, total_count: 0 };
         }
         return res.json();
       })
@@ -112,10 +140,11 @@ export function useGuestImportSummary() {
         setLoading(false);
       })
       .catch((err) => {
-        console.error('Failed to load guest import summary:', err);
-        setError(err.message || 'Failed to load guest import summary');
+        // Silently handle errors - endpoint may not exist yet
+        console.warn('Guest import summary endpoint not available:', err.message);
         setLoading(false);
         setSummary({ pending_count: 0, total_count: 0 });
+        // Don't set error state - just return empty summary
       });
   }, [selectedEvent?.id]);
 
