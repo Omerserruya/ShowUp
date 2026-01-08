@@ -36,11 +36,9 @@ import {
 } from '@mui/icons-material';
 import { useGuestImports, approveGuestImportContact, rejectGuestImportContact, GuestImportContact } from '../hooks/useGuestImports';
 
-type FilterTab = 'all' | 'ready' | 'needsReview';
-
 /**
  * Mobile screen for reviewing and approving imported guests
- * One guest per card layout with summary card and filter tabs
+ * One guest per card layout with summary card
  */
 export function ImportedGuestsReviewScreen() {
   const navigate = useNavigate();
@@ -49,7 +47,6 @@ export function ImportedGuestsReviewScreen() {
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Record<string, any>>({});
   const [processing, setProcessing] = useState<Set<string>>(new Set());
-  const [activeFilter, setActiveFilter] = useState<FilterTab>('all');
   const [approveAllDialogOpen, setApproveAllDialogOpen] = useState(false);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
@@ -90,21 +87,6 @@ export function ImportedGuestsReviewScreen() {
   // Calculate statistics
   const totalContacts = allContacts.length;
   const approvedCount = 0; // Will be updated when we track approvals
-  const readyContacts = allContacts.filter((c) => {
-    const validation = getValidationStatus(c);
-    return validation.status === 'ok';
-  });
-  const needsReviewContacts = allContacts.filter((c) => {
-    const validation = getValidationStatus(c);
-    return validation.status !== 'ok';
-  });
-
-  // Filter contacts based on active filter
-  const filteredContacts = activeFilter === 'all' 
-    ? allContacts 
-    : activeFilter === 'ready' 
-      ? readyContacts 
-      : needsReviewContacts;
 
   // Navigate back if all contacts are processed
   useEffect(() => {
@@ -337,7 +319,7 @@ export function ImportedGuestsReviewScreen() {
           <Button
             variant="outlined"
             fullWidth
-            startIcon={<CancelIcon />}
+            endIcon={<CancelIcon />}
             onClick={handleRejectAll}
             disabled={processing.size > 0}
             sx={{
@@ -346,6 +328,13 @@ export function ImportedGuestsReviewScreen() {
               color: 'text.primary',
               textTransform: 'none',
               py: 1.5,
+              px: 2,
+              gap: 1.5,
+              flexDirection: 'row-reverse',
+              '& .MuiButton-endIcon': {
+                marginLeft: 0,
+                marginRight: 0,
+              },
             }}
           >
             דחה הכל
@@ -353,7 +342,7 @@ export function ImportedGuestsReviewScreen() {
           <Button
             variant="contained"
             fullWidth
-            startIcon={<CheckCircleIcon />}
+            endIcon={<CheckCircleIcon />}
             onClick={handleApproveAll}
             disabled={processing.size > 0}
             sx={{
@@ -362,8 +351,15 @@ export function ImportedGuestsReviewScreen() {
               color: 'white',
               textTransform: 'none',
               py: 1.5,
+              px: 2,
+              gap: 1.5,
+              flexDirection: 'row-reverse',
               '&:hover': {
                 backgroundColor: '#4529D9',
+              },
+              '& .MuiButton-endIcon': {
+                marginLeft: 0,
+                marginRight: 0,
               },
             }}
           >
@@ -371,78 +367,9 @@ export function ImportedGuestsReviewScreen() {
           </Button>
         </Stack>
 
-        {/* Filter Tabs */}
-        <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-          <Button
-            variant={activeFilter === 'ready' ? 'contained' : 'outlined'}
-            onClick={() => setActiveFilter('ready')}
-            sx={{
-              flex: 1,
-              borderRadius: 2,
-              textTransform: 'none',
-              backgroundColor: activeFilter === 'ready' ? '#5236F7' : 'white',
-              color: activeFilter === 'ready' ? 'white' : 'text.primary',
-              borderColor: 'divider',
-              '&:hover': {
-                backgroundColor: activeFilter === 'ready' ? '#4529D9' : '#F5F5F5',
-              },
-            }}
-          >
-            מוכן לאישור
-          </Button>
-          <Button
-            variant={activeFilter === 'needsReview' ? 'contained' : 'outlined'}
-            onClick={() => setActiveFilter('needsReview')}
-            sx={{
-              flex: 1,
-              borderRadius: 2,
-              textTransform: 'none',
-              backgroundColor: activeFilter === 'needsReview' ? '#5236F7' : 'white',
-              color: activeFilter === 'needsReview' ? 'white' : 'text.primary',
-              borderColor: 'divider',
-              position: 'relative',
-              '&:hover': {
-                backgroundColor: activeFilter === 'needsReview' ? '#4529D9' : '#F5F5F5',
-              },
-            }}
-          >
-            דורש בדיקה
-            {needsReviewContacts.length > 0 && (
-              <Chip
-                label={needsReviewContacts.length}
-                size="small"
-                sx={{
-                  ml: 1,
-                  height: 20,
-                  fontSize: '0.75rem',
-                  backgroundColor: activeFilter === 'needsReview' ? 'rgba(255, 255, 255, 0.3)' : '#E0E0E0',
-                  color: activeFilter === 'needsReview' ? 'white' : 'text.secondary',
-                }}
-              />
-            )}
-          </Button>
-          <Button
-            variant={activeFilter === 'all' ? 'contained' : 'outlined'}
-            onClick={() => setActiveFilter('all')}
-            sx={{
-              flex: 1,
-              borderRadius: 2,
-              textTransform: 'none',
-              backgroundColor: activeFilter === 'all' ? '#5236F7' : 'white',
-              color: activeFilter === 'all' ? 'white' : 'text.primary',
-              borderColor: 'divider',
-              '&:hover': {
-                backgroundColor: activeFilter === 'all' ? '#4529D9' : '#F5F5F5',
-              },
-            }}
-          >
-            הכל {totalContacts}
-          </Button>
-        </Stack>
-
         {/* Guest Cards */}
         <Stack spacing={2}>
-          {filteredContacts.map((contact) => {
+          {allContacts.map((contact) => {
             const isProcessing = processing.has(contact.id);
             const validation = getValidationStatus(contact);
             const isEditingName = editingContact === contact.id && editingField === 'name';
