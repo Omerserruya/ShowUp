@@ -61,41 +61,39 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData 
     return null;
   };
 
-  const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, name, value }: any) => {
+  // Calculate total for center display
+  const total = data.reduce((sum, item) => sum + item.value, 0);
+
+  // Map status names to colors (matching StatusCard colors)
+  const getColorForStatus = (name: string): string => {
+    if (name.includes('אישרו הגעה') || name.includes('confirmed')) {
+      return 'url(#gradientGreen)'; // Green for approved
+    } else if (name.includes('ביטלו') || name.includes('declined')) {
+      return 'url(#gradientRed)'; // Red for declined
+    } else {
+      return 'url(#gradientOrange)'; // Orange for pending
+    }
+  };
+
+  // Render labels with values (not percentages)
+  const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value }: any) => {
     const RADIAN = Math.PI / 180;
-    const radius = innerRadius + (outerRadius - innerRadius) * 0.65;
+    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
 
     return (
-      <g>
-        <text
-          x={x}
-          y={y - 6}
-          fill="#ffffff"
-          textAnchor="middle"
-          dominantBaseline="central"
-          fontSize={13}
-          fontWeight={700}
-          stroke="#1f2937"
-          strokeWidth={0.5}
-        >
-          {name}
-        </text>
-        <text
-          x={x}
-          y={y + 13}
-          fill="#ffffff"
-          textAnchor="middle"
-          dominantBaseline="central"
-          fontSize={15}
-          fontWeight={700}
-          stroke="#1f2937"
-          strokeWidth={0.5}
-        >
-          {value}
-        </text>
-      </g>
+      <text
+        x={x}
+        y={y}
+        fill="#ffffff"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize={isMobile ? 12 : 14}
+        fontWeight={600}
+      >
+        {value}
+      </text>
     );
   };
 
@@ -137,26 +135,128 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData 
         התפלגות תשובות האורחים
       </Typography>
 
-      <Box sx={{ width: '100%', flex: 1, minHeight: { xs: 300, md: 280 }, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <ResponsiveContainer width="100%" height={isMobile ? 300 : '100%'}>
-          <PieChart>
-            <Pie
-              data={data}
-              cx="50%"
-              cy="50%"
-              label={renderCustomLabel}
-              labelLine={false}
-              outerRadius={isMobile ? 120 : 130}
-              fill="#8884d8"
-              dataKey="value"
+      <Box 
+        sx={{ 
+          width: '100%', 
+          flex: 1, 
+          minHeight: { xs: 300, md: 280 }, 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center',
+          position: 'relative',
+        }}
+      >
+        <Box
+          sx={{
+            position: 'relative',
+            width: '100%',
+            height: '100%',
+            filter: 'drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1))',
+          }}
+        >
+          <ResponsiveContainer width="100%" height={isMobile ? 300 : '100%'}>
+            <PieChart>
+              <defs>
+                {/* Gradient definitions matching StatusCard colors with 135deg angle */}
+                {/* Green for approved - linear-gradient(135deg, #22c55e 0%,#18cd5a 100%) */}
+                <linearGradient id="gradientGreen" x1="0%" y1="100%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="#22c55e" stopOpacity={1} />
+                  <stop offset="100%" stopColor="#18cd5a" stopOpacity={1} />
+                </linearGradient>
+                {/* Red for declined - linear-gradient(135deg,#d97171 0%, #dc2626 100%) */}
+                <linearGradient id="gradientRed" x1="0%" y1="100%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="#ef4444" stopOpacity={1} />
+                  <stop offset="100%" stopColor="#dc2626" stopOpacity={1} />
+                </linearGradient>
+                {/* Orange for pending - linear-gradient(135deg,#efab35 0%, #d97706 100%) */}
+                <linearGradient id="gradientOrange" x1="0%" y1="100%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="#f59e0b" stopOpacity={1} />
+                  <stop offset="100%" stopColor="#efab35" stopOpacity={1} />
+                </linearGradient>
+              </defs>
+              <Pie
+                data={data}
+                cx="50%"
+                cy="50%"
+                label={renderCustomLabel}
+                labelLine={false}
+                innerRadius={isMobile ? 50 : 70}
+                outerRadius={isMobile ? 100 : 130}
+                fill="#8884d8"
+                dataKey="value"
+                startAngle={90}
+                endAngle={-270}
+              >
+                {data.map((entry, index) => {
+                  // Use color based on status name
+                  const fillColor = getColorForStatus(entry.name);
+                  return (
+                    <Cell 
+                      key={`cell-${index}`} 
+                      fill={fillColor}
+                      stroke="none"
+                    />
+                  );
+                })}
+              </Pie>
+              <Tooltip content={<CustomTooltip />} />
+            </PieChart>
+          </ResponsiveContainer>
+          
+          {/* Center text with inner shadow effect */}
+          <Box
+            sx={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              textAlign: 'center',
+              pointerEvents: 'none',
+              zIndex: 1,
+            }}
+          >
+            <Typography
+              variant="h4"
+              sx={{
+                fontWeight: 600,
+                color: '#a855f7',
+                fontSize: { xs: '1.75rem', sm: '2rem', md: '2.5rem' },
+                lineHeight: 1.2,
+                textShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+                mb: 0.5,
+              }}
             >
-              {data.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={entry.color} />
-              ))}
-            </Pie>
-            <Tooltip content={<CustomTooltip />} />
-          </PieChart>
-        </ResponsiveContainer>
+              {total}
+            </Typography>
+            <Typography
+              variant="body2"
+              sx={{
+                color: '#a855f7',
+                fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' },
+                textShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+                fontWeight: 500,
+              }}
+            >
+              סה״כ המוזמנים
+            </Typography>
+          </Box>
+          
+          {/* Inner shadow effect - matching image style with different sizes */}
+          <Box
+            sx={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: { xs: '100px', sm: '120px', md: '140px' },
+              height: { xs: '100px', sm: '120px', md: '140px' },
+              borderRadius: '50%',
+              boxShadow: 'inset 0 2px 8px rgba(0, 0, 0, 0.15), inset 0 1px 2px rgba(0, 0, 0, 0.2)',
+              pointerEvents: 'none',
+              zIndex: 0,
+            }}
+          />
+        </Box>
       </Box>
     </Paper>
   );

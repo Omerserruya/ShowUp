@@ -200,11 +200,32 @@ services:
       - WEBHOOK_SECRET=${WEBHOOK_SECRET}
       - REDIS_URL=${REDIS_URL}
       - WEBHOOK_QUEUE=${WEBHOOK_QUEUE_NAME}
+      - CONTACT_IMPORT_QUEUE=${CONTACT_IMPORT_QUEUE}
       - RABBITMQ_HOST=${RABBITMQ_HOST}
       - RABBITMQ_PORT=${RABBITMQ_PORT}
       - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
       - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
     depends_on:
+      - rabbitmq
+
+  contact-import-worker:
+    build:
+      context: ./contact-import-worker
+      dockerfile: Dockerfile
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=${RABBITMQ_PORT}
+      - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
+      - CONTACT_IMPORT_QUEUE=${CONTACT_IMPORT_QUEUE}
+      - OUTPOST_QUEUE_NAME=${OUTPOST_QUEUE_NAME}
+    depends_on:
+      - postgres
       - rabbitmq
 
   webhook-worker:

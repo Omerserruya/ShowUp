@@ -65,6 +65,8 @@ import { useGuests, useOverviewStats } from '../hooks/useOverviewData';
 import { useEvent } from '../contexts/EventContext';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { countryOptions, normalizePhoneNumber } from '../utils/countryOptions';
+import { ImportedGuestsSection } from '../components/ImportedGuestsSection';
+import { ImportedGuestsWidget } from '../components/ImportedGuestsWidget';
 
 // Types
 interface Guest {
@@ -252,7 +254,7 @@ function Guests() {
   const pendingGuests = stats?.pending || 0; // Count of pending guests
 
   // Get unique groups from guests
-  const uniqueGroups = Array.from(new Set(guests.map(guest => guest.group).filter(Boolean))).sort();
+  const uniqueGroups = Array.from(new Set(guests.map(guest => guest.group).filter((g): g is string => Boolean(g)))).sort();
 
   // Filtered guests (client-side filtering only for group and notes, status filtering is done server-side)
   const filteredGuests = guests.filter(guest => {
@@ -1221,6 +1223,8 @@ function Guests() {
             </Menu>
           </Grid>
         </Grid>
+
+
       </Box>
 
       {/* Delete confirmation dialog */}
@@ -1328,6 +1332,15 @@ function Guests() {
 
       {/* Content Section */}
       <Box sx={{ p: { xs: 2, sm: 3 } }}>
+        {/* Imported Guests Section - Desktop */}
+        {!isMobile && (
+          <ImportedGuestsSection 
+            onRefresh={() => setRefreshKey(prev => prev + 1)} 
+            uniqueGroups={uniqueGroups}
+            hasTableNumbers={hasTableNumbers}
+          />
+        )}
+
         {/* Desktop Table View */}
         {!isMobile ? (
         <Paper 
@@ -2009,6 +2022,11 @@ function Guests() {
       ) : (
         /* Mobile Card View */
         <>
+          {/* Imported Guests Widget - Mobile */}
+          {isMobile && (
+            <ImportedGuestsWidget onClick={() => navigate('/guests/imported')} />
+          )}
+
           {/* Filters and Search Widget */}
           <Paper 
             sx={{ 

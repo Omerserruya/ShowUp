@@ -15,6 +15,7 @@ import Guests from './pages/Guests';
 import Messages from './pages/Messages';
 import Seating from './pages/Seating';
 import Profile from './pages/Profile';
+import { ImportedGuestsReviewScreen } from './components/ImportedGuestsReviewScreen';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import MarketingPage from './pages/MarketingPage';
@@ -79,6 +80,7 @@ function App() {
         >
           <Route path="/overview" element={<Overview />} />
           <Route path="/guests" element={<Guests />} />
+          <Route path="/guests/imported" element={<ImportedGuestsReviewScreen />} />
           <Route path="/messages" element={<Messages />} />
           <Route path="/seating" element={<Seating />} />
           <Route path="/profile" element={<Profile />} />

@@ -26,6 +26,7 @@ import os
 import sys
 import uuid
 import random
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import psycopg2
@@ -116,7 +117,7 @@ def get_db_connection():
         sys.exit(1)
 
 
-def create_user(conn, phone="+972521234567", first_name="משתמש", last_name="הדגמא", email="demo@example.com"):
+def create_user(conn, phone="+972525401686", first_name="משתמש", last_name="הדגמא", email="demo@example.com"):
     """Create a demo user in the users table."""
     user_id = uuid.uuid4()
     now = datetime.now(timezone.utc)
@@ -305,6 +306,98 @@ def create_guests(conn, event_id, num_guests=50):
     return guests
 
 
+def create_guest_imports(conn, event_id, num_imports=2, contacts_per_import=3):
+    """Create demo guest imports with contacts from WhatsApp."""
+    imports = []
+    now = datetime.now(timezone.utc)
+    
+    # Phone number of the sender (event owner)
+    sender_phone = "972525401686"
+    
+    with conn.cursor() as cur:
+        for i in range(num_imports):
+            import_id = uuid.uuid4()
+            message_id = f"wamid.{uuid.uuid4().hex.upper()[:40]}"
+            
+            # Generate contacts for this import
+            contacts_data = []
+            contact_names = []
+            contact_phones = []
+            
+            for j in range(contacts_per_import):
+                first_name = random.choice(HEBREW_FIRST_NAMES)
+                last_name = random.choice(HEBREW_LAST_NAMES)
+                name = f"{first_name} {last_name}"
+                phone = f"+972 5{random.randint(0, 9)}-{random.randint(100, 999)}-{random.randint(1000, 9999)}"
+                wa_id = phone.replace("+972 ", "").replace("-", "")
+                
+                contacts_data.append({
+                    "name": {
+                        "first_name": first_name,
+                        "formatted_name": f"{name} "
+                    },
+                    "phones": [{
+                        "phone": phone,
+                        "wa_id": wa_id,
+                        "type": "CELL"
+                    }]
+                })
+                contact_names.append(name)
+                contact_phones.append(phone)
+            
+            # Create raw_payload in WhatsApp webhook format
+            raw_payload = {
+                "from": sender_phone,
+                "id": message_id,
+                "timestamp": str(int(now.timestamp())),
+                "type": "contacts",
+                "contacts": contacts_data
+            }
+            
+            # Insert guest_import
+            cur.execute("""
+                INSERT INTO guest_imports (id, event_id, source, raw_payload, status, message_id, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (
+                str(import_id),
+                str(event_id),
+                'whatsapp',
+                json.dumps(raw_payload, ensure_ascii=False),
+                'pending',
+                message_id,
+                now,
+                now
+            ))
+            
+            import_id_result = cur.fetchone()[0]
+            
+            # Insert guest_import_contacts
+            for j, contact_data in enumerate(contacts_data):
+                contact_id = uuid.uuid4()
+                name = contact_data["name"]["formatted_name"].strip()
+                phone = contact_data["phones"][0]["phone"]
+                
+                cur.execute("""
+                    INSERT INTO guest_import_contacts (id, import_id, name, phone, status, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (
+                    str(contact_id),
+                    str(import_id_result),
+                    name,
+                    phone,
+                    'pending',
+                    now
+                ))
+            
+            imports.append(import_id_result)
+            print(f"  ✓ Created guest import with {contacts_per_import} contacts")
+    
+    conn.commit()
+    print(f"✓ Created {num_imports} guest imports with {contacts_per_import} contacts each")
+    return imports
+
+
 def main():
     """Main function to generate all demo data."""
     print("=" * 60)
@@ -351,6 +444,13 @@ def main():
         guests = create_guests(conn, event_id, num_guests)
         print()
         
+        # Create guest imports
+        print("5. Creating guest imports...")
+        num_imports = int(os.getenv("NUM_IMPORTS", "2"))
+        contacts_per_import = int(os.getenv("CONTACTS_PER_IMPORT", "3"))
+        imports = create_guest_imports(conn, event_id, num_imports, contacts_per_import)
+        print()
+        
         print("=" * 60)
         print("✓ Demo data generation completed successfully!")
         print("=" * 60)
@@ -360,6 +460,7 @@ def main():
         print(f"  Event ID: {event_id}")
         print(f"  Campaigns: {len(campaigns)}")
         print(f"  Guests: {len(guests)}")
+        print(f"  Guest Imports: {len(imports)}")
         print()
         print("You can now use this data to test the application.")
         print("Login with phone: 0521234567")
