@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import uuid
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -12,6 +13,19 @@ from app.models.models import GuestImport, GuestImportContact
 from shared.auth.deps import get_current_user_id
 
 router = APIRouter(prefix="/guest-imports", tags=["guest-imports"])
+
+
+class GuestImportContactUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[EmailStr] = None
+
+
+class GuestImportContactApprove(BaseModel):
+    name: Optional[str] = None
+    group: Optional[str] = None
+    import_count: Optional[int] = None
+    table_number: Optional[int] = None
 
 
 @router.get("")
@@ -112,14 +126,61 @@ def get_guest_import_summary(
     }
 
 
+@router.put("/contacts/{contact_id}")
+def update_guest_import_contact(
+    contact_id: uuid.UUID,
+    data: GuestImportContactUpdate,
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """
+    Update an imported guest contact (name, phone, email).
+    """
+    # Find the contact
+    contact = db.query(GuestImportContact).filter(GuestImportContact.id == str(contact_id)).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Guest import contact not found")
+
+    # Get the import to check event ownership
+    import_record = db.query(GuestImport).filter(GuestImport.id == str(contact.import_id)).first()
+    if not import_record:
+        raise HTTPException(status_code=404, detail="Guest import not found")
+
+    # AuthZ check
+    event = event_crud.get_event(db, import_record.event_id)
+    if not event or not event_crud.is_owner(event, user_id):
+        raise HTTPException(status_code=404, detail="Event not found or not permitted")
+
+    # Only allow updates to pending contacts
+    if contact.status != "pending":
+        raise HTTPException(status_code=400, detail="Can only update pending contacts")
+
+    # Update fields
+    if data.name is not None:
+        contact.name = data.name
+    if data.phone is not None:
+        contact.phone = data.phone
+    if data.email is not None:
+        contact.email = data.email
+
+    db.commit()
+
+    return {
+        "message": "Guest import contact updated",
+        "contact_id": str(contact.id)
+    }
+
+
 @router.post("/contacts/{contact_id}/approve")
 def approve_guest_import_contact(
     contact_id: uuid.UUID,
+    data: Optional[GuestImportContactApprove] = Body(None),
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """
     Approve an imported guest contact and create a guest from it.
+    Optional fields can be provided to override contact data or add additional fields.
     """
     # Find the contact
     contact = db.query(GuestImportContact).filter(GuestImportContact.id == str(contact_id)).first()
@@ -140,30 +201,47 @@ def approve_guest_import_contact(
     from app.crud import guest as guest_crud
     from app.schemas.schemas import GuestCreate
 
-    # Create guest from contact
+    # Use provided name or contact name
+    name = (data.name if data and data.name else contact.name) or "ללא שם"
+    phone = contact.phone or ""
+    email = contact.email
+
+    # Validate phone is present
+    if not phone:
+        raise HTTPException(status_code=400, detail="Phone number is required")
+
+    # Create guest from contact with optional fields
     guest_data = GuestCreate(
         event_id=import_record.event_id,
-        name=contact.name or "ללא שם",
-        phone=contact.phone or "",
-        email=contact.email,
+        name=name,
+        phone=phone,
+        email=email,
         status="invited",
     )
 
-    # Validate phone is present
-    if not guest_data.phone:
-        raise HTTPException(status_code=400, detail="Phone number is required")
+    # Add optional fields if provided
+    if data:
+        if data.group is not None:
+            guest_data.group = data.group
+        if data.import_count is not None and data.import_count > 0:
+            guest_data.import_count = data.import_count
+        if data.table_number is not None and data.table_number > 0:
+            guest_data.table_number = data.table_number
 
     # Create the guest
     guest = guest_crud.create_guest(db, guest_data)
 
-    # Update contact status
-    contact.status = "imported"
+    # Save contact ID before deletion
+    contact_id = str(contact.id)
+    
+    # Delete the contact from the database after approval
+    db.delete(contact)
     db.commit()
 
     return {
         "message": "Guest import contact approved and guest created",
         "guest_id": str(guest.id),
-        "contact_id": str(contact.id)
+        "contact_id": contact_id
     }
 
 
@@ -191,12 +269,15 @@ def reject_guest_import_contact(
     if not event or not event_crud.is_owner(event, user_id):
         raise HTTPException(status_code=404, detail="Event not found or not permitted")
 
-    # Update contact status to rejected
-    contact.status = "rejected"
+    # Save contact ID before deletion
+    contact_id = str(contact.id)
+    
+    # Delete the contact from the database after rejection
+    db.delete(contact)
     db.commit()
 
     return {
         "message": "Guest import contact rejected",
-        "contact_id": str(contact.id)
+        "contact_id": contact_id
     }
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Paper,
@@ -27,7 +27,7 @@ import {
   Warning as WarningIcon,
   AccessTime as AccessTimeIcon,
 } from '@mui/icons-material';
-import { useGuestImports, approveGuestImportContact, rejectGuestImportContact, GuestImportContact } from '../hooks/useGuestImports';
+import { useGuestImports, approveGuestImportContactWithData, rejectGuestImportContact, updateGuestImportContact, GuestImportContact } from '../hooks/useGuestImports';
 
 interface ImportedGuestsSectionProps {
   onRefresh?: () => void;
@@ -40,19 +40,38 @@ interface ImportedGuestsSectionProps {
  * Displays as a separate section before the main guest table
  */
 export function ImportedGuestsSection({ onRefresh, uniqueGroups, hasTableNumbers }: ImportedGuestsSectionProps) {
-  const { imports, loading, error } = useGuestImports();
+  const { imports, loading, error, refresh } = useGuestImports();
   const [editingContact, setEditingContact] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Record<string, any>>({});
   const [processing, setProcessing] = useState<Set<string>>(new Set());
+  const [removedContactIds, setRemovedContactIds] = useState<Set<string>>(new Set());
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false,
     message: '',
     severity: 'success',
   });
 
-  // Flatten all contacts from all imports
-  const allContacts: GuestImportContact[] = imports.flatMap((imp) => imp.contacts || []);
+  // Flatten all contacts from all imports, excluding removed ones
+  const allContacts: GuestImportContact[] = imports
+    .flatMap((imp) => imp.contacts || [])
+    .filter((contact) => !removedContactIds.has(contact.id));
+
+  // Clean up removedContactIds when imports change (after refresh from backend)
+  // Only keep IDs that are still in the current imports list
+  useEffect(() => {
+    const currentContactIds = new Set(imports.flatMap((imp) => (imp.contacts || []).map((c) => c.id)));
+    setRemovedContactIds((prev) => {
+      const next = new Set<string>();
+      prev.forEach((id) => {
+        // Only keep removed IDs if they're still in the imports (shouldn't happen, but just in case)
+        if (currentContactIds.has(id)) {
+          next.add(id);
+        }
+      });
+      return next;
+    });
+  }, [imports]);
 
   // If no pending imports, don't render
   if (!loading && allContacts.length === 0) {
@@ -68,10 +87,25 @@ export function ImportedGuestsSection({ onRefresh, uniqueGroups, hasTableNumbers
     });
   };
 
-  const handleSaveEdit = (contactId: string, field: string) => {
+  const handleSaveEdit = async (contactId: string, field: string) => {
     const newValue = editValues[`${contactId}_${field}`];
-    // In a real implementation, you might want to update the contact via API
-    // For now, we'll just update local state
+    
+    // Update via API for name, phone, email
+    if (field === 'name' || field === 'phone' || field === 'email') {
+      try {
+        const updateData: { name?: string; phone?: string; email?: string } = {};
+        if (field === 'name') updateData.name = newValue;
+        if (field === 'phone') updateData.phone = newValue;
+        if (field === 'email') updateData.email = newValue;
+        
+        await updateGuestImportContact(contactId, updateData);
+        setSnackbar({ open: true, message: 'השדה עודכן בהצלחה', severity: 'success' });
+      } catch (err: any) {
+        setSnackbar({ open: true, message: err.message || 'שגיאה בעדכון השדה', severity: 'error' });
+        return; // Don't close edit mode on error
+      }
+    }
+    
     setEditingContact(null);
     setEditingField(null);
   };
@@ -79,15 +113,44 @@ export function ImportedGuestsSection({ onRefresh, uniqueGroups, hasTableNumbers
   const handleApprove = async (contactId: string) => {
     setProcessing((prev) => new Set(prev).add(contactId));
     try {
-      await approveGuestImportContact(contactId);
+      // Get edited values for this contact
+      const contact = allContacts.find(c => c.id === contactId);
+      if (!contact) {
+        throw new Error('Contact not found');
+      }
+
+      const approveData: { name?: string; group?: string; import_count?: number; table_number?: number } = {};
+      
+      // Use edited name if available, otherwise use contact name
+      const editedName = editValues[`${contactId}_name`];
+      if (editedName !== undefined && editedName !== contact.name) {
+        approveData.name = editedName;
+      }
+      
+      // Get edited group, expected count, table number
+      const editedGroup = editValues[`${contactId}_group`];
+      if (editedGroup) {
+        approveData.group = editedGroup;
+      }
+      
+      const editedExpectedCount = editValues[`${contactId}_expectedCount`];
+      // Default to 1 if not set
+      approveData.import_count = editedExpectedCount !== undefined && editedExpectedCount > 0 ? editedExpectedCount : 1;
+      
+      const editedTableNumber = editValues[`${contactId}_tableNumber`];
+      if (editedTableNumber !== undefined && editedTableNumber > 0) {
+        approveData.table_number = editedTableNumber;
+      }
+
+      await approveGuestImportContactWithData(contactId, approveData);
+      // Remove contact from list immediately
+      setRemovedContactIds((prev) => new Set(prev).add(contactId));
       setSnackbar({ open: true, message: 'האורח אושר בהצלחה', severity: 'success' });
+      // Refresh the imports list
+      refresh();
       if (onRefresh) {
         onRefresh();
       }
-      // Reload page data after a short delay
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
     } catch (err: any) {
       setSnackbar({ open: true, message: err.message || 'שגיאה באישור האורח', severity: 'error' });
     } finally {
@@ -103,14 +166,14 @@ export function ImportedGuestsSection({ onRefresh, uniqueGroups, hasTableNumbers
     setProcessing((prev) => new Set(prev).add(contactId));
     try {
       await rejectGuestImportContact(contactId);
+      // Remove contact from list immediately
+      setRemovedContactIds((prev) => new Set(prev).add(contactId));
       setSnackbar({ open: true, message: 'האורח נדחה', severity: 'success' });
+      // Refresh the imports list
+      refresh();
       if (onRefresh) {
         onRefresh();
       }
-      // Reload page data after a short delay
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
     } catch (err: any) {
       setSnackbar({ open: true, message: err.message || 'שגיאה בדחיית האורח', severity: 'error' });
     } finally {
@@ -377,8 +440,8 @@ export function ImportedGuestsSection({ onRefresh, uniqueGroups, hasTableNumbers
                         <TextField
                           size="small"
                           type="number"
-                          value={editValues[`${contact.id}_expectedCount`] ?? ''}
-                          onChange={(e) => setEditValues({ ...editValues, [`${contact.id}_expectedCount`]: parseInt(e.target.value) || 0 })}
+                          value={editValues[`${contact.id}_expectedCount`] ?? 1}
+                          onChange={(e) => setEditValues({ ...editValues, [`${contact.id}_expectedCount`]: parseInt(e.target.value) || 1 })}
                           onBlur={() => {
                             handleSaveEdit(contact.id, 'expectedCount');
                           }}
@@ -397,9 +460,9 @@ export function ImportedGuestsSection({ onRefresh, uniqueGroups, hasTableNumbers
                         <Typography
                           variant="body2" 
                           sx={{ fontWeight: 500, cursor: 'pointer' }}
-                          onDoubleClick={() => handleEdit(contact.id, 'expectedCount', 0)}
+                          onDoubleClick={() => handleEdit(contact.id, 'expectedCount', 1)}
                         >
-                          -
+                          1
                         </Typography>
                       )}
                     </TableCell>

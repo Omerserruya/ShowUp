@@ -38,8 +38,9 @@ export function useGuestImports() {
   const [imports, setImports] = useState<GuestImport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  useEffect(() => {
+  const fetchImports = async () => {
     if (!selectedEvent?.id) {
       setLoading(false);
       return;
@@ -51,58 +52,69 @@ export function useGuestImports() {
     const url = `/api/guest-imports?status=pending&event_id=${selectedEvent.id}`;
     console.log('Fetching guest imports from:', url);
     
-    fetchWithAuth(url)
-      .then(async (res) => {
-        console.log('Guest imports response status:', res.status, res.statusText);
-        if (!res.ok) {
-          if (res.status === 401) {
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('token');
-            throw new Error('Authentication failed. Please log in again.');
-          }
-          // If endpoint doesn't exist (404), return empty array
-          if (res.status === 404) {
-            console.warn('Guest imports endpoint not found (404) - API may not be implemented yet');
-            return [];
-          }
-          // Check if response is HTML (404 page)
-          const contentType = res.headers.get('content-type');
-          console.log('Response content-type:', contentType);
-          if (contentType && contentType.includes('text/html')) {
-            console.warn('Received HTML response (likely 404 page) - API may not be implemented yet');
-            return [];
-          }
-          throw new Error(`Failed to load guest imports: ${res.statusText}`);
+    try {
+      const res = await fetchWithAuth(url);
+      console.log('Guest imports response status:', res.status, res.statusText);
+      if (!res.ok) {
+        if (res.status === 401) {
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('token');
+          throw new Error('Authentication failed. Please log in again.');
         }
+        // If endpoint doesn't exist (404), return empty array
+        if (res.status === 404) {
+          console.warn('Guest imports endpoint not found (404) - API may not be implemented yet');
+          setImports([]);
+          setLoading(false);
+          return;
+        }
+        // Check if response is HTML (404 page)
         const contentType = res.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          // Response is not JSON, likely HTML error page
-          console.warn('Response is not JSON - API may not be implemented yet');
-          return [];
+        console.log('Response content-type:', contentType);
+        if (contentType && contentType.includes('text/html')) {
+          console.warn('Received HTML response (likely 404 page) - API may not be implemented yet');
+          setImports([]);
+          setLoading(false);
+          return;
         }
-        return res.json();
-      })
-      .then((data) => {
-        console.log('Guest imports data received:', data);
-        // API might return array or paginated response
-        const importsList = Array.isArray(data) ? data : (data.items || []);
-        console.log('Processed imports list:', importsList);
-        console.log('Total imports:', importsList.length);
-        if (importsList.length > 0) {
-          console.log('First import contacts:', importsList[0]?.contacts);
-        }
-        setImports(importsList);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error('Failed to load guest imports:', err);
-        setError(err.message || 'Failed to load guest imports');
-        setLoading(false);
+        throw new Error(`Failed to load guest imports: ${res.statusText}`);
+      }
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        // Response is not JSON, likely HTML error page
+        console.warn('Response is not JSON - API may not be implemented yet');
         setImports([]);
-      });
-  }, [selectedEvent?.id]);
+        setLoading(false);
+        return;
+      }
+      const data = await res.json();
+      console.log('Guest imports data received:', data);
+      // API might return array or paginated response
+      const importsList = Array.isArray(data) ? data : (data.items || []);
+      console.log('Processed imports list:', importsList);
+      console.log('Total imports:', importsList.length);
+      if (importsList.length > 0) {
+        console.log('First import contacts:', importsList[0]?.contacts);
+      }
+      setImports(importsList);
+      setLoading(false);
+    } catch (err: any) {
+      console.error('Failed to load guest imports:', err);
+      setError(err.message || 'Failed to load guest imports');
+      setLoading(false);
+      setImports([]);
+    }
+  };
 
-  return { imports, loading, error };
+  useEffect(() => {
+    fetchImports();
+  }, [selectedEvent?.id, refreshTrigger]);
+
+  const refresh = () => {
+    setRefreshTrigger(prev => prev + 1);
+  };
+
+  return { imports, loading, error, refresh };
 }
 
 /**
@@ -169,7 +181,7 @@ export function useGuestImportSummary() {
  * Approve an imported guest contact
  */
 export async function approveGuestImportContact(contactId: string): Promise<void> {
-  const response = await fetchWithAuth(`/api/guest-import-contacts/${contactId}/approve`, {
+  const response = await fetchWithAuth(`/api/guest-imports/contacts/${contactId}/approve`, {
     method: 'POST',
   });
 
@@ -188,7 +200,7 @@ export async function approveGuestImportContact(contactId: string): Promise<void
  * Reject an imported guest contact
  */
 export async function rejectGuestImportContact(contactId: string): Promise<void> {
-  const response = await fetchWithAuth(`/api/guest-import-contacts/${contactId}/reject`, {
+  const response = await fetchWithAuth(`/api/guest-imports/contacts/${contactId}/reject`, {
     method: 'POST',
   });
 
@@ -203,3 +215,54 @@ export async function rejectGuestImportContact(contactId: string): Promise<void>
   }
 }
 
+/**
+ * Update an imported guest contact
+ */
+export async function updateGuestImportContact(
+  contactId: string,
+  data: { name?: string; phone?: string; email?: string }
+): Promise<void> {
+  const response = await fetchWithAuth(`/api/guest-imports/contacts/${contactId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('token');
+      throw new Error('Authentication failed. Please log in again.');
+    }
+    const errorData = await response.json().catch(() => ({ detail: 'Failed to update guest import' }));
+    throw new Error(errorData.detail || 'Failed to update guest import');
+  }
+}
+
+/**
+ * Approve an imported guest contact with optional fields
+ */
+export async function approveGuestImportContactWithData(
+  contactId: string,
+  data?: { name?: string; group?: string; import_count?: number; table_number?: number }
+): Promise<void> {
+  const response = await fetchWithAuth(`/api/guest-imports/contacts/${contactId}/approve`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data || {}),
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('token');
+      throw new Error('Authentication failed. Please log in again.');
+    }
+    const errorData = await response.json().catch(() => ({ detail: 'Failed to approve guest import' }));
+    throw new Error(errorData.detail || 'Failed to approve guest import');
+  }
+}

@@ -40,7 +40,7 @@ import {
   Edit as EditIcon,
 } from '@mui/icons-material';
 import { Autocomplete } from '@mui/material';
-import { useGuestImports, approveGuestImportContact, rejectGuestImportContact, GuestImportContact } from '../hooks/useGuestImports';
+import { useGuestImports, approveGuestImportContactWithData, rejectGuestImportContact, updateGuestImportContact, GuestImportContact } from '../hooks/useGuestImports';
 import { useGuests } from '../hooks/useOverviewData';
 
 /**
@@ -49,7 +49,7 @@ import { useGuests } from '../hooks/useOverviewData';
  */
 export function ImportedGuestsReviewScreen() {
   const navigate = useNavigate();
-  const { imports, loading, error } = useGuestImports();
+  const { imports, loading, error, refresh } = useGuestImports();
   const { guests } = useGuests();
   
   // Get unique groups from existing guests
@@ -58,6 +58,7 @@ export function ImportedGuestsReviewScreen() {
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Record<string, any>>({});
   const [processing, setProcessing] = useState<Set<string>>(new Set());
+  const [removedContactIds, setRemovedContactIds] = useState<Set<string>>(new Set());
   const [approveAllDialogOpen, setApproveAllDialogOpen] = useState(false);
   const [fullEditMode, setFullEditMode] = useState<Set<string>>(new Set()); // Full edit mode for contacts
   const [menuAnchor, setMenuAnchor] = useState<{ contactId: string; anchor: HTMLElement } | null>(null);
@@ -67,8 +68,26 @@ export function ImportedGuestsReviewScreen() {
     severity: 'success',
   });
 
-  // Flatten all contacts from all imports
-  const allContacts: GuestImportContact[] = imports.flatMap((imp) => imp.contacts || []);
+  // Flatten all contacts from all imports, excluding removed ones
+  const allContacts: GuestImportContact[] = imports
+    .flatMap((imp) => imp.contacts || [])
+    .filter((contact) => !removedContactIds.has(contact.id));
+
+  // Clean up removedContactIds when imports change (after refresh from backend)
+  // Only keep IDs that are still in the current imports list
+  useEffect(() => {
+    const currentContactIds = new Set(imports.flatMap((imp) => (imp.contacts || []).map((c) => c.id)));
+    setRemovedContactIds((prev) => {
+      const next = new Set<string>();
+      prev.forEach((id) => {
+        // Only keep removed IDs if they're still in the imports (shouldn't happen, but just in case)
+        if (currentContactIds.has(id)) {
+          next.add(id);
+        }
+      });
+      return next;
+    });
+  }, [imports]);
 
   // Helper function to get validation status (must be defined before use)
   const getValidationStatus = (contact: GuestImportContact) => {
@@ -90,7 +109,7 @@ export function ImportedGuestsReviewScreen() {
       return { status: 'warning', message: 'חסר שם' };
     }
     // Check if required fields are filled
-    const expectedCount = editValues[`${contact.id}_expectedCount`] ?? 0;
+    const expectedCount = editValues[`${contact.id}_expectedCount`] ?? 1;
     if (!expectedCount || expectedCount === 0) {
       return { status: 'warning', message: 'דורש בדיקה' };
     }
@@ -120,8 +139,23 @@ export function ImportedGuestsReviewScreen() {
     });
   };
 
-  const handleSaveEdit = (contactId: string, field: string) => {
-    // In a real implementation, you might want to update the contact via API
+  const handleSaveEdit = async (contactId: string, field: string) => {
+    // Update via API for name, phone, email
+    if (field === 'name' || field === 'phone' || field === 'email') {
+      try {
+        const updateData: { name?: string; phone?: string; email?: string } = {};
+        if (field === 'name') updateData.name = editValues[`${contactId}_name`];
+        if (field === 'phone') updateData.phone = editValues[`${contactId}_phone`];
+        if (field === 'email') updateData.email = editValues[`${contactId}_email`];
+        
+        await updateGuestImportContact(contactId, updateData);
+        setSnackbar({ open: true, message: 'השדה עודכן בהצלחה', severity: 'success' });
+      } catch (err: any) {
+        setSnackbar({ open: true, message: err.message || 'שגיאה בעדכון השדה', severity: 'error' });
+        return; // Don't close edit mode on error
+      }
+    }
+    
     setEditingContact(null);
     setEditingField(null);
   };
@@ -129,13 +163,42 @@ export function ImportedGuestsReviewScreen() {
   const handleApprove = async (contactId: string) => {
     setProcessing((prev) => new Set(prev).add(contactId));
     try {
-      await approveGuestImportContact(contactId);
+      // Get edited values for this contact
+      const contact = allContacts.find(c => c.id === contactId);
+      if (!contact) {
+        throw new Error('Contact not found');
+      }
+
+      const approveData: { name?: string; group?: string; import_count?: number; table_number?: number } = {};
+      
+      // Use edited name if available, otherwise use contact name
+      const editedName = editValues[`${contactId}_name`];
+      if (editedName !== undefined && editedName !== contact.name) {
+        approveData.name = editedName;
+      }
+      
+      // Get edited group, expected count, table number
+      const editedGroup = editValues[`${contactId}_group`];
+      if (editedGroup) {
+        approveData.group = editedGroup;
+      }
+      
+      const editedExpectedCount = editValues[`${contactId}_expectedCount`];
+      // Default to 1 if not set
+      approveData.import_count = editedExpectedCount !== undefined && editedExpectedCount > 0 ? editedExpectedCount : 1;
+      
+      const editedTableNumber = editValues[`${contactId}_tableNumber`];
+      if (editedTableNumber !== undefined && editedTableNumber > 0) {
+        approveData.table_number = editedTableNumber;
+      }
+
+      await approveGuestImportContactWithData(contactId, approveData);
+      // Remove contact from list immediately
+      setRemovedContactIds((prev) => new Set(prev).add(contactId));
       setSnackbar({ open: true, message: 'האורח אושר בהצלחה', severity: 'success' });
       
-      // Reload data to refresh the list
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
+      // Refresh the imports list
+      refresh();
     } catch (err: any) {
       setSnackbar({ open: true, message: err.message || 'שגיאה באישור האורח', severity: 'error' });
     } finally {
@@ -151,21 +214,12 @@ export function ImportedGuestsReviewScreen() {
     setProcessing((prev) => new Set(prev).add(contactId));
     try {
       await rejectGuestImportContact(contactId);
+      // Remove contact from list immediately
+      setRemovedContactIds((prev) => new Set(prev).add(contactId));
       setSnackbar({ open: true, message: 'האורח נדחה', severity: 'success' });
       
-      // Check if all contacts are processed
-      const remainingContacts = allContacts.filter((c) => c.id !== contactId);
-      if (remainingContacts.length === 0) {
-        // Navigate back to guest list after a short delay
-        setTimeout(() => {
-          navigate('/guests');
-        }, 1000);
-      } else {
-        // Reload data
-        setTimeout(() => {
-          window.location.reload();
-        }, 1000);
-      }
+      // Refresh the imports list
+      refresh();
     } catch (err: any) {
       setSnackbar({ open: true, message: err.message || 'שגיאה בדחיית האורח', severity: 'error' });
     } finally {
@@ -193,11 +247,40 @@ export function ImportedGuestsReviewScreen() {
     setProcessing(new Set(allContacts.map(c => c.id)));
     try {
       for (const contact of allContacts) {
-        await approveGuestImportContact(contact.id);
+        const approveData: { name?: string; group?: string; import_count?: number; table_number?: number } = {};
+        
+        // Get edited values for this contact
+        const editedName = editValues[`${contact.id}_name`];
+        if (editedName !== undefined && editedName !== contact.name) {
+          approveData.name = editedName;
+        }
+        
+        const editedGroup = editValues[`${contact.id}_group`];
+        if (editedGroup) {
+          approveData.group = editedGroup;
+        }
+        
+        const editedExpectedCount = editValues[`${contact.id}_expectedCount`];
+        // Default to 1 if not set
+        approveData.import_count = editedExpectedCount !== undefined && editedExpectedCount > 0 ? editedExpectedCount : 1;
+        
+        const editedTableNumber = editValues[`${contact.id}_tableNumber`];
+        if (editedTableNumber !== undefined && editedTableNumber > 0) {
+          approveData.table_number = editedTableNumber;
+        }
+        
+        await approveGuestImportContactWithData(contact.id, approveData);
       }
+      // Remove all contacts from list immediately
+      setRemovedContactIds((prev) => {
+        const next = new Set(prev);
+        allContacts.forEach((c) => next.add(c.id));
+        return next;
+      });
       setSnackbar({ open: true, message: 'כל האורחים אושרו בהצלחה', severity: 'success' });
+      refresh();
       setTimeout(() => {
-        window.location.reload();
+        navigate('/guests');
       }, 1000);
     } catch (err: any) {
       setSnackbar({ open: true, message: err.message || 'שגיאה באישור האורחים', severity: 'error' });
@@ -212,7 +295,14 @@ export function ImportedGuestsReviewScreen() {
       for (const contact of allContacts) {
         await rejectGuestImportContact(contact.id);
       }
+      // Remove all contacts from list immediately
+      setRemovedContactIds((prev) => {
+        const next = new Set(prev);
+        allContacts.forEach((c) => next.add(c.id));
+        return next;
+      });
       setSnackbar({ open: true, message: 'כל האורחים נדחו', severity: 'success' });
+      refresh();
       setTimeout(() => {
         navigate('/guests');
       }, 1000);
@@ -389,7 +479,7 @@ export function ImportedGuestsReviewScreen() {
             const isEditingName = isFullEditMode || (editingContact === contact.id && editingField === 'name');
             const isEditingPhone = isFullEditMode || (editingContact === contact.id && editingField === 'phone');
 
-            const expectedCount = editValues[`${contact.id}_expectedCount`] ?? 0;
+            const expectedCount = editValues[`${contact.id}_expectedCount`] ?? 1;
             const group = editValues[`${contact.id}_group`] ?? '';
             const tableNumber = editValues[`${contact.id}_tableNumber`] ?? '';
 
@@ -414,8 +504,33 @@ export function ImportedGuestsReviewScreen() {
               handleMenuClose();
             };
 
-            const handleSaveAll = (contactId: string) => {
-              // Save all changes
+            const handleSaveAll = async (contactId: string) => {
+              // Save name, phone, email changes via API
+              try {
+                const updateData: { name?: string; phone?: string; email?: string } = {};
+                const editedName = editValues[`${contactId}_name`];
+                const editedPhone = editValues[`${contactId}_phone`];
+                const editedEmail = editValues[`${contactId}_email`];
+                
+                if (editedName !== undefined && editedName !== contact.name) {
+                  updateData.name = editedName;
+                }
+                if (editedPhone !== undefined && editedPhone !== contact.phone) {
+                  updateData.phone = editedPhone;
+                }
+                if (editedEmail !== undefined && editedEmail !== contact.email) {
+                  updateData.email = editedEmail;
+                }
+                
+                if (Object.keys(updateData).length > 0) {
+                  await updateGuestImportContact(contactId, updateData);
+                }
+              } catch (err: any) {
+                setSnackbar({ open: true, message: err.message || 'שגיאה בשמירת השינויים', severity: 'error' });
+                return; // Don't exit edit mode on error
+              }
+              
+              // Exit full edit mode
               setFullEditMode((prev) => {
                 const next = new Set(prev);
                 next.delete(contactId);
@@ -600,7 +715,7 @@ export function ImportedGuestsReviewScreen() {
                         size="small"
                         type="number"
                         value={expectedCount}
-                        onChange={(e) => setEditValues({ ...editValues, [`${contact.id}_expectedCount`]: parseInt(e.target.value) || 0 })}
+                        onChange={(e) => setEditValues({ ...editValues, [`${contact.id}_expectedCount`]: parseInt(e.target.value) || 1 })}
                       />
                     </Box>
 
@@ -631,9 +746,9 @@ export function ImportedGuestsReviewScreen() {
                     <Button
                       variant="contained"
                       endIcon={<CheckCircleIcon />}
-                      onClick={() => {
+                      onClick={async () => {
                         if (isFullEditMode) {
-                          handleSaveAll(contact.id);
+                          await handleSaveAll(contact.id);
                         }
                         handleApprove(contact.id);
                       }}
