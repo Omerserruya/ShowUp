@@ -47,7 +47,7 @@ def fetch_campaign_by_id(conn: psycopg2.extensions.connection, campaign_id: str)
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
-            SELECT id, event_id, name, template, channel, schedule_time, status
+            SELECT id, event_id, name, template, channel, schedule_time, status, recipient_count
             FROM campaigns
             WHERE id = %s
             """,
@@ -108,6 +108,28 @@ def mark_message_sent(conn: psycopg2.extensions.connection, campaign_id: str, gu
             ON CONFLICT (campaign_id, guest_id) DO NOTHING
             """,
             (campaign_id, guest_id),
+        )
+
+
+def mark_campaign_completed(
+    conn: psycopg2.extensions.connection,
+    campaign_id: str,
+    sent_count: int,
+) -> None:
+    """
+    Update campaign row after processing:
+    - Set status='sent'
+    - Update recipient_count with the actual number of successfully enqueued messages.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE campaigns
+            SET status = 'sent',
+                recipient_count = %s
+            WHERE id = %s
+            """,
+            (sent_count, campaign_id),
         )
 
 

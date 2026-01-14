@@ -6,7 +6,14 @@ from typing import Dict, Any
 
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from db import connect as db_connect, fetch_campaign_by_id, fetch_event_by_id, was_message_sent, mark_message_sent
+from db import (
+    connect as db_connect,
+    fetch_campaign_by_id,
+    fetch_event_by_id,
+    was_message_sent,
+    mark_message_sent,
+    mark_campaign_completed,
+)
 from mq import connect as mq_connect, publish_outpost
 from template_registry import get_template_spec
 
@@ -122,7 +129,27 @@ def process_campaign(conn, channel, campaign_id: str):
             failed_count += 1
             log_json(logger, logging.ERROR, "Failed to enqueue message", campaign_id=campaign_id, guest_id=guest_id, error=str(e))
 
-    log_json(logger, logging.INFO, "Campaign processed", campaign_id=campaign_id, template=template_name, sent=sent_count, failed=failed_count)
+    # After processing all guests, mark campaign as completed ('sent') and store recipient_count
+    try:
+        mark_campaign_completed(conn, campaign_id, sent_count)
+    except Exception as e:
+        log_json(
+            logger,
+            logging.ERROR,
+            "Failed to update campaign status to sent",
+            campaign_id=campaign_id,
+            error=str(e),
+        )
+
+    log_json(
+        logger,
+        logging.INFO,
+        "Campaign processed",
+        campaign_id=campaign_id,
+        template=template_name,
+        sent=sent_count,
+        failed=failed_count,
+    )
 
 
 def main():

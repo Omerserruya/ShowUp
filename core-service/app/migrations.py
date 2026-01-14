@@ -42,7 +42,30 @@ def ensure_guest_counts_and_group(engine: Engine) -> None:
     logger.info("Guest schema verified (guest_count nullable, import_count default=1, guest_group column exists)")
 
 
+def ensure_campaign_recipient_count(engine: Engine) -> None:
+    """
+    Ensure campaigns table has recipient_count column to track actual recipients per campaign.
+    """
+    statements = [
+        "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS recipient_count INTEGER",
+        "UPDATE campaigns SET recipient_count = 0 WHERE recipient_count IS NULL",
+        "ALTER TABLE campaigns ALTER COLUMN recipient_count SET DEFAULT 0",
+        "ALTER TABLE campaigns ALTER COLUMN recipient_count SET NOT NULL",
+    ]
+
+    with engine.begin() as conn:
+        for stmt in statements:
+            try:
+                conn.execute(text(stmt))
+            except Exception as exc:  # pragma: no cover - best-effort migration
+                logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
+                continue
+
+    logger.info("Campaign schema verified (recipient_count column exists with default 0)")
+
+
 def apply_schema_patches(engine: Engine) -> None:
     ensure_guest_counts_and_group(engine)
+    ensure_campaign_recipient_count(engine)
 
 

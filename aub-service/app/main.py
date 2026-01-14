@@ -99,13 +99,25 @@ def ensure_users_table(env):
 @app.get("/health")
 def health():
     env = get_env()
-    db_ok = check_db_connection(env)
+    # Ensure users table exists on startup/health-check so the schema is always ready
+    try:
+        ensure_users_table(env)
+        users_table_ok = True
+    except Exception:
+        users_table_ok = False
+
+    db_ok = check_db_connection(env) and users_table_ok
     rabbit_ok = check_rabbit_connection(env)
     redis_ok = check_redis_connection(env)
-    status = 200 if (db_ok and rabbit_ok and redis_ok) else 503
+    status_code = 200 if (db_ok and rabbit_ok and redis_ok) else 503
     return JSONResponse(
-        status_code=status,
-        content={"db": db_ok, "rabbit": rabbit_ok, "redis": redis_ok},
+        status_code=status_code,
+        content={
+            "db": db_ok,
+            "users_table": users_table_ok,
+            "rabbit": rabbit_ok,
+            "redis": redis_ok,
+        },
     )
 
 

@@ -16,6 +16,12 @@ interface PieChartData {
 
 interface ResponsePieChartProps {
   data?: PieChartData[];
+  /**
+   * Optional override for the total shown in the center of the pie.
+   * When provided, this should represent the expected total invitees (import_count sum),
+   * rather than the actual responses.
+   */
+  totalInvited?: number;
 }
 
 // Mock data
@@ -25,7 +31,7 @@ const defaultData: PieChartData[] = [
   { name: 'טרם אישרו', value: 18, color: '#fb923c' },
 ];
 
-const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData }) => {
+const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData, totalInvited }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   
@@ -61,8 +67,16 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData 
     return null;
   };
 
-  // Calculate total for center display
-  const total = data.reduce((sum, item) => sum + item.value, 0);
+  // Filter out zero values so we don't render empty slices / labels with 0
+  const filteredData = (data || []).filter((item) => item.value > 0);
+
+  // Calculate total for center display:
+  // - Prefer the provided totalInvited (expected invitees / import_count sum)
+  // - Fallback to sum of all values (including zero values) if not provided
+  const total =
+    typeof totalInvited === 'number'
+      ? totalInvited
+      : (data || []).reduce((sum, item) => sum + item.value, 0);
 
   // Map status names to colors (matching StatusCard colors)
   const getColorForStatus = (name: string): string => {
@@ -89,8 +103,9 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData 
         fill="#ffffff"
         textAnchor="middle"
         dominantBaseline="central"
-        fontSize={isMobile ? 12 : 14}
-        fontWeight={600}
+        // Make the numbers on the pie more prominent
+        fontSize={isMobile ? 14 : 18}
+        fontWeight={700}
       >
         {value}
       </text>
@@ -175,7 +190,8 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData 
                 </linearGradient>
               </defs>
               <Pie
-                data={data}
+                // Use filteredData so we don't show 0 slices
+                data={filteredData}
                 cx="50%"
                 cy="50%"
                 label={renderCustomLabel}
@@ -187,7 +203,7 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData 
                 startAngle={90}
                 endAngle={-270}
               >
-                {data.map((entry, index) => {
+                {filteredData.map((entry, index) => {
                   // Use color based on status name
                   const fillColor = getColorForStatus(entry.name);
                   return (

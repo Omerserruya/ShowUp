@@ -132,6 +132,7 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
     { id: 'status', label: 'סטטוס', width: 150, align: 'right' },
     { id: 'confirmedCount', label: 'כמות אורחים', width: 150, align: 'right' },
     { id: 'lastResponse', label: 'תאריך תגובה', width: 150, align: 'right' },
+    { id: 'note', label: 'הערות', width: 220, align: 'right' },
     { id: 'actions', label: 'פעולות', width: 80, align: 'right' },
   ]);
 
@@ -497,6 +498,21 @@ export default function RSVPTable({ guests, loading = false }: RSVPTableProps) {
                                   -
                                 </Typography>
                               )
+                            ) : column.id === 'note' ? (
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  textAlign: 'right',
+                                  color: guest.note ? 'text.primary' : 'text.secondary',
+                                  maxWidth: 220,
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                                title={guest.note || undefined}
+                              >
+                                {guest.note && guest.note.trim().length > 0 ? guest.note : '-'}
+                              </Typography>
                             ) : column.id === 'actions' ? (
                               <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                                 <IconButton size="small">

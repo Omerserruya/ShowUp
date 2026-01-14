@@ -1566,13 +1566,14 @@ function Guests() {
                   {hasTableNumbers && (
                     <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>מספר שולחן</TableCell>
                   )}
+                  <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>הערות</TableCell>
                   <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>פעולות</TableCell>
-            </TableRow>
-          </TableHead>
+                </TableRow>
+              </TableHead>
           <TableBody>
             {guestsLoading ? (
               <TableRow>
-                <TableCell colSpan={hasTableNumbers ? 8 : 7} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
+                <TableCell colSpan={hasTableNumbers ? 9 : 8} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
                   <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
                     <CircularProgress size={40} />
                   </Box>
@@ -1580,10 +1581,10 @@ function Guests() {
               </TableRow>
             ) : filteredGuests.length === 0 ? (
               <TableRow>
-                    <TableCell colSpan={hasTableNumbers ? 8 : 7} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
-                      <Typography variant="body1" color="text.secondary" sx={{ py: 4 }}>
-                  {searchQuery ? 'לא נמצאו תוצאות' : 'אין מוזמנים'}
-                      </Typography>
+                <TableCell colSpan={hasTableNumbers ? 9 : 8} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
+                  <Typography variant="body1" color="text.secondary" sx={{ py: 4 }}>
+                    {searchQuery ? 'לא נמצאו תוצאות' : 'אין מוזמנים'}
+                  </Typography>
                 </TableCell>
               </TableRow>
             ) : (
@@ -1951,8 +1952,24 @@ function Guests() {
                               {guest.tableNumber !== undefined ? guest.tableNumber : '-'}
                             </Typography>
                           )}
-                    </TableCell>
+                        </TableCell>
                       )}
+                      {/* Notes column */}
+                      <TableCell align="center" sx={{ backgroundColor: 'white', maxWidth: 240 }}>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            textAlign: 'right',
+                            color: guest.note ? 'text.primary' : 'text.secondary',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title={guest.note || undefined}
+                        >
+                          {guest.note && guest.note.trim().length > 0 ? guest.note : '-'}
+                        </Typography>
+                      </TableCell>
                       <TableCell align="center" sx={{ backgroundColor: 'white' }}>
                         <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
                           <IconButton 

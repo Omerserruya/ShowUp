@@ -94,6 +94,8 @@ class Campaign(Base):
     channel = Column(String(20), nullable=False)
     schedule_time = Column(DateTime(timezone=True), nullable=True)
     status = Column(String(20), nullable=False, default="pending")
+    # Number of recipients the campaign was actually sent to (messages enqueued)
+    recipient_count = Column(Integer, nullable=False, default=0, server_default="0")
 
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())

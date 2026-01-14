@@ -110,6 +110,8 @@ class CampaignBase(BaseModel):
     channel: str = Field(..., max_length=20)
     schedule_time: Optional[dt.datetime] = None
     status: str = Field("pending", max_length=20)
+    # Number of recipients the campaign was actually sent to (messages enqueued)
+    recipient_count: int = Field(0, ge=0)
 
 
 class CampaignCreate(CampaignBase):

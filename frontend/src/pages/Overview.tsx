@@ -190,12 +190,17 @@ function Overview() {
   const timelineItems = mapCampaignsToTimeline(campaigns);
   const campaignUpdates = mapCampaignsToUpdates(campaigns);
 
-  // Prepare pie chart data
-  const pieData = stats ? [
-    { name: 'אישרו הגעה', value: stats.approved, color: '#4ade80' },
-    { name: 'ביטלו השתתפות', value: stats.declined, color: '#f87171' },
-    { name: 'טרם אישרו', value: stats.pending, color: '#fb923c' },
-  ] : [];
+  // Prepare pie chart data - based on actual responses
+  const pieData = stats
+    ? [
+        { name: 'אישרו הגעה', value: stats.approved, color: '#4ade80' },
+        { name: 'ביטלו השתתפות', value: stats.declined, color: '#f87171' },
+        { name: 'טרם אישרו', value: stats.pending, color: '#fb923c' },
+      ]
+    : [];
+
+  // Total invited people (expected invitees) - based on import_count sum from API
+  const totalInvited = stats?.total || 0;
 
   // Get event date - check both event_date and date fields
   const eventDate = (selectedEvent as any)?.event_date || (selectedEvent as any)?.date;
@@ -266,7 +271,7 @@ function Overview() {
 
       {/* Pie Chart for mobile - show after stats */}
       <Box sx={{ mb: 4, display: { xs: 'block', md: 'none' } }}>
-        <ResponsePieChart data={pieData} />
+        <ResponsePieChart data={pieData} totalInvited={totalInvited} />
       </Box>
 
       {/* Countdown and Pie Chart Section - Desktop only */}
@@ -278,7 +283,7 @@ function Overview() {
         
         {/* Response Pie Chart - 1/3 width */}
         <Grid item xs={12} md={4} sx={{ display: 'flex' }}>
-          <ResponsePieChart data={pieData} />
+          <ResponsePieChart data={pieData} totalInvited={totalInvited} />
         </Grid>
       </Grid>
 

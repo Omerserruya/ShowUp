@@ -82,7 +82,7 @@ const processTemplateText = (template: string, variables: Record<string, string>
   return processed;
 };
 
-// Campaign status types from API
+// Campaign status types from API (normalized)
 type CampaignStatus = 'sent' | 'pending' | 'paused' | 'scheduled';
 
 interface CampaignFromAPI {
@@ -94,6 +94,9 @@ interface CampaignFromAPI {
   channel: string;
   created_at: string;
   updated_at: string;
+  // Optional fields that may contain recipients info
+  recipient_count?: number;
+  recipients?: any[];
 }
 
 interface Campaign {
@@ -103,7 +106,11 @@ interface Campaign {
   status: CampaignStatus;
   scheduleTime: Date | null;
   channel: 'whatsapp' | 'sms' | 'email';
-  recipientCount: number; // Will be fetched from guests count
+  /**
+   * Number of recipients the campaign was actually sent to.
+   * Prefer campaign-specific data from the API; fallback to a general estimate when not available.
+   */
+  recipientCount: number;
 }
 
 function Messages() {
@@ -156,14 +163,26 @@ function Messages() {
 
     const mapped = apiCampaigns.map((apiCampaign: CampaignFromAPI) => {
       // Map status from API to local status
+      // Treat "processing" from backend as "sent" in the UI once sending has been triggered
       let status: CampaignStatus = 'pending';
-      if (apiCampaign.status === 'sent') {
+      if (apiCampaign.status === 'sent' || apiCampaign.status === 'processing') {
         status = 'sent';
       } else if (apiCampaign.status === 'paused') {
         status = 'paused';
       } else if (apiCampaign.schedule_time) {
         status = 'scheduled';
       }
+
+      // Derive per-campaign recipient count:
+      // - Prefer explicit recipient_count from API
+      // - Then fall back to length of recipients list if available
+      // - Finally, fall back to the general recipientCount estimate
+      const specificRecipientCount =
+        typeof apiCampaign.recipient_count === 'number'
+          ? apiCampaign.recipient_count
+          : Array.isArray(apiCampaign.recipients)
+          ? apiCampaign.recipients.length
+          : recipientCount;
 
       return {
         id: apiCampaign.id,
@@ -172,7 +191,7 @@ function Messages() {
         status,
         scheduleTime: apiCampaign.schedule_time ? new Date(apiCampaign.schedule_time) : null,
         channel: apiCampaign.channel as 'whatsapp' | 'sms' | 'email',
-        recipientCount,
+        recipientCount: specificRecipientCount,
       };
     });
 

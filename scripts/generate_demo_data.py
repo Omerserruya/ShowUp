@@ -201,9 +201,15 @@ def create_campaigns(conn, event_id, event_date):
     with conn.cursor() as cur:
         for schedule_time, template_data, status in campaign_schedules:
             campaign_id = uuid.uuid4()
+
+            # For demo data, approximate recipient_count using the number of guests table will later create.
+            # Here we simply use a reasonable demo default (e.g. 50 recipients for past campaigns, 0 for future).
+            # In a real system, this will be updated by the campaign-worker after actual sending.
+            recipient_count = 50 if status == "sent" else 0
+
             cur.execute("""
-                INSERT INTO campaigns (id, event_id, name, template, channel, schedule_time, status, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO campaigns (id, event_id, name, template, channel, schedule_time, status, recipient_count, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             """, (
                 str(campaign_id),
@@ -213,13 +219,14 @@ def create_campaigns(conn, event_id, event_date):
                 template_data["channel"],
                 schedule_time,
                 status,
+                recipient_count,
                 now,
                 now if status == "sent" else schedule_time
             ))
             
             campaign_id = cur.fetchone()[0]
             campaigns.append(campaign_id)
-            print(f"  ✓ Created campaign: {template_data['name']} ({status})")
+            print(f"  ✓ Created campaign: {template_data['name']} ({status}), recipients={recipient_count}")
     
     conn.commit()
     return campaigns
