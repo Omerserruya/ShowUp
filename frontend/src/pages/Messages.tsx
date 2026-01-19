@@ -24,6 +24,7 @@ import {
   Skeleton,
   LinearProgress,
   Grid,
+  Divider,
 } from '@mui/material';
 import {
   Send as SendIcon,
@@ -42,44 +43,210 @@ import {
   Add as PlusIcon,
   ChevronRight as ChevronRightIcon,
   Create as PencilIcon,
+  Edit as EditTemplateIcon,
+  Delete as DeleteIcon,
+  ExpandMore as ExpandMoreIcon,
 } from '@mui/icons-material';
 import { useEvent } from '../contexts/EventContext';
 import { useCampaigns, useOverviewStats } from '../hooks/useOverviewData';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
+import { templates, processTemplate, MessageTemplate } from '../config/templates';
 
-// Helper function to process template with variables
-const processTemplateText = (template: string, variables: Record<string, string>): string => {
-  let processed = template;
+// WhatsApp message bubble component (same as in EventWizard)
+const WhatsAppBubble = ({ template, variables }: { template: MessageTemplate; variables: Record<string, string> }) => {
+  const processedBody = processTemplate(template, variables);
+  const lines = processedBody.split('\n');
   
-  // Replace all placeholders - support multiple formats
-  Object.entries(variables).forEach(([key, value]) => {
-    // Support {{key}}, {{key.key}}, and {{key_key}} formats
-    const patterns = [
-      `{{${key}}}`,
-      `{{${key.replace('_', '.')}}}`,
-      `{{${key.replace('.', '_')}}}`,
-    ];
-    
-    patterns.forEach(pattern => {
-      // Escape special regex characters in pattern
-      const escapedPattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      processed = processed.replace(new RegExp(escapedPattern, 'g'), value || pattern);
-    });
-  });
+  return (
+    <Box
+      sx={{
+        position: 'relative',
+        bgcolor: '#ffffff',
+        borderRadius: '7.5px',
+        p: 1,
+        maxWidth: '85%',
+        mr: 'auto',
+        mb: 0.5,
+        boxShadow: '0 1px 0.5px rgba(0,0,0,0.13)',
+        border: '1px solid rgba(0,0,0,0.08)',
+        overflow: 'hidden',
+        direction: 'rtl',
+        textAlign: 'right',
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          left: -8,
+          top: 0,
+          width: 0,
+          height: 0,
+          borderTop: '0px solid transparent',
+          borderBottom: '20px solid transparent',
+          borderRight: `8px solid #ffffff`,
+        },
+      }}
+    >
+      {template.title && (
+        <Typography 
+          variant="subtitle2" 
+          fontWeight={700} 
+          sx={{ 
+            mb: 0.25,
+            fontSize: '0.875rem',
+            color: '#000',
+            textAlign: 'right',
+            direction: 'rtl',
+            width: '100%',
+            display: 'block',
+          }}
+        >
+          {processTemplate({ ...template, body: template.title }, variables)}
+        </Typography>
+      )}
+      {lines.map((line, idx) => (
+        <Typography
+          key={idx}
+          variant="body2"
+          sx={{
+            color: '#000',
+            mb: line.trim() ? 0.25 : 0,
+            fontSize: '0.8125rem',
+            lineHeight: 1.4,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            direction: 'rtl',
+            textAlign: 'right',
+          }}
+        >
+          {line || '\u00A0'}
+        </Typography>
+      ))}
+      {template.cta && (
+        <Box sx={{ mt: 0.75, pt: 0.75, borderTop: '1px solid rgba(0,0,0,0.1)' }}>
+          <Typography
+            variant="body2"
+            sx={{
+              color: '#0084ff',
+              fontWeight: 500,
+              fontSize: '0.8125rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+              justifyContent: 'flex-end',
+            }}
+          >
+            {template.cta.text}
+            {template.cta.link && <span>↗</span>}
+          </Typography>
+        </Box>
+      )}
+      {template.buttons && template.buttons.length > 0 && (
+        <>
+          <Typography
+            variant="caption"
+            sx={{
+              color: 'rgba(0,0,0,0.45)',
+              fontSize: '10px',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              mt: 0.25,
+              mb: 0.25,
+              direction: 'ltr',
+            }}
+          >
+            {new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+          </Typography>
+          <Box sx={{ mt: 0.75, pt: 0.75, borderTop: '1px solid rgba(0,0,0,0.1)', mx: -1, px: 1 }}>
+            {template.buttons.map((button, idx) => (
+              <Box key={button.id}>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: '#0084ff',
+                    fontWeight: 400,
+                    fontSize: '0.8125rem',
+                    textAlign: 'center',
+                    py: 0.5,
+                  }}
+                >
+                  {button.text}
+                </Typography>
+                {idx < template.buttons!.length - 1 && (
+                  <Divider 
+                    sx={{ 
+                      borderColor: 'rgba(0,0,0,0.1)',
+                      mx: -1,
+                      width: 'calc(100% + 16px)',
+                    }} 
+                  />
+                )}
+              </Box>
+            ))}
+          </Box>
+        </>
+      )}
+      {!template.buttons && (
+        <Typography
+          variant="caption"
+          sx={{
+            color: 'rgba(0,0,0,0.45)',
+            fontSize: '10px',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            mt: 0.25,
+            direction: 'ltr',
+          }}
+        >
+          {new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+        </Typography>
+      )}
+    </Box>
+  );
+};
+
+// Campaign message preview component - finds template by ID or campaignLabel
+const CampaignMessagePreview = ({ 
+  campaignName,
+  campaignTemplate,
+  variables 
+}: { 
+  campaignName: string;
+  campaignTemplate?: string;
+  variables: Record<string, string> 
+}) => {
+  // Try to find template by ID first (campaign.template or campaign.name might be the template ID like "save_date_1")
+  let template = templates.find(t => t.id === campaignTemplate || t.id === campaignName);
   
-  // Also handle common placeholders that might be in the template
-  const commonReplacements: Record<string, string> = {
-    '{{guest.name}}': variables['guest.name'] || variables['שם'] || 'דוד כהן',
-    '{{event.name}}': variables['event.name'] || variables['שם_אירוע'] || 'האירוע שלי',
-    '{{event.date}}': variables['event.date'] || variables['תאריך'] || '15/06/2024',
-    '{{event.location}}': variables['event.location'] || variables['מיקום'] || 'גן אירועים רויאל',
-  };
+  // If not found by ID, try to find by campaignLabel (campaign name might match campaignLabel like "Save the date")
+  if (!template) {
+    template = templates.find(t => t.campaignLabel === campaignName && t.isDefault === true);
+  }
   
-  Object.entries(commonReplacements).forEach(([placeholder, value]) => {
-    processed = processed.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), value);
-  });
+  // If still not found, try to find any template with matching campaignLabel
+  if (!template) {
+    const matchingTemplates = templates.filter(t => t.campaignLabel === campaignName);
+    template = matchingTemplates[0];
+  }
   
-  return processed;
+  // If no template found, fallback to simple text display
+  if (!template) {
+    return (
+      <Typography 
+        variant="body2" 
+        sx={{ 
+          color: '#000',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          direction: 'rtl',
+          textAlign: 'right',
+        }}
+      >
+        {campaignTemplate || campaignName}
+      </Typography>
+    );
+  }
+  
+  return <WhatsAppBubble template={template} variables={variables} />;
 };
 
 // Campaign status types from API (normalized)
@@ -111,6 +278,8 @@ interface Campaign {
    * Prefer campaign-specific data from the API; fallback to a general estimate when not available.
    */
   recipientCount: number;
+  sentCount?: number; // Number of recipients sent to (from messages_sent)
+  readCount?: number; // Number of recipients who read the message (from messages_log)
 }
 
 function Messages() {
@@ -122,7 +291,6 @@ function Messages() {
   
   // State
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [recipientCount, setRecipientCount] = useState<number>(0);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -133,28 +301,10 @@ function Messages() {
   const [editedMessage, setEditedMessage] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [updating, setUpdating] = useState<string | null>(null);
+  const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
+  const [selectingTemplateFor, setSelectingTemplateFor] = useState<string | null>(null);
 
-  // Fetch recipient count (total guests)
-  useEffect(() => {
-    if (!selectedEvent?.id) return;
-
-    fetchWithAuth(`/api/guests?event_id=${selectedEvent.id}&page_size=1`)
-      .then(res => res.json())
-      .then(data => {
-        // Get total from API if available, otherwise use array length
-        const total = Array.isArray(data) ? data.length : 0;
-        // For now, we'll use a reasonable default or fetch all guests count
-        fetchWithAuth(`/api/guests?event_id=${selectedEvent.id}&page_size=1000`)
-          .then(res => res.json())
-          .then(allGuests => {
-            setRecipientCount(Array.isArray(allGuests) ? allGuests.length : 0);
-          })
-          .catch(() => setRecipientCount(150)); // Fallback
-      })
-      .catch(() => setRecipientCount(150)); // Fallback
-  }, [selectedEvent?.id]);
-
-  // Map API campaigns to local format
+  // Map API campaigns to local format and fetch stats
   useEffect(() => {
     if (!apiCampaigns || apiCampaigns.length === 0) {
       setCampaigns([]);
@@ -182,7 +332,7 @@ function Messages() {
           ? apiCampaign.recipient_count
           : Array.isArray(apiCampaign.recipients)
           ? apiCampaign.recipients.length
-          : recipientCount;
+          : (stats?.total_guests || 0);
 
       return {
         id: apiCampaign.id,
@@ -192,11 +342,66 @@ function Messages() {
         scheduleTime: apiCampaign.schedule_time ? new Date(apiCampaign.schedule_time) : null,
         channel: apiCampaign.channel as 'whatsapp' | 'sms' | 'email',
         recipientCount: specificRecipientCount,
+        sentCount: undefined, // Will be loaded separately
+        readCount: undefined, // Will be loaded separately
       };
     });
 
     setCampaigns(mapped);
-  }, [apiCampaigns, recipientCount]);
+
+    // Fetch stats for sent campaigns
+    // Only fetch if we know the endpoint exists (check once and cache result)
+    const fetchStats = async () => {
+      const sentCampaigns = mapped.filter(c => c.status === 'sent');
+      if (sentCampaigns.length === 0) return;
+      
+      // Try to fetch stats for the first campaign to check if endpoint exists
+      // If it returns 404, we'll skip all subsequent requests to avoid console noise
+      let endpointExists: boolean | null = null;
+      
+      for (const campaign of sentCampaigns) {
+        try {
+          const statsRes = await fetchWithAuth(`/api/campaigns/${campaign.id}/stats`);
+          
+          if (statsRes.status === 404) {
+            // First 404 means endpoint doesn't exist yet - skip all remaining requests
+            if (endpointExists === null) {
+              endpointExists = false;
+              // Silently skip - endpoint not implemented yet
+              break;
+            }
+            continue;
+          }
+          
+          // If we got here, endpoint exists
+          if (endpointExists === null) {
+            endpointExists = true;
+          }
+          
+          if (statsRes.ok) {
+            const stats = await statsRes.json();
+            setCampaigns(prev => prev.map(c => 
+              c.id === campaign.id 
+                ? { ...c, sentCount: stats.sent_count || 0, readCount: stats.read_count || 0 }
+                : c
+            ));
+          }
+        } catch (error) {
+          // Network errors or other issues - log only if endpoint was confirmed to exist
+          if (endpointExists === true) {
+            console.warn(`Failed to fetch stats for campaign ${campaign.id}:`, error);
+          }
+          // If endpoint doesn't exist, silently skip
+          if (endpointExists === null) {
+            endpointExists = false;
+            break;
+          }
+        }
+      }
+    };
+
+    fetchStats();
+  }, [apiCampaigns, stats?.total_guests]);
 
   // Helper functions
   const getTimeLabel = (campaign: Campaign): string => {
@@ -282,6 +487,8 @@ function Messages() {
         'שם_אירוע': 'האירוע שלי',
         'תאריך': '15/06/2024',
         'מיקום': 'גן אירועים רויאל',
+        'שם_מזמין': 'דוד ושרה',
+        'שעה': '18:00',
       };
     }
 
@@ -292,6 +499,19 @@ function Messages() {
           year: 'numeric' 
         })
       : '{{תאריך}}';
+
+    const eventTime = selectedEvent.date
+      ? new Date(selectedEvent.date).toLocaleTimeString('he-IL', {
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : '18:00';
+
+    // Extract inviter names from event
+    const inviters = (selectedEvent as any)?.inviters || [];
+    const inviterNames = Array.isArray(inviters) && inviters.length > 0
+      ? inviters.map((inv: any) => `${inv.fn || ''} ${inv.ln || ''}`.trim()).filter(Boolean).join(' ו-')
+      : 'דוד ושרה';
 
     const eventTypeMap: Record<string, string> = {
       'wedding': 'חתונה',
@@ -317,6 +537,8 @@ function Messages() {
       'תאריך': eventDate,
       'מיקום': selectedEvent.location || '{{מיקום}}',
       'סוג_אירוע': eventTypeMap[selectedEvent.type || 'custom'] || 'אירוע',
+      'שם_מזמין': inviterNames,
+      'שעה': eventTime,
     };
   };
 
@@ -461,6 +683,68 @@ function Messages() {
     }
   };
 
+  // Expand/collapse handlers
+  const handleToggleExpand = (campaignId: string) => {
+    setExpandedCampaignId(expandedCampaignId === campaignId ? null : campaignId);
+  };
+
+  const handleDelete = async (campaign: Campaign) => {
+    if (!window.confirm(`האם אתה בטוח שברצונך למחוק את הקמפיין "${campaign.name}"?`)) {
+      return;
+    }
+
+    setUpdating(campaign.id);
+    try {
+      const response = await fetchWithAuth(`/api/campaigns/${campaign.id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error('Failed to delete campaign');
+      
+      setCampaigns(prev => prev.filter(c => c.id !== campaign.id));
+      if (expandedCampaignId === campaign.id) {
+        setExpandedCampaignId(null);
+      }
+    } catch (error) {
+      console.error('Error deleting campaign:', error);
+      alert('שגיאה במחיקת הקמפיין');
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  const handleChangeTemplate = (campaign: Campaign) => {
+    // Open the campaign if it's not expanded
+    if (expandedCampaignId !== campaign.id) {
+      setExpandedCampaignId(campaign.id);
+    }
+    // Toggle template selection
+    setSelectingTemplateFor(selectingTemplateFor === campaign.id ? null : campaign.id);
+  };
+
+  const handleTemplateSelect = async (campaign: Campaign, templateId: string) => {
+    setUpdating(campaign.id);
+    try {
+      const response = await fetchWithAuth(`/api/campaigns/${campaign.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ template: templateId }),
+      });
+      if (!response.ok) throw new Error('Failed to update template');
+      
+      setCampaigns(prev => prev.map(c => 
+        c.id === campaign.id 
+          ? { ...c, template: templateId }
+          : c
+      ));
+      
+      setSelectingTemplateFor(null);
+    } catch (error) {
+      console.error('Error updating template:', error);
+      alert('שגיאה בעדכון התבנית');
+    } finally {
+      setUpdating(null);
+    }
+  };
+
   // Group campaigns
   const pastCampaigns = filteredCampaigns.filter(c => isPast(c));
   const upcomingCampaigns = filteredCampaigns.filter(c => !isPast(c));
@@ -468,16 +752,20 @@ function Messages() {
   // Calculate statistics
   const totalCampaigns = campaigns.length;
   const sentCampaigns = campaigns.filter(c => c.status === 'sent').length;
-  const totalSent = sentCampaigns * recipientCount; // Total messages sent
+  // Total messages sent (sum of per-campaign sentCount if available, otherwise recipientCount fallback)
+  const totalSent = campaigns.reduce(
+    (sum, c) => sum + (c.sentCount ?? c.recipientCount ?? 0),
+    0
+  );
   const responseRate = stats && stats.total > 0 
     ? Math.round(((stats.approved + stats.declined) / stats.total) * 100)
     : 0;
   
-  // Calculate response percentage for each campaign (mock for now)
-  const getCampaignResponseRate = (campaign: Campaign): number => {
-    if (campaign.status === 'sent') {
-      // For sent campaigns, use overall response rate or calculate based on recipients
-      return responseRate;
+  // Calculate read percentage for each campaign
+  const getCampaignReadRate = (campaign: Campaign): number => {
+    if (campaign.status === 'sent' && campaign.sentCount && campaign.sentCount > 0) {
+      // Calculate read rate based on sent_count and read_count
+      return Math.round(((campaign.readCount || 0) / campaign.sentCount) * 100);
     }
     return 0;
   };
@@ -652,7 +940,7 @@ function Messages() {
           {/* Past Campaigns (Sent) */}
           {pastCampaigns.map((campaign) => {
             const statusColors = getStatusColor(campaign);
-            const responseRate = getCampaignResponseRate(campaign);
+            const readRate = getCampaignReadRate(campaign);
             return (
               <Paper
                 key={campaign.id}
@@ -697,9 +985,23 @@ function Messages() {
                         }}
                       />
                     </Stack>
-                    <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
-                      {campaign.template.substring(0, 100)}...
-                    </Typography>
+                    {/* WhatsApp-style message preview */}
+                    <Box
+                      sx={{
+                        bgcolor: '#ece5dd',
+                        borderRadius: '7.5px',
+                        p: 1,
+                        mb: 2,
+                        maxWidth: '90%',
+                        mr: 'auto',
+                      }}
+                    >
+                      <CampaignMessagePreview 
+                        campaignName={campaign.name}
+                        campaignTemplate={campaign.template}
+                        variables={getTemplateVariables()} 
+                      />
+                    </Box>
                     <Stack direction="row" spacing={2} sx={{ mb: 2, flexWrap: 'wrap' }}>
                       <Stack direction="row" spacing={0.5} alignItems="center">
                         <CalendarIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
@@ -710,15 +1012,17 @@ function Messages() {
                       <Stack direction="row" spacing={0.5} alignItems="center">
                         <PeopleIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                         <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                          {campaign.recipientCount} נמענים
+                          {campaign.sentCount !== undefined ? campaign.sentCount : campaign.recipientCount} נשלח ל
                         </Typography>
                       </Stack>
-                      <Stack direction="row" spacing={0.5} alignItems="center">
-                        <BarChartIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                          {responseRate}% הגיבו
-                        </Typography>
-                      </Stack>
+                      {campaign.sentCount !== undefined && campaign.sentCount > 0 && (
+                        <Stack direction="row" spacing={0.5} alignItems="center">
+                          <BarChartIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                            {readRate}% נקרא
+                          </Typography>
+                        </Stack>
+                      )}
                     </Stack>
                     <Box sx={{ mt: 1.5 }}>
                       <Box
@@ -732,7 +1036,7 @@ function Messages() {
                         <Box
                           sx={{
                             height: '100%',
-                            width: `${responseRate}%`,
+                            width: `${readRate}%`,
                             background: 'linear-gradient(to right, #9333ea, #ec4899)',
                             borderRadius: '999px',
                             transition: 'width 0.5s',
@@ -743,8 +1047,15 @@ function Messages() {
                   </Box>
                   <IconButton
                     size="small"
+                    onClick={() => {
+                      if (campaign.status !== 'sent') {
+                        handleToggleExpand(campaign.id);
+                      }
+                    }}
                     sx={{
                       flexShrink: 0,
+                      transform: expandedCampaignId === campaign.id ? 'rotate(90deg)' : 'rotate(0deg)',
+                      transition: 'transform 0.2s',
                       '&:hover': {
                         bgcolor: alpha('#9333ea', 0.1),
                       },
@@ -753,6 +1064,229 @@ function Messages() {
                     <ChevronRightIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
                   </IconButton>
                 </Stack>
+                {/* Expanded content */}
+                {expandedCampaignId === campaign.id && campaign.status !== 'sent' && (
+                  <Box
+                    sx={{
+                      mt: 2,
+                      pt: 2,
+                      borderTop: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    {/* Message preview */}
+                    <Box
+                      sx={{
+                        bgcolor: '#ece5dd',
+                        borderRadius: '7.5px',
+                        p: 1,
+                        mb: 2,
+                        maxWidth: '90%',
+                        mr: 'auto',
+                      }}
+                    >
+                      <CampaignMessagePreview 
+                        campaignName={campaign.name}
+                        campaignTemplate={campaign.template}
+                        variables={getTemplateVariables()} 
+                      />
+                    </Box>
+                    {/* Template selection gallery */}
+                    {selectingTemplateFor === campaign.id ? (() => {
+                      // Find campaign label from template or name
+                      const currentTemplate = templates.find(t => t.id === campaign.template || t.id === campaign.name);
+                      const campaignLabel = currentTemplate?.campaignLabel || campaign.name;
+                      const campaignTemplates = templates.filter(t => t.campaignLabel === campaignLabel);
+                      const templateVariables = getTemplateVariables();
+                      const currentTemplateId = campaign.template || campaign.name;
+
+                      if (campaignTemplates.length === 0) {
+                        return (
+                          <Box sx={{ mt: 2 }}>
+                            <Typography variant="body2" color="text.secondary">
+                              לא נמצאו תבניות עבור קמפיין זה
+                            </Typography>
+                            <Button
+                              variant="text"
+                              onClick={() => setSelectingTemplateFor(null)}
+                              sx={{ mt: 1, color: 'text.secondary' }}
+                            >
+                              ביטול
+                            </Button>
+                          </Box>
+                        );
+                      }
+
+                      return (
+                        <Box sx={{ mt: 2 }}>
+                          <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 600, color: 'text.primary' }}>
+                            בחר תבנית
+                          </Typography>
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              gap: 2,
+                              overflowX: 'auto',
+                              pb: 2,
+                              scrollSnapType: 'x mandatory',
+                              '&::-webkit-scrollbar': {
+                                height: 6,
+                              },
+                              '&::-webkit-scrollbar-track': {
+                                bgcolor: alpha('#9333ea', 0.1),
+                                borderRadius: 3,
+                              },
+                              '&::-webkit-scrollbar-thumb': {
+                                bgcolor: alpha('#9333ea', 0.3),
+                                borderRadius: 3,
+                                '&:hover': {
+                                  bgcolor: alpha('#9333ea', 0.5),
+                                },
+                              },
+                              scrollbarWidth: 'thin',
+                            }}
+                          >
+                            {campaignTemplates.map((template) => {
+                              const isSelected = template.id === currentTemplateId;
+                              const isDefault = template.isDefault === true;
+                              
+                              return (
+                                <Paper
+                                  key={template.id}
+                                  variant="outlined"
+                                  onClick={() => handleTemplateSelect(campaign, template.id)}
+                                  sx={{
+                                    p: 1.5,
+                                    cursor: updating === campaign.id ? 'default' : 'pointer',
+                                    borderWidth: isSelected ? 2 : 1,
+                                    borderColor: isSelected ? 'primary.main' : isDefault ? 'success.main' : 'divider',
+                                    bgcolor: isSelected ? 'primary.main' + '08' : isDefault ? 'success.main' + '05' : 'transparent',
+                                    transition: 'all 0.2s ease',
+                                    minWidth: 240,
+                                    width: 240,
+                                    flexShrink: 0,
+                                    scrollSnapAlign: 'start',
+                                    position: 'relative',
+                                    opacity: updating === campaign.id ? 0.6 : 1,
+                                    '&:hover': {
+                                      borderColor: updating === campaign.id ? undefined : 'primary.main',
+                                      bgcolor: updating === campaign.id ? undefined : 'primary.main' + '05',
+                                    },
+                                  }}
+                                >
+                                  {isDefault && (
+                                    <Chip
+                                      label="ברירת מחדל"
+                                      size="small"
+                                      color="success"
+                                      sx={{
+                                        position: 'absolute',
+                                        top: 8,
+                                        left: 8,
+                                        fontSize: '10px',
+                                        height: 20,
+                                        zIndex: 1,
+                                      }}
+                                    />
+                                  )}
+                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1, flexDirection: 'row-reverse', direction: 'rtl' }}>
+                                    <Typography variant="body2" fontWeight={600} sx={{ textAlign: 'right', direction: 'rtl', flex: 1, fontSize: '0.8125rem' }}>
+                                      {template.name}
+                                    </Typography>
+                                    {isSelected && (
+                                      <Chip
+                                        label="נבחר"
+                                        size="small"
+                                        color="primary"
+                                        sx={{ height: 20, fontSize: '0.7rem', ml: 1 }}
+                                      />
+                                    )}
+                                  </Box>
+                                  
+                                  {/* WhatsApp preview */}
+                                  <Box
+                                    sx={{
+                                      bgcolor: '#ece5dd',
+                                      p: 1,
+                                      borderRadius: 1,
+                                      minHeight: 100,
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      justifyContent: 'flex-end',
+                                    }}
+                                  >
+                                    <WhatsAppBubble template={template} variables={templateVariables} />
+                                  </Box>
+                                </Paper>
+                              );
+                            })}
+                          </Box>
+                          <Button
+                            variant="text"
+                            onClick={() => setSelectingTemplateFor(null)}
+                            sx={{ mt: 1, color: 'text.secondary' }}
+                          >
+                            ביטול
+                          </Button>
+                        </Box>
+                      );
+                    })() : (
+                      /* Action buttons */
+                      <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap', gap: 1.5 }}>
+                        <Button
+                          variant="contained"
+                          startIcon={<SendIcon />}
+                          onClick={() => handleSendNow(campaign)}
+                          disabled={updating === campaign.id}
+                          sx={{
+                            bgcolor: '#22c55e',
+                            color: 'white',
+                            '&:hover': {
+                              bgcolor: '#16a34a',
+                            },
+                            minWidth: 140,
+                          }}
+                        >
+                          שלח עכשיו
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          startIcon={<EditTemplateIcon />}
+                          onClick={() => handleChangeTemplate(campaign)}
+                          disabled={updating === campaign.id}
+                          sx={{
+                            borderColor: '#9333ea',
+                            color: '#9333ea',
+                            '&:hover': {
+                              borderColor: '#7e22ce',
+                              bgcolor: alpha('#9333ea', 0.1),
+                            },
+                            minWidth: 140,
+                          }}
+                        >
+                          שנה תבנית
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          startIcon={<DeleteIcon />}
+                          onClick={() => handleDelete(campaign)}
+                          disabled={updating === campaign.id}
+                          sx={{
+                            borderColor: '#ef4444',
+                            color: '#ef4444',
+                            '&:hover': {
+                              borderColor: '#dc2626',
+                              bgcolor: alpha('#ef4444', 0.1),
+                            },
+                            minWidth: 140,
+                          }}
+                        >
+                          מחק
+                        </Button>
+                      </Stack>
+                    )}
+                  </Box>
+                )}
               </Paper>
             );
           })}
@@ -866,9 +1400,23 @@ function Messages() {
                         }}
                       />
                     </Stack>
-                    <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
-                      {campaign.template.substring(0, 100)}...
-                    </Typography>
+                    {/* WhatsApp-style message preview */}
+                    <Box
+                      sx={{
+                        bgcolor: '#ece5dd',
+                        borderRadius: '7.5px',
+                        p: 1,
+                        mb: 2,
+                        maxWidth: '90%',
+                        mr: 'auto',
+                      }}
+                    >
+                      <CampaignMessagePreview 
+                        campaignName={campaign.name}
+                        campaignTemplate={campaign.template}
+                        variables={getTemplateVariables()} 
+                      />
+                    </Box>
                     <Stack direction="row" spacing={2} sx={{ mb: 2, flexWrap: 'wrap' }}>
                       <Stack direction="row" spacing={0.5} alignItems="center">
                         <CalendarIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
@@ -907,8 +1455,15 @@ function Messages() {
                   </Box>
                   <IconButton
                     size="small"
+                    onClick={() => {
+                      if (campaign.status !== 'sent') {
+                        handleToggleExpand(campaign.id);
+                      }
+                    }}
                     sx={{
                       flexShrink: 0,
+                      transform: expandedCampaignId === campaign.id ? 'rotate(90deg)' : 'rotate(0deg)',
+                      transition: 'transform 0.2s',
                       '&:hover': {
                         bgcolor: alpha('#9333ea', 0.1),
                       },
@@ -917,6 +1472,88 @@ function Messages() {
                     <ChevronRightIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
                   </IconButton>
                 </Stack>
+                {/* Expanded content */}
+                {expandedCampaignId === campaign.id && campaign.status !== 'sent' && (
+                  <Box
+                    sx={{
+                      mt: 2,
+                      pt: 2,
+                      borderTop: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    {/* Message preview */}
+                    <Box
+                      sx={{
+                        bgcolor: '#ece5dd',
+                        borderRadius: '7.5px',
+                        p: 1,
+                        mb: 2,
+                        maxWidth: '90%',
+                        mr: 'auto',
+                      }}
+                    >
+                      <CampaignMessagePreview 
+                        campaignName={campaign.name}
+                        campaignTemplate={campaign.template}
+                        variables={getTemplateVariables()} 
+                      />
+                    </Box>
+                    {/* Action buttons */}
+                    <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap', gap: 1.5 }}>
+                      <Button
+                        variant="contained"
+                        startIcon={<SendIcon />}
+                        onClick={() => handleSendNow(campaign)}
+                        disabled={isLoading}
+                        sx={{
+                          bgcolor: '#22c55e',
+                          color: 'white',
+                          '&:hover': {
+                            bgcolor: '#16a34a',
+                          },
+                          minWidth: 140,
+                        }}
+                      >
+                        שלח עכשיו
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        startIcon={<EditTemplateIcon />}
+                        onClick={() => handleChangeTemplate(campaign)}
+                        disabled={isLoading}
+                        sx={{
+                          borderColor: '#9333ea',
+                          color: '#9333ea',
+                          '&:hover': {
+                            borderColor: '#7e22ce',
+                            bgcolor: alpha('#9333ea', 0.1),
+                          },
+                          minWidth: 140,
+                        }}
+                      >
+                        שנה תבנית
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        startIcon={<DeleteIcon />}
+                        onClick={() => handleDelete(campaign)}
+                        disabled={isLoading}
+                        sx={{
+                          borderColor: '#ef4444',
+                          color: '#ef4444',
+                          '&:hover': {
+                            borderColor: '#dc2626',
+                            bgcolor: alpha('#ef4444', 0.1),
+                          },
+                          minWidth: 140,
+                        }}
+                      >
+                        מחק
+                      </Button>
+                    </Stack>
+                  </Box>
+                )}
               </Paper>
             );
           })}
@@ -1121,19 +1758,23 @@ function Messages() {
                 <Typography variant="body1" sx={{ fontWeight: 500 }}>
                   {sendNowCampaign.name}
                 </Typography>
-                  <Box
-                    sx={{
-                      p: 2,
-                      backgroundColor: alpha('#2196f3', 0.08),
-                      borderRadius: 1,
-                      border: '1px solid',
-                      borderColor: alpha('#2196f3', 0.2),
-                    }}
-                  >
-                    <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-                      {processTemplateText(sendNowCampaign.template, getTemplateVariables())}
-                    </Typography>
-                  </Box>
+                {/* WhatsApp-style message preview */}
+                <Box
+                  sx={{
+                    bgcolor: '#ece5dd',
+                    borderRadius: '7.5px',
+                    p: 1.5,
+                    mb: 2,
+                    maxWidth: '90%',
+                    mr: 'auto',
+                  }}
+                >
+                  <CampaignMessagePreview 
+                    campaignName={sendNowCampaign.name}
+                    campaignTemplate={sendNowCampaign.template}
+                    variables={getTemplateVariables()} 
+                  />
+                </Box>
               <Typography variant="body2" color="text.secondary">
                   ההודעה תישלח ל-<strong>{sendNowCampaign.recipientCount}</strong> מוזמנים עכשיו.
               </Typography>
@@ -1169,6 +1810,7 @@ function Messages() {
           </Button>
         </DialogActions>
       </Dialog>
+
     </Box>
   );
 }

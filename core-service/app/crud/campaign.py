@@ -184,3 +184,47 @@ def delete_campaigns_by_event(db: Session, event_id: uuid.UUID) -> int:
     return count
 
 
+def get_campaign_stats(db: Session, campaign_id: uuid.UUID) -> dict:
+    """
+    Get campaign statistics:
+    - sent_count: Number of recipients the campaign was sent to (from messages_sent)
+    - read_count: Number of recipients who read the message (from messages_log with status='read')
+    
+    Returns dict with sent_count and read_count.
+    """
+    from sqlalchemy import text
+    
+    campaign_id_str = str(campaign_id)
+    
+    # Count sent recipients from messages_sent table
+    sent_result = db.execute(
+        text("SELECT COUNT(*) FROM messages_sent WHERE campaign_id = :campaign_id"),
+        {"campaign_id": campaign_id_str}
+    )
+    sent_count = sent_result.scalar() or 0
+    
+    # Count read recipients from messages_log table
+    # A message is considered "read" if there's a status update with status='read' 
+    # for an outgoing message with this campaign_id
+    read_result = db.execute(
+        text("""
+            SELECT COUNT(DISTINCT ml_outgoing.guest_phone)
+            FROM messages_log ml_outgoing
+            INNER JOIN messages_log ml_status 
+                ON ml_status.wa_message_id = ml_outgoing.wa_message_id
+                AND ml_status.direction = 'status'
+                AND ml_status.status = 'read'
+            WHERE ml_outgoing.campaign_id = :campaign_id
+                AND ml_outgoing.direction = 'outgoing'
+                AND ml_outgoing.guest_phone IS NOT NULL
+        """),
+        {"campaign_id": campaign_id_str}
+    )
+    read_count = read_result.scalar() or 0
+    
+    return {
+        "sent_count": sent_count,
+        "read_count": read_count
+    }
+
+

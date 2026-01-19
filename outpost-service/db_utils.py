@@ -298,7 +298,8 @@ class ConversationDB:
         message_type: str,
         state: Optional[str],
         whatsapp_message_id: str,
-        payload: Optional[str] = None
+        payload: Optional[str] = None,
+        campaign_id: Optional[str] = None
     ) -> bool:
         """
         Log outgoing message to messages_log table with conversation_id.
@@ -309,6 +310,7 @@ class ConversationDB:
             state: The conversation state when message was sent
             whatsapp_message_id: The WhatsApp message ID (wamid)
             payload: Optional JSON payload (truncated to 4000 chars)
+            campaign_id: Optional campaign ID if this is a campaign message
         
         Returns:
             True if logged successfully, False otherwise
@@ -326,10 +328,10 @@ class ConversationDB:
             with self.pg_conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO messages_log (conversation_id, wa_message_id, direction, message_type, payload, state, created_at)
-                    VALUES (%s::uuid, %s, 'outgoing', %s, %s, %s, NOW())
+                    INSERT INTO messages_log (conversation_id, wa_message_id, direction, message_type, payload, state, campaign_id, created_at)
+                    VALUES (%s::uuid, %s, 'outgoing', %s, %s, %s, %s::uuid, NOW())
                     """,
-                    (conversation_id, whatsapp_message_id, message_type, payload, state)
+                    (conversation_id, whatsapp_message_id, message_type, payload, state, campaign_id)
                 )
                 self.logger.info(
                     "Logged outgoing message to messages_log",
@@ -337,7 +339,8 @@ class ConversationDB:
                         "conversation_id": conversation_id,
                         "wa_message_id": whatsapp_message_id,
                         "message_type": message_type,
-                        "state": state
+                        "state": state,
+                        "campaign_id": campaign_id
                     }
                 )
                 return True

@@ -207,12 +207,14 @@ class RabbitMQConsumer:
                                 # The "state" field in message_data is the template name, not the conversation state
                                 actual_state = self.conversation_db.get_conversation_state(conversation_id) or "rsvp_invite"
                                 payload_json = json.dumps(message_data, ensure_ascii=False)[:4000]
+                                campaign_id = message_data.get("campaign_id")
                                 self.conversation_db.log_outgoing_message(
                                     conversation_id=conversation_id,
                                     message_type="template",
                                     state=actual_state,
                                     whatsapp_message_id=wa_id,
                                     payload=payload_json,
+                                    campaign_id=campaign_id,
                                 )
                                 self.logger.info(
                                     "Logged outgoing template message to messages_log",
@@ -436,12 +438,14 @@ class RabbitMQConsumer:
                                 # Get the actual conversation state from the database
                                 actual_state = self.conversation_db.get_conversation_state(conversation_id) or message_data.get("state", "rsvp_invite")
                                 payload_json = json.dumps(message_data, ensure_ascii=False)[:4000]
+                                campaign_id = message_data.get("campaign_id")
                                 self.conversation_db.log_outgoing_message(
                                     conversation_id=conversation_id,
                                     message_type="interactive",
                                     state=actual_state,
                                     whatsapp_message_id=wa_id,
                                     payload=payload_json,
+                                    campaign_id=campaign_id,
                                 )
                             else:
                                 self.logger.warning(

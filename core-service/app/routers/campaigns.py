@@ -143,3 +143,23 @@ def delete_campaigns_by_event(
     return {"deleted": count}
 
 
+@router.get("/{campaign_id}/stats", response_model=dict)
+def get_campaign_stats(
+    campaign_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Get campaign statistics: sent_count and read_count."""
+    campaign = campaign_crud.get_campaign(db, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    
+    # Verify event ownership
+    event = event_crud.get_event(db, campaign.event_id)
+    if not event or not event_crud.is_owner(event, user_id):
+        raise HTTPException(status_code=404, detail="Campaign not found or not permitted")
+    
+    stats = campaign_crud.get_campaign_stats(db, campaign_id)
+    return stats
+
+
