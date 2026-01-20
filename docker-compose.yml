@@ -6,7 +6,7 @@ services:
       - ${HTTP_PORT}:${HTTP_PORT}  # HTTP port for local development
     environment:
       - CORE_SERVICE_URL=${BACKEND_PROTOCOL}://${CORE_SERVICE_HOST}:${CORE_SERVICE_PORT}
-      - AUB_SERVICE_URL=${BACKEND_PROTOCOL}://${AUB_SERVICE_HOST}:${AUB_SERVICE_PORT}/
+      - AUB_SERVICE_URL=${BACKEND_PROTOCOL}://${AUB_SERVICE_HOST}:${AUB_SERVICE_PORT}
       - WEBHOOK_HANDLER_URL=${BACKEND_PROTOCOL}://${WEBHOOK_HANDLER_HOST}:${WEBHOOK_HANDLER_PORT}/
       - DOLLAR=$ # To escape $ in envsubst
     volumes:
@@ -50,6 +50,21 @@ services:
       - ${REDIS_PORT}:${REDIS_PORT}
     volumes:
       - redisdata:/data
+
+  mongodb:
+    image: mongo:7
+    ports:
+      - ${MONGO_PORT:-27017}:27017
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USER:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD:-password}
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   core-service:
     build:
@@ -99,10 +114,16 @@ services:
       - JWT_EXP_SECONDS=${JWT_EXP_SECONDS}
       - OTP_TTL_SEC=${OTP_TTL_SEC}
       - OTP_QUEUE_NAME=${OTP_QUEUE_NAME}
+      - MONGO_HOST=${MONGO_HOST:-mongodb}
+      - MONGO_PORT=${MONGO_PORT:-27017}
+      - MONGO_USER=${MONGO_USER:-admin}
+      - MONGO_PASSWORD=${MONGO_PASSWORD:-password}
+      - MONGO_DB_NAME=${MONGO_DB_NAME:-showup}
     depends_on:
       - postgres
       - rabbitmq
       - redis
+      - mongodb
 
   outpost-service:
     build:
@@ -266,3 +287,4 @@ networks:
 volumes:
   pgdata:
   redisdata:
+  mongodata:

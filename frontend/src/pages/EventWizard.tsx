@@ -40,8 +40,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { useTheme } from '@mui/material/styles';
-import { plans, PlanTier, getCampaignsForPlan } from '../config/plans';
-import { CampaignSchedule } from '../config/campaigns';
+import { usePlans, usePlanCampaigns, Plan, CampaignSchedule } from '../hooks/usePlans';
+// CampaignSchedule type is now imported from usePlans hook
 import { templates, getTemplatesByCampaign, getDefaultTemplateForCampaign, processTemplate, MessageTemplate } from '../config/templates';
 import { useUser } from '../contexts/UserContext';
 import { countryOptions, normalizePhoneNumber } from '../utils/countryOptions';
@@ -74,12 +74,7 @@ interface EventDetails {
   inviters: Inviter[];
 }
 
-// Helper function to get campaigns for a package
-const getCampaignsForPackage = (packageId: string): CampaignSchedule[] => {
-  const campaigns = getCampaignsForPlan(packageId);
-  // Sort by offsetDays descending (30, 7, 1, -1)
-  return [...campaigns].sort((a, b) => b.offsetDays - a.offsetDays);
-};
+// Helper function removed - campaigns come from API via usePlanCampaigns hook
 
 // Helper function to get variables from event details
 const getTemplateVariables = (eventDetails: EventDetails, inviters: Inviter[]): Record<string, string> => {
@@ -334,12 +329,11 @@ export default function EventWizard() {
     location: null,
     inviters: [{ fn: firstNameFromQuery, ln: lastNameFromQuery }], // מתחיל עם מזמין אחד מהנתונים מה-Hero
   });
-  const [campaigns, setCampaigns] = useState<CampaignSchedule[]>(() => {
-    if (packageFromQuery) {
-      return getCampaignsForPackage(packageFromQuery);
-    }
-    return [];
-  });
+  // Fetch plans from API
+  const { plans, loading: plansLoading } = usePlans();
+  const { campaigns: planCampaigns, loading: campaignsLoading } = usePlanCampaigns(selectedPackageId);
+  
+  const [campaigns, setCampaigns] = useState<CampaignSchedule[]>([]);
   const [selectedTemplates, setSelectedTemplates] = useState<Record<string, string>>({}); // campaign label -> template id
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [paymentData, setPaymentData] = useState({
@@ -395,17 +389,21 @@ export default function EventWizard() {
     }
   }, [firstNameFromQuery, lastNameFromQuery]);
 
-  // Update campaigns when package changes
+  // Update campaigns when plan campaigns are loaded from API
   useEffect(() => {
-    if (selectedPackageId) {
-      const newCampaigns = getCampaignsForPackage(selectedPackageId);
-      setCampaigns(newCampaigns);
+    if (planCampaigns && planCampaigns.length > 0) {
+      // Sort by offsetDays descending (30, 7, 1, -1)
+      const sorted = [...planCampaigns].sort((a, b) => b.offsetDays - a.offsetDays);
+      setCampaigns(sorted);
+    } else if (selectedPackageId && !campaignsLoading) {
+      // If no campaigns found and not loading, clear campaigns
+      setCampaigns([]);
     }
-  }, [selectedPackageId]);
+  }, [planCampaigns, selectedPackageId, campaignsLoading]);
 
   const selectedPlan = useMemo(() => {
     return plans.find(p => p.id === selectedPackageId);
-  }, [selectedPackageId]);
+  }, [plans, selectedPackageId]);
 
   const canNext = useMemo(() => {
     if (activeStep === 0) return !!selectedPackageId;
@@ -662,32 +660,41 @@ export default function EventWizard() {
     );
   };
 
-  const renderPackageStep = () => (
-    <Box>
-      <Typography variant="h6" sx={{ mb: 2, fontWeight: 800 }}>
-        בחרו חבילה
-      </Typography>
-      {renderInfoBox()}
-      <Box
-        sx={{
-          display: { xs: 'flex', sm: 'grid' },
-          gridTemplateColumns: { sm: 'repeat(3, 1fr)' },
-          gap: 2,
-          direction: 'rtl',
-          overflowX: { xs: 'auto', sm: 'visible' },
-          overflowY: 'hidden',
-          scrollBehavior: 'smooth',
-          scrollSnapType: { xs: 'x mandatory', sm: 'none' },
-          py: { xs: 2, sm: 4, md: 4 },
-          px: { xs: 1.5, md: 3 },
-          mx: { xs: -2, sm: 0 },
-          '&::-webkit-scrollbar': {
-            display: 'none',
-          },
-          scrollbarWidth: 'none',
-        }}
-      >
-        {plans.map((plan: PlanTier) => {
+  const renderPackageStep = () => {
+    if (plansLoading) {
+      return (
+        <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+          <CircularProgress />
+        </Box>
+      );
+    }
+
+    return (
+      <Box>
+        <Typography variant="h6" sx={{ mb: 2, fontWeight: 800 }}>
+          בחרו חבילה
+        </Typography>
+        {renderInfoBox()}
+        <Box
+          sx={{
+            display: { xs: 'flex', sm: 'grid' },
+            gridTemplateColumns: { sm: 'repeat(3, 1fr)' },
+            gap: 2,
+            direction: 'rtl',
+            overflowX: { xs: 'auto', sm: 'visible' },
+            overflowY: 'hidden',
+            scrollBehavior: 'smooth',
+            scrollSnapType: { xs: 'x mandatory', sm: 'none' },
+            py: { xs: 2, sm: 4, md: 4 },
+            px: { xs: 1.5, md: 3 },
+            mx: { xs: -2, sm: 0 },
+            '&::-webkit-scrollbar': {
+              display: 'none',
+            },
+            scrollbarWidth: 'none',
+          }}
+        >
+          {plans.map((plan: Plan) => {
           const selected = selectedPackageId === plan.id;
           return (
             <Paper
@@ -792,7 +799,8 @@ export default function EventWizard() {
         })}
       </Box>
     </Box>
-  );
+    );
+  };
 
   const renderEventStep = () => (
     <Box
@@ -1427,7 +1435,7 @@ export default function EventWizard() {
   };
 
   const renderReviewStep = () => {
-    const selectedPlan = plans.find(p => p.id === selectedPackageId);
+    // selectedPlan is already defined in component scope via useMemo
     const eventTypeMap: Record<string, string> = {
       'wedding': 'חתונה',
       'bar': 'בר מצווה',

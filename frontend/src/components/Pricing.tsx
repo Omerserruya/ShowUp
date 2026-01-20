@@ -1,9 +1,9 @@
 import React from 'react';
-import { Box, Container, Grid, Typography, Paper, Button, Chip } from '@mui/material';
+import { Box, Container, Grid, Typography, Paper, Button, Chip, CircularProgress } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { styled, useTheme } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
-import { plans as tiers } from '../config/plans';
+import { usePlans } from '../hooks/usePlans';
 
 const StyledPaper = styled(Paper, {
   shouldForwardProp: (prop) => prop !== 'accent' && prop !== 'popular',
@@ -79,10 +79,28 @@ const FeaturesBox = styled(Box)(({ theme }) => ({
 export default function Pricing() {
   const theme = useTheme();
   const navigate = useNavigate();
+  const { plans: tiers, loading } = usePlans();
 
   const handleStartNow = (planId: string) => {
     navigate(`/wizard?package=${planId}`);
   };
+
+  if (loading) {
+    return (
+      <Box
+        id="pricing"
+        sx={{
+          py: 10,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          minHeight: 400,
+        }}
+      >
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <Box
