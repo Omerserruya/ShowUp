@@ -23,6 +23,7 @@ import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
 import AccessibilityStatement from './pages/AccessibilityStatement';
 import EventWizard from './pages/EventWizard';
+import Payment from './pages/Payment';
 
 function App() {
   useEffect(() => {
@@ -40,6 +41,14 @@ function App() {
               <EventWizard />
             </UserProvider>
           } 
+        />
+        <Route
+          path="/payment"
+          element={
+            <UserProvider>
+              <Payment />
+            </UserProvider>
+          }
         />
                 <Route path="/terms" element={<Terms />} />
                 <Route path="/privacy" element={<Privacy />} />

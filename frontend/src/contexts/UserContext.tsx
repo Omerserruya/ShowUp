@@ -5,6 +5,9 @@ export interface User {
   _id: string;
   username: string;
   email: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string; // expected E.164 like +9725...
   role?: string;
   createdAt?: Date;
   updatedAt?: Date;
@@ -95,6 +98,9 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (userData.email) {
               localStorage.setItem('user_email', userData.email);
             }
+            if (userData.phone) {
+              localStorage.setItem('user_phone', userData.phone);
+            }
             
             // Map backend user data to frontend User interface
             // Prefer full_name/name/username from backend, fallback to combining first_name + last_name
@@ -115,6 +121,9 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
               _id: userData.id || userData._id || decoded.user_id,
               username: fullName,
               email: userData.email || '',
+              firstName: userData.first_name || undefined,
+              lastName: userData.last_name || undefined,
+              phone: userData.phone || undefined,
               role: 'user',
               createdAt: userData.created_at || userData.createdAt,
               updatedAt: userData.updated_at || userData.updatedAt,
@@ -132,6 +141,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const savedFirstName = localStorage.getItem('user_first_name');
         const savedLastName = localStorage.getItem('user_last_name');
         const savedEmail = localStorage.getItem('user_email');
+        const savedPhone = localStorage.getItem('user_phone');
         
         // Create user object from saved data
         // IMPORTANT: Don't use decoded.sub (phone number) as fallback - prefer empty name over phone
@@ -149,6 +159,9 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
           _id: decoded.user_id,
           username: username,
           email: savedEmail || '',
+          firstName: savedFirstName || undefined,
+          lastName: savedLastName || undefined,
+          phone: savedPhone || undefined,
           role: 'user',
         });
         localStorage.setItem('user_id', decoded.user_id);
@@ -185,6 +198,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('user_first_name');
     localStorage.removeItem('user_last_name');
     localStorage.removeItem('user_email');
+    localStorage.removeItem('user_phone');
   };
 
   // Fetch user details when the component mounts

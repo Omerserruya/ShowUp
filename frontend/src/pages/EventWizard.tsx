@@ -297,7 +297,11 @@ export default function EventWizard() {
       const match = cleaned.match(/^\+(\d{1,4})(.*)$/);
       if (match) {
         const code = `+${match[1]}`;
-        const local = match[2].replace(/^0+/, '');
+        let local = match[2];
+        // להצגה למשתמש אנחנו כן רוצים את ה־0 המוביל (למשל 052...)
+        if (code === '+972' && local && !local.startsWith('0')) {
+          local = `0${local}`;
+        }
         return { code: code || fallbackCode, phone: local };
       }
     }
@@ -345,6 +349,7 @@ export default function EventWizard() {
   });
   const [paymentErrors, setPaymentErrors] = useState<Record<string, string>>({});
   const [paymentLoading, setPaymentLoading] = useState(false);
+  const [orderId, setOrderId] = useState<string | null>(null);
 
   // Places Autocomplete hook - must be at component level
   const placesAutocomplete = usePlacesAutocomplete({
@@ -357,12 +362,25 @@ export default function EventWizard() {
   // Update payment data when user changes or when data comes from Hero
   useEffect(() => {
     if (user) {
-      const nameParts = user.username?.split(' ') || [];
+      const first = user.firstName ?? (user.username?.split(' ')[0] || '');
+      const last =
+        user.lastName ??
+        (user.username
+          ?.split(' ')
+          .slice(1)
+          .join(' ')
+          .trim() || '');
+
+      const phoneSource = user.phone || phoneFromQuery || '';
+      const phoneCodeGuess = getCountryCodeFromPhone(phoneSource);
+      const parsedPhoneSource = phoneSource ? splitPhone(phoneSource, phoneCodeGuess) : null;
       setPaymentData(prev => ({
         ...prev,
-        firstName: prev.firstName || nameParts[0] || '',
-        lastName: prev.lastName || nameParts.slice(1).join(' ') || '',
-        email: user.email || '',
+        firstName: prev.firstName || first,
+        lastName: prev.lastName || last,
+        email: user.email || prev.email || '',
+        phone: prev.phone || parsedPhoneSource?.phone || '',
+        countryCode: prev.countryCode || parsedPhoneSource?.code || prev.countryCode || '+972',
       }));
     } else if (firstNameFromQuery || lastNameFromQuery || phoneFromQuery) {
       // If we have data from Hero, use it (but don't override if user already filled)
@@ -516,21 +534,7 @@ export default function EventWizard() {
   const handlePaymentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // If user is logged in, create event and proceed to home
-    if (user) {
-      try {
-        setPaymentLoading(true);
-        await createEvent();
-        navigate('/overview');
-        return;
-      } catch (error) {
-        setPaymentErrors({ form: 'שגיאה ביצירת האירוע. אנא נסו שוב.' });
-        setPaymentLoading(false);
-        return;
-      }
-    }
-    
-    // Validate form for new users
+    // Validate form (גם למשתמשים מחוברים וגם ללא)
     const errors: Record<string, string> = {};
     if (!paymentData.firstName.trim()) {
       errors.firstName = 'שם פרטי הוא שדה חובה';
@@ -538,12 +542,20 @@ export default function EventWizard() {
     if (!paymentData.lastName.trim()) {
       errors.lastName = 'שם משפחה הוא שדה חובה';
     }
-    if (!paymentData.phone.trim()) {
+    const cleanedLocalPhone = paymentData.phone.replace(/\s/g, '');
+    if (!cleanedLocalPhone) {
       errors.phone = 'מספר טלפון הוא שדה חובה';
-    } else if (!/^\d{7,15}$/.test(paymentData.phone.replace(/\s/g, ''))) {
+    } else if (!/^\d{7,15}$/.test(cleanedLocalPhone)) {
       errors.phone = 'מספר הטלפון אינו תקין';
+    } else {
+      const normalized = normalizePhoneNumber(cleanedLocalPhone, paymentData.countryCode);
+      if (!/^\+\d{8,15}$/.test(normalized)) {
+        errors.phone = 'מספר הטלפון חייב להיות בפורמט בינלאומי (כולל קידומת)';
+      }
     }
-    if (paymentData.email && !/\S+@\S+\.\S+/.test(paymentData.email)) {
+    if (!paymentData.email.trim()) {
+      errors.email = 'אימייל הוא שדה חובה';
+    } else if (!/^\S+@\S+\.\S+$/.test(paymentData.email.trim())) {
       errors.email = 'כתובת האימייל אינה תקינה';
     }
     
@@ -554,56 +566,74 @@ export default function EventWizard() {
     
     setPaymentLoading(true);
     setPaymentErrors({});
-    
+
     try {
-      // Normalize phone number
-      const normalizedPhone = normalizePhoneNumber(paymentData.phone, paymentData.countryCode);
-      
-      // Register user
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          phone: normalizedPhone,
-          first_name: paymentData.firstName,
-          last_name: paymentData.lastName,
-          email: paymentData.email || undefined,
-        }),
-        credentials: 'include',
-      });
-      
-      // Try parse JSON safely
-      let data: any = {};
-      try {
-        data = await response.json();
-      } catch (parseErr) {
-        data = {};
-      }
-      
-      if (response.ok && data.message === 'otp_sent') {
-        // Create event before navigating to OTP verification
-        try {
-          await createEvent();
-        } catch (eventError) {
-          console.error('Event creation failed after registration:', eventError);
-          // Continue to OTP verification even if event creation fails
+      // 1) Create / reuse order in aub-service (pre-payment בלבד, בלי יצירת event)
+      let currentOrderId = orderId;
+
+      // Build campaigns payload for order (label, template_id, scheduled_at)
+      const campaignsPayload = campaigns
+        .filter((c) => c.enabled)
+        .map((c) => ({
+          label: c.label,
+          template_id: selectedTemplates[c.label] || null,
+          scheduled_at:
+            c.offsetDays !== undefined && eventDetails.date
+              ? eventDetails.date.toDate()
+              : null,
+        }));
+
+      if (!currentOrderId) {
+        const orderRes = await fetch('/api/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            plan: selectedPackageId,
+            event_name: eventDetails.name,
+            event_description: eventDetails.description,
+            event_type: eventDetails.type,
+            event_date: eventDetails.date ? eventDetails.date.toDate() : null,
+            location: eventDetails.location,
+            inviters: eventDetails.inviters,
+            campaigns: campaignsPayload,
+          }),
+        });
+
+        if (!orderRes.ok) {
+          throw new Error('Failed to create order');
         }
-        // Navigate to login/register page for OTP verification
-        navigate('/register?phone=' + encodeURIComponent(normalizedPhone));
-      } else {
-        const apiError =
-          data?.error ||
-          (response.status === 404
-            ? 'שרת ההרשמה לא זמין (404). בדוק את ה-API או ה-proxy.'
-            : 'שגיאה בהרשמה. אנא נסו שוב.');
-        setPaymentErrors({ form: apiError });
+
+        const orderData = await orderRes.json();
+        currentOrderId = orderData.order_id || orderData.orderId;
+        setOrderId(currentOrderId);
       }
+
+      // 2) Enrich order with buyer identity (pre-payment)
+      if (currentOrderId) {
+        const normalizedPhone = normalizePhoneNumber(paymentData.phone, paymentData.countryCode);
+        const identityRes = await fetch(`/api/orders/${currentOrderId}/identity`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            first_name: paymentData.firstName,
+            last_name: paymentData.lastName,
+            phone: normalizedPhone,
+            email: paymentData.email.trim(),
+          }),
+        });
+
+        if (!identityRes.ok) {
+          throw new Error('Failed to update order identity');
+        }
+      }
+
+      // 3) TODO: integrate payment provider here using currentOrderId
+
+      setPaymentLoading(false);
+      navigate(`/payment?orderId=${encodeURIComponent(currentOrderId || '')}`); // שלב תשלום (placeholder)
     } catch (error) {
-      console.error('Registration error:', error);
-      setPaymentErrors({ form: 'שגיאה בהרשמה. אנא נסו שוב.' });
-    } finally {
+      console.error('Order / payment flow error:', error);
+      setPaymentErrors({ form: 'שגיאה ביצירת ההזמנה. אנא נסו שוב.' });
       setPaymentLoading(false);
     }
   };
@@ -1645,7 +1675,6 @@ export default function EventWizard() {
                 }}
                 error={!!paymentErrors.firstName}
                 helperText={paymentErrors.firstName}
-                disabled={!!user}
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
@@ -1672,7 +1701,6 @@ export default function EventWizard() {
                 }}
                 error={!!paymentErrors.lastName}
                 helperText={paymentErrors.lastName}
-                disabled={!!user}
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">
@@ -1694,7 +1722,6 @@ export default function EventWizard() {
                   select
                   value={paymentData.countryCode}
                   onChange={(e) => setPaymentData({ ...paymentData, countryCode: e.target.value })}
-                  disabled={!!user}
                   sx={{
                     minWidth: 120,
                     '& .MuiOutlinedInput-root': {
@@ -1723,7 +1750,6 @@ export default function EventWizard() {
                   }}
                   error={!!paymentErrors.phone}
                   helperText={paymentErrors.phone}
-                  disabled={!!user}
                   InputProps={{
                     startAdornment: (
                       <InputAdornment position="start">
@@ -1752,7 +1778,6 @@ export default function EventWizard() {
                 }}
                 error={!!paymentErrors.email}
                 helperText={paymentErrors.email}
-                disabled={!!user}
                 InputProps={{
                   startAdornment: (
                     <InputAdornment position="start">

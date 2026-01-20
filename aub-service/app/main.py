@@ -5,7 +5,7 @@ import redis
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from .mongodb import check_mongodb_connection
-from .routers import plans, auth
+from .routers import plans, auth, orders
 
 
 def get_env():
@@ -32,6 +32,7 @@ app = FastAPI(title="AUB Service")
 # Include routers
 app.include_router(auth.router)
 app.include_router(plans.router)
+app.include_router(orders.router)
 
 
 def check_db_connection(env):
