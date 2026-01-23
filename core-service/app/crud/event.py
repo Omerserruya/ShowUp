@@ -51,6 +51,9 @@ def create_event(db: Session, data: EventCreate) -> Event:
     if data.inviters:
         inviters_list = [{"fn": inviter.fn, "ln": inviter.ln} for inviter in data.inviters]
     
+    print(f"[CREATE_EVENT] Creating event: name={data.name}, location type={type(data.location)}, location value={data.location}")
+    print(f"[CREATE_EVENT] Location length: {len(data.location) if data.location else 0}")
+    
     event = Event(
         owners=owners_list,
         inviters=inviters_list,
@@ -62,6 +65,10 @@ def create_event(db: Session, data: EventCreate) -> Event:
     db.add(event)
     db.commit()
     db.refresh(event)
+    
+    print(f"[CREATE_EVENT] Event created: id={event.id}, location in DB={event.location}")
+    print(f"[CREATE_EVENT] Location in DB type={type(event.location)}, length={len(event.location) if event.location else 0}")
+    
     return event
 
 

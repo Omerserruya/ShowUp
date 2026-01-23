@@ -25,7 +25,8 @@ class EventBase(BaseModel):
     name: str = Field(..., max_length=100)
     description: Optional[str] = None
     event_date: Optional[dt.datetime] = None
-    location: Optional[str] = Field(default=None, max_length=200)
+    # Stored as free-form text (often JSON string from places autocomplete)
+    location: Optional[str] = None
     active: bool = True
 
 
@@ -40,7 +41,7 @@ class EventUpdate(BaseModel):
     name: Optional[str] = Field(default=None, max_length=100)
     description: Optional[str] = None
     event_date: Optional[dt.datetime] = None
-    location: Optional[str] = Field(default=None, max_length=200)
+    location: Optional[str] = None
 
 
 class EventOut(EventBase):

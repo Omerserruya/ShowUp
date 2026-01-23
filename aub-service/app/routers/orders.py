@@ -3,14 +3,19 @@ Orders API endpoints (pre-payment order flow)
 """
 import os
 import uuid
+import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+import httpx
 import psycopg2
 import psycopg2.extras
 from fastapi import APIRouter, Body, HTTPException, Path
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+
+from app.token_utils import create_jwt
+from app.routers.auth import ensure_users_table, get_env as get_auth_env
 
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -59,6 +64,22 @@ def ensure_orders_table(env: Dict[str, Any]) -> None:
       # Ensure pgcrypto for gen_random_uuid
       cur.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
       cur.execute(ddl)
+      
+      # Migration: Ensure location, inviters, campaigns columns are JSONB (not TEXT)
+      # This handles cases where table was created before JSONB was set
+      migration_statements = [
+          "ALTER TABLE orders ALTER COLUMN location TYPE JSONB USING location::jsonb",
+          "ALTER TABLE orders ALTER COLUMN inviters TYPE JSONB USING inviters::jsonb",
+          "ALTER TABLE orders ALTER COLUMN campaigns TYPE JSONB USING campaigns::jsonb",
+      ]
+      for stmt in migration_statements:
+        try:
+          cur.execute(stmt)
+          print(f"[ORDERS_TABLE] Migration applied: {stmt}")
+        except Exception as e:
+          # Column might already be JSONB or not exist yet - that's OK
+          print(f"[ORDERS_TABLE] Migration skipped (expected): {stmt[:50]}... - {e}")
+          pass
 
 
 class CampaignItem(BaseModel):
@@ -82,7 +103,7 @@ class OrderIdentityUpdate(BaseModel):
   first_name: str
   last_name: str
   phone: str
-  email: str
+  email: Optional[str] = None  # Optional - can be empty string or None
 
 
 class OrderOut(BaseModel):
@@ -281,3 +302,315 @@ def get_order(order_id: uuid.UUID = Path(..., description="Order ID")) -> OrderO
   # Decode JSONB if needed (psycopg2 usually returns proper Python types)
   return OrderOut(**row)
 
+
+class PaymentWebhookPayload(BaseModel):
+  order_id: uuid.UUID
+
+
+def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
+  """
+  Provision order after payment confirmation.
+  - Creates user if not exists (by phone)
+  - Creates event in core-service with location as JSON string
+  - Creates all campaigns from order.campaigns
+  - Updates order status to 'paid'
+  
+  This function is separated from the webhook endpoint so it can be called
+  from different payment providers in the future.
+  """
+  print(f"[PROVISION] Starting provision for order_id={order_id}")
+  env = get_env()
+  auth_env = get_auth_env()
+  
+  # Fetch order
+  order_row = _fetch_order(env, order_id)
+  print(f"[PROVISION] Fetched order: event_name={order_row.get('event_name')}, status={order_row.get('status')}")
+  
+  # Log location data
+  location_raw = order_row.get("location")
+  print(f"[PROVISION] Location raw type={type(location_raw)}, value={location_raw}")
+  
+  # Log campaigns data
+  campaigns_raw = order_row.get("campaigns")
+  print(f"[PROVISION] Campaigns raw type={type(campaigns_raw)}, count={len(campaigns_raw) if isinstance(campaigns_raw, list) else 'N/A'}")
+  if campaigns_raw:
+    print(f"[PROVISION] Campaigns raw content: {json.dumps(campaigns_raw, default=str, ensure_ascii=False)}")
+  
+  # Validate order has required data
+  if not order_row.get("phone"):
+    raise ValueError("Order missing phone number")
+  if not order_row.get("first_name") or not order_row.get("last_name"):
+    raise ValueError("Order missing first_name or last_name")
+  
+  phone = order_row["phone"]
+  first_name = order_row["first_name"]
+  last_name = order_row["last_name"]
+  email = order_row.get("email")
+  print(f"[PROVISION] User: phone={phone}, name={first_name} {last_name}, email={email}")
+  
+  # Ensure users table exists
+  ensure_users_table(auth_env)
+  
+  # Check if user exists, create if not
+  user_id: Optional[uuid.UUID] = None
+  with psycopg2.connect(
+      host=auth_env["DB_HOST"],
+      port=auth_env["DB_PORT"],
+      user=auth_env["DB_USER"],
+      password=auth_env["DB_PASSWORD"],
+      dbname=auth_env["DB_NAME"],
+  ) as conn:
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+      # Check if user exists
+      cur.execute("SELECT id FROM users WHERE phone = %s", (phone,))
+      user_row = cur.fetchone()
+      
+      if user_row:
+        user_id = user_row["id"]
+        print(f"[PROVISION] User exists: user_id={user_id}")
+      else:
+        # Create new user
+        cur.execute(
+            "INSERT INTO users (phone, email, first_name, last_name, is_verified) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+            (phone, email, first_name, last_name, True),  # Mark as verified since payment succeeded
+        )
+        user_id = cur.fetchone()["id"]
+        conn.commit()
+        print(f"[PROVISION] Created new user: user_id={user_id}")
+  
+  if not user_id:
+    raise RuntimeError("Failed to get or create user")
+  
+  # Create JWT for the user
+  jwt_exp_seconds = int(os.getenv("JWT_EXP_SECONDS", "86400"))  # Default 24 hours
+  jwt_token = create_jwt({"user_id": str(user_id)}, jwt_exp_seconds)
+  print(f"[PROVISION] Created JWT token for user_id={user_id}")
+  
+  # Prepare event data - save location as JSON string
+  location_data = order_row.get("location")
+  print(f"[PROVISION] Location from DB: type={type(location_data)}, value={location_data}")
+  
+  # Keep location as JSON string (core-service stores as TEXT)
+  location_str = None
+  if location_data:
+    if isinstance(location_data, dict):
+      # Convert dict to JSON string
+      location_str = json.dumps(location_data, ensure_ascii=False)
+      print(f"[PROVISION] Location converted from dict to JSON string: {location_str[:200]}...")
+    elif isinstance(location_data, str):
+      # If already a string, try to parse and re-stringify to ensure it's valid JSON
+      try:
+        parsed = json.loads(location_data)
+        location_str = json.dumps(parsed, ensure_ascii=False)
+        print(f"[PROVISION] Location parsed and re-stringified from string: {location_str[:200]}...")
+      except Exception as e:
+        # If not valid JSON, use as-is
+        location_str = location_data
+        print(f"[PROVISION] Location kept as-is (not valid JSON): {e}, value={location_str[:200]}...")
+    else:
+      # Try to convert other types to JSON string
+      try:
+        location_str = json.dumps(location_data, ensure_ascii=False, default=str)
+        print(f"[PROVISION] Location converted from {type(location_data)} to JSON string: {location_str[:200]}...")
+      except Exception as e:
+        print(f"[PROVISION] ERROR: Could not convert location to string: {e}")
+        location_str = None
+  else:
+    print(f"[PROVISION] WARNING: location_data is None or empty!")
+  
+  print(f"[PROVISION] Final location_str: {location_str}")
+  
+  inviters_data = order_row.get("inviters") or []
+  if isinstance(inviters_data, str):
+    try:
+      inviters_data = json.loads(inviters_data)
+    except Exception:
+      inviters_data = []
+  
+  # Prepare event payload for core-service
+  event_date = order_row.get("event_date")
+  event_date_str = None
+  if event_date:
+    if isinstance(event_date, datetime):
+      event_date_str = event_date.isoformat()
+    elif isinstance(event_date, str):
+      event_date_str = event_date
+  
+  event_payload = {
+      "name": order_row["event_name"],
+      "description": order_row.get("event_description"),
+      "event_date": event_date_str,
+      "location": location_str,
+      "inviters": inviters_data,
+  }
+  print(f"[PROVISION] Event payload: name={event_payload['name']}, location={location_str[:100] if location_str else None}...")
+  
+  # Call core-service to create event
+  core_service_url = os.getenv("CORE_SERVICE_URL")
+  print(f"[PROVISION] Calling core-service at {core_service_url}/events")
+  try:
+    with httpx.Client(timeout=30.0) as client:
+      response = client.post(
+          f"{core_service_url}/events",
+          json=event_payload,
+          headers={"Authorization": f"Bearer {jwt_token}"},
+      )
+      print(f"[PROVISION] Event creation response: status={response.status_code}")
+      response.raise_for_status()
+      event_data = response.json()
+      print(f"[PROVISION] Event created: event_data={json.dumps(event_data, default=str)}")
+      event_id_raw = event_data.get("id")
+      if not event_id_raw:
+        raise RuntimeError("Event created but no event_id returned")
+      # Ensure event_id is UUID string
+      event_id = str(uuid.UUID(str(event_id_raw)))
+      print(f"[PROVISION] Event ID: {event_id}")
+  except httpx.HTTPError as e:
+    print(f"[PROVISION] ERROR creating event: {e}")
+    if hasattr(e, 'response') and e.response is not None:
+      try:
+        error_body = e.response.text
+        print(f"[PROVISION] Error response body: {error_body}")
+      except:
+        pass
+    raise RuntimeError(f"Failed to create event in core-service: {e}")
+  
+  # Create campaigns from order.campaigns - CREATE ALL CAMPAIGNS
+  campaigns_data = order_row.get("campaigns") or []
+  print(f"[PROVISION] Processing campaigns: raw type={type(campaigns_data)}")
+  if isinstance(campaigns_data, str):
+    try:
+      campaigns_data = json.loads(campaigns_data)
+      print(f"[PROVISION] Parsed campaigns from JSON string")
+    except Exception as e:
+      print(f"[PROVISION] Failed to parse campaigns JSON string: {e}")
+      campaigns_data = []
+  
+  if campaigns_data and isinstance(campaigns_data, list):
+    print(f"[PROVISION] Found {len(campaigns_data)} campaigns in order")
+    campaign_items = []
+    for idx, camp in enumerate(campaigns_data):
+      if not isinstance(camp, dict):
+        print(f"[PROVISION] Campaign[{idx}] skipped: not a dict")
+        continue
+      
+      # Extract campaign fields
+      label = camp.get("label") or camp.get("name") or "Campaign"
+      template_id = camp.get("template_id")
+      scheduled_at = camp.get("scheduled_at")
+      print(f"[PROVISION] Campaign[{idx}]: label={label}, template_id={template_id}, scheduled_at={scheduled_at}")
+      
+      # Parse scheduled_at if it's a string
+      schedule_time = None
+      if scheduled_at:
+        if isinstance(scheduled_at, str):
+          try:
+            schedule_time = datetime.fromisoformat(scheduled_at.replace("Z", "+00:00"))
+            print(f"[PROVISION] Campaign[{idx}] parsed schedule_time: {schedule_time}")
+          except Exception as e:
+            print(f"[PROVISION] Campaign[{idx}] failed to parse schedule_time: {e}")
+        elif isinstance(scheduled_at, datetime):
+          schedule_time = scheduled_at
+          print(f"[PROVISION] Campaign[{idx}] schedule_time already datetime: {schedule_time}")
+      
+      # Create campaign for ALL items with template_id
+      if template_id:
+        campaign_item = {
+            "name": label,
+            "template": template_id,
+            "channel": "whatsapp",  # Default channel
+            "status": "pending",
+        }
+        # Add schedule_time only if it exists
+        if schedule_time:
+          campaign_item["schedule_time"] = schedule_time.isoformat()
+        campaign_items.append(campaign_item)
+        print(f"[PROVISION] Campaign[{idx}] added to batch: {json.dumps(campaign_item, default=str)}")
+      else:
+        print(f"[PROVISION] Campaign[{idx}] skipped: no template_id")
+    
+    print(f"[PROVISION] Prepared {len(campaign_items)} campaign items to create")
+    
+    # Create campaigns in bulk if we have any
+    if campaign_items:
+      payload = {"items": campaign_items}
+      print(f"[PROVISION] {payload}")
+      try:
+        with httpx.Client(timeout=30.0) as client:
+          response = client.post(
+              f"{core_service_url}/campaigns",
+              params={"event_id": str(event_id)},
+              json=payload,
+              headers={"Authorization": f"Bearer {jwt_token}"},
+          )
+          print(f"[PROVISION] Campaigns creation response: status={response.status_code}")
+          response.raise_for_status()
+          campaigns_result = response.json()
+          print(f"[PROVISION] Campaigns created: result={json.dumps(campaigns_result, default=str)}")
+          if isinstance(campaigns_result, list):
+            print(f"[PROVISION] Successfully created {len(campaigns_result)} campaigns")
+          elif isinstance(campaigns_result, dict) and campaigns_result.get("id"):
+            print(f"[PROVISION] Successfully created 1 campaign (single item response)")
+      except httpx.HTTPError as e:
+        # Log but don't fail - campaigns can be created later
+        print(f"[PROVISION] ERROR: Failed to create campaigns: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+          try:
+            error_body = e.response.text
+            print(f"[PROVISION] Error response body: {error_body}")
+          except:
+            pass
+    else:
+      print(f"[PROVISION] WARNING: No campaign items to create (all skipped or no template_id)")
+  else:
+    print(f"[PROVISION] WARNING: No campaigns data found in order or not a list")
+  
+  # Update order status to 'paid'
+  print(f"[PROVISION] Updating order status to 'paid'")
+  with psycopg2.connect(
+      host=env["DB_HOST"],
+      port=env["DB_PORT"],
+      user=env["DB_USER"],
+      password=env["DB_PASSWORD"],
+      dbname=env["DB_NAME"],
+  ) as conn:
+    with conn.cursor() as cur:
+      cur.execute(
+          """
+          UPDATE orders
+          SET status = %s, updated_at = NOW()
+          WHERE order_id = %s
+          """,
+          ("paid", str(order_id)),
+      )
+      conn.commit()
+  
+  result = {
+      "order_id": str(order_id),
+      "user_id": str(user_id),
+      "event_id": str(event_id),
+      "status": "paid",
+  }
+  print(f"[PROVISION] Provision completed successfully: {json.dumps(result, default=str)}")
+  return result
+
+
+@router.post("/webhook/payment", response_model=Dict[str, Any])
+@router.put("/webhook/payment", response_model=Dict[str, Any])
+def payment_webhook(payload: PaymentWebhookPayload = Body(...)) -> Dict[str, Any]:
+  """
+  Webhook endpoint for payment confirmation.
+  Accepts POST or PUT with order_id.
+  Calls provision_order to create user and event.
+  
+  This endpoint can be called by payment providers after successful payment.
+  """
+  try:
+    result = provision_order(payload.order_id)
+    return JSONResponse(status_code=200, content=result)
+  except ValueError as e:
+    raise HTTPException(status_code=400, detail=str(e))
+  except RuntimeError as e:
+    raise HTTPException(status_code=500, detail=str(e))
+  except Exception as e:
+    raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")

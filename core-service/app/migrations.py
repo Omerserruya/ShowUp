@@ -64,8 +64,33 @@ def ensure_campaign_recipient_count(engine: Engine) -> None:
     logger.info("Campaign schema verified (recipient_count column exists with default 0)")
 
 
+def ensure_events_location_text(engine: Engine) -> None:
+    """
+    Ensure events.location can store full JSON strings (TEXT instead of VARCHAR(200)).
+    Safe widening migration.
+    """
+    statements = [
+        # First check if column exists, if not add it
+        "ALTER TABLE events ADD COLUMN IF NOT EXISTS location TEXT",
+        # Then ensure it's TEXT type (not VARCHAR)
+        "ALTER TABLE events ALTER COLUMN location TYPE TEXT USING location::text",
+    ]
+
+    with engine.begin() as conn:
+        for stmt in statements:
+            try:
+                conn.execute(text(stmt))
+                logger.info(f"Schema patch applied: {stmt}")
+            except Exception as exc:  # pragma: no cover - best-effort migration
+                logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
+                continue
+
+    logger.info("Event schema verified (location column is TEXT)")
+
+
 def apply_schema_patches(engine: Engine) -> None:
     ensure_guest_counts_and_group(engine)
     ensure_campaign_recipient_count(engine)
+    ensure_events_location_text(engine)
 
 

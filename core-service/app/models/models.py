@@ -35,7 +35,8 @@ class Event(Base):
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     event_date = Column(DateTime(timezone=True), nullable=True)
-    location = Column(String(200), nullable=True)
+    # Store location as free-form text (can hold JSON string)
+    location = Column(Text, nullable=True)
     active = Column(Boolean, nullable=False, server_default='true')
 
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())

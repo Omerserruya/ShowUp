@@ -50,9 +50,12 @@ def get_event(event_id: uuid.UUID, db: Session = Depends(get_db), user_id: uuid.
 
 @router.post("", response_model=EventOut, status_code=201)
 def create_event(payload: EventCreate, db: Session = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
+    print(f"[CREATE_EVENT_ROUTER] Received payload: name={payload.name}, location={payload.location}")
+    print(f"[CREATE_EVENT_ROUTER] Location type={type(payload.location)}, length={len(payload.location) if payload.location else 0}")
     # Force owners to current user only on creation
     payload.owners = [user_id]
     event = event_crud.create_event(db, payload)
+    print(f"[CREATE_EVENT_ROUTER] Returning event: id={event.id}, location={event.location}")
     return event
 
 

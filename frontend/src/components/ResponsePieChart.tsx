@@ -6,6 +6,7 @@ import {
   Cell,
   ResponsiveContainer,
   Tooltip,
+  LabelList,
 } from 'recharts';
 
 interface PieChartData {
@@ -78,37 +79,48 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData,
       ? totalInvited
       : (data || []).reduce((sum, item) => sum + item.value, 0);
 
-  // Map status names to colors (matching StatusCard colors)
+  // Calculate percentage of confirmed (green) to determine center shadow color
+  const confirmedItem = filteredData.find(item => 
+    item.name.includes('אישרו הגעה') || item.name.includes('confirmed')
+  );
+  const confirmedValue = confirmedItem?.value || 0;
+  const confirmedPercentage = total > 0 ? (confirmedValue / total) * 100 : 0;
+  // If majority (>=50%) confirmed -> green, otherwise purple
+  const centerShadowColor = confirmedPercentage >= 50 ? '#a7f3d0' : '#c4b5fd';
+
+  // Vibrant, lively colors
   const getColorForStatus = (name: string): string => {
     if (name.includes('אישרו הגעה') || name.includes('confirmed')) {
-      return 'url(#gradientGreen)'; // Green for approved
+      return '#22c55e'; // Vibrant green
     } else if (name.includes('ביטלו') || name.includes('declined')) {
-      return 'url(#gradientRed)'; // Red for declined
+      return '#ef4444'; // Vibrant red
     } else {
-      return 'url(#gradientOrange)'; // Orange for pending
+      return '#f59e0b'; // Vibrant orange
     }
   };
 
-  // Render labels with values (not percentages)
-  const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value }: any) => {
+  // Render labels outside the pie chart
+  const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value, name }: any) => {
     const RADIAN = Math.PI / 180;
-    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
-    const x = cx + radius * Math.cos(-midAngle * RADIAN);
-    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+    // Position label outside the pie (beyond outerRadius)
+    const labelRadius = outerRadius + 25; // Distance from edge
+    const x = cx + labelRadius * Math.cos(-midAngle * RADIAN);
+    const y = cy + labelRadius * Math.sin(-midAngle * RADIAN);
 
     return (
-      <text
-        x={x}
-        y={y}
-        fill="#ffffff"
-        textAnchor="middle"
-        dominantBaseline="central"
-        // Make the numbers on the pie more prominent
-        fontSize={isMobile ? 14 : 18}
-        fontWeight={700}
-      >
-        {value}
-      </text>
+      <g>
+        <text
+          x={x}
+          y={y}
+          fill={theme.palette.text.primary}
+          textAnchor={x > cx ? 'start' : 'end'}
+          dominantBaseline="central"
+          fontSize={isMobile ? 13 : 15}
+          fontWeight={600}
+        >
+          {value}
+        </text>
+      </g>
     );
   };
 
@@ -172,22 +184,17 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData,
           <ResponsiveContainer width="100%" height={isMobile ? 300 : '100%'}>
             <PieChart>
               <defs>
-                {/* Gradient definitions matching StatusCard colors with 135deg angle */}
-                {/* Green for approved - linear-gradient(135deg, #22c55e 0%,#18cd5a 100%) */}
-                <linearGradient id="gradientGreen" x1="0%" y1="100%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="#22c55e" stopOpacity={1} />
-                  <stop offset="100%" stopColor="#18cd5a" stopOpacity={1} />
-                </linearGradient>
-                {/* Red for declined - linear-gradient(135deg,#d97171 0%, #dc2626 100%) */}
-                <linearGradient id="gradientRed" x1="0%" y1="100%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="#ef4444" stopOpacity={1} />
-                  <stop offset="100%" stopColor="#dc2626" stopOpacity={1} />
-                </linearGradient>
-                {/* Orange for pending - linear-gradient(135deg,#efab35 0%, #d97706 100%) */}
-                <linearGradient id="gradientOrange" x1="0%" y1="100%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="#f59e0b" stopOpacity={1} />
-                  <stop offset="100%" stopColor="#efab35" stopOpacity={1} />
-                </linearGradient>
+                {/* Define corner radius effect using filters/clipPath */}
+                <filter id="roundedCorners">
+                  <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="blur" />
+                  <feOffset in="blur" dx="0" dy="0" result="offsetBlur" />
+                  <feFlood floodColor="#000" floodOpacity="0.1" result="offsetColor" />
+                  <feComposite in="offsetColor" in2="offsetBlur" operator="in" result="offsetBlur" />
+                  <feMerge>
+                    <feMergeNode in="offsetBlur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
               </defs>
               <Pie
                 // Use filteredData so we don't show 0 slices
@@ -196,21 +203,26 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData,
                 cy="50%"
                 label={renderCustomLabel}
                 labelLine={false}
-                innerRadius={isMobile ? 50 : 70}
-                outerRadius={isMobile ? 100 : 130}
+                // Very thin ring - small difference between inner and outer radius
+                innerRadius={isMobile ? 80 : 100}
+                outerRadius={isMobile ? 95 : 115}
                 fill="#8884d8"
                 dataKey="value"
                 startAngle={90}
                 endAngle={-270}
+                // Less padding between slices for tighter look
+                paddingAngle={0.5}
+                cornerRadius={8}
               >
                 {filteredData.map((entry, index) => {
-                  // Use color based on status name
+                  // Use delicate colors
                   const fillColor = getColorForStatus(entry.name);
                   return (
                     <Cell 
                       key={`cell-${index}`} 
                       fill={fillColor}
                       stroke="none"
+                      strokeWidth={0}
                     />
                   );
                 })}
@@ -219,7 +231,7 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData,
             </PieChart>
           </ResponsiveContainer>
           
-          {/* Center text with inner shadow effect */}
+          {/* Center text - keep original purple color */}
           <Box
             sx={{
               position: 'absolute',
@@ -257,7 +269,7 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData,
             </Typography>
           </Box>
           
-          {/* Inner shadow effect - matching image style with different sizes */}
+          {/* Inner shadow effect - delicate with dynamic color */}
           <Box
             sx={{
               position: 'absolute',
@@ -267,7 +279,8 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData,
               width: { xs: '100px', sm: '120px', md: '140px' },
               height: { xs: '100px', sm: '120px', md: '140px' },
               borderRadius: '50%',
-              boxShadow: 'inset 0 2px 8px rgba(0, 0, 0, 0.15), inset 0 1px 2px rgba(0, 0, 0, 0.2)',
+              // Delicate shadow with dynamic color tint
+              boxShadow: `inset 0 1px 3px ${centerShadowColor}30, inset 0 0.5px 1px ${centerShadowColor}20`,
               pointerEvents: 'none',
               zIndex: 0,
             }}

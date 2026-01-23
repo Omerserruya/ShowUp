@@ -134,9 +134,10 @@ def create_campaigns_bulk(db: Session, event_id: uuid.UUID, items: List[Campaign
     created: List[Campaign] = []
     # Deduplicate within the same request by (name, template, channel, schedule_time)
     seen_keys: set[tuple] = set()
-    for data in items:
+    for idx, data in enumerate(items):
         key = (data.name, data.template, data.channel, data.schedule_time)
         if key in seen_keys:
+            print(f"[CREATE_CAMPAIGNS_BULK] Campaign[{idx}] skipped: duplicate key {key}")
             continue
         seen_keys.add(key)
         c = Campaign(
@@ -148,9 +149,11 @@ def create_campaigns_bulk(db: Session, event_id: uuid.UUID, items: List[Campaign
             status=data.status,
         )
         # Enforce spacing: check conflicts within DB and within batch
+        # BUT: allow multiple campaigns with same schedule_time if they have different template/name
         if c.schedule_time is not None:
             window_start = c.schedule_time - dt.timedelta(minutes=CAMPAIGN_MIN_GAP_MINUTES)
             window_end = c.schedule_time + dt.timedelta(minutes=CAMPAIGN_MIN_GAP_MINUTES)
+            # Check DB conflicts - only if same template AND name (different templates can share time)
             conflict_db = (
                 db.query(Campaign)
                 .filter(
@@ -158,15 +161,26 @@ def create_campaigns_bulk(db: Session, event_id: uuid.UUID, items: List[Campaign
                     Campaign.schedule_time != None,
                     Campaign.schedule_time >= window_start,
                     Campaign.schedule_time <= window_end,
+                    Campaign.template == c.template,
+                    Campaign.name == c.name,
                 )
                 .first()
             )
+            # Check batch conflicts - only if same template AND name
             conflict_batch = any(
-                (x.schedule_time is not None and window_start <= x.schedule_time <= window_end)
+                (x.schedule_time is not None 
+                 and window_start <= x.schedule_time <= window_end
+                 and x.template == c.template
+                 and x.name == c.name)
                 for x in created
             )
-            if conflict_db or conflict_batch:
+            if conflict_db:
+                print(f"[CREATE_CAMPAIGNS_BULK] Campaign[{idx}] '{c.name}' ({c.template}) skipped: DB conflict at {c.schedule_time}")
                 continue
+            if conflict_batch:
+                print(f"[CREATE_CAMPAIGNS_BULK] Campaign[{idx}] '{c.name}' ({c.template}) skipped: batch conflict at {c.schedule_time}")
+                continue
+        print(f"[CREATE_CAMPAIGNS_BULK] Campaign[{idx}] '{c.name}' ({c.template}) added: schedule_time={c.schedule_time}")
         db.add(c)
         created.append(c)
     db.commit()

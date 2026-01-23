@@ -553,9 +553,8 @@ export default function EventWizard() {
         errors.phone = 'מספר הטלפון חייב להיות בפורמט בינלאומי (כולל קידומת)';
       }
     }
-    if (!paymentData.email.trim()) {
-      errors.email = 'אימייל הוא שדה חובה';
-    } else if (!/^\S+@\S+\.\S+$/.test(paymentData.email.trim())) {
+    // Email is optional, but if provided, must be valid
+    if (paymentData.email.trim() && !/^\S+@\S+\.\S+$/.test(paymentData.email.trim())) {
       errors.email = 'כתובת האימייל אינה תקינה';
     }
     
@@ -574,14 +573,29 @@ export default function EventWizard() {
       // Build campaigns payload for order (label, template_id, scheduled_at)
       const campaignsPayload = campaigns
         .filter((c) => c.enabled)
-        .map((c) => ({
-          label: c.label,
-          template_id: selectedTemplates[c.label] || null,
-          scheduled_at:
-            c.offsetDays !== undefined && eventDetails.date
-              ? eventDetails.date.toDate()
-              : null,
-        }));
+        .map((c) => {
+          const templateId = selectedTemplates[c.label] || null;
+
+          // scheduled_at is an absolute datetime for the campaign
+          // offsetDays is relative to event date: positive => before event, negative => after event
+          let scheduledAt: Date | null = null;
+          if (eventDetails.date) {
+            const base = eventDetails.date.startOf('day');
+            const offsetDays = typeof c.offsetDays === 'number' ? c.offsetDays : 0;
+            const at = base.subtract(offsetDays, 'day');
+
+            const timeStr = c.time || '12:00';
+            const [hh, mm] = timeStr.split(':').map((x) => parseInt(x, 10));
+            const withTime = at.hour(Number.isFinite(hh) ? hh : 12).minute(Number.isFinite(mm) ? mm : 0).second(0);
+            scheduledAt = withTime.toDate();
+          }
+
+          return {
+            label: c.label,
+            template_id: templateId,
+            scheduled_at: scheduledAt,
+          };
+        });
 
       if (!currentOrderId) {
         const orderRes = await fetch('/api/orders', {
@@ -618,7 +632,7 @@ export default function EventWizard() {
             first_name: paymentData.firstName,
             last_name: paymentData.lastName,
             phone: normalizedPhone,
-            email: paymentData.email.trim(),
+            email: paymentData.email.trim() || null, // Send null if empty (optional field)
           }),
         });
 
@@ -940,6 +954,7 @@ export default function EventWizard() {
           <LocalizationProvider dateAdapter={AdapterDayjs}>
             <DatePicker
               value={eventDetails.date}
+              minDate={dayjs().startOf('day')}
               onChange={(val) => setEventDetails({ ...eventDetails, date: val })}
               slotProps={{
                 textField: {
