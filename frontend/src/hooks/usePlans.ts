@@ -18,6 +18,7 @@ export interface Plan {
   color: string;
   isPopular: boolean;
   campaigns: CampaignSchedule[];
+  countLimit?: number | null; // Maximum number of guests allowed (null = unlimited)
 }
 
 export function usePlans() {

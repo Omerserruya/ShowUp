@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 import uuid
 from typing import List, Optional, Tuple
 
+import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -55,11 +57,61 @@ def get_guest(db: Session, guest_id: uuid.UUID) -> Optional[Guest]:
     return db.query(Guest).filter(Guest.id == str(guest_id)).first()
 
 
+def _get_plan_count_limit(plan_id: Optional[str]) -> Optional[int]:
+    """
+    Fetch count_limit from plan via aub-service API.
+    Returns None if plan_id is None, plan not found, or API call fails.
+    """
+    if not plan_id:
+        return None
+    
+    aub_service_url = os.getenv("AUB_SERVICE_URL", "http://aub-service:8000")
+    try:
+        with httpx.Client(timeout=2.0) as client:
+            response = client.get(f"{aub_service_url}/api/plans/{plan_id}")
+            if response.status_code == 200:
+                plan_data = response.json()
+                return plan_data.get("countLimit")
+    except Exception:
+        # If API call fails, return None (no limit enforced)
+        pass
+    return None
+
+
+def _check_capacity_limit(db: Session, event: Event, new_guests_count: int) -> None:
+    """
+    Check if adding new guests would exceed the plan's count_limit.
+    Raises ValueError if limit would be exceeded.
+    """
+    if not event.plan_id:
+        # No plan set, no limit enforced
+        return
+    
+    count_limit = _get_plan_count_limit(event.plan_id)
+    if count_limit is None:
+        # No limit set for this plan, or couldn't fetch it
+        return
+    
+    # Count current total guests (sum of import_count)
+    current_total = db.query(func.sum(Guest.import_count)).filter(
+        Guest.event_id == str(event.id)
+    ).scalar() or 0
+    
+    if current_total + new_guests_count > count_limit:
+        raise ValueError(
+            f"Adding {new_guests_count} guests would exceed the plan limit of {count_limit}. "
+            f"Current total: {current_total}, limit: {count_limit}"
+        )
+
+
 def create_guest(db: Session, data: GuestCreate) -> Guest:
     # ensure event exists
     event = db.query(Event).filter(Event.id == str(data.event_id)).first()
     if not event:
         raise ValueError("event_id does not exist")
+
+    # Check capacity limit before creating
+    _check_capacity_limit(db, event, data.import_count or 1)
 
     phone_norm = normalize_phone(data.phone)
     # ensure no duplicate phone within same event
@@ -130,6 +182,11 @@ def create_guests_bulk(db: Session, event_id: uuid.UUID, items: List[GuestCreate
     event = db.query(Event).filter(Event.id == str(event_id)).first()
     if not event:
         raise ValueError("event_id does not exist")
+
+    # Calculate total new guests count (sum of import_count)
+    total_new_count = sum(item.import_count or 1 for item in items)
+    # Check capacity limit before creating any guests
+    _check_capacity_limit(db, event, total_new_count)
 
     created: List[Guest] = []
     seen_phones: set[str] = set()

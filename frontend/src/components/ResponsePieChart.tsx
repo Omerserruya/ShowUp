@@ -128,7 +128,9 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData,
     <Paper
       elevation={0}
       sx={{
-        p: { xs: 3, md: 2.5 },
+        pt: { xs: 1.5, md: 2.5 },
+        pb: { xs: 1.5, md: 2.5 },
+        px: { xs: 2, md: 2.5 },
         bgcolor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
         borderRadius: '16px',
         border: '1px solid',
@@ -145,7 +147,7 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData,
         sx={{
           fontWeight: 600,
           color: 'text.primary',
-          mb: { xs: 1, md: 0.5 },
+          mb: { xs: 0.5, md: 0.5 },
           ml: 1,
         }}
       >
@@ -155,7 +157,7 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData,
         variant="body2"
         sx={{
           color: 'text.secondary',
-          mb: { xs: 2, md: 1.5 },
+          mb: { xs: 1, md: 1.5 },
           ml: 1,
         }}
       >

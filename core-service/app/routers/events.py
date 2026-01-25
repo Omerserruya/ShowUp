@@ -31,6 +31,7 @@ def list_events(
 ):
     page, page_size = paginate_params(page, page_size)
     items, _ = event_crud.list_events_for_user(db, user_id=user_id, page=page, page_size=page_size, search=search)
+    # FastAPI will serialize using response_model, which uses model_dump(by_alias=True) via our override
     return items
 
 
@@ -45,6 +46,7 @@ def get_event(event_id: uuid.UUID, db: Session = Depends(get_db), user_id: uuid.
     event = event_crud.get_event(db, event_id)
     if not event or not event_crud.is_owner(event, user_id):
         raise HTTPException(status_code=404, detail="Event not found")
+    # FastAPI will serialize using response_model, which uses model_dump(by_alias=True) via our override
     return event
 
 
@@ -56,6 +58,7 @@ def create_event(payload: EventCreate, db: Session = Depends(get_db), user_id: u
     payload.owners = [user_id]
     event = event_crud.create_event(db, payload)
     print(f"[CREATE_EVENT_ROUTER] Returning event: id={event.id}, location={event.location}")
+    # FastAPI will serialize using response_model, which uses model_dump(by_alias=True) via our override
     return event
 
 
@@ -65,6 +68,7 @@ def update_event(event_id: uuid.UUID, payload: EventUpdate, db: Session = Depend
     if not event or not event_crud.is_owner(event, user_id):
         raise HTTPException(status_code=404, detail="Event not found or not permitted")
     event = event_crud.update_event(db, event, payload)
+    # FastAPI will serialize using response_model, which uses model_dump(by_alias=True) via our override
     return event
 
 

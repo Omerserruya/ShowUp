@@ -632,9 +632,13 @@ def create_guests(
         return []
 
     # Decide single vs bulk persistence
-    if len(valid_items) == 1:
+    try:
+        if len(valid_items) == 1:
+            return guest_crud.create_guests_bulk(db, event_id=event_id, items=valid_items)
         return guest_crud.create_guests_bulk(db, event_id=event_id, items=valid_items)
-    return guest_crud.create_guests_bulk(db, event_id=event_id, items=valid_items)
+    except ValueError as e:
+        # Handle capacity limit errors
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/bulk", response_model=list[GuestOut])
@@ -778,7 +782,11 @@ async def bulk_import(
 
     created = []
     for g in guests_to_create:
-        created.append(guest_crud.create_guest(db, g))
+        try:
+            created.append(guest_crud.create_guest(db, g))
+        except ValueError as e:
+            # Handle capacity limit or other validation errors
+            raise HTTPException(status_code=400, detail=str(e))
     return created
 
 

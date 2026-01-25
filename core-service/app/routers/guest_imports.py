@@ -229,7 +229,11 @@ def approve_guest_import_contact(
             guest_data.table_number = data.table_number
 
     # Create the guest
-    guest = guest_crud.create_guest(db, guest_data)
+    try:
+        guest = guest_crud.create_guest(db, guest_data)
+    except ValueError as e:
+        # Handle capacity limit or other validation errors
+        raise HTTPException(status_code=400, detail=str(e))
 
     # Save contact ID before deletion
     contact_id = str(contact.id)

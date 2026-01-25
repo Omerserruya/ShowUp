@@ -146,7 +146,7 @@ def create_user(conn, phone="+972525401686", first_name="משתמש", last_name=
         return user_id
 
 
-def create_event(conn, user_id, event_name=None, event_date=None, location=None):
+def create_event(conn, user_id, event_name=None, event_date=None, location=None, plan_id=None):
     """Create a demo event."""
     event_id = uuid.uuid4()
     now = datetime.now(timezone.utc)
@@ -157,6 +157,10 @@ def create_event(conn, user_id, event_name=None, event_date=None, location=None)
     if event_date is None:
         # Event in 2 months from now
         event_date = now + timedelta(days=60)
+    
+    # Default plan_id to "plus" if not provided
+    if plan_id is None:
+        plan_id = "plus"  # Use "plus" plan as default for demo data
     
     # Create inviters (demo couple)
     inviters = Json([
@@ -181,8 +185,8 @@ def create_event(conn, user_id, event_name=None, event_date=None, location=None)
     
     with conn.cursor() as cur:
         cur.execute("""
-            INSERT INTO events (id, owners, inviters, name, description, event_date, location, active, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO events (id, owners, inviters, name, description, event_date, location, active, plan_id, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             str(event_id),
@@ -193,6 +197,7 @@ def create_event(conn, user_id, event_name=None, event_date=None, location=None)
             event_date,
             location_str,  # TEXT column - JSON string
             True,
+            plan_id,  # Plan ID from MongoDB
             now,
             now
         ))

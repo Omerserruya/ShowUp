@@ -14,7 +14,11 @@ from app.routers.guest_imports import router as guest_imports_router
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="core-service", version="0.1.0")
+    app = FastAPI(
+        title="core-service", 
+        version="0.1.0",
+        json_encoders={},  # Use Pydantic's default serialization
+    )
 
     app.add_middleware(
         CORSMiddleware,

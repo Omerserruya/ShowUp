@@ -28,6 +28,10 @@ class EventBase(BaseModel):
     # Stored as free-form text (often JSON string from places autocomplete)
     location: Optional[str] = None
     active: bool = True
+    plan_id: Optional[str] = Field(None, serialization_alias="planId")  # Plan ID from MongoDB (serialized as planId)
+    
+    class Config:
+        populate_by_name = True  # Allow both plan_id and planId when parsing
 
 
 class EventCreate(EventBase):
@@ -42,6 +46,7 @@ class EventUpdate(BaseModel):
     description: Optional[str] = None
     event_date: Optional[dt.datetime] = None
     location: Optional[str] = None
+    plan_id: Optional[str] = None
 
 
 class EventOut(EventBase):
@@ -59,8 +64,15 @@ class EventOut(EventBase):
             return [Inviter(**item) if isinstance(item, dict) else item for item in v]
         return v
 
+    def model_dump(self, **kwargs):
+        """Override to serialize plan_id as planId for frontend compatibility"""
+        # Always use by_alias=True to convert plan_id to planId
+        data = super().model_dump(by_alias=True, **kwargs)
+        return data
+
     class Config:
         from_attributes = True
+        populate_by_name = True  # Allow both plan_id and planId when parsing
 
 
 # Guest Schemas

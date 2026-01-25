@@ -34,6 +34,7 @@ def seed_plans():
             "color": "#4CAF50",
             "is_popular": False,
             "is_active": True,
+            "count_limit": 50,
             "campaigns": [
                 {"enabled": True, "label": "RSVP", "offset_days": 7, "time": "12:00"},
                 {"enabled": True, "label": "rsvp_reminder", "offset_days": 1, "time": "18:00"},
@@ -56,6 +57,7 @@ def seed_plans():
             "color": "#2196F3",
             "is_popular": True,
             "is_active": True,
+            "count_limit": 250,
             "campaigns": [
                 {"enabled": True, "label": "RSVP", "offset_days": 30, "time": "10:00"},
                 {"enabled": True, "label": "nudge_reminder", "offset_days": 7, "time": "12:00"},
@@ -81,6 +83,7 @@ def seed_plans():
             "color": "#9C27B0",
             "is_popular": False,
             "is_active": True,
+            "count_limit": None,  # Unlimited
             "campaigns": [
                 {"enabled": True, "label": "RSVP", "offset_days": 30, "time": "10:00"},
                 {"enabled": True, "label": "nudge_reminder", "offset_days": 7, "time": "12:00"},

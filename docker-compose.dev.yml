@@ -105,6 +105,7 @@ services:
       - AWS_REGION=${AWS_REGION}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME}
       - AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID}
+      - AUB_SERVICE_URL=${BACKEND_PROTOCOL}://${AUB_SERVICE_HOST}:${AUB_SERVICE_PORT}
     depends_on:
       - postgres
       - rabbitmq

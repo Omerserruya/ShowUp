@@ -38,6 +38,7 @@ class Event(Base):
     # Store location as free-form text (can hold JSON string)
     location = Column(Text, nullable=True)
     active = Column(Boolean, nullable=False, server_default='true')
+    plan_id = Column(String(50), nullable=True)  # Plan ID from MongoDB (e.g., "basic", "plus", "pro")
 
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())

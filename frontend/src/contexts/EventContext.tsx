@@ -12,6 +12,7 @@ export interface Event {
   imageUrl?: string;
   rsvpDeadline?: string;
   active?: boolean;
+  planId?: string | null; // Plan ID from MongoDB
   createdAt: string;
   updatedAt?: string;
 }
@@ -96,7 +97,12 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
       const response = await fetchWithAuth('/api/events');
       if (!response.ok) throw new Error('Failed to fetch events');
       const data = await response.json();
-      setEvents(data);
+      // Map plan_id to planId for frontend compatibility
+      const mappedData = data.map((event: any) => ({
+        ...event,
+        planId: event.planId || event.plan_id || null,
+      }));
+      setEvents(mappedData);
     } catch (err) {
       setError('שגיאה בטעינת האירועים');
       console.error('Error fetching events:', err);

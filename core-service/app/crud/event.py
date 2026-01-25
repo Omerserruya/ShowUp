@@ -61,6 +61,7 @@ def create_event(db: Session, data: EventCreate) -> Event:
         description=data.description,
         event_date=data.event_date,
         location=data.location,
+        plan_id=data.plan_id,
     )
     db.add(event)
     db.commit()
@@ -86,6 +87,8 @@ def update_event(db: Session, event: Event, data: EventUpdate) -> Event:
         event.event_date = data.event_date
     if data.location is not None:
         event.location = data.location
+    if data.plan_id is not None:
+        event.plan_id = data.plan_id
     db.add(event)
     db.commit()
     db.refresh(event)

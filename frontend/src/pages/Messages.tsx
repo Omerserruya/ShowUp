@@ -657,20 +657,43 @@ function Messages() {
         body: JSON.stringify(updateData),
       });
 
-      if (!response.ok) throw new Error('Failed to update campaign');
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Update campaign error:', errorText);
+        throw new Error(`Failed to update campaign: ${response.status} ${errorText}`);
+      }
       
       const updated = await response.json();
+      console.log('Updated campaign:', updated);
       
-      setCampaigns(prev => prev.map(c => 
-        c.id === editingCampaign.id 
-          ? {
-              ...c,
-              scheduleTime: editType === 'time' && editedTime ? new Date(editedTime) : c.scheduleTime,
-              template: editType === 'message' ? editedMessage : c.template,
-              status: updated.schedule_time ? 'scheduled' as CampaignStatus : c.status,
-            }
-          : c
-      ));
+      // Refresh campaigns list to get updated data
+      const campaignsResponse = await fetchWithAuth(`/api/campaigns?event_id=${selectedEvent?.id}`);
+      if (campaignsResponse.ok) {
+        const campaignsData = await campaignsResponse.json();
+        const mapped = campaignsData.map((apiCampaign: CampaignFromAPI) => ({
+          id: apiCampaign.id,
+          name: apiCampaign.name,
+          template: apiCampaign.template,
+          channel: apiCampaign.channel,
+          scheduleTime: apiCampaign.schedule_time ? new Date(apiCampaign.schedule_time) : null,
+          status: apiCampaign.status as CampaignStatus,
+          recipientCount: apiCampaign.recipient_count || 0,
+          sentCount: undefined, // Will be fetched separately if needed
+        }));
+        setCampaigns(mapped);
+      } else {
+        // Fallback: update local state
+        setCampaigns(prev => prev.map(c => 
+          c.id === editingCampaign.id 
+            ? {
+                ...c,
+                scheduleTime: editType === 'time' && editedTime ? new Date(editedTime) : c.scheduleTime,
+                template: editType === 'message' ? editedMessage : c.template,
+                status: updated.schedule_time ? 'scheduled' as CampaignStatus : c.status,
+              }
+            : c
+        ));
+      }
 
       setEditDialogOpen(false);
       setEditingCampaign(null);
@@ -1231,54 +1254,76 @@ function Messages() {
                         </Box>
                       );
                     })() : (
-                      /* Action buttons */
-                      <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap', gap: 1.5 }}>
+                      /* Action buttons - Filter style */
+                      <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
                         <Button
-                          variant="contained"
-                          startIcon={<SendIcon />}
                           onClick={() => handleSendNow(campaign)}
                           disabled={updating === campaign.id}
                           sx={{
-                            bgcolor: '#22c55e',
+                            borderRadius: '999px',
+                            px: 2.5,
+                            py: 0.75,
+                            fontSize: '0.875rem',
+                            fontWeight: 500,
+                            textTransform: 'none',
+                            bgcolor: '#3b82f6',
                             color: 'white',
+                            border: 'none',
                             '&:hover': {
-                              bgcolor: '#16a34a',
+                              bgcolor: '#2563eb',
                             },
-                            minWidth: 140,
+                            '&:disabled': {
+                              bgcolor: '#9ca3af',
+                              color: 'white',
+                            },
                           }}
                         >
                           שלח עכשיו
                         </Button>
                         <Button
-                          variant="outlined"
-                          startIcon={<EditTemplateIcon />}
                           onClick={() => handleChangeTemplate(campaign)}
                           disabled={updating === campaign.id}
                           sx={{
-                            borderColor: '#9333ea',
-                            color: '#9333ea',
+                            borderRadius: '999px',
+                            px: 2.5,
+                            py: 0.75,
+                            fontSize: '0.875rem',
+                            fontWeight: 500,
+                            textTransform: 'none',
+                            bgcolor: '#e5e7eb',
+                            color: '#374151',
+                            border: 'none',
                             '&:hover': {
-                              borderColor: '#7e22ce',
-                              bgcolor: alpha('#9333ea', 0.1),
+                              bgcolor: '#d1d5db',
                             },
-                            minWidth: 140,
+                            '&:disabled': {
+                              bgcolor: '#f3f4f6',
+                              color: '#9ca3af',
+                            },
                           }}
                         >
                           שנה תבנית
                         </Button>
                         <Button
-                          variant="outlined"
-                          startIcon={<DeleteIcon />}
                           onClick={() => handleDelete(campaign)}
                           disabled={updating === campaign.id}
                           sx={{
-                            borderColor: '#ef4444',
-                            color: '#ef4444',
+                            borderRadius: '999px',
+                            px: 2.5,
+                            py: 0.75,
+                            fontSize: '0.875rem',
+                            fontWeight: 500,
+                            textTransform: 'none',
+                            bgcolor: '#e5e7eb',
+                            color: '#374151',
+                            border: 'none',
                             '&:hover': {
-                              borderColor: '#dc2626',
-                              bgcolor: alpha('#ef4444', 0.1),
+                              bgcolor: '#d1d5db',
                             },
-                            minWidth: 140,
+                            '&:disabled': {
+                              bgcolor: '#f3f4f6',
+                              color: '#9ca3af',
+                            },
                           }}
                         >
                           מחק
@@ -1400,7 +1445,7 @@ function Messages() {
                         }}
                       />
                     </Stack>
-                    {/* WhatsApp-style message preview */}
+                    {/* WhatsApp-style message preview - Hidden on mobile */}
                     <Box
                       sx={{
                         bgcolor: '#ece5dd',
@@ -1409,6 +1454,7 @@ function Messages() {
                         mb: 2,
                         maxWidth: '90%',
                         mr: 'auto',
+                        display: { xs: 'none', md: 'block' },
                       }}
                     >
                       <CampaignMessagePreview 
@@ -1425,33 +1471,6 @@ function Messages() {
                         </Typography>
                       </Stack>
                     </Stack>
-                    {isNextCampaign && campaign.status === 'scheduled' && (
-                      <Button
-                        variant="outlined"
-                        size="small"
-                        startIcon={<PencilIcon sx={{ fontSize: 14 }} />}
-                        onClick={() => handleEditMessage(campaign)}
-                        disabled={isLoading}
-                        sx={{
-                          mt: 1.5,
-                          height: 32,
-                          fontSize: '0.75rem',
-                          borderColor: alpha('#9333ea', 0.3),
-                          color: '#9333ea',
-                          '&:hover': {
-                            bgcolor: alpha('#9333ea', 0.1),
-                            borderColor: alpha('#9333ea', 0.5),
-                            color: '#7e22ce',
-                          },
-                          '& .MuiButton-startIcon': {
-                            marginRight: 0,
-                            marginLeft: 0.25,
-                          },
-                        }}
-                      >
-                        ערוך קמפיין
-                      </Button>
-                    )}
                   </Box>
                   <IconButton
                     size="small"
@@ -1499,54 +1518,76 @@ function Messages() {
                         variables={getTemplateVariables()} 
                       />
                     </Box>
-                    {/* Action buttons */}
-                    <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap', gap: 1.5 }}>
+                    {/* Action buttons - Filter style */}
+                    <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
                       <Button
-                        variant="contained"
-                        startIcon={<SendIcon />}
                         onClick={() => handleSendNow(campaign)}
                         disabled={isLoading}
                         sx={{
-                          bgcolor: '#22c55e',
+                          borderRadius: '999px',
+                          px: 2.5,
+                          py: 0.75,
+                          fontSize: '0.875rem',
+                          fontWeight: 500,
+                          textTransform: 'none',
+                          bgcolor: '#3b82f6',
                           color: 'white',
+                          border: 'none',
                           '&:hover': {
-                            bgcolor: '#16a34a',
+                            bgcolor: '#2563eb',
                           },
-                          minWidth: 140,
+                          '&:disabled': {
+                            bgcolor: '#9ca3af',
+                            color: 'white',
+                          },
                         }}
                       >
                         שלח עכשיו
                       </Button>
                       <Button
-                        variant="outlined"
-                        startIcon={<EditTemplateIcon />}
                         onClick={() => handleChangeTemplate(campaign)}
                         disabled={isLoading}
                         sx={{
-                          borderColor: '#9333ea',
-                          color: '#9333ea',
+                          borderRadius: '999px',
+                          px: 2.5,
+                          py: 0.75,
+                          fontSize: '0.875rem',
+                          fontWeight: 500,
+                          textTransform: 'none',
+                          bgcolor: '#e5e7eb',
+                          color: '#374151',
+                          border: 'none',
                           '&:hover': {
-                            borderColor: '#7e22ce',
-                            bgcolor: alpha('#9333ea', 0.1),
+                            bgcolor: '#d1d5db',
                           },
-                          minWidth: 140,
+                          '&:disabled': {
+                            bgcolor: '#f3f4f6',
+                            color: '#9ca3af',
+                          },
                         }}
                       >
                         שנה תבנית
                       </Button>
                       <Button
-                        variant="outlined"
-                        startIcon={<DeleteIcon />}
                         onClick={() => handleDelete(campaign)}
                         disabled={isLoading}
                         sx={{
-                          borderColor: '#ef4444',
-                          color: '#ef4444',
+                          borderRadius: '999px',
+                          px: 2.5,
+                          py: 0.75,
+                          fontSize: '0.875rem',
+                          fontWeight: 500,
+                          textTransform: 'none',
+                          bgcolor: '#e5e7eb',
+                          color: '#374151',
+                          border: 'none',
                           '&:hover': {
-                            borderColor: '#dc2626',
-                            bgcolor: alpha('#ef4444', 0.1),
+                            bgcolor: '#d1d5db',
                           },
-                          minWidth: 140,
+                          '&:disabled': {
+                            bgcolor: '#f3f4f6',
+                            color: '#9ca3af',
+                          },
                         }}
                       >
                         מחק

@@ -46,6 +46,7 @@ class Plan(BaseModel):
     is_popular: bool = False
     campaigns: List[CampaignSchedule] = []
     is_active: bool = True
+    count_limit: Optional[int] = None  # Maximum number of guests allowed (None = unlimited)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -70,6 +71,7 @@ class PlanResponse(BaseModel):
     # We map from Mongo's `is_popular` field in the router layer
     isPopular: bool = False
     campaigns: List[CampaignSchedule] = []
+    countLimit: Optional[int] = None  # Maximum number of guests allowed
 
     class Config:
         populate_by_name = True

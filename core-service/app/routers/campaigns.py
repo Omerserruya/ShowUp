@@ -113,11 +113,26 @@ def create_campaigns(
 
 
 @router.put("/{campaign_id}", response_model=CampaignOut)
-def update_campaign(campaign_id: uuid.UUID, payload: CampaignUpdate, db: Session = Depends(get_db)):
+def update_campaign(
+    campaign_id: uuid.UUID, 
+    payload: CampaignUpdate, 
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id)
+):
     campaign = campaign_crud.get_campaign(db, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    campaign = campaign_crud.update_campaign(db, campaign, payload)
+    
+    # Verify event ownership
+    event = event_crud.get_event(db, campaign.event_id)
+    if not event or not event_crud.is_owner(event, user_id):
+        raise HTTPException(status_code=404, detail="Campaign not found or not permitted")
+    
+    try:
+        campaign = campaign_crud.update_campaign(db, campaign, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
     return campaign
 
 

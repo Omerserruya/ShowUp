@@ -88,9 +88,30 @@ def ensure_events_location_text(engine: Engine) -> None:
     logger.info("Event schema verified (location column is TEXT)")
 
 
+def ensure_events_plan_id(engine: Engine) -> None:
+    """
+    Ensure events.plan_id column exists for plan-based capacity limits.
+    """
+    statements = [
+        "ALTER TABLE events ADD COLUMN IF NOT EXISTS plan_id VARCHAR(50)",
+    ]
+
+    with engine.begin() as conn:
+        for stmt in statements:
+            try:
+                conn.execute(text(stmt))
+                logger.info(f"Schema patch applied: {stmt}")
+            except Exception as exc:  # pragma: no cover - best-effort migration
+                logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
+                continue
+
+    logger.info("Event schema verified (plan_id column exists)")
+
+
 def apply_schema_patches(engine: Engine) -> None:
     ensure_guest_counts_and_group(engine)
     ensure_campaign_recipient_count(engine)
     ensure_events_location_text(engine)
+    ensure_events_plan_id(engine)
 
 

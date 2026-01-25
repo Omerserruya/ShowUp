@@ -63,6 +63,7 @@ import {
 } from '@mui/icons-material';
 import { useGuests, useOverviewStats } from '../hooks/useOverviewData';
 import { useEvent } from '../contexts/EventContext';
+import { usePlan } from '../hooks/usePlans';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { countryOptions, normalizePhoneNumber } from '../utils/countryOptions';
 import { ImportedGuestsSection } from '../components/ImportedGuestsSection';
@@ -127,13 +128,13 @@ const statusLabels = {
   maybe: 'אולי'
 } as const;
 
-// Capacity constant
-const EVENT_CAPACITY = 200;
-
 function Guests() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { selectedEvent } = useEvent();
+  // Map plan_id from API to planId for frontend compatibility
+  const planId = selectedEvent?.planId || (selectedEvent as any)?.plan_id || null;
+  const { plan, loading: planLoading, error: planError } = usePlan(planId);
   const location = useLocation();
   const navigate = useNavigate();
   const tableRef = useRef<HTMLDivElement>(null);
@@ -252,6 +253,9 @@ function Guests() {
   const confirmedGuests = stats?.approved || 0; // Sum of guest_count (or import_count) for confirmed
   const confirmedPeople = stats?.approved || 0; // Same as confirmedGuests
   const pendingGuests = stats?.pending || 0; // Count of pending guests
+
+  // Get capacity from plan, or use default if no plan or no limit
+  const eventCapacity = plan?.countLimit ?? null; // null means unlimited
 
   // Get unique groups from guests
   const uniqueGroups = Array.from(new Set(guests.map(guest => guest.group).filter((g): g is string => Boolean(g)))).sort();
@@ -701,13 +705,20 @@ function Guests() {
         </Alert>
       </Snackbar>
 
-      {/* Top Section - Full Width White Background */}
+      {/* Top Section - Gradient background on mobile */}
       <Box
         sx={{
-          backgroundColor: 'white',
+          backgroundColor: isMobile ? 'transparent' : 'white',
+          background: isMobile 
+            ? 'linear-gradient(135deg, #4f8ff5 0%, #8b5cf6 100%)' 
+            : 'white',
           width: '100%',
-          py: 3,
-          px: { xs: 2, sm: 3, md: 4 }
+          pt: isMobile ? 4 : 3,
+          pb: isMobile ? 2 : 3,
+          px: { xs: 2, sm: 3, md: 4 },
+          borderRadius: isMobile ? { xs: '0 0 24px 24px', sm: 0 } : 0,
+          position: 'relative',
+          overflow: 'hidden',
         }}
       >
         {/* Summary Statistics */}
@@ -716,10 +727,11 @@ function Guests() {
             sx={{
               p: 3,
               mb: 3,
-              borderRadius: 2,
-              background: 'linear-gradient(to left, #faf5ff, #eff6ff)',
-              boxShadow: 'none',
-              borderRight: '4px solid #5236F7',
+              borderRadius: 3,
+              backgroundColor: 'rgba(255, 255, 255, 0.95)',
+              backdropFilter: 'blur(10px)',
+              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+              border: 'none',
             }}
           >
             <Box
@@ -750,7 +762,7 @@ function Guests() {
                       backgroundColor: '#2e7d32',
                     }}
                   />
-                  <Typography sx={{ fontSize: '0.9rem', color: '#111827' }}>
+                  <Typography sx={{ fontSize: '0.9rem', color: '#111827', fontWeight: 500 }}>
                     {confirmedGuests} מגיעים
       </Typography>
                 </Box>
@@ -765,7 +777,7 @@ function Guests() {
                       backgroundColor: '#c62828',
                     }}
                   />
-                  <Typography sx={{ fontSize: '0.9rem', color: '#111827' }}>
+                  <Typography sx={{ fontSize: '0.9rem', color: '#111827', fontWeight: 500 }}>
                     {stats?.declined || 0} לא מגיעים
                   </Typography>
                 </Box>
@@ -780,7 +792,7 @@ function Guests() {
                       backgroundColor: '#f57c00',
                     }}
                   />
-                  <Typography sx={{ fontSize: '0.9rem', color: '#111827' }}>
+                  <Typography sx={{ fontSize: '0.9rem', color: '#111827', fontWeight: 500 }}>
                     {pendingGuests} ללא מענה
                   </Typography>
                 </Box>
@@ -802,6 +814,7 @@ function Guests() {
                     fontSize: '0.9rem',
                     color: '#6b7280',
                     mb: 0.5,
+                    fontWeight: 500,
                   }}
                 >
                   סה״כ מוזמנים
@@ -1012,8 +1025,12 @@ function Guests() {
           sx={{
             p: { xs: 2, sm: 2.5 },
             mb: 3,
-            borderRadius: 2,
-            backgroundColor: alpha(theme.palette.grey[100], 0.5)
+            borderRadius: isMobile ? 3 : 2,
+            backgroundColor: isMobile 
+              ? 'rgba(218, 207, 243, 0.25)' 
+              : alpha(theme.palette.grey[100], 0.5),
+            backdropFilter: isMobile ? 'blur(10px)' : 'none',
+            boxShadow: isMobile ? 'none' : 'none',
           }}
         >
           <Box sx={{ 
@@ -1024,23 +1041,36 @@ function Guests() {
             flexDirection: 'row',
             gap: 2
           }}>
-            <Typography variant="body1" sx={{ fontWeight: 600, fontSize: { xs: '1rem', sm: '1.25rem' } }}>
-              {totalGuests} / {EVENT_CAPACITY}
+            <Typography 
+              variant="body1" 
+              sx={{ 
+                fontWeight: 600, 
+                fontSize: { xs: '1rem', sm: '1.25rem' },
+                color: isMobile ? '#111827' : 'text.primary'
+              }}
+            >
+              {totalInvitedPeople}{eventCapacity !== null ? ` / ${eventCapacity}` : ''}
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
-              קיבולת: {EVENT_CAPACITY} הזמנות
+            <Typography 
+              variant="body2" 
+              sx={{ 
+                fontSize: { xs: '0.8rem', sm: '0.875rem' },
+                color: isMobile ? ' #ffffff' : 'text.secondary'
+              }}
+            >
+              {eventCapacity !== null ? `קיבולת: ${eventCapacity} הזמנות` : 'קיבולת: ללא הגבלה'}
       </Typography>
           </Box>
           <LinearProgress
             variant="determinate"
-            value={EVENT_CAPACITY > 0 ? (totalGuests / EVENT_CAPACITY) * 100 : 0}
+            value={eventCapacity !== null && eventCapacity > 0 ? (totalInvitedPeople / eventCapacity) * 100 : 0}
             sx={{
               height: 8,
               borderRadius: 4,
               backgroundColor: alpha(theme.palette.grey[300], 0.3),
               '& .MuiLinearProgress-bar': {
                 borderRadius: 4,
-                backgroundColor: '#2e7d32'
+                background: 'linear-gradient(to right, #9333ea, #ec4899)',
               }
             }}
           />
@@ -1055,21 +1085,22 @@ function Guests() {
               fullWidth
               sx={{ 
                 borderRadius: 3,
-                backgroundColor: 'white',
+                backgroundColor: isMobile ? 'rgba(255, 255, 255, 0.95)' : 'white',
+                backdropFilter: isMobile ? 'blur(10px)' : 'none',
                 color: '#000000',
                 fontWeight: 500,
                 py: { xs: 1, sm: 1.5 },
                 px: { xs: 0.5, sm: 1 },
-                border: '1px solid #e0e0e0',
-                boxShadow: 'none',
+                border: isMobile ? '1px solid rgba(255, 255, 255, 0.3)' : '1px solid #e0e0e0',
+                boxShadow: isMobile ? '0 2px 4px rgba(0, 0, 0, 0.1)' : 'none',
                 textTransform: 'none',
                 display: 'flex',
                 justifyContent: 'flex-start',
                 flexDirection: 'row',
                 fontSize: { xs: '0.7rem', sm: '1rem' },
                 '&:hover': {
-                  backgroundColor: '#fafafa',
-                  border: '1px solid #d0d0d0'
+                  backgroundColor: isMobile ? 'rgba(255, 255, 255, 1)' : '#fafafa',
+                  border: isMobile ? '1px solid rgba(255, 255, 255, 0.5)' : '1px solid #d0d0d0'
                 }
               }}
             >
@@ -1100,21 +1131,22 @@ function Guests() {
               fullWidth
               sx={{ 
                 borderRadius: 3,
-                backgroundColor: 'white',
+                backgroundColor: isMobile ? 'rgba(255, 255, 255, 0.95)' : 'white',
+                backdropFilter: isMobile ? 'blur(10px)' : 'none',
                 color: '#000000',
                 fontWeight: 500,
                 py: { xs: 1, sm: 1.5 },
                 px: { xs: 0.5, sm: 1 },
-                border: '1px solid #e0e0e0',
-                boxShadow: 'none',
+                border: isMobile ? '1px solid rgba(255, 255, 255, 0.3)' : '1px solid #e0e0e0',
+                boxShadow: isMobile ? '0 2px 4px rgba(0, 0, 0, 0.1)' : 'none',
                 textTransform: 'none',
                 display: 'flex',
                 justifyContent: 'flex-start',
                 flexDirection: 'row',
                 fontSize: { xs: '0.7rem', sm: '1rem' },
                 '&:hover': {
-                  backgroundColor: '#fafafa',
-                  border: '1px solid #d0d0d0'
+                  backgroundColor: isMobile ? 'rgba(255, 255, 255, 1)' : '#fafafa',
+                  border: isMobile ? '1px solid rgba(255, 255, 255, 0.5)' : '1px solid #d0d0d0'
                 }
               }}
             >
@@ -1157,21 +1189,22 @@ function Guests() {
               onClick={(e) => setExportMenuAnchor(e.currentTarget)}
               sx={{ 
                 borderRadius: 3,
-                backgroundColor: 'white',
+                backgroundColor: isMobile ? 'rgba(255, 255, 255, 0.95)' : 'white',
+                backdropFilter: isMobile ? 'blur(10px)' : 'none',
                 color: '#000000',
                 fontWeight: 500,
                 py: { xs: 1, sm: 1.5 },
                 px: { xs: 0.5, sm: 1 },
-                border: '1px solid #e0e0e0',
-                boxShadow: 'none',
+                border: isMobile ? '1px solid rgba(255, 255, 255, 0.3)' : '1px solid #e0e0e0',
+                boxShadow: isMobile ? '0 2px 4px rgba(0, 0, 0, 0.1)' : 'none',
                 textTransform: 'none',
                 display: 'flex',
                 justifyContent: 'flex-start',
                 flexDirection: 'row',
                 fontSize: { xs: '0.7rem', sm: '1rem' },
                 '&:hover': {
-                  backgroundColor: '#fafafa',
-                  border: '1px solid #d0d0d0'
+                  backgroundColor: isMobile ? 'rgba(255, 255, 255, 1)' : '#fafafa',
+                  border: isMobile ? '1px solid rgba(255, 255, 255, 0.5)' : '1px solid #d0d0d0'
                 }
               }}
             >

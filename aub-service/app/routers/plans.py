@@ -75,7 +75,8 @@ def get_plans():
             color=plan.get("color", ""),
             # Map DB field `is_popular` -> API field `isPopular`
             isPopular=plan.get("is_popular", False),
-            campaigns=campaigns_normalized
+            campaigns=campaigns_normalized,
+            countLimit=plan.get("count_limit")
         ))
     
     return result
@@ -127,7 +128,8 @@ def get_plan(plan_id: str):
         color=plan.get("color", ""),
         # Map DB field `is_popular` -> API field `isPopular`
         isPopular=plan.get("is_popular", False),
-        campaigns=campaigns_normalized
+        campaigns=campaigns_normalized,
+        countLimit=plan.get("count_limit")
     )
 
 
