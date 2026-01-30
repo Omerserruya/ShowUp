@@ -41,6 +41,7 @@ import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { useTheme } from '@mui/material/styles';
 import { usePlans, usePlanCampaigns, Plan, CampaignSchedule } from '../hooks/usePlans';
+import { israelTimeToISOUTC } from '../utils/israelTime';
 // CampaignSchedule type is now imported from usePlans hook
 import { templates, getTemplatesByCampaign, getDefaultTemplateForCampaign, processTemplate, MessageTemplate } from '../config/templates';
 import { useUser } from '../contexts/UserContext';
@@ -480,17 +481,12 @@ export default function EventWizard() {
 
   const createEvent = async (): Promise<string | null> => {
     try {
-      // Combine date and time into ISO datetime string
+      // Combine date and time: interpret as Israel time and convert to UTC so backend/store has no drift
       let eventDateTime: string | null = null;
       if (eventDetails.date && eventDetails.time) {
-        const [hours, minutes] = eventDetails.time.split(':');
-        const combinedDateTime = eventDetails.date
-          .hour(parseInt(hours, 10))
-          .minute(parseInt(minutes, 10))
-          .second(0);
-        eventDateTime = combinedDateTime.toISOString();
+        eventDateTime = israelTimeToISOUTC(eventDetails.date, eventDetails.time);
       } else if (eventDetails.date) {
-        eventDateTime = eventDetails.date.toISOString();
+        eventDateTime = israelTimeToISOUTC(eventDetails.date, '00:00');
       }
 
       // Prepare location as JSON string
@@ -576,18 +572,14 @@ export default function EventWizard() {
         .map((c) => {
           const templateId = selectedTemplates[c.label] || null;
 
-          // scheduled_at is an absolute datetime for the campaign
-          // offsetDays is relative to event date: positive => before event, negative => after event
+          // scheduled_at: interpret as Israel time and convert to UTC so no drift
           let scheduledAt: Date | null = null;
           if (eventDetails.date) {
-            const base = eventDetails.date.startOf('day');
             const offsetDays = typeof c.offsetDays === 'number' ? c.offsetDays : 0;
-            const at = base.subtract(offsetDays, 'day');
-
+            const at = eventDetails.date.subtract(offsetDays, 'day');
             const timeStr = c.time || '12:00';
-            const [hh, mm] = timeStr.split(':').map((x) => parseInt(x, 10));
-            const withTime = at.hour(Number.isFinite(hh) ? hh : 12).minute(Number.isFinite(mm) ? mm : 0).second(0);
-            scheduledAt = withTime.toDate();
+            const isoUtc = israelTimeToISOUTC(at, timeStr);
+            scheduledAt = new Date(isoUtc);
           }
 
           return {

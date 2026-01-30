@@ -32,7 +32,15 @@ def list_campaigns(
         raise HTTPException(status_code=404, detail="Event not found or not permitted")
     page, page_size = paginate_params(page, page_size)
     items, _ = campaign_crud.list_campaigns(db, event_id=event_id, page=page, page_size=page_size, search=search, order_by=order_by)
-    return items
+    # For unsent campaigns, return intended recipient count (guest count); for sent, use DB recipient_count
+    intended_count = campaign_crud.get_intended_recipient_count(db, event_id)
+    result = []
+    for c in items:
+        out = CampaignOut.model_validate(c)
+        if c.status != "sent":
+            out = out.model_copy(update={"recipient_count": intended_count})
+        result.append(out)
+    return result
 
 
 @router.get("/{campaign_id}", response_model=CampaignOut)
@@ -40,7 +48,11 @@ def get_campaign(campaign_id: uuid.UUID, db: Session = Depends(get_db)):
     campaign = campaign_crud.get_campaign(db, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    return campaign
+    out = CampaignOut.model_validate(campaign)
+    if campaign.status != "sent":
+        intended_count = campaign_crud.get_intended_recipient_count(db, campaign.event_id)
+        out = out.model_copy(update={"recipient_count": intended_count})
+    return out
 
 
 @router.post("", response_model=Union[CampaignOut, List[CampaignOut]], status_code=201)

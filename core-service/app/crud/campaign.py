@@ -7,11 +7,19 @@ import datetime as dt
 
 from sqlalchemy.orm import Session
 
-from app.models.models import Campaign, Event
+from app.models.models import Campaign, Event, Guest
 from app.schemas.schemas import CampaignCreate, CampaignUpdate
 
 # Configurable minimum gap between campaigns (in minutes)
 CAMPAIGN_MIN_GAP_MINUTES = int(os.getenv("CAMPAIGN_MIN_GAP_MINUTES"))  # 5 hours = 300 minutes
+
+
+def get_intended_recipient_count(db: Session, event_id: uuid.UUID) -> int:
+    """
+    Number of guests the campaign would be sent to (for unsent campaigns).
+    Used by API to show "to how many" before sending; after sending, use campaign.recipient_count.
+    """
+    return db.query(Guest).filter(Guest.event_id == str(event_id)).count()
 
 
 def list_campaigns(
