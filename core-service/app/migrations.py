@@ -108,10 +108,26 @@ def ensure_events_plan_id(engine: Engine) -> None:
     logger.info("Event schema verified (plan_id column exists)")
 
 
+def ensure_events_seating_layout(engine: Engine) -> None:
+    """Ensure events.seating_layout JSON column exists for seating map."""
+    statements = [
+        "ALTER TABLE events ADD COLUMN IF NOT EXISTS seating_layout JSONB",
+    ]
+    with engine.begin() as conn:
+        for stmt in statements:
+            try:
+                conn.execute(text(stmt))
+                logger.info("Schema patch applied: %s", stmt)
+            except Exception as exc:  # pragma: no cover
+                logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
+    logger.info("Event schema verified (seating_layout column exists)")
+
+
 def apply_schema_patches(engine: Engine) -> None:
     ensure_guest_counts_and_group(engine)
     ensure_campaign_recipient_count(engine)
     ensure_events_location_text(engine)
     ensure_events_plan_id(engine)
+    ensure_events_seating_layout(engine)
 
 

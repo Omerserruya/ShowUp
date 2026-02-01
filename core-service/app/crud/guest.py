@@ -160,7 +160,8 @@ def update_guest(db: Session, guest: Guest, data: GuestUpdate) -> Guest:
         guest.import_count = data.import_count
     if data.guest_count is not None:
         guest.guest_count = data.guest_count
-    if data.table_number is not None:
+    # Allow explicitly clearing table_number (null) when client sends table_number in payload
+    if "table_number" in data.model_fields_set:
         guest.table_number = data.table_number
     if data.notes is not None:
         guest.notes = data.notes

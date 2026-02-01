@@ -122,7 +122,7 @@ def list_guests(
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=200),
+    page_size: int = Query(20, ge=1, le=2000),
     search: Optional[str] = Query(None),
     order_by: Optional[str] = Query(None, regex="^(last_response|created_at)$"),
     only_with_responses: bool = Query(False),

@@ -13,6 +13,8 @@ export interface Event {
   rsvpDeadline?: string;
   active?: boolean;
   planId?: string | null; // Plan ID from MongoDB
+  /** Saved seating map: { tables: [ { id, name, seats, style, side, position, size, ... } ] } */
+  seatingLayout?: { tables?: Array<Record<string, unknown>> } | null;
   createdAt: string;
   updatedAt?: string;
 }
@@ -23,7 +25,7 @@ interface EventContextType {
   setSelectedEvent: (event: Event | null) => void;
   addEvent: (event: Event) => void;
   updateEvent: (event: Event) => void;
-  deleteEvent: (eventId: string) => void;
+  deleteEvent: (eventId: string) => Promise<void>;
   loading: boolean;
   error: string | null;
   fetchEvents: () => Promise<void>;
@@ -146,8 +148,9 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const deleteEvent = async (eventId: string) => {
+  const deleteEvent = async (eventId: string): Promise<void> => {
     setLoading(true);
+    setError(null);
     try {
       const response = await fetchWithAuth(`/api/events/${eventId}`, {
         method: 'DELETE',
@@ -160,6 +163,7 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       setError('שגיאה במחיקת אירוע');
       console.error('Error deleting event:', err);
+      throw err;
     } finally {
       setLoading(false);
     }

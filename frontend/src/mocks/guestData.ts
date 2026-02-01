@@ -10,8 +10,13 @@ export interface Guest {
   source: 'manual' | 'imported' | 'whatsapp';
   note?: string;
   reminderSentAt?: Date;
+  /** For seating: guest_count if confirmed, else import_count. Used for capacity. */
   confirmedCount?: number;
+  /** From API: import_count (expected from list). */
+  expectedCount?: number;
   assignedSeat?: string;
+  /** From API: table_number (which table). */
+  tableNumber?: number | null;
   lastResponse?: string | Date;
   avatarUrl?: string;
 }
@@ -20,6 +25,9 @@ export interface Table {
   id: string;
   name: string;
   seats: number;
+  /** Optional per-side capacity (bride + groom = seats when both set). */
+  seatsBride?: number;
+  seatsGroom?: number;
   style: 'round' | 'row' | 'square';
   side: 'bride' | 'groom';
   position: { x: number; y: number };

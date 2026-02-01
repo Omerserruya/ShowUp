@@ -29,7 +29,8 @@ class EventBase(BaseModel):
     location: Optional[str] = None
     active: bool = True
     plan_id: Optional[str] = Field(None, serialization_alias="planId")  # Plan ID from MongoDB (serialized as planId)
-    
+    seating_layout: Optional[dict] = Field(None, serialization_alias="seatingLayout", validation_alias="seatingLayout")  # { tables: [...] }
+
     class Config:
         populate_by_name = True  # Allow both plan_id and planId when parsing
 
@@ -47,6 +48,7 @@ class EventUpdate(BaseModel):
     event_date: Optional[dt.datetime] = None
     location: Optional[str] = None
     plan_id: Optional[str] = None
+    seating_layout: Optional[dict] = Field(None, serialization_alias="seatingLayout", validation_alias="seatingLayout")
 
 
 class EventOut(EventBase):
