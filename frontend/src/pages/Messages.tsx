@@ -969,7 +969,7 @@ function Messages() {
                 key={campaign.id}
                 elevation={0}
                 sx={{
-                  p: 2.5,
+                  p: 1,
                   backgroundColor: 'rgba(255, 255, 255, 0.8)',
                   backdropFilter: 'blur(10px)',
                   border: '1px solid',
@@ -981,7 +981,7 @@ function Messages() {
                   },
                 }}
               >
-                <Stack direction="row" spacing={4} alignItems="flex-start">
+                <Stack direction="row" spacing={2} alignItems="flex-start">
                   <Box
                     sx={{
                       borderRadius: 2,
@@ -997,7 +997,7 @@ function Messages() {
                       minWidth: 0,
                     }}
                   >
-                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} sx={{ mb: 1 }}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start"  sx={{ mb: 1 }}>
                       <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary' }}>
                         {campaign.name}
                       </Typography>
@@ -1079,7 +1079,6 @@ function Messages() {
                 {expandedCampaignId === campaign.id && campaign.status !== 'sent' && (
                   <Box
                     sx={{
-                      mt: 2,
                       pt: 2,
                       borderTop: '1px solid',
                       borderColor: 'divider',
@@ -1380,7 +1379,7 @@ function Messages() {
                     <CircularProgress size={40} />
                   </Box>
                 )}
-                <Stack direction="row" spacing={4} alignItems="flex-start">
+                <Stack direction="row" spacing={0.5} alignItems="flex-start">
                   <Box
                     sx={{
                       borderRadius: 2,
@@ -1402,11 +1401,11 @@ function Messages() {
                     sx={{
                       flex: 1,
                       minWidth: 0,
-                      pr: { xs: 5, sm: 6 }, // keep text away from right purple square
+                      pr: { xs: 1, sm: 1 }, // keep text away from right purple square
                     }}
                   >
                     <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} sx={{ mb: 0.5 }}>
-                      <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary' }}>
+                      <Typography variant="h6" sx={{ fontWeight: 600, color: 'text.primary' }}>
                         {campaign.name}
                       </Typography>
                       <Chip

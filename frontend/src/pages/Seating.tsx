@@ -978,7 +978,7 @@ export default function Seating() {
         </ReactFlow>
       </Box>
 
-      {/* Overlay Controls */}
+      {/* Overlay Controls – ריווח ו־nowrap אחידים במובייל */}
       <Box sx={{
         position: 'absolute',
         top: 16,
@@ -988,7 +988,8 @@ export default function Seating() {
         backdropFilter: 'blur(8px)',
         borderRadius: 2,
         boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
-        p: 1
+        p: { xs: 1.5, sm: 1 },
+        maxWidth: { xs: 'calc(100vw - 32px)', sm: 'none' },
       }}>
         {layoutSaveError && (
           <Alert severity="error" onClose={() => setLayoutSaveError(null)} sx={{ mb: 1 }}>
@@ -997,9 +998,22 @@ export default function Seating() {
         )}
         <Stack
           direction="row"
-          spacing={2}
+          flexWrap="wrap"
+          spacing={1.5}
           alignItems="center"
-          sx={{ '& .MuiButton-root': { gap: 0.75 } }}
+          useFlexGap
+          sx={{
+            '& .MuiButton-root': {
+              gap: { xs: 0.5, sm: 0.75 },
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              minHeight: { xs: 36, sm: undefined },
+              py: { xs: 0.5, sm: undefined },
+              px: { xs: 1, sm: undefined },
+              fontSize: { xs: '0.8125rem', sm: undefined },
+            },
+            '& .MuiButton-startIcon svg': { width: { xs: 18, sm: 20 }, height: { xs: 18, sm: 20 } },
+          }}
         >
           <Button
             variant="contained"
