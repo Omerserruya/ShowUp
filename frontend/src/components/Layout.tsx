@@ -55,6 +55,26 @@ function Layout() {
           title: 'הפרופיל שלי',
           subtitle: 'פרטי החשבון וההגדרות שלך',
         };
+      case '/admin/users':
+        return {
+          title: 'ניהול משתמשים',
+          subtitle: 'צפייה, עריכה ומחיקה של משתמשים במערכת',
+        };
+      case '/admin/events':
+        return {
+          title: 'ניהול אירועים',
+          subtitle: 'צפייה בכל האירועים, אורחים וקמפיינים',
+        };
+      case '/admin/purchases':
+        return {
+          title: 'רכישות ובילינג',
+          subtitle: 'ניהול תשלומים וחבילות',
+        };
+      case '/admin/settings':
+        return {
+          title: 'הגדרות מערכת',
+          subtitle: 'הגדרות כלליות של המערכת',
+        };
       default:
         return {
           title: 'לוח בקרה',

@@ -34,6 +34,7 @@ import {
   Alert,
   CircularProgress,
   Drawer,
+  alpha,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -229,7 +230,7 @@ const TableNode = ({ data }: { data: { table: Table; guests: Guest[]; onSeatClic
           width: 30,
           height: 30,
           borderRadius: '50%',
-          backgroundColor: assignedGuest ? statusColors[assignedGuest.status as keyof typeof statusColors] : 'white',
+          backgroundColor: assignedGuest ? statusColors[assignedGuest.status as keyof typeof statusColors] : 'background.paper',
           border: '2px solid',
           borderColor: 'primary.main',
           display: 'flex',
@@ -321,7 +322,7 @@ const TableNode = ({ data }: { data: { table: Table; guests: Guest[]; onSeatClic
         sx={{ 
           width: table.size.width,
           height: table.size.height,
-          backgroundColor: isOver ? 'action.hover' : 'white',
+          backgroundColor: isOver ? 'action.hover' : 'background.paper',
           border: '2px solid',
           borderColor: table.side === 'bride' ? 'primary.main' : 'secondary.main',
           borderRadius: table.style === 'round' ? '50%' : 1,
@@ -954,7 +955,7 @@ export default function Seating() {
       <Box sx={{ 
         flex: 1,
         position: 'relative',
-        backgroundColor: '#f5f5f5',
+        backgroundColor: 'background.default',
         minHeight: 0
       }}>
         <ReactFlow
@@ -984,10 +985,10 @@ export default function Seating() {
         top: 16,
         left: 16,
         zIndex: 1000,
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        backgroundColor: alpha(theme.palette.background.paper, 0.9),
         backdropFilter: 'blur(8px)',
         borderRadius: 2,
-        boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+        boxShadow: `0 4px 20px ${alpha('#000', 0.1)}`,
         p: { xs: 1.5, sm: 1 },
         maxWidth: { xs: 'calc(100vw - 32px)', sm: 'none' },
       }}>
@@ -1060,10 +1061,10 @@ export default function Seating() {
         width: 300,
         p: 2,
         zIndex: 1000,
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        backgroundColor: alpha(theme.palette.background.paper, 0.9),
         backdropFilter: 'blur(8px)',
         borderRadius: 2,
-        boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+        boxShadow: `0 4px 20px ${alpha('#000', 0.1)}`,
         maxHeight: 'calc(100% - 32px)', // Account for top margin
         display: 'flex',
         flexDirection: 'column'

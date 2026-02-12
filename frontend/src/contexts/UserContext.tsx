@@ -20,6 +20,7 @@ interface UserContextType {
   refreshUserDetails: () => Promise<void>;
   loading: boolean;
   clearUser: () => void;
+  isAdmin: boolean;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -101,7 +102,10 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (userData.phone) {
               localStorage.setItem('user_phone', userData.phone);
             }
-            
+            if (userData.role) {
+              localStorage.setItem('user_role', userData.role);
+            }
+
             // Map backend user data to frontend User interface
             // Prefer full_name/name/username from backend, fallback to combining first_name + last_name
             // IMPORTANT: Don't use decoded.sub (phone number) as fallback - prefer empty name over phone
@@ -124,7 +128,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
               firstName: userData.first_name || undefined,
               lastName: userData.last_name || undefined,
               phone: userData.phone || undefined,
-              role: 'user',
+              role: userData.role || 'user',
               createdAt: userData.created_at || userData.createdAt,
               updatedAt: userData.updated_at || userData.updatedAt,
             });
@@ -162,7 +166,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
           firstName: savedFirstName || undefined,
           lastName: savedLastName || undefined,
           phone: savedPhone || undefined,
-          role: 'user',
+          role: localStorage.getItem('user_role') || 'user',
         });
         localStorage.setItem('user_id', decoded.user_id);
         setLoading(false);
@@ -199,7 +203,10 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('user_last_name');
     localStorage.removeItem('user_email');
     localStorage.removeItem('user_phone');
+    localStorage.removeItem('user_role');
   };
+
+  const isAdmin = user?.role === 'admin';
 
   // Fetch user details when the component mounts
   useEffect(() => {
@@ -207,12 +214,13 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   return (
-    <UserContext.Provider value={{ 
-      user, 
-      setUser: setUserWithStorage, 
+    <UserContext.Provider value={{
+      user,
+      setUser: setUserWithStorage,
       refreshUserDetails,
       loading,
-      clearUser
+      clearUser,
+      isAdmin,
     }}>
       {children}
     </UserContext.Provider>

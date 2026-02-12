@@ -45,7 +45,8 @@ def ensure_users_table(env):
         "is_verified BOOLEAN NOT NULL DEFAULT FALSE,"
         "last_login TIMESTAMP NULL,"
         "created_at TIMESTAMP NOT NULL DEFAULT NOW(),"
-        "updated_at TIMESTAMP NOT NULL DEFAULT NOW()"
+        "updated_at TIMESTAMP NOT NULL DEFAULT NOW(),"
+        "role VARCHAR(20) NOT NULL DEFAULT 'user'"
         ")"
     )
     # Ensure pgcrypto for gen_random_uuid (on PG >= 13 can use gen_random_uuid from pgcrypto)
@@ -56,6 +57,10 @@ def ensure_users_table(env):
         with conn.cursor() as cur:
             cur.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto;")
             cur.execute(ddl)
+            # Migration: add role column if missing (existing tables)
+            cur.execute(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'user'"
+            )
 
 
 def _otp_key(phone: str) -> str:
@@ -241,14 +246,14 @@ def get_current_user(authorization: str = Header(None)):
                 user_uuid = uuid.UUID(user_id)
                 # Search by UUID - convert to string for psycopg2
                 cur.execute(
-                    "SELECT id, phone, email, first_name, last_name, is_verified, created_at, updated_at, last_login FROM users WHERE id = %s",
+                    "SELECT id, phone, email, first_name, last_name, is_verified, created_at, updated_at, last_login, role FROM users WHERE id = %s",
                     (str(user_uuid),)
                 )
                 row = cur.fetchone()
             except ValueError:
                 # If not a valid UUID, try to find by phone (sub might be phone)
                 cur.execute(
-                    "SELECT id, phone, email, first_name, last_name, is_verified, created_at, updated_at, last_login FROM users WHERE phone = %s",
+                    "SELECT id, phone, email, first_name, last_name, is_verified, created_at, updated_at, last_login, role FROM users WHERE phone = %s",
                     (user_id,)
                 )
                 row = cur.fetchone()
@@ -276,6 +281,7 @@ def get_current_user(authorization: str = Header(None)):
                 "created_at": row[6].isoformat() if row[6] else None,
                 "updated_at": row[7].isoformat() if row[7] else None,
                 "last_login": row[8].isoformat() if row[8] else None,
+                "role": row[9] or "user",
             })
 
 

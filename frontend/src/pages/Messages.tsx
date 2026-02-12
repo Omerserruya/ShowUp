@@ -446,15 +446,15 @@ function Messages() {
   const getStatusColor = (campaign: Campaign): { bg: string; color: string } => {
     switch (campaign.status) {
       case 'sent':
-        return { bg: alpha('#22c55e', 0.1), color: '#16a34a' };
+        return { bg: alpha(theme.palette.success.main, 0.1), color: theme.palette.success.main };
       case 'scheduled':
-        return { bg: alpha('#3b82f6', 0.1), color: '#2563eb' };
+        return { bg: alpha(theme.palette.info.main, 0.1), color: theme.palette.info.main };
       case 'paused':
-        return { bg: alpha('#f59e0b', 0.1), color: '#d97706' };
+        return { bg: alpha(theme.palette.warning.main, 0.1), color: theme.palette.warning.main };
       case 'pending':
-        return { bg: alpha('#6b7280', 0.1), color: '#4b5563' };
+        return { bg: alpha(theme.palette.text.secondary, 0.1), color: theme.palette.text.secondary };
       default:
-        return { bg: '#f3f4f6', color: '#6b7280' };
+        return { bg: alpha(theme.palette.text.disabled, 0.1), color: theme.palette.text.disabled };
     }
   };
 
@@ -826,9 +826,9 @@ function Messages() {
       <Paper
         elevation={0}
         sx={{
-          background: 'linear-gradient(to bottom right, rgba(147, 51, 234, 0.1), rgba(236, 72, 153, 0.1))',
+          background: `linear-gradient(to bottom right, ${alpha(theme.palette.primary.main, 0.1)}, ${alpha(theme.palette.secondary.main, 0.1)})`,
           border: '1px solid',
-          borderColor: alpha('#9333ea', 0.2),
+          borderColor: alpha(theme.palette.primary.main, 0.2),
           borderRadius: 3,
           p: 3,
           mb: 3,
@@ -837,7 +837,7 @@ function Messages() {
         <Stack direction="row" spacing={2} alignItems="flex-start">
           <Box
             sx={{
-              bgcolor: 'rgba(255, 255, 255, 0.8)',
+              bgcolor: alpha(theme.palette.background.paper, 0.8),
               backdropFilter: 'blur(10px)',
               borderRadius: '50%',
               p: 1.5,
@@ -846,7 +846,7 @@ function Messages() {
               justifyContent: 'center',
             }}
           >
-            <SendIcon sx={{ fontSize: 24, color: '#9333ea' }} />
+            <SendIcon sx={{ fontSize: 24, color: 'primary.main' }} />
           </Box>
           <Box sx={{ flex: 1 }}>
             <Typography variant="h5" sx={{ fontWeight: 700, color: 'text.primary', mb: 1 }}>
@@ -865,16 +865,16 @@ function Messages() {
           <Paper
             elevation={0}
             sx={{
-              bgcolor: 'rgba(255, 255, 255, 0.8)',
+              bgcolor: alpha(theme.palette.background.paper, 0.8),
               backdropFilter: 'blur(10px)',
               border: '1px solid',
-              borderColor: alpha('#9333ea', 0.2),
+              borderColor: alpha(theme.palette.primary.main, 0.2),
               borderRadius: 3,
               p: 2,
               textAlign: 'center',
             }}
           >
-            <Typography variant="h4" sx={{ fontWeight: 700, color: '#9333ea', mb: 0.5 }}>
+            <Typography variant="h4" sx={{ fontWeight: 700, color: 'primary.main', mb: 0.5 }}>
               {totalCampaigns}
       </Typography>
             <Typography variant="caption" sx={{ color: 'text.secondary' }}>
@@ -886,16 +886,16 @@ function Messages() {
           <Paper
             elevation={0}
             sx={{
-              bgcolor: 'rgba(255, 255, 255, 0.8)',
+              bgcolor: alpha(theme.palette.background.paper, 0.8),
               backdropFilter: 'blur(10px)',
               border: '1px solid',
-              borderColor: alpha('#3b82f6', 0.2),
+              borderColor: alpha(theme.palette.info.main, 0.2),
               borderRadius: 3,
               p: 2,
               textAlign: 'center',
             }}
           >
-            <Typography variant="h4" sx={{ fontWeight: 700, color: '#3b82f6', mb: 0.5 }}>
+            <Typography variant="h4" sx={{ fontWeight: 700, color: 'info.main', mb: 0.5 }}>
               {totalSent}
                 </Typography>
             <Typography variant="caption" sx={{ color: 'text.secondary' }}>
@@ -907,16 +907,16 @@ function Messages() {
           <Paper
             elevation={0}
             sx={{
-              bgcolor: 'rgba(255, 255, 255, 0.8)',
+              bgcolor: alpha(theme.palette.background.paper, 0.8),
               backdropFilter: 'blur(10px)',
               border: '1px solid',
-              borderColor: alpha('#22c55e', 0.2),
+              borderColor: alpha(theme.palette.success.main, 0.2),
               borderRadius: 3,
               p: 2,
               textAlign: 'center',
             }}
           >
-            <Typography variant="h4" sx={{ fontWeight: 700, color: '#22c55e', mb: 0.5 }}>
+            <Typography variant="h4" sx={{ fontWeight: 700, color: 'success.main', mb: 0.5 }}>
               {responseRate}%
             </Typography>
             <Typography variant="caption" sx={{ color: 'text.secondary' }}>
@@ -932,17 +932,17 @@ function Messages() {
         variant="contained"
         startIcon={<PlusIcon />}
         sx={{
-          background: 'linear-gradient(to right, #9333ea, #ec4899)',
+          background: `linear-gradient(to right, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
           color: 'white',
           height: 56,
           fontSize: '1rem',
           fontWeight: 500,
           borderRadius: 3,
-          boxShadow: '0 10px 30px rgba(147, 51, 234, 0.2)',
+          boxShadow: `0 10px 30px ${alpha(theme.palette.primary.main, 0.2)}`,
           mb: 3,
           '&:hover': {
-            background: 'linear-gradient(to right, #7e22ce, #db2777)',
-            boxShadow: '0 10px 30px rgba(147, 51, 234, 0.3)',
+            background: `linear-gradient(to right, ${theme.palette.primary.dark}, ${theme.palette.secondary.dark})`,
+            boxShadow: `0 10px 30px ${alpha(theme.palette.primary.main, 0.3)}`,
           },
           '& .MuiButton-startIcon': {
             marginRight: 0,
@@ -970,14 +970,14 @@ function Messages() {
                 elevation={0}
                 sx={{
                   p: 1,
-                  backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                  backgroundColor: alpha(theme.palette.background.paper, 0.8),
                   backdropFilter: 'blur(10px)',
                   border: '1px solid',
-                  borderColor: alpha('#9333ea', 0.2),
+                  borderColor: alpha(theme.palette.primary.main, 0.2),
                   borderRadius: 3,
                   transition: 'all 0.3s',
                   '&:hover': {
-                    boxShadow: '0 10px 30px rgba(147, 51, 234, 0.15)',
+                    boxShadow: `0 10px 30px ${alpha(theme.palette.primary.main, 0.15)}`,
                   },
                 }}
               >
@@ -986,10 +986,10 @@ function Messages() {
                     sx={{
                       borderRadius: 2,
                       p: 1.5,
-                      background: 'linear-gradient(to bottom right, rgba(147, 51, 234, 0.1), rgba(236, 72, 153, 0.1))',
+                      background: `linear-gradient(to bottom right, ${alpha(theme.palette.primary.main, 0.1)}, ${alpha(theme.palette.secondary.main, 0.1)})`,
                     }}
                   >
-                    <CheckCircleIcon sx={{ fontSize: 24, color: '#22c55e' }} />
+                    <CheckCircleIcon sx={{ fontSize: 24, color: 'success.main' }} />
                   </Box>
                   <Box
                     sx={{
@@ -1039,7 +1039,7 @@ function Messages() {
                       <Box
                         sx={{
                           height: 8,
-                          bgcolor: alpha('#e5e7eb', 0.5),
+                          bgcolor: alpha(theme.palette.divider, 0.5),
                           borderRadius: '999px',
                           overflow: 'hidden',
                         }}
@@ -1048,7 +1048,7 @@ function Messages() {
                           sx={{
                             height: '100%',
                             width: `${readRate}%`,
-                            background: 'linear-gradient(to right, #9333ea, #ec4899)',
+                            background: `linear-gradient(to right, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
                             borderRadius: '999px',
                             transition: 'width 0.5s',
                           }}
@@ -1068,7 +1068,7 @@ function Messages() {
                       transform: expandedCampaignId === campaign.id ? 'rotate(90deg)' : 'rotate(0deg)',
                       transition: 'transform 0.2s',
                       '&:hover': {
-                        bgcolor: alpha('#9333ea', 0.1),
+                        bgcolor: alpha(theme.palette.primary.main, 0.1),
                       },
                     }}
                   >
@@ -1122,14 +1122,14 @@ function Messages() {
                                 height: 8,
                               },
                               '&::-webkit-scrollbar-track': {
-                                bgcolor: alpha('#9333ea', 0.1),
+                                bgcolor: alpha(theme.palette.primary.main, 0.1),
                                 borderRadius: 3,
                               },
                               '&::-webkit-scrollbar-thumb': {
-                                bgcolor: alpha('#9333ea', 0.3),
+                                bgcolor: alpha(theme.palette.primary.main, 0.3),
                                 borderRadius: 3,
                                 '&:hover': {
-                                  bgcolor: alpha('#9333ea', 0.5),
+                                  bgcolor: alpha(theme.palette.primary.main, 0.5),
                                 },
                               },
                               scrollbarWidth: 'thin',
@@ -1232,14 +1232,14 @@ function Messages() {
                             fontSize: '0.875rem',
                             fontWeight: 500,
                             textTransform: 'none',
-                            bgcolor: '#5236F7',
+                            bgcolor: 'primary.main',
                             color: 'white',
                             border: 'none',
                             '&:hover': {
-                              bgcolor: '#4328E8',
+                              bgcolor: 'primary.dark',
                             },
                             '&:disabled': {
-                              bgcolor: '#9ca3af',
+                              bgcolor: 'action.disabled',
                               color: 'white',
                             },
                           }}
@@ -1256,15 +1256,15 @@ function Messages() {
                             fontSize: '0.875rem',
                             fontWeight: 500,
                             textTransform: 'none',
-                            bgcolor: '#e5e7eb',
-                            color: '#374151',
+                            bgcolor: 'action.hover',
+                            color: 'text.primary',
                             border: 'none',
                             '&:hover': {
-                              bgcolor: '#d1d5db',
+                              bgcolor: 'action.selected',
                             },
                             '&:disabled': {
-                              bgcolor: '#f3f4f6',
-                              color: '#9ca3af',
+                              bgcolor: 'action.disabledBackground',
+                              color: 'text.disabled',
                             },
                           }}
                         >
@@ -1281,16 +1281,16 @@ function Messages() {
                             fontWeight: 500,
                             textTransform: 'none',
                             border: '1px solid',
-                            borderColor: '#dc2626',
+                            borderColor: 'error.main',
                             bgcolor: 'transparent',
-                            color: '#dc2626',
+                            color: 'error.main',
                             '&:hover': {
-                              bgcolor: 'rgba(220, 38, 38, 0.08)',
-                              borderColor: '#b91c1c',
+                              bgcolor: alpha(theme.palette.error.main, 0.08),
+                              borderColor: 'error.dark',
                             },
                             '&:disabled': {
-                              borderColor: '#9ca3af',
-                              color: '#9ca3af',
+                              borderColor: 'action.disabled',
+                              color: 'text.disabled',
                               bgcolor: 'transparent',
                             },
                           }}
@@ -1318,24 +1318,24 @@ function Messages() {
                 elevation={0}
                 sx={{
                   p: 2.5,
-                  backgroundColor: isNextCampaign 
-                    ? 'rgba(147, 51, 234, 0.1)' 
-                    : 'rgba(255, 255, 255, 0.8)',
+                  backgroundColor: isNextCampaign
+                    ? alpha(theme.palette.primary.main, 0.1)
+                    : alpha(theme.palette.background.paper, 0.8),
                   backdropFilter: 'blur(10px)',
                   border: '1px solid',
                   borderColor: isNextCampaign 
-                    ? alpha('#9333ea', 0.5)
-                    : alpha('#9333ea', 0.2),
+                    ? alpha(theme.palette.primary.main, 0.5)
+                    : alpha(theme.palette.primary.main, 0.2),
                   borderRadius: 3,
-                  boxShadow: isNextCampaign 
-                    ? '0 10px 30px rgba(147, 51, 234, 0.25), 0 0 0 2px rgba(147, 51, 234, 0.2)'
+                  boxShadow: isNextCampaign
+                    ? `0 10px 30px ${alpha(theme.palette.primary.main, 0.25)}, 0 0 0 2px ${alpha(theme.palette.primary.main, 0.2)}`
                     : 'none',
                   transition: 'all 0.3s',
                   position: 'relative',
                   '&:hover': {
                     boxShadow: isNextCampaign
-                      ? '0 10px 30px rgba(147, 51, 234, 0.3), 0 0 0 2px rgba(147, 51, 234, 0.3)'
-                      : '0 10px 30px rgba(147, 51, 234, 0.15)',
+                      ? `0 10px 30px ${alpha(theme.palette.primary.main, 0.3)}, 0 0 0 2px ${alpha(theme.palette.primary.main, 0.3)}`
+                      : `0 10px 30px ${alpha(theme.palette.primary.main, 0.15)}`,
                   },
                 }}
               >
@@ -1343,7 +1343,7 @@ function Messages() {
                   <Box
                     sx={{
                       mb: 1.5,
-                      bgcolor: 'rgba(255, 255, 255, 0.8)',
+                      bgcolor: alpha(theme.palette.background.paper, 0.8),
                       backdropFilter: 'blur(10px)',
                       px: 1.5,
                       py: 0.75,
@@ -1354,8 +1354,8 @@ function Messages() {
                       gap: 0.5,
                     }}
                   >
-                    <SparklesIcon sx={{ fontSize: 16, color: '#9333ea' }} />
-                    <Typography variant="caption" sx={{ fontWeight: 700, color: '#9333ea' }}>
+                    <SparklesIcon sx={{ fontSize: 16, color: 'primary.main' }} />
+                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'primary.main' }}>
                       הקמפיין הבא בתור
                     </Typography>
                   </Box>
@@ -1368,7 +1368,7 @@ function Messages() {
                       left: 0,
                       right: 0,
                       bottom: 0,
-                      backgroundColor: alpha('#fff', 0.8),
+                      backgroundColor: alpha(theme.palette.background.paper, 0.8),
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -1385,16 +1385,16 @@ function Messages() {
                       borderRadius: 2,
                       p: 1.5,
                       background: isNextCampaign
-                        ? 'linear-gradient(to bottom right, rgba(147, 51, 234, 0.2), rgba(236, 72, 153, 0.2))'
-                        : 'linear-gradient(to bottom right, rgba(147, 51, 234, 0.1), rgba(236, 72, 153, 0.1))',
+                        ? `linear-gradient(to bottom right, ${alpha(theme.palette.primary.main, 0.2)}, ${alpha(theme.palette.secondary.main, 0.2)})`
+                        : `linear-gradient(to bottom right, ${alpha(theme.palette.primary.main, 0.1)}, ${alpha(theme.palette.secondary.main, 0.1)})`,
                     }}
                   >
                     {campaign.status === 'sent' ? (
-                      <CheckCircleIcon sx={{ fontSize: 24, color: '#22c55e' }} />
+                      <CheckCircleIcon sx={{ fontSize: 24, color: 'success.main' }} />
                     ) : campaign.status === 'scheduled' ? (
-                      <SendIcon sx={{ fontSize: 24, color: '#3b82f6' }} />
+                      <SendIcon sx={{ fontSize: 24, color: 'info.main' }} />
                     ) : (
-                      <ClockIcon sx={{ fontSize: 24, color: '#9333ea' }} />
+                      <ClockIcon sx={{ fontSize: 24, color: 'primary.main' }} />
                     )}
                   </Box>
                   <Box
@@ -1424,7 +1424,7 @@ function Messages() {
                     <Typography
                       variant="body2"
                       sx={{
-                        color: '#7c3aed',
+                        color: 'primary.main',
                         fontWeight: 500,
                         mb: 1.5,
                         display: 'flex',
@@ -1478,7 +1478,7 @@ function Messages() {
                       transform: expandedCampaignId === campaign.id ? 'rotate(90deg)' : 'rotate(0deg)',
                       transition: 'transform 0.2s',
                       '&:hover': {
-                        bgcolor: alpha('#9333ea', 0.1),
+                        bgcolor: alpha(theme.palette.primary.main, 0.1),
                       },
                     }}
                   >
@@ -1523,8 +1523,8 @@ function Messages() {
                               touchAction: 'pan-x',
                               minHeight: 280,
                               '&::-webkit-scrollbar': { height: 8 },
-                              '&::-webkit-scrollbar-track': { bgcolor: alpha('#9333ea', 0.1), borderRadius: 3 },
-                              '&::-webkit-scrollbar-thumb': { bgcolor: alpha('#9333ea', 0.3), borderRadius: 3 },
+                              '&::-webkit-scrollbar-track': { bgcolor: alpha(theme.palette.primary.main, 0.1), borderRadius: 3 },
+                              '&::-webkit-scrollbar-thumb': { bgcolor: alpha(theme.palette.primary.main, 0.3), borderRadius: 3 },
                               scrollbarWidth: 'thin',
                             }}
                           >
@@ -1578,14 +1578,14 @@ function Messages() {
                           fontSize: '0.875rem',
                           fontWeight: 500,
                           textTransform: 'none',
-                          bgcolor: '#5236F7',
+                          bgcolor: 'primary.main',
                           color: 'white',
                           border: 'none',
                           '&:hover': {
-                            bgcolor: '#4328E8',
+                            bgcolor: 'primary.dark',
                           },
                           '&:disabled': {
-                            bgcolor: '#9ca3af',
+                            bgcolor: 'action.disabled',
                             color: 'white',
                           },
                         }}
@@ -1602,15 +1602,15 @@ function Messages() {
                           fontSize: '0.875rem',
                           fontWeight: 500,
                           textTransform: 'none',
-                          bgcolor: '#e5e7eb',
-                          color: '#374151',
+                          bgcolor: 'action.hover',
+                          color: 'text.primary',
                           border: 'none',
                           '&:hover': {
-                            bgcolor: '#d1d5db',
+                            bgcolor: 'action.selected',
                           },
                           '&:disabled': {
-                            bgcolor: '#f3f4f6',
-                            color: '#9ca3af',
+                            bgcolor: 'action.disabledBackground',
+                            color: 'text.disabled',
                           },
                         }}
                       >
@@ -1627,11 +1627,11 @@ function Messages() {
                             fontSize: '0.875rem',
                             fontWeight: 500,
                             textTransform: 'none',
-                            bgcolor: '#e5e7eb',
-                            color: '#374151',
+                            bgcolor: 'action.hover',
+                            color: 'text.primary',
                             border: 'none',
-                            '&:hover': { bgcolor: '#d1d5db' },
-                            '&:disabled': { bgcolor: '#f3f4f6', color: '#9ca3af' },
+                            '&:hover': { bgcolor: 'action.selected' },
+                            '&:disabled': { bgcolor: 'action.disabledBackground', color: 'text.disabled' },
                           }}
                         >
                           המשך
@@ -1648,16 +1648,16 @@ function Messages() {
                             fontWeight: 500,
                             textTransform: 'none',
                             border: '1px solid',
-                            borderColor: '#d97706',
+                            borderColor: 'warning.main',
                             bgcolor: 'transparent',
-                            color: '#b45309',
+                            color: 'warning.dark',
                             '&:hover': {
-                              bgcolor: 'rgba(217, 119, 6, 0.1)',
-                              borderColor: '#b45309',
+                              bgcolor: alpha(theme.palette.warning.main, 0.1),
+                              borderColor: 'warning.dark',
                             },
                             '&:disabled': {
-                              borderColor: '#9ca3af',
-                              color: '#9ca3af',
+                              borderColor: 'action.disabled',
+                              color: 'text.disabled',
                               bgcolor: 'transparent',
                             },
                           }}
@@ -1676,16 +1676,16 @@ function Messages() {
                           fontWeight: 500,
                           textTransform: 'none',
                           border: '1px solid',
-                          borderColor: '#dc2626',
+                          borderColor: 'error.main',
                           bgcolor: 'transparent',
-                          color: '#dc2626',
+                          color: 'error.main',
                           '&:hover': {
-                            bgcolor: 'rgba(220, 38, 38, 0.08)',
-                            borderColor: '#b91c1c',
+                            bgcolor: alpha(theme.palette.error.main, 0.08),
+                            borderColor: 'error.dark',
                           },
                           '&:disabled': {
-                            borderColor: '#9ca3af',
-                            color: '#9ca3af',
+                            borderColor: 'action.disabled',
+                            color: 'text.disabled',
                             bgcolor: 'transparent',
                           },
                         }}
@@ -1708,11 +1708,11 @@ function Messages() {
           sx={{
             p: 4,
             textAlign: 'center',
-            backgroundColor: 'rgba(255, 255, 255, 0.8)',
+            backgroundColor: alpha(theme.palette.background.paper, 0.8),
             backdropFilter: 'blur(10px)',
             borderRadius: 3,
             border: '1px solid',
-            borderColor: alpha('#9333ea', 0.2),
+            borderColor: alpha(theme.palette.primary.main, 0.2),
           }}
         >
           <Typography variant="body1" color="text.secondary">
@@ -1726,10 +1726,10 @@ function Messages() {
         elevation={0}
         sx={{
           p: 2.5,
-          backgroundColor: 'rgba(255, 255, 255, 0.6)',
+          backgroundColor: alpha(theme.palette.background.paper, 0.6),
           backdropFilter: 'blur(10px)',
           border: '1px solid',
-          borderColor: alpha('#9333ea', 0.2),
+          borderColor: alpha(theme.palette.primary.main, 0.2),
           borderRadius: 3,
           mt: 3,
         }}
@@ -1744,7 +1744,7 @@ function Messages() {
                 width: 6,
                 height: 6,
                 borderRadius: '50%',
-                bgcolor: '#9333ea',
+                bgcolor: 'primary.main',
                 mt: 0.75,
                 flexShrink: 0,
               }}
@@ -1759,7 +1759,7 @@ function Messages() {
                 width: 6,
                 height: 6,
                 borderRadius: '50%',
-                bgcolor: '#9333ea',
+                bgcolor: 'primary.main',
                 mt: 0.75,
                 flexShrink: 0,
               }}
@@ -1774,7 +1774,7 @@ function Messages() {
                 width: 6,
                 height: 6,
                 borderRadius: '50%',
-                bgcolor: '#9333ea',
+                bgcolor: 'primary.main',
                 mt: 0.75,
                 flexShrink: 0,
               }}
@@ -1789,7 +1789,7 @@ function Messages() {
                 width: 6,
                 height: 6,
                 borderRadius: '50%',
-                bgcolor: '#9333ea',
+                bgcolor: 'primary.main',
                 mt: 0.75,
                 flexShrink: 0,
               }}
@@ -1942,9 +1942,9 @@ function Messages() {
             startIcon={updating ? <CircularProgress size={16} /> : <SendIcon />}
             disabled={updating !== null}
             sx={{
-              backgroundColor: '#5236F7',
+              backgroundColor: 'primary.main',
               '&:hover': {
-                backgroundColor: '#4328E8',
+                backgroundColor: 'primary.dark',
               },
             }}
           >

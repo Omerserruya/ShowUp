@@ -20,6 +20,7 @@ import { styled } from '@mui/material/styles';
 import Button from '@mui/material/Button';
 import Box from '@mui/material/Box';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useUser } from '../../contexts/UserContext';
 
 const DashboardButton = styled(Button)<{ selected?: boolean }>(({ theme, selected }) => ({
   background: selected 
@@ -94,6 +95,7 @@ interface MenuContentProps {
 export default function MenuContent({ onItemClick }: MenuContentProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { isAdmin } = useUser();
   const [adminOpen, setAdminOpen] = useState(false);
 
   const isDashboardSelected = location.pathname === '/overview';
@@ -163,32 +165,36 @@ export default function MenuContent({ onItemClick }: MenuContentProps) {
         );
       })}
 
-      <Divider sx={{ my: 1 }} />
+      {isAdmin && (
+        <>
+          <Divider sx={{ my: 1 }} />
 
-      <ListItem disablePadding>
-        <ListItemButton onClick={handleAdminClick}>
-          <ListItemIcon>
-            <SettingsIcon />
-          </ListItemIcon>
-          <ListItemText primary="ניהול" sx={{ display: 'flex', justifyContent: 'right' }} />
-          {adminOpen ? <ExpandLess /> : <ExpandMore />}
-        </ListItemButton>
-      </ListItem>
+          <ListItem disablePadding>
+            <ListItemButton onClick={handleAdminClick}>
+              <ListItemIcon>
+                <SettingsIcon />
+              </ListItemIcon>
+              <ListItemText primary="ניהול" sx={{ display: 'flex', justifyContent: 'right' }} />
+              {adminOpen ? <ExpandLess /> : <ExpandMore />}
+            </ListItemButton>
+          </ListItem>
 
-      {adminOpen && (
-        <List component="div" disablePadding>
-          {adminMenuItems.map((item) => (
-            <ListItem key={item.text} disablePadding sx={{ pr: 4 }}>
-              <ListItemButton
-                selected={location.pathname === item.path}
-                onClick={() => handleNavigation(item.path)}
-              >
-                <ListItemIcon>{item.icon}</ListItemIcon>
-                <ListItemText primary={item.text} sx={{ display: 'flex', justifyContent: 'right' }} />
-              </ListItemButton>
-            </ListItem>
-          ))}
-        </List>
+          {adminOpen && (
+            <List component="div" disablePadding>
+              {adminMenuItems.map((item) => (
+                <ListItem key={item.text} disablePadding sx={{ pr: 4 }}>
+                  <ListItemButton
+                    selected={location.pathname === item.path}
+                    onClick={() => handleNavigation(item.path)}
+                  >
+                    <ListItemIcon>{item.icon}</ListItemIcon>
+                    <ListItemText primary={item.text} sx={{ display: 'flex', justifyContent: 'right' }} />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+            </List>
+          )}
+        </>
       )}
     </List>
   );

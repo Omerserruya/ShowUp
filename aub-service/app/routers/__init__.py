@@ -1,1 +1,1 @@
-from . import auth, plans, orders
+from . import auth, plans, orders, admin

@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { Box } from '@mui/material';
+import { Box, Typography } from '@mui/material';
 import { UserProvider } from './contexts/UserContext';
 import { EventProvider } from './contexts/EventContext';
 import { AccountProvider } from './contexts/AccountContext';
@@ -24,6 +24,9 @@ import Privacy from './pages/Privacy';
 import AccessibilityStatement from './pages/AccessibilityStatement';
 import EventWizard from './pages/EventWizard';
 import Payment from './pages/Payment';
+import AdminRoute from './components/AdminRoute';
+import AdminUsers from './pages/admin/Users';
+import AdminEvents from './pages/admin/Events';
 
 function App() {
   useEffect(() => {
@@ -93,6 +96,10 @@ function App() {
           <Route path="/messages" element={<Messages />} />
           <Route path="/seating" element={<Seating />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/admin/users" element={<AdminRoute><AdminUsers /></AdminRoute>} />
+          <Route path="/admin/events" element={<AdminRoute><AdminEvents /></AdminRoute>} />
+          <Route path="/admin/purchases" element={<AdminRoute><Box sx={{ p: 4 }}><Typography variant="h5">רכישות ובילינג - בקרוב</Typography></Box></AdminRoute>} />
+          <Route path="/admin/settings" element={<AdminRoute><Box sx={{ p: 4 }}><Typography variant="h5">הגדרות מערכת - בקרוב</Typography></Box></AdminRoute>} />
         </Route>
         </Routes>
     </ThemeProvider>

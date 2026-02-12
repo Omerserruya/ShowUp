@@ -11,6 +11,7 @@ from app.routers.guests import router as guests_router
 from app.routers.campaigns import router as campaigns_router
 from app.routers.uploads import router as uploads_router
 from app.routers.guest_imports import router as guest_imports_router
+from app.routers.admin import router as admin_router
 
 
 def create_app() -> FastAPI:
@@ -68,6 +69,7 @@ def create_app() -> FastAPI:
     app.include_router(campaigns_router)
     app.include_router(uploads_router)
     app.include_router(guest_imports_router)
+    app.include_router(admin_router)
 
     @app.get("/healthz")
     def healthz():
