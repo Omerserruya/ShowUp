@@ -17,6 +17,7 @@ import {
   Button,
   useTheme,
   alpha,
+  type Theme,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
@@ -104,7 +105,7 @@ const Resizer = styled('div')(({ theme }) => ({
 }));
 
 // Filter button styles helper
-const getFilterButtonSx = (isActive: boolean, theme: ReturnType<typeof useTheme>) => ({
+const getFilterButtonSx = (isActive: boolean, theme: Theme) => ({
   borderRadius: 3,
   minWidth: 80,
   px: 2,
