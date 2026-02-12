@@ -1,16 +1,17 @@
 """
 Admin API endpoints – user management (aub-service).
 All endpoints require admin role.
+JWT validation is done inline since aub-service doesn't use shared AuthMiddleware.
 """
 import os
 import uuid
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
 from fastapi.responses import JSONResponse
 
-from shared.auth.admin import get_admin_user_id
+from ..token_utils import verify_jwt
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -25,6 +26,34 @@ def _get_conn():
     )
 
 
+def get_admin_user_id(authorization: str = Header(None)) -> str:
+    """
+    Extract user_id from JWT and verify the user has admin role.
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
+
+    token = authorization.split(" ")[1]
+    try:
+        decoded = verify_jwt(token)
+        user_id = decoded.get("user_id") or decoded.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token: missing user_id")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+
+    with _get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT role FROM users WHERE id = %s", (str(user_id),))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=401, detail="User not found")
+            if row[0] != "admin":
+                raise HTTPException(status_code=403, detail="Admin access required")
+
+    return str(user_id)
+
+
 # ---------------------------------------------------------------------------
 # GET /admin/users – list all users (paginated, searchable)
 # ---------------------------------------------------------------------------
@@ -33,7 +62,7 @@ def list_users(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     search: str = Query("", alias="search"),
-    admin_id: uuid.UUID = Depends(get_admin_user_id),
+    admin_id: str = Depends(get_admin_user_id),
 ):
     offset = (page - 1) * page_size
     with _get_conn() as conn:
@@ -85,7 +114,7 @@ def list_users(
 @router.get("/users/{user_id}")
 def get_user(
     user_id: str,
-    admin_id: uuid.UUID = Depends(get_admin_user_id),
+    admin_id: str = Depends(get_admin_user_id),
 ):
     with _get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -119,7 +148,7 @@ def get_user(
 def update_user(
     user_id: str,
     payload: dict = Body(...),
-    admin_id: uuid.UUID = Depends(get_admin_user_id),
+    admin_id: str = Depends(get_admin_user_id),
 ):
     allowed_fields = {"first_name", "last_name", "email", "role"}
     updates = {k: v for k, v in payload.items() if k in allowed_fields and v is not None}
@@ -151,9 +180,9 @@ def update_user(
 @router.delete("/users/{user_id}")
 def delete_user(
     user_id: str,
-    admin_id: uuid.UUID = Depends(get_admin_user_id),
+    admin_id: str = Depends(get_admin_user_id),
 ):
-    if str(admin_id) == user_id:
+    if admin_id == user_id:
         raise HTTPException(status_code=400, detail="Cannot delete yourself")
 
     with _get_conn() as conn:

@@ -11,9 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models.event import Event
-from app.models.guest import Guest
-from app.models.campaign import Campaign
+from app.models.models import Event, Guest, Campaign
 from shared.auth.admin import get_admin_user_id
 
 router = APIRouter(prefix="/admin", tags=["admin"])

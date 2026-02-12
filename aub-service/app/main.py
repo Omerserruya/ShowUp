@@ -4,7 +4,6 @@ import pika
 import redis
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from shared.auth.middleware import AuthMiddleware
 from .mongodb import check_mongodb_connection
 from .routers import plans, auth, orders, admin as admin_router
 
@@ -35,23 +34,6 @@ app.include_router(auth.router)
 app.include_router(plans.router)
 app.include_router(orders.router)
 app.include_router(admin_router.router)
-
-# Auth middleware – admin routes require JWT; public routes skip auth
-app.add_middleware(
-    AuthMiddleware,
-    allow_unauthenticated_paths=[
-        "/health",
-        "/docs",
-        "/openapi.json",
-        "/redoc",
-        "/auth/register",
-        "/auth/login",
-        "/auth/verify-otp",
-        "/auth/me",
-        "/plans",
-        "/plans/default",
-    ],
-)
 
 
 def check_db_connection(env):
