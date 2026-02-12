@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Typography, Paper, useTheme } from '@mui/material';
+import { Box, Typography, Paper, useTheme, alpha } from '@mui/material';
 
 type CampaignStatus = 'completed' | 'upcoming';
 
@@ -43,13 +43,14 @@ const defaultItems: CampaignTimelineItem[] = [
 
 const CampaignTimeline: React.FC<CampaignTimelineProps> = ({ items = defaultItems }) => {
   const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   return (
     <Paper
       elevation={0}
       sx={{
         p: 2.5,
-        bgcolor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
-        borderRadius: '16px',
+        bgcolor: 'background.paper',
+        borderRadius: 3,
         border: '1px solid',
         borderColor: 'divider',
         height: '100%',
@@ -95,19 +96,27 @@ const CampaignTimeline: React.FC<CampaignTimelineProps> = ({ items = defaultItem
             bottom: 4,
             right: 5, // separate from cards; dedicated gutter for line + dots
             width: 2,
-            bgcolor: '#e5e7eb',
+            bgcolor: isDark ? alpha(theme.palette.grey[500], 0.3) : theme.palette.grey[200],
           }}
         />
 
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {items.map((item, index) => {
             const isCompleted = item.status === 'completed';
-            const dotColor = isCompleted ? '#22c55e' : '#9ca3af';
-            const bgColor = isCompleted ? 'rgba(34,197,94,0.05)' : 'rgba(148,163,184,0.04)';
-            const borderColor = isCompleted ? 'rgba(34,197,94,0.35)' : 'rgba(148,163,184,0.6)';
+            const dotColor = isCompleted ? theme.palette.success.main : theme.palette.grey[400];
+            const bgColor = isCompleted
+              ? alpha(theme.palette.success.main, isDark ? 0.08 : 0.05)
+              : alpha(theme.palette.grey[500], isDark ? 0.06 : 0.04);
+            const borderColor = isCompleted
+              ? alpha(theme.palette.success.main, isDark ? 0.3 : 0.35)
+              : alpha(theme.palette.grey[500], isDark ? 0.3 : 0.6);
              const statusLabel = isCompleted ? 'הושלם' : 'מתוכנן';
-             const statusBg = isCompleted ? 'rgba(34,197,94,0.12)' : 'rgba(234,179,8,0.16)';
-             const statusColor = isCompleted ? '#16a34a' : '#b45309';
+             const statusBg = isCompleted
+               ? alpha(theme.palette.success.main, isDark ? 0.2 : 0.12)
+               : alpha(theme.palette.warning.main, isDark ? 0.2 : 0.16);
+             const statusColor = isCompleted
+               ? (isDark ? theme.palette.success.light : '#16a34a')
+               : (isDark ? theme.palette.warning.light : '#b45309');
 
             return (
               <Box
@@ -145,7 +154,7 @@ const CampaignTimeline: React.FC<CampaignTimelineProps> = ({ items = defaultItem
                     bgcolor: bgColor,
                     borderRadius: 2,
                     border: `1px solid ${borderColor}`,
-                    boxShadow: '0 4px 14px rgba(15,23,42,0.04)',
+                    boxShadow: isDark ? 'none' : '0 4px 14px rgba(15,23,42,0.04)',
                     textAlign: 'right',
                   }}
                 >
@@ -190,7 +199,7 @@ const CampaignTimeline: React.FC<CampaignTimelineProps> = ({ items = defaultItem
                     variant="body1"
                     sx={{
                       fontWeight: 500,
-                      color: '#111827',
+                      color: 'text.primary',
                       fontSize: '0.95rem',
                     }}
                   >

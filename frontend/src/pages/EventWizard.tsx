@@ -7,9 +7,6 @@ import {
   Switch,
   TextField,
   Typography,
-  Stepper,
-  Step,
-  StepLabel,
   Chip,
   Paper,
   Divider,
@@ -19,6 +16,7 @@ import {
   Alert,
   Checkbox,
   CircularProgress,
+  alpha,
 } from '@mui/material';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -102,11 +100,11 @@ const getTemplateVariables = (eventDetails: EventDetails, inviters: Inviter[]): 
   };
 };
 
-// WhatsApp message bubble component (received message - white background)
+// WhatsApp message bubble component (received message - always light themed to mimic WhatsApp)
 const WhatsAppBubble = ({ template, variables }: { template: MessageTemplate; variables: Record<string, string> }) => {
   const processedBody = processTemplate(template, variables);
   const lines = processedBody.split('\n');
-  
+
   return (
     <Box
       sx={{
@@ -119,7 +117,7 @@ const WhatsAppBubble = ({ template, variables }: { template: MessageTemplate; va
         mb: 0.5,
         boxShadow: '0 1px 0.5px rgba(0,0,0,0.13)',
         border: '1px solid rgba(0,0,0,0.08)',
-        overflow: 'hidden', // כדי שה-divider לא יבלוט
+        overflow: 'hidden',
         direction: 'rtl',
         textAlign: 'right',
         '&::before': {
@@ -131,7 +129,7 @@ const WhatsAppBubble = ({ template, variables }: { template: MessageTemplate; va
           height: 0,
           borderTop: '0px solid transparent',
           borderBottom: '20px solid transparent',
-          borderRight: `8px solid #ffffff`,
+          borderRight: '8px solid #ffffff',
         },
       }}
     >
@@ -676,11 +674,10 @@ export default function EventWizard() {
         severity="info"
         sx={{
           mb: 3,
-          borderRadius: 1,
-          bgcolor: theme.palette.mode === 'dark' 
-            ? theme.palette.info.dark + '20' 
-            : theme.palette.info.light + '40',
-          border: `1px solid ${theme.palette.mode === 'dark' ? theme.palette.info.dark + '40' : theme.palette.info.main + '30'}`,
+          borderRadius: 2,
+          bgcolor: alpha(theme.palette.info.main, theme.palette.mode === 'dark' ? 0.08 : 0.06),
+          border: '1px solid',
+          borderColor: alpha(theme.palette.info.main, theme.palette.mode === 'dark' ? 0.2 : 0.15),
           '& .MuiAlert-icon': {
             color: theme.palette.info.main,
           },
@@ -739,21 +736,17 @@ export default function EventWizard() {
               onClick={() => setSelectedPackageId(plan.id)}
               sx={{
                 p: plan.isPopular ? 3 : 2.5,
-                borderRadius: 2,
+                borderRadius: 3,
                 cursor: 'pointer',
                 borderWidth: selected ? 2 : 1,
                 borderColor: selected ? plan.color : theme.palette.divider,
                 boxShadow: selected
-                  ? `0 0 0 2px ${plan.color}40, 0 14px 34px rgba(15,23,42,0.14)`
-                  : theme.palette.mode === 'dark'
-                    ? '0 10px 30px rgba(0,0,0,0.24)'
-                    : '0 10px 30px rgba(15,23,42,0.08)',
+                  ? `0 0 0 2px ${alpha(plan.color, 0.25)}, 0 14px 34px ${alpha(theme.palette.common.black, 0.14)}`
+                  : `0 10px 30px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.24 : 0.08)}`,
                 transition: 'transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, border-width 0.22s ease',
                 position: 'relative',
                 overflow: 'hidden',
-                background: theme.palette.mode === 'dark'
-                  ? theme.palette.background.paper
-                  : '#ffffff',
+                bgcolor: 'background.paper',
                 transform: plan.isPopular ? 'scale(1.03)' : 'scale(1)',
                 minWidth: { xs: '85%', sm: 'auto' },
                 width: { xs: '85%', sm: 'auto' },
@@ -764,7 +757,7 @@ export default function EventWizard() {
                       content: '""',
                       position: 'absolute',
                       inset: 0,
-                      background: `linear-gradient(135deg, ${plan.color}15, transparent 60%)`,
+                      background: `linear-gradient(135deg, ${alpha(plan.color, 0.08)}, transparent 60%)`,
                       pointerEvents: 'none',
                     }
                   : {},
@@ -772,8 +765,8 @@ export default function EventWizard() {
                   transform: plan.isPopular ? 'scale(1.05) translateY(-4px)' : 'translateY(-4px)',
                   borderColor: plan.color,
                   boxShadow: selected
-                    ? `0 0 0 2px ${plan.color}40, 0 18px 45px ${plan.color}28`
-                    : '0 18px 45px rgba(15,23,42,0.12)',
+                    ? `0 0 0 2px ${alpha(plan.color, 0.25)}, 0 18px 45px ${alpha(plan.color, 0.16)}`
+                    : `0 18px 45px ${alpha(theme.palette.common.black, 0.12)}`,
                 },
               }}
             >
@@ -825,7 +818,7 @@ export default function EventWizard() {
                     mt: 1.5,
                     alignSelf: 'flex-end',
                     bgcolor: plan.color,
-                    color: '#fff',
+                    color: theme.palette.common.white,
                     fontWeight: 700,
                   }}
                 />
@@ -1141,16 +1134,16 @@ export default function EventWizard() {
             <Paper 
               key={c.label} 
               variant="outlined" 
-              sx={{ 
+              sx={{
                 p: { xs: 1.5, sm: 1.5 },
-                borderRadius: 1,
+                borderRadius: 2,
                 borderWidth: 1,
                 borderColor: theme.palette.divider,
                 bgcolor: 'transparent',
                 transition: 'all 0.15s ease',
                 '&:hover': {
-                  borderColor: theme.palette.primary.main + '40',
-                  bgcolor: theme.palette.mode === 'dark' ? theme.palette.background.paper : '#fafafa',
+                  borderColor: alpha(theme.palette.primary.main, 0.25),
+                  bgcolor: alpha(theme.palette.primary.main, 0.03),
                 },
               }}
             >
@@ -1279,9 +1272,7 @@ export default function EventWizard() {
                       }}
                       sx={{
                         '& .MuiOutlinedInput-root': {
-                          bgcolor: c.enabled 
-                            ? (theme.palette.mode === 'dark' ? theme.palette.background.paper : '#ffffff')
-                            : 'transparent',
+                          bgcolor: c.enabled ? 'background.paper' : 'transparent',
                           direction: 'rtl',
                         },
                       }}
@@ -1311,9 +1302,7 @@ export default function EventWizard() {
                       }}
                       sx={{
                         '& .MuiOutlinedInput-root': {
-                          bgcolor: c.enabled 
-                            ? (theme.palette.mode === 'dark' ? theme.palette.background.paper : '#ffffff')
-                            : 'transparent',
+                          bgcolor: c.enabled ? 'background.paper' : 'transparent',
                         },
                       }}
                     />
@@ -1403,9 +1392,14 @@ export default function EventWizard() {
                       sx={{
                         p: 2,
                         cursor: 'pointer',
+                        borderRadius: 3,
                         borderWidth: isSelected ? 2 : 1,
                         borderColor: isSelected ? 'primary.main' : isDefault ? 'success.main' : 'divider',
-                        bgcolor: isSelected ? 'primary.main' + '08' : isDefault ? 'success.main' + '05' : 'transparent',
+                        bgcolor: isSelected
+                          ? alpha(theme.palette.primary.main, 0.06)
+                          : isDefault
+                          ? alpha(theme.palette.success.main, 0.04)
+                          : 'transparent',
                         transition: 'all 0.2s ease',
                         minWidth: { xs: '85%', sm: 'auto' },
                         width: { xs: '85%', sm: 'auto' },
@@ -1414,7 +1408,7 @@ export default function EventWizard() {
                         position: 'relative',
                         '&:hover': {
                           borderColor: 'primary.main',
-                          bgcolor: 'primary.main' + '05',
+                          bgcolor: alpha(theme.palette.primary.main, 0.04),
                         },
                       }}
                     >
@@ -1449,9 +1443,9 @@ export default function EventWizard() {
                       {/* WhatsApp preview */}
                       <Box
                         sx={{
-                          bgcolor: '#ece5dd',
+                          bgcolor: theme.palette.mode === 'dark' ? alpha('#1a2e1a', 0.5) : '#ece5dd',
                           p: 2,
-                          borderRadius: 1,
+                          borderRadius: 2,
                           minHeight: 150,
                           display: 'flex',
                           flexDirection: 'column',
@@ -1490,7 +1484,7 @@ export default function EventWizard() {
         </Typography>
 
         {/* Package and Price */}
-        <Paper variant="outlined" sx={{ p: 3, borderRadius: 2 }}>
+        <Paper variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexDirection: 'row' }}>
             <Box sx={{ textAlign: 'right' }}>
               <Typography variant="h6" fontWeight={700}>
@@ -1573,7 +1567,7 @@ export default function EventWizard() {
         </Paper>
 
         {/* Terms and Agreement */}
-        <Paper variant="outlined" sx={{ p: 3, borderRadius: 2, bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}>
+        <Paper variant="outlined" sx={{ p: 3, borderRadius: 3, bgcolor: alpha(theme.palette.text.primary, 0.02) }}>
           <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5, textAlign: 'right' }}>
             תנאים והסכמים
           </Typography>
@@ -1618,12 +1612,12 @@ export default function EventWizard() {
         </Paper>
 
         {/* Total Price */}
-        <Paper 
-          variant="outlined" 
-          sx={{ 
-            p: 3, 
-            borderRadius: 2,
-            bgcolor: selectedPlan?.color ? selectedPlan.color + '10' : 'transparent',
+        <Paper
+          variant="outlined"
+          sx={{
+            p: 3,
+            borderRadius: 3,
+            bgcolor: selectedPlan?.color ? alpha(selectedPlan.color, 0.06) : 'transparent',
             borderColor: selectedPlan?.color || 'divider',
             borderWidth: 2,
           }}
@@ -1807,10 +1801,10 @@ export default function EventWizard() {
               sx={{
                 p: 2,
                 mb: 3,
-                bgcolor: selectedPlan?.color ? selectedPlan.color + '10' : 'transparent',
+                bgcolor: selectedPlan?.color ? alpha(selectedPlan.color, 0.06) : 'transparent',
                 borderColor: selectedPlan?.color || 'divider',
                 borderWidth: 2,
-                borderRadius: 2,
+                borderRadius: 3,
               }}
             >
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexDirection: 'row' }}>
@@ -1870,7 +1864,7 @@ export default function EventWizard() {
                   right: 11,
                   top: 40,
                   width: 2,
-                  height: isCompleted ? 60 : 60,
+                  height: 60,
                   bgcolor: isCompleted ? theme.palette.success.main : theme.palette.divider,
                   zIndex: 0,
                 }}
@@ -1900,10 +1894,8 @@ export default function EventWizard() {
                     ? theme.palette.success.main
                     : isActive
                     ? theme.palette.primary.main
-                    : theme.palette.mode === 'dark'
-                    ? theme.palette.grey[800]
-                    : theme.palette.grey[300],
-                  color: isCompleted || isActive ? '#fff' : theme.palette.text.secondary,
+                    : theme.palette.action.disabledBackground,
+                  color: isCompleted || isActive ? theme.palette.common.white : theme.palette.text.secondary,
                   flexShrink: 0,
                 }}
               >
@@ -1952,25 +1944,9 @@ export default function EventWizard() {
       <Box
         sx={{
           minHeight: '100vh',
-          background: `
-            radial-gradient(
-              1200px 600px at 10% 0%,
-              #e8ecff 0%,
-              #f0f4ff 40%,
-              transparent 70%
-            ),
-            radial-gradient(
-              800px 500px at 90% 20%,
-              #fce8f5 0%,
-              #fef0f7 35%,
-              transparent 65%
-            ),
-            linear-gradient(
-              180deg,
-              #f7f8fb 0%,
-              #f3f4fa 100%
-            )
-          `,
+          background: theme.palette.mode === 'dark'
+            ? `radial-gradient(1200px 600px at 10% 0%, ${alpha(theme.palette.primary.dark, 0.15)} 0%, transparent 70%), radial-gradient(800px 500px at 90% 20%, ${alpha('#7c3aed', 0.1)} 0%, transparent 65%), ${theme.palette.background.default}`
+            : `radial-gradient(1200px 600px at 10% 0%, #e8ecff 0%, #f0f4ff 40%, transparent 70%), radial-gradient(800px 500px at 90% 20%, #fce8f5 0%, #fef0f7 35%, transparent 65%), linear-gradient(180deg, #f7f8fb 0%, #f3f4fa 100%)`,
           py: { xs: 4, md: 6 },
         }}
       >
@@ -2047,10 +2023,10 @@ export default function EventWizard() {
                       minWidth: { xs: '120px', sm: '140px' },
                       bgcolor: selectedPlan?.color || 'primary.main',
                       '&:hover': {
-                        bgcolor: selectedPlan?.color ? selectedPlan.color + 'dd' : 'primary.dark',
+                        bgcolor: selectedPlan?.color ? alpha(selectedPlan.color, 0.85) : 'primary.dark',
                       },
                       '&:disabled': {
-                        bgcolor: '#666666',
+                        bgcolor: theme.palette.action.disabledBackground,
                       },
                     }}
                   >
@@ -2066,7 +2042,7 @@ export default function EventWizard() {
                     minWidth: { xs: '120px', sm: '140px' },
                     bgcolor: selectedPlan?.color || 'primary.main',
                     '&:hover': {
-                      bgcolor: selectedPlan?.color ? selectedPlan.color + 'dd' : 'primary.dark',
+                      bgcolor: selectedPlan?.color ? alpha(selectedPlan.color, 0.85) : 'primary.dark',
                     },
                   }}
                 >

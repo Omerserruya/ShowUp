@@ -1,12 +1,11 @@
 import React from 'react';
-import { Box, Paper, Typography, useTheme, useMediaQuery } from '@mui/material';
+import { Box, Paper, Typography, useTheme, useMediaQuery, alpha } from '@mui/material';
 import {
   PieChart,
   Pie,
   Cell,
   ResponsiveContainer,
   Tooltip,
-  LabelList,
 } from 'recharts';
 
 interface PieChartData {
@@ -17,15 +16,9 @@ interface PieChartData {
 
 interface ResponsePieChartProps {
   data?: PieChartData[];
-  /**
-   * Optional override for the total shown in the center of the pie.
-   * When provided, this should represent the expected total invitees (import_count sum),
-   * rather than the actual responses.
-   */
   totalInvited?: number;
 }
 
-// Mock data
 const defaultData: PieChartData[] = [
   { name: 'אישרו הגעה', value: 24, color: '#4ade80' },
   { name: 'ביטלו השתתפות', value: 8, color: '#f87171' },
@@ -34,20 +27,21 @@ const defaultData: PieChartData[] = [
 
 const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData, totalInvited }) => {
   const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-  
+
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0];
       return (
         <Box
           sx={{
-            bgcolor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
+            bgcolor: 'background.paper',
             border: '1px solid',
             borderColor: 'divider',
-            borderRadius: '8px',
+            borderRadius: 2,
             p: 1.5,
-            boxShadow: theme.palette.mode === 'dark' 
+            boxShadow: isDark
               ? '0 4px 6px rgba(0, 0, 0, 0.5)'
               : '0 4px 6px rgba(0, 0, 0, 0.1)',
           }}
@@ -68,42 +62,29 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData,
     return null;
   };
 
-  // Filter out zero values so we don't render empty slices / labels with 0
+  // Filter out zero values
   const filteredData = (data || []).filter((item) => item.value > 0);
 
-  // Calculate total for center display:
-  // - Prefer the provided totalInvited (expected invitees / import_count sum)
-  // - Fallback to sum of all values (including zero values) if not provided
   const total =
     typeof totalInvited === 'number'
       ? totalInvited
       : (data || []).reduce((sum, item) => sum + item.value, 0);
 
-  // Calculate percentage of confirmed (green) to determine center shadow color
-  const confirmedItem = filteredData.find(item => 
-    item.name.includes('אישרו הגעה') || item.name.includes('confirmed')
-  );
-  const confirmedValue = confirmedItem?.value || 0;
-  const confirmedPercentage = total > 0 ? (confirmedValue / total) * 100 : 0;
-  // If majority (>=50%) confirmed -> green, otherwise purple
-  const centerShadowColor = confirmedPercentage >= 50 ? '#a7f3d0' : '#c4b5fd';
-
-  // Vibrant, lively colors
+  // Vibrant colors
   const getColorForStatus = (name: string): string => {
     if (name.includes('אישרו הגעה') || name.includes('confirmed')) {
-      return '#22c55e'; // Vibrant green
+      return '#22c55e';
     } else if (name.includes('ביטלו') || name.includes('declined')) {
-      return '#ef4444'; // Vibrant red
+      return '#ef4444';
     } else {
-      return '#f59e0b'; // Vibrant orange
+      return '#f59e0b';
     }
   };
 
   // Render labels outside the pie chart
-  const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, value, name }: any) => {
+  const renderCustomLabel = ({ cx, cy, midAngle, outerRadius, value }: any) => {
     const RADIAN = Math.PI / 180;
-    // Position label outside the pie (beyond outerRadius)
-    const labelRadius = outerRadius + 25; // Distance from edge
+    const labelRadius = outerRadius + 25;
     const x = cx + labelRadius * Math.cos(-midAngle * RADIAN);
     const y = cy + labelRadius * Math.sin(-midAngle * RADIAN);
 
@@ -112,7 +93,7 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData,
         <text
           x={x}
           y={y}
-          fill={theme.palette.text.primary}
+          fill={isDark ? theme.palette.text.primary : theme.palette.text.primary}
           textAnchor={x > cx ? 'start' : 'end'}
           dominantBaseline="central"
           fontSize={isMobile ? 13 : 15}
@@ -131,8 +112,8 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData,
         pt: { xs: 1.5, md: 2.5 },
         pb: { xs: 1.5, md: 2.5 },
         px: { xs: 2, md: 2.5 },
-        bgcolor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
-        borderRadius: '16px',
+        bgcolor: 'background.paper',
+        borderRadius: 3,
         border: '1px solid',
         borderColor: 'divider',
         height: { xs: 'auto', md: '100%' },
@@ -164,13 +145,13 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData,
         התפלגות תשובות האורחים
       </Typography>
 
-      <Box 
-        sx={{ 
-          width: '100%', 
-          flex: 1, 
-          minHeight: { xs: 300, md: 280 }, 
-          display: 'flex', 
-          alignItems: 'center', 
+      <Box
+        sx={{
+          width: '100%',
+          flex: 1,
+          minHeight: { xs: 300, md: 280 },
+          display: 'flex',
+          alignItems: 'center',
           justifyContent: 'center',
           position: 'relative',
         }}
@@ -180,48 +161,31 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData,
             position: 'relative',
             width: '100%',
             height: '100%',
-            filter: 'drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1))',
+            filter: isDark ? 'none' : 'drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1))',
           }}
         >
           <ResponsiveContainer width="100%" height={isMobile ? 300 : '100%'}>
             <PieChart>
-              <defs>
-                {/* Define corner radius effect using filters/clipPath */}
-                <filter id="roundedCorners">
-                  <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="blur" />
-                  <feOffset in="blur" dx="0" dy="0" result="offsetBlur" />
-                  <feFlood floodColor="#000" floodOpacity="0.1" result="offsetColor" />
-                  <feComposite in="offsetColor" in2="offsetBlur" operator="in" result="offsetBlur" />
-                  <feMerge>
-                    <feMergeNode in="offsetBlur" />
-                    <feMergeNode in="SourceGraphic" />
-                  </feMerge>
-                </filter>
-              </defs>
               <Pie
-                // Use filteredData so we don't show 0 slices
                 data={filteredData}
                 cx="50%"
                 cy="50%"
                 label={renderCustomLabel}
                 labelLine={false}
-                // Very thin ring - small difference between inner and outer radius
                 innerRadius={isMobile ? 80 : 100}
                 outerRadius={isMobile ? 95 : 115}
                 fill="#8884d8"
                 dataKey="value"
                 startAngle={90}
                 endAngle={-270}
-                // Less padding between slices for tighter look
                 paddingAngle={0.5}
                 cornerRadius={8}
               >
                 {filteredData.map((entry, index) => {
-                  // Use delicate colors
                   const fillColor = getColorForStatus(entry.name);
                   return (
-                    <Cell 
-                      key={`cell-${index}`} 
+                    <Cell
+                      key={`cell-${index}`}
                       fill={fillColor}
                       stroke="none"
                       strokeWidth={0}
@@ -232,8 +196,8 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData,
               <Tooltip content={<CustomTooltip />} />
             </PieChart>
           </ResponsiveContainer>
-          
-          {/* Center text - keep original purple color */}
+
+          {/* Center text */}
           <Box
             sx={{
               position: 'absolute',
@@ -249,10 +213,9 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData,
               variant="h4"
               sx={{
                 fontWeight: 600,
-                color: '#a855f7',
+                color: isDark ? theme.palette.primary.light : theme.palette.primary.main,
                 fontSize: { xs: '1.75rem', sm: '2rem', md: '2.5rem' },
                 lineHeight: 1.2,
-                textShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
                 mb: 0.5,
               }}
             >
@@ -261,32 +224,14 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData,
             <Typography
               variant="body2"
               sx={{
-                color: '#a855f7',
+                color: isDark ? theme.palette.primary.light : theme.palette.primary.main,
                 fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' },
-                textShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
                 fontWeight: 500,
               }}
             >
               סה״כ המוזמנים
             </Typography>
           </Box>
-          
-          {/* Inner shadow effect - delicate with dynamic color */}
-          <Box
-            sx={{
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -50%)',
-              width: { xs: '100px', sm: '120px', md: '140px' },
-              height: { xs: '100px', sm: '120px', md: '140px' },
-              borderRadius: '50%',
-              // Delicate shadow with dynamic color tint
-              boxShadow: `inset 0 1px 3px ${centerShadowColor}30, inset 0 0.5px 1px ${centerShadowColor}20`,
-              pointerEvents: 'none',
-              zIndex: 0,
-            }}
-          />
         </Box>
       </Box>
     </Paper>
@@ -294,4 +239,3 @@ const ResponsePieChart: React.FC<ResponsePieChartProps> = ({ data = defaultData,
 };
 
 export default ResponsePieChart;
-

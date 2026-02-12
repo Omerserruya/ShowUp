@@ -4,7 +4,6 @@ import {
   Box, 
   Typography, 
   Grid,
-  Divider,
   Paper,
   CircularProgress,
   Alert,
@@ -14,12 +13,6 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import QuestionMarkIcon from '@mui/icons-material/QuestionMark';
 import PeopleIcon from '@mui/icons-material/People';
-import {
-  Email as EmailIcon,
-  MarkEmailRead as MarkEmailReadIcon,
-  Campaign as CampaignIcon,
-  Favorite as FavoriteIcon,
-} from '@mui/icons-material';
 
 // Import our custom components
 import StatusCard from '../components/StatusCard';
@@ -227,7 +220,7 @@ function Overview() {
             description="אנשים שאישרו השתתפות באירוע"
             count={stats?.approved || 0}
             color="linear-gradient(135deg, #22c55e 0%, #16a34a 100%)"
-            icon={<CheckCircleOutlineIcon sx={{ color: '#ffffff' }} />}
+            icon={<CheckCircleOutlineIcon />}
             onClick={() => navigate('/guests?filter=confirmed')}
           />
         </Grid>
@@ -239,7 +232,7 @@ function Overview() {
             description="אנשים שלא יוכלו להגיע לאירוע"
             count={stats?.declined || 0}
             color="linear-gradient(135deg, #ef4444 0%, #dc2626 100%)"
-            icon={<CancelOutlinedIcon sx={{ color: '#ffffff' }} />}
+            icon={<CancelOutlinedIcon />}
             onClick={() => navigate('/guests?filter=declined')}
           />
         </Grid>
@@ -251,7 +244,7 @@ function Overview() {
             description="ממתינים לתשובה מהם"
             count={stats?.pending || 0}
             color="linear-gradient(135deg, #f59e0b 0%, #d97706 100%)"
-            icon={<QuestionMarkIcon sx={{ color: '#ffffff' }} />}
+            icon={<QuestionMarkIcon />}
             onClick={() => navigate('/guests?filter=pending')}
           />
         </Grid>
@@ -263,7 +256,7 @@ function Overview() {
             description="מספר המוזמנים הכולל לאירוע"
             count={stats?.total || 0}
             color="linear-gradient(135deg, #a855f7 0%, #9333ea 100%)"
-            icon={<PeopleIcon sx={{ color: '#ffffff' }} />}
+            icon={<PeopleIcon />}
             onClick={() => navigate('/guests?filter=all')}
           />
         </Grid>
@@ -301,20 +294,19 @@ function Overview() {
       </Grid>
 
       {/* RSVP Table Section */}
-      <Paper 
+      <Paper
         elevation={0}
         sx={{
           borderRadius: { xs: 0, sm: 2 },
-          backgroundColor: 'white',
+          bgcolor: 'background.paper',
           boxShadow: 'none',
           border: '1px solid',
           borderColor: 'divider',
-          borderWidth: '1px',
           overflow: 'hidden',
           p: { xs: 1, sm: 2, md: 3 },
-          px: { xs: 2, sm: 2, md: 3 }, // Horizontal padding
-          mx: { xs: -1, sm: 0 }, // Negative margin on mobile to extend to edges
-          width: { xs: 'calc(100% + 16px)', sm: '100%' } // Extend width on mobile
+          px: { xs: 2, sm: 2, md: 3 },
+          mx: { xs: -1, sm: 0 },
+          width: { xs: 'calc(100% + 16px)', sm: '100%' }
         }}
       >
         <Typography 

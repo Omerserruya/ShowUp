@@ -17,15 +17,16 @@ interface TimeLeft {
 
 function EventCountdown({ eventDate }: EventCountdownProps) {
   const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const [timeLeft, setTimeLeft] = useState<TimeLeft>({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   const [targetDate, setTargetDate] = useState<Date | null>(null);
 
   useEffect(() => {
     if (!eventDate) return;
-    
+
     const date = new Date(eventDate);
     if (isNaN(date.getTime())) return;
-    
+
     setTargetDate(date);
   }, [eventDate]);
 
@@ -81,13 +82,16 @@ function EventCountdown({ eventDate }: EventCountdownProps) {
     <Paper
       elevation={0}
       sx={{
-        backgroundColor: alpha('#ffffff', 0.8),
+        bgcolor: isDark
+          ? alpha(theme.palette.background.paper, 0.6)
+          : alpha('#ffffff', 0.8),
         backdropFilter: 'blur(10px)',
-        borderRadius: 4,
+        borderRadius: 3,
         p: { xs: 1.5, md: 2.5 },
         border: '1px solid',
-        borderColor: alpha(theme.palette.primary.main, 0.2),
-        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+        borderColor: isDark
+          ? alpha(theme.palette.primary.main, 0.15)
+          : alpha(theme.palette.primary.main, 0.2),
         textAlign: 'center',
         minWidth: { xs: '55px', sm: '80px', md: '100px' },
         flex: 1,
@@ -103,7 +107,9 @@ function EventCountdown({ eventDate }: EventCountdownProps) {
           fontWeight: 700,
           mb: { xs: 0.25, md: 0.5 },
           fontFamily: 'monospace',
-          background: 'linear-gradient(135deg, #9333ea 0%, #7c3aed 50%, #6366f1 100%)',
+          background: isDark
+            ? `linear-gradient(135deg, ${theme.palette.primary.light} 0%, ${alpha(theme.palette.primary.main, 0.8)} 100%)`
+            : 'linear-gradient(135deg, #9333ea 0%, #7c3aed 50%, #6366f1 100%)',
           backgroundClip: 'text',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
@@ -131,10 +137,14 @@ function EventCountdown({ eventDate }: EventCountdownProps) {
       sx={{
         position: 'relative',
         overflow: 'hidden',
-        borderRadius: 4,
-        background: 'linear-gradient(135deg, #dbeafe 0%, #e9d5ff 50%, #fce7f3 100%)',
+        borderRadius: 3,
+        background: isDark
+          ? `linear-gradient(135deg, ${alpha(theme.palette.primary.dark, 0.3)} 0%, ${alpha('#7c3aed', 0.2)} 50%, ${alpha('#ec4899', 0.15)} 100%)`
+          : 'linear-gradient(135deg, #dbeafe 0%, #e9d5ff 50%, #fce7f3 100%)',
         border: '1px solid',
-        borderColor: alpha(theme.palette.primary.main, 0.2),
+        borderColor: isDark
+          ? alpha(theme.palette.primary.main, 0.15)
+          : alpha(theme.palette.primary.main, 0.2),
         p: { xs: 2.5, sm: 4, md: 4 },
         mb: { xs: 1.5, md: 0 },
         height: { xs: 'auto', md: '100%' },
@@ -153,7 +163,7 @@ function EventCountdown({ eventDate }: EventCountdownProps) {
           left: 0,
           width: 128,
           height: 128,
-          backgroundColor: alpha(theme.palette.primary.main, 0.3),
+          backgroundColor: alpha(theme.palette.primary.main, isDark ? 0.15 : 0.3),
           borderRadius: '50%',
           transform: 'translate(-50%, -50%)',
           filter: 'blur(40px)',
@@ -166,7 +176,7 @@ function EventCountdown({ eventDate }: EventCountdownProps) {
           right: 0,
           width: 160,
           height: 160,
-          backgroundColor: alpha('#ec4899', 0.3),
+          backgroundColor: alpha('#ec4899', isDark ? 0.15 : 0.3),
           borderRadius: '50%',
           transform: 'translate(50%, 50%)',
           filter: 'blur(40px)',
@@ -186,8 +196,8 @@ function EventCountdown({ eventDate }: EventCountdownProps) {
         >
           <Box
             sx={{
-              animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-              '@keyframes pulse': {
+              animation: 'countdownPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              '@keyframes countdownPulse': {
                 '0%, 100%': { opacity: 1 },
                 '50%': { opacity: 0.5 },
               },
@@ -208,11 +218,7 @@ function EventCountdown({ eventDate }: EventCountdownProps) {
           </Typography>
           <Box
             sx={{
-              animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-              '@keyframes pulse': {
-                '0%, 100%': { opacity: 1 },
-                '50%': { opacity: 0.5 },
-              },
+              animation: 'countdownPulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
               color: alpha(theme.palette.primary.main, 0.7),
             }}
           >
@@ -224,7 +230,7 @@ function EventCountdown({ eventDate }: EventCountdownProps) {
         <Box
           sx={{
             display: 'grid',
-            gridTemplateColumns: { xs: 'repeat(4, 1fr)', sm: 'repeat(4, 1fr)' },
+            gridTemplateColumns: 'repeat(4, 1fr)',
             gap: { xs: 1, sm: 2, md: 2.5 },
             mb: { xs: 2, md: 2.5 },
           }}
@@ -243,9 +249,9 @@ function EventCountdown({ eventDate }: EventCountdownProps) {
             justifyContent: 'center',
             gap: 3,
             flexWrap: 'wrap',
-            backgroundColor: alpha(theme.palette.primary.main, 0.1),
+            bgcolor: alpha(theme.palette.primary.main, isDark ? 0.15 : 0.1),
             backdropFilter: 'blur(10px)',
-            borderRadius: 4,
+            borderRadius: 3,
             py: 1.5,
             px: 3,
             fontSize: { xs: '0.875rem', sm: '1rem' },
@@ -261,7 +267,7 @@ function EventCountdown({ eventDate }: EventCountdownProps) {
             sx={{
               width: '1px',
               height: 16,
-              backgroundColor: alpha(theme.palette.primary.main, 0.3),
+              bgcolor: alpha(theme.palette.primary.main, 0.3),
             }}
           />
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -277,4 +283,3 @@ function EventCountdown({ eventDate }: EventCountdownProps) {
 }
 
 export default EventCountdown;
-

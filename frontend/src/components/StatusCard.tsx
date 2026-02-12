@@ -1,13 +1,11 @@
 import React from 'react';
-import { 
-  Box, 
-  Typography, 
-  Card, 
-  CardContent, 
-  Button,
-  IconButton,
-  Stack,
-  useTheme
+import {
+  Box,
+  Typography,
+  Card,
+  CardActionArea,
+  useTheme,
+  alpha
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
@@ -15,10 +13,16 @@ interface StatusCardProps {
   title: string;
   description: string;
   count: number;
-  color: string; // Can be any color format: hex, rgb, rgba, named color, etc.
+  color: string; // Can be any CSS color or gradient
   icon: React.ReactNode;
   onClick?: () => void;
 }
+
+// Extract a usable solid color from any color string (hex, gradient, rgb, etc.)
+const extractColor = (color: string): string => {
+  const match = color.match(/#[0-9a-fA-F]{6}|rgb\([^)]+\)|rgba\([^)]+\)/);
+  return match ? match[0] : '#6366f1';
+};
 
 const StatusCard: React.FC<StatusCardProps> = ({
   title,
@@ -29,218 +33,142 @@ const StatusCard: React.FC<StatusCardProps> = ({
   onClick
 }) => {
   const theme = useTheme();
-  
-  // Card styles for a modern, gentle appearance
-  const cardStyle = {
-    borderRadius: '20px',
-    boxShadow: theme.palette.mode === 'dark' 
-      ? '0 8px 30px rgba(0,0,0,0.3)'
-      : '0 8px 30px rgba(0,0,0,0.04)',
-    transition: 'all 0.3s ease',
-    height: { xs: '140px', sm: '180px' }, // Smaller height on mobile
-    width: '100%',
-    position: 'relative', // For absolute positioning of number and button
-    '&:hover': {
-      transform: 'translateY(-4px)',
-      boxShadow: theme.palette.mode === 'dark' 
-        ? '0 10px 40px rgba(0,0,0,0.5)'
-        : '0 10px 40px rgba(0,0,0,0.08)',
-    }
-  };
+  const isDark = theme.palette.mode === 'dark';
+  const solidColor = extractColor(color);
 
-  // Icon style for more gentle, modern look
-  const iconStyle = {
-    fontSize: { xs: 24, sm: 32 }, // Smaller icon on mobile
-    p: { xs: 0.6, sm: 0.8 },
-    borderRadius: '12px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: { xs: '40px', sm: '52px' },
-    height: { xs: '40px', sm: '52px' }
-  };
-
-  // Helper function to check if color is a gradient
-  const isGradient = (color: string): boolean => {
-    return color.trim().startsWith('linear-gradient') || color.trim().startsWith('radial-gradient');
-  };
-
-  // Helper function to extract base color from gradient for text/icon
-  const getBaseColorFromGradient = (gradient: string): string => {
-    // Try to extract the first color from gradient
-    // linear-gradient(135deg, #22c55e 0%, #16a34a 100%) -> #22c55e
-    const match = gradient.match(/#[0-9a-fA-F]{6}|rgb\([^)]+\)|rgba\([^)]+\)/);
-    if (match) {
-      return match[0];
-    }
-    // Fallback to a default color
-    return '#000000';
-  };
-
-  // Helper function to convert color to rgba for background with opacity
-  const getBackgroundColor = (color: string, opacity: number = 0.04): string => {
-    // If it's a gradient, return it as-is (gradients don't support opacity directly)
-    if (isGradient(color)) {
-      return color;
-    }
-    
-    // If color is in format "r, g, b" (RGB values without rgb() wrapper)
-    if (/^\d+,\s*\d+,\s*\d+$/.test(color)) {
-      return `rgba(${color}, ${opacity})`;
-    }
-    // If color is hex, convert to rgba
-    if (color.startsWith('#')) {
-      const hex = color.replace('#', '');
-      const r = parseInt(hex.substring(0, 2), 16);
-      const g = parseInt(hex.substring(2, 4), 16);
-      const b = parseInt(hex.substring(4, 6), 16);
-      return `rgba(${r}, ${g}, ${b}, ${opacity})`;
-    }
-    // If already rgba or rgb, extract RGB values and apply opacity
-    const rgbaMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-    if (rgbaMatch) {
-      return `rgba(${rgbaMatch[1]}, ${rgbaMatch[2]}, ${rgbaMatch[3]}, ${opacity})`;
-    }
-    // For named colors or other formats, use as-is with opacity via theme
-    return color;
-  };
-
-  // Helper function to get solid color for text/icon
-  const getSolidColor = (color: string): string => {
-    // If it's a gradient, extract base color
-    if (isGradient(color)) {
-      return getBaseColorFromGradient(color);
-    }
-    
-    // If color is in format "r, g, b" (RGB values without rgb() wrapper)
-    if (/^\d+,\s*\d+,\s*\d+$/.test(color)) {
-      return `rgb(${color})`;
-    }
-    // For hex, rgb, rgba, or named colors, use as-is
-    return color;
-  };
-
-  const backgroundColor = getBackgroundColor(color, 0.04);
-  const isGradientColor = isGradient(color);
-  
   return (
-    <Card 
-      onClick={onClick}
-      sx={{ 
-        ...cardStyle,
-        ...(isGradientColor 
-          ? { background: backgroundColor }
-          : { bgcolor: backgroundColor }
-        ),
-        cursor: onClick ? 'pointer' : 'default',
+    <Card
+      elevation={0}
+      sx={{
+        borderRadius: 3,
+        border: '1px solid',
+        borderColor: isDark ? alpha(solidColor, 0.3) : alpha(solidColor, 0.15),
+        bgcolor: isDark ? alpha(solidColor, 0.08) : alpha(solidColor, 0.04),
+        transition: 'all 0.2s ease-in-out',
+        height: { xs: 'auto', sm: '180px' },
+        overflow: 'visible',
+        '&:hover': {
+          transform: onClick ? 'translateY(-2px)' : 'none',
+          borderColor: alpha(solidColor, 0.4),
+          boxShadow: onClick
+            ? `0 8px 25px ${alpha(solidColor, isDark ? 0.25 : 0.12)}`
+            : 'none',
+        },
       }}
     >
-      <CardContent sx={{ p: { xs: 0.75, sm: 2 }, pl: { xs: 0.75, sm: 1 }, height: '100%', position: 'relative' }}>
-        <Stack 
-          direction={{ xs: 'column', sm: 'row' }} 
-          spacing={{ xs: 1, sm: 5 }} 
-          sx={{ mb: 0, alignItems: { xs: 'flex-start', sm: 'center' } }}
-        >
-          <Box 
-            sx={{ 
-              ...iconStyle,
-              bgcolor: 'rgba(255, 255, 255, 0.2)', // White background with 20% opacity
-              color: '#ffffff', // White icon color
+      <CardActionArea
+        onClick={onClick}
+        disabled={!onClick}
+        sx={{
+          height: '100%',
+          p: { xs: 1.5, sm: 2.5 },
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          '&:hover': { bgcolor: 'transparent' },
+          '.MuiCardActionArea-focusHighlight': { opacity: 0 },
+        }}
+      >
+        {/* Top: Icon + Title */}
+        <Box sx={{ width: '100%' }}>
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1.5,
+              mb: { xs: 1, sm: 1.5 },
             }}
           >
-            {icon}
-          </Box>
-          <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', flex: 1 }}>
-            <Typography 
-              variant="h6" 
-              component="h2" 
-              sx={{ 
-                fontWeight: 500, 
-                mr: { xs: 0, sm: 0.75 }, 
-                mb: { xs: 0, sm: 0.5 }, 
-                color: '#ffffff',
-                fontSize: { xs: '0.875rem', sm: '1.25rem' }, // Smaller title on mobile
-                textAlign: { xs: 'right', sm: 'right' }
+            <Box
+              sx={{
+                width: { xs: 36, sm: 44 },
+                height: { xs: 36, sm: 44 },
+                borderRadius: 2.5,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                bgcolor: alpha(solidColor, isDark ? 0.2 : 0.12),
+                color: solidColor,
+                flexShrink: 0,
+                '& > *': {
+                  fontSize: { xs: 20, sm: 24 },
+                  color: solidColor,
+                },
+              }}
+            >
+              {icon}
+            </Box>
+            <Typography
+              variant="body2"
+              sx={{
+                fontWeight: 600,
+                color: 'text.primary',
+                fontSize: { xs: '0.8rem', sm: '0.9rem' },
+                lineHeight: 1.3,
               }}
             >
               {title}
             </Typography>
-            <Typography 
-              variant="body2" 
-              sx={{ 
-                mr: { xs: 0, sm: 0.75 }, 
-                color: 'rgba(255, 255, 255, 0.8)',
-                fontSize: { xs: '0.7rem', sm: '0.875rem' }, // Smaller description on mobile
-                display: { xs: 'none', sm: 'block' } // Hide description on mobile
-              }}
-            >
-              {description}
-            </Typography>
           </Box>
-        </Stack>
-        
-        {/* Fixed position for number and button */}
-        <Box sx={{ 
-          position: 'absolute',
-          bottom: { xs: 8, sm: 16 },
-          left: { xs: 8, sm: 16 },
-          right: { xs: 8, sm: 16 },
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'flex-end'
-        }}>
-          <Typography 
-            variant="h3" 
-            component="div" 
-            sx={{ 
-              fontWeight: 700, 
-              color: '#ffffff',
-              fontSize: { xs: '1.75rem', sm: '3rem' } // Smaller number on mobile
+
+          {/* Description - desktop only */}
+          <Typography
+            variant="caption"
+            sx={{
+              color: 'text.secondary',
+              display: { xs: 'none', sm: 'block' },
+              fontSize: '0.75rem',
+              lineHeight: 1.4,
+            }}
+          >
+            {description}
+          </Typography>
+        </Box>
+
+        {/* Bottom: Count + Arrow */}
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-end',
+            width: '100%',
+            mt: { xs: 1, sm: 'auto' },
+            pt: { xs: 0, sm: 1 },
+          }}
+        >
+          <Typography
+            variant="h3"
+            component="div"
+            sx={{
+              fontWeight: 700,
+              color: solidColor,
+              fontSize: { xs: '1.75rem', sm: '2.5rem' },
+              lineHeight: 1,
             }}
           >
             {count}
           </Typography>
-          
-          {/* Mobile: Icon only, Desktop: Button with text */}
-          <IconButton
-            size="small"
-            sx={{
-              display: { xs: 'flex', sm: 'none' }, // Show only on mobile
-              color: '#ffffff',
-              opacity: 0.9,
-              p: '4px',
-              '&:hover': {
-                bgcolor: getBackgroundColor(color, 0.1),
-                opacity: 1
-              }
-            }}
-          >
-            <ArrowBackIcon sx={{ fontSize: 18, color: '#ffffff' }} />
-          </IconButton>
-          
-          <Button 
-            size="small" 
-            endIcon={<ArrowBackIcon sx={{ fontSize: 18, color: '#ffffff' }} />}
-            sx={{ 
-              color: '#ffffff', 
-              fontWeight: 500,
-              opacity: 0.9,
-              p: '6px 12px',
-              borderRadius: '8px',
-              fontSize: '0.875rem',
-              display: { xs: 'none', sm: 'flex' }, // Hide button on desktop, show icon on mobile
-              '&:hover': { 
-                bgcolor: getBackgroundColor(color, 0.1),
-                opacity: 1 
-              } 
-            }}
-          >
-            לצפייה נוספת
-          </Button>
+
+          {onClick && (
+            <Box
+              sx={{
+                color: alpha(solidColor, 0.6),
+                display: 'flex',
+                alignItems: 'center',
+                transition: 'color 0.2s',
+                '.MuiCard-root:hover &': {
+                  color: solidColor,
+                },
+              }}
+            >
+              <ArrowBackIcon sx={{ fontSize: { xs: 18, sm: 20 } }} />
+            </Box>
+          )}
         </Box>
-      </CardContent>
+      </CardActionArea>
     </Card>
   );
 };
 
-export default StatusCard; 
+export default StatusCard;

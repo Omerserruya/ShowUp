@@ -30,12 +30,6 @@ const Drawer = styled(MuiDrawer)({
   },
 });
 
-const LogoContainer = styled(Box)({
-  display: 'flex',
-  justifyContent: 'center',
-  alignItems: 'center'
-});
-
 interface SideMenuProps {
   mobileOpen?: boolean;
   onMobileClose?: () => void;
@@ -52,17 +46,15 @@ export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenu
     { text: 'עלינו', icon: <InfoRoundedIcon />, path: '/about' },
   ];
 
-
   const drawerContent = (
-      <Box sx={{ 
-        display: 'flex', 
-        flexDirection: 'column', 
-        height: '100%',
-        position: 'relative',
-        backgroundColor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff'
-      }}>
+    <Box sx={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      bgcolor: 'background.paper',
+    }}>
       {/* Close button for mobile */}
-      <Box sx={{ 
+      <Box sx={{
         display: { xs: 'flex', md: 'none' },
         justifyContent: 'flex-start',
         alignItems: 'center',
@@ -72,62 +64,58 @@ export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenu
       }}>
         <IconButton
           onClick={onMobileClose}
-          sx={{
-            color: 'text.primary',
-          }}
+          sx={{ color: 'text.primary' }}
         >
           <CloseIcon />
         </IconButton>
       </Box>
 
-        <LogoContainer>
-          <img 
-            src={'./logo.png'}
-            alt="ShowUp Logo" 
-            style={{ 
-              width: '180px', 
-              height: 'auto',
-              display: 'block',
-              margin: '15px auto'
-            }} 
-          />
-        </LogoContainer>
-        
-        <Box sx={{ 
-          flexGrow: 1,
-          overflowY: 'auto',
-        }}>
-          <SelectContent />
-        <MenuContent onItemClick={onMobileClose} />
-        </Box>
+      {/* Logo */}
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        <img
+          src={'./logo.png'}
+          alt="ShowUp Logo"
+          style={{
+            width: '180px',
+            height: 'auto',
+            display: 'block',
+            margin: '15px auto'
+          }}
+        />
+      </Box>
 
-        <Box sx={{ 
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          backgroundColor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff'
-        }}>
-          <List dense>
-            {bottomMenuItems.map((item) => (
-              <ListItem key={item.text} disablePadding>
-                <ListItemButton
-                  selected={location.pathname === item.path}
+      {/* Main scrollable area */}
+      <Box sx={{
+        flex: 1,
+        overflowY: 'auto',
+        minHeight: 0, // allows flex child to shrink
+      }}>
+        <SelectContent />
+        <MenuContent onItemClick={onMobileClose} />
+      </Box>
+
+      {/* Bottom section - uses flex instead of absolute positioning */}
+      <Box sx={{ flexShrink: 0, bgcolor: 'background.paper' }}>
+        <List dense>
+          {bottomMenuItems.map((item) => (
+            <ListItem key={item.text} disablePadding>
+              <ListItemButton
+                selected={location.pathname === item.path}
                 onClick={() => {
                   navigate(item.path);
                   onMobileClose?.();
                 }}
-                >
-                  <ListItemIcon>{item.icon}</ListItemIcon>
-                  <ListItemText primary={item.text} sx={{ display: 'flex', justifyContent: 'right' }} />
-                </ListItemButton>
-              </ListItem>
-            ))}
-          </List>
-          <Divider />
-          <UserCard />
-        </Box>
+              >
+                <ListItemIcon>{item.icon}</ListItemIcon>
+                <ListItemText primary={item.text} sx={{ display: 'flex', justifyContent: 'right' }} />
+              </ListItemButton>
+            </ListItem>
+          ))}
+        </List>
+        <Divider />
+        <UserCard />
       </Box>
+    </Box>
   );
 
   return (
@@ -139,7 +127,7 @@ export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenu
         onClose={onMobileClose}
         anchor="right"
         ModalProps={{
-          keepMounted: true, // Better open performance on mobile.
+          keepMounted: true,
         }}
         sx={{
           display: { xs: 'block', md: 'none' },
@@ -147,7 +135,7 @@ export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenu
             boxSizing: 'border-box',
             width: '100%',
             maxWidth: '100vw',
-            backgroundColor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
+            bgcolor: 'background.paper',
             borderRight: 'none',
           },
         }}
@@ -162,7 +150,7 @@ export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenu
         sx={{
           display: { xs: 'none', md: 'block' },
           '& .MuiDrawer-paper': {
-            backgroundColor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
+            bgcolor: 'background.paper',
             borderRight: '1px solid',
             borderColor: 'divider',
             width: drawerWidth,
@@ -172,7 +160,7 @@ export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenu
         }}
       >
         {drawerContent}
-    </Drawer>
+      </Drawer>
     </>
   );
 }

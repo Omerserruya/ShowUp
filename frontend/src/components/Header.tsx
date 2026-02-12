@@ -3,7 +3,7 @@ import Stack from '@mui/material/Stack';
 import IconButton from '@mui/material/IconButton';
 import MenuIcon from '@mui/icons-material/Menu';
 import ColorModeIconDropdown from '../shared-theme/ColorModeIconDropdown';
-import { Box, Typography, useTheme } from '@mui/material';
+import { Box, Typography, useTheme, alpha } from '@mui/material';
 
 interface HeaderProps {
   title?: string;
@@ -13,57 +13,54 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ title, subtitle, onMenuClick }) => {
   const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+
   return (
     <Box
       sx={{
         display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
         position: 'sticky',
         top: 0,
         zIndex: 1100,
-        backgroundColor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
+        bgcolor: isDark
+          ? alpha(theme.palette.background.paper, 0.8)
+          : alpha('#ffffff', 0.85),
+        backdropFilter: 'blur(12px)',
         borderBottom: '1px solid',
         borderColor: 'divider',
         pl: { xs: 1.5, sm: 4 },
-        pr: { xs: 1.5, sm: 1 },
+        pr: { xs: 1.5, sm: 2 },
         py: 1.5,
+        minHeight: { xs: 56, sm: 64 },
       }}
     >
-      <Stack
-        direction="row"
-        sx={{
-          width: '100%',
-          alignItems: 'center',
-          position: 'relative',
-        }}
-        spacing={2}
-      >
-        {/* Page title & subtitle (center/right in RTL) */}
-        <Box
+      {/* Right side: hamburger (mobile) + title */}
+      <Stack direction="row" alignItems="center" spacing={1} sx={{ flex: 1, minWidth: 0 }}>
+        {/* Mobile: Hamburger menu */}
+        <IconButton
+          onClick={onMenuClick}
           sx={{
-            flexGrow: 0,
-            flexShrink: 0,
-            ml: 'auto',
-            // leave room for hamburger on the right in mobile
-            pr: { xs: 6, sm: 6},
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'flex-end',
-            textAlign: 'right',
-            gap: 0.5,
-            width: 'fit-content',
-            maxWidth: { xs: 'calc(100% - 72px)', sm: '100%' }, // don't go under the burger on mobile
+            display: { xs: 'flex', md: 'none' },
+            color: 'text.primary',
           }}
         >
+          <MenuIcon />
+        </IconButton>
+
+        {/* Page title & subtitle */}
+        <Box sx={{ minWidth: 0 }}>
           {title && (
             <Typography
               variant="h4"
               component="h1"
-              sx={{ 
-                textAlign: 'right',
-                width: '100%',
-                fontWeight: 700, 
+              noWrap
+              sx={{
+                fontWeight: 700,
                 color: 'text.primary',
-                fontSize: { xs: '1.25rem', sm: '2.125rem' }
+                fontSize: { xs: '1.15rem', sm: '1.5rem' },
+                lineHeight: 1.3,
               }}
             >
               {title}
@@ -71,53 +68,30 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, onMenuClick }) => {
           )}
           {subtitle && (
             <Typography
-              variant="subtitle1"
-              sx={{ 
+              variant="body2"
+              noWrap
+              sx={{
                 color: 'text.secondary',
-                fontSize: { xs: '0.75rem', sm: '1rem' },
-                display: { xs: 'block', sm: 'block' }
+                fontSize: { xs: '0.75rem', sm: '0.875rem' },
+                mt: 0.25,
               }}
             >
               {subtitle}
             </Typography>
           )}
         </Box>
-
-        {/* Mobile: Hamburger menu on right */}
-        <Box
-          sx={{
-            position: 'absolute',
-            right: 8,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            display: { xs: 'flex', md: 'none' },
-            alignItems: 'center',
-          }}
-        >
-          <IconButton
-            onClick={onMenuClick}
-            sx={{
-              color: 'text.primary',
-            }}
-          >
-            <MenuIcon />
-          </IconButton>
-        </Box>
-
-        {/* Desktop: Color mode toggle on left */}
-        <Box
-          sx={{
-            position: 'absolute',
-            left: 16,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            display: { xs: 'none', md: 'flex' },
-            alignItems: 'center',
-          }}
-        >
-          <ColorModeIconDropdown />
-        </Box>
       </Stack>
+
+      {/* Left side: Color mode toggle (desktop) */}
+      <Box
+        sx={{
+          display: { xs: 'none', md: 'flex' },
+          alignItems: 'center',
+          flexShrink: 0,
+        }}
+      >
+        <ColorModeIconDropdown />
+      </Box>
     </Box>
   );
 };

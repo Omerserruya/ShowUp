@@ -98,8 +98,8 @@ const CampaignUpdates: React.FC<CampaignUpdatesProps> = ({ items = defaultItems 
       elevation={0}
       sx={{
         p: 3,
-        bgcolor: theme.palette.mode === 'dark' ? 'background.paper' : '#ffffff',
-        borderRadius: '16px',
+        bgcolor: 'background.paper',
+        borderRadius: 3,
         border: '1px solid',
         borderColor: 'divider',
         height: '100%',
@@ -125,7 +125,7 @@ const CampaignUpdates: React.FC<CampaignUpdatesProps> = ({ items = defaultItems 
             />
           }
           sx={{
-            color: theme.palette.mode === 'dark' ? '#a78bfa' : '#7c3aed',
+            color: theme.palette.primary.main,
             fontWeight: 500,
             textTransform: 'none',
             '& .MuiButton-endIcon': {

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Box, CircularProgress, useTheme, Paper, BottomNavigation, BottomNavigationAction } from "@mui/material";
+import { Box, CircularProgress, useTheme, Paper, BottomNavigation, BottomNavigationAction, alpha } from "@mui/material";
 import { Outlet, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import SideMenu from './SideMenuCustom/SideMenu';
 import Header from './Header';
@@ -18,6 +18,7 @@ function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [bottomNavValue, setBottomNavValue] = useState(location.pathname);
   const { isBannerVisible } = useBanner();
+  const isDark = theme.palette.mode === 'dark';
 
   useEffect(() => {
     setBottomNavValue(location.pathname);
@@ -77,34 +78,35 @@ function Layout() {
   if (!loading && !user) {
     return <Navigate to="/login" replace />;
   }
+
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh', pt: isBannerVisible ? '48px' : 0 }}>
       {/* Sidebar - Desktop permanent, Mobile drawer */}
       <SideMenu mobileOpen={mobileOpen} onMobileClose={handleDrawerToggle} />
-      
+
       {/* Main content */}
-      <Box sx={{ 
-        flexGrow: 1, 
+      <Box sx={{
+        flexGrow: 1,
         marginLeft: { xs: 0, md: 0 },
         width: { xs: '100%', md: 'calc(100% - 280px)' },
         minHeight: '100vh',
         display: 'flex',
         flexDirection: 'column',
-        backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[900] : '#f6f7fb',
+        bgcolor: isDark ? 'background.default' : 'grey.50',
       }}>
         {/* Top app header (sticky) */}
-        <Header 
-          title={headerContent.title} 
+        <Header
+          title={headerContent.title}
           subtitle={headerContent.subtitle}
           onMenuClick={handleDrawerToggle}
         />
 
         {/* Page Content */}
-        <Box sx={{ 
+        <Box sx={{
           flexGrow: 1,
           width: '100%',
           margin: '0',
-          pb: { xs: 8, md: 0 }, // space for bottom nav on mobile
+          pb: { xs: 10, md: 0 }, // space for bottom nav on mobile
         }}>
           <Outlet />
         </Box>
@@ -119,21 +121,29 @@ function Layout() {
           }}
         >
           <Paper
-            elevation={6}
+            elevation={0}
             sx={{
               position: 'fixed',
               zIndex: (theme) => theme.zIndex.appBar + 1,
               bottom: isBannerVisible ? 56 : 16,
               left: '50%',
               transform: 'translateX(-50%)',
-              width: 'calc(100% - 16px)',
-              maxWidth: 480,
-              borderRadius: 999,
-              px: 1.5,
-              py: 0.75,
-              backdropFilter: 'blur(10px)',
-              backgroundColor: 'rgba(255,255,255,0.94)',
-              boxShadow: '0 10px 30px rgba(15,23,42,0.15)',
+              width: 'calc(100% - 24px)',
+              maxWidth: 420,
+              borderRadius: 4,
+              px: 0.5,
+              py: 0.5,
+              backdropFilter: 'blur(16px)',
+              bgcolor: isDark
+                ? alpha(theme.palette.background.paper, 0.85)
+                : alpha('#ffffff', 0.9),
+              border: '1px solid',
+              borderColor: isDark
+                ? alpha(theme.palette.divider, 0.3)
+                : alpha(theme.palette.divider, 0.2),
+              boxShadow: isDark
+                ? `0 8px 32px ${alpha('#000', 0.4)}`
+                : `0 8px 32px ${alpha('#0f172a', 0.12)}`,
             }}
           >
             <BottomNavigation
@@ -146,28 +156,50 @@ function Layout() {
                 }
               }}
               sx={{
-                background: 'transparent',
+                bgcolor: 'transparent',
+                height: 56,
+                '& .MuiBottomNavigationAction-root': {
+                  color: 'text.secondary',
+                  minWidth: 'auto',
+                  borderRadius: 2.5,
+                  mx: 0.25,
+                  transition: 'all 0.2s ease',
+                  '&.Mui-selected': {
+                    color: 'primary.main',
+                    bgcolor: isDark
+                      ? alpha(theme.palette.primary.main, 0.12)
+                      : alpha(theme.palette.primary.main, 0.08),
+                  },
+                  '& .MuiBottomNavigationAction-label': {
+                    fontSize: '0.7rem',
+                    fontWeight: 500,
+                    '&.Mui-selected': {
+                      fontSize: '0.7rem',
+                      fontWeight: 600,
+                    },
+                  },
+                },
               }}
             >
               <BottomNavigationAction
                 label="ראשי"
                 value="/overview"
-                icon={<HomeIcon />}
+                icon={<HomeIcon sx={{ fontSize: 22 }} />}
               />
               <BottomNavigationAction
                 label="אורחים"
                 value="/guests"
-                icon={<PeopleIcon />}
+                icon={<PeopleIcon sx={{ fontSize: 22 }} />}
               />
               <BottomNavigationAction
                 label="קמפיינים"
                 value="/messages"
-                icon={<SendIcon />}
+                icon={<SendIcon sx={{ fontSize: 22 }} />}
               />
               <BottomNavigationAction
                 label="אני"
                 value="/profile"
-                icon={<PersonIcon />}
+                icon={<PersonIcon sx={{ fontSize: 22 }} />}
               />
             </BottomNavigation>
           </Paper>
@@ -177,4 +209,4 @@ function Layout() {
   );
 }
 
-export default Layout; 
+export default Layout;
