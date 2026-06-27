@@ -3,6 +3,8 @@ import { Box, CircularProgress, useTheme, Paper, BottomNavigation, BottomNavigat
 import { Outlet, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import SideMenu from './SideMenuCustom/SideMenu';
 import Header from './Header';
+import AssistantWidget from './AssistantWidget';
+import KeyboardShortcuts from './KeyboardShortcuts';
 import { useUser } from '../contexts/UserContext';
 import { useBanner } from '../contexts/BannerContext';
 import HomeIcon from '@mui/icons-material/Home';
@@ -130,6 +132,12 @@ function Layout() {
         }}>
           <Outlet />
         </Box>
+
+        {/* Global AI assistant */}
+        <AssistantWidget />
+
+        {/* Global keyboard shortcuts (press ? for help) */}
+        <KeyboardShortcuts />
 
         {/* Floating bottom navigation - mobile only */}
         <Box

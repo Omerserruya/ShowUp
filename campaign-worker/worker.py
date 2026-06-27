@@ -13,9 +13,12 @@ from db import (
     was_message_sent,
     mark_message_sent,
     mark_campaign_completed,
+    create_follow_up_campaign,
+    record_message_usage,
 )
 from mq import connect as mq_connect, publish_outpost
 from template_registry import get_template_spec
+from audience import select_guests_by_audience
 
 
 def configure_logging():
@@ -69,22 +72,25 @@ def process_campaign(conn, channel, campaign_id: str):
              inviters=event_data.get("inviters"),
              inviters_type=type(event_data.get("inviters")).__name__ if event_data.get("inviters") else "None")
 
-    # Get template handler
+    # Template controls only the message params now; the AUDIENCE is a first-class
+    # campaign field (Phase 6), decoupled from the template choice.
     template_spec = get_template_spec(template_name)
 
-    # Get guest list from template spec
     try:
-        guests = template_spec.audience_selector(conn, event_id, event_data)
+        guests = select_guests_by_audience(
+            conn, event_id, campaign_data.get("audience"), campaign_data.get("audience_filter")
+        )
         log_json(
             logger,
             logging.INFO,
-            "Template handler selected guests",
+            "Audience selected guests",
             campaign_id=campaign_id,
             template=template_name,
+            audience=campaign_data.get("audience"),
             guest_count=len(guests),
         )
     except Exception as e:
-        log_json(logger, logging.ERROR, "Template handler failed", campaign_id=campaign_id, template=template_name, error=str(e))
+        log_json(logger, logging.ERROR, "Audience selection failed", campaign_id=campaign_id, audience=campaign_data.get("audience"), error=str(e))
         return
 
     sent_count = 0
@@ -140,6 +146,23 @@ def process_campaign(conn, channel, campaign_id: str):
             campaign_id=campaign_id,
             error=str(e),
         )
+
+    # Phase 10: meter messages sent (internal cost metric, never a customer quota).
+    if sent_count:
+        record_message_usage(conn, event_data.get("account_id"), event_id, sent_count, ref_id=campaign_id)
+
+    # Optional single follow-up (Phase 6): schedule one more round to a sub-audience
+    # (typically 'no_response') N hours later. Not a sequence engine.
+    follow_hours = campaign_data.get("follow_up_after_hours")
+    follow_audience = campaign_data.get("follow_up_audience")
+    if follow_hours and follow_audience:
+        try:
+            new_id = create_follow_up_campaign(conn, campaign_data, int(follow_hours), follow_audience)
+            log_json(logger, logging.INFO, "Scheduled follow-up campaign",
+                     campaign_id=campaign_id, follow_up_id=new_id,
+                     after_hours=follow_hours, audience=follow_audience)
+        except Exception as e:
+            log_json(logger, logging.ERROR, "Failed to schedule follow-up", campaign_id=campaign_id, error=str(e))
 
     log_json(
         logger,

@@ -11,6 +11,7 @@ from sqlalchemy import func
 from app.models.models import Guest, Event
 from app.schemas.schemas import GuestCreate, GuestUpdate
 from app.utils import normalize_phone
+from shared.domain.enums import GuestStatus
 
 
 def list_guests(
@@ -22,21 +23,25 @@ def list_guests(
     order_by: Optional[str] = None,
     only_with_responses: bool = False,
     status: Optional[str] = None,
+    tag_id: Optional[uuid.UUID] = None,
 ) -> Tuple[List[Guest], int]:
     query = db.query(Guest).filter(Guest.event_id == str(event_id))
+    if tag_id is not None:
+        from app.models.models import GuestTag
+        query = query.join(GuestTag, GuestTag.guest_id == Guest.id).filter(GuestTag.tag_id == tag_id)
     if search:
         like = f"%{search}%"
         query = query.filter((Guest.name.ilike(like)) | (Guest.phone.ilike(like)))
     if status:
-        # Map frontend status to backend status
+        # Map filter key -> canonical (+legacy) DB values via the shared SSOT.
         status_map = {
-            'pending': ['invited', 'pending'],
-            'confirmed': ['attending', 'confirmed'],
-            'declined': ['declined'],
-            'maybe': ['maybe']
+            'pending': GuestStatus.pending_values(),
+            'confirmed': GuestStatus.confirmed_values(),
+            'declined': GuestStatus.declined_values(),
+            'maybe': GuestStatus.maybe_values(),
         }
         if status in status_map:
-            query = query.filter(Guest.status.in_(status_map[status]))
+            query = query.filter(Guest.status.in_(list(status_map[status])))
     if only_with_responses:
         query = query.filter(Guest.last_response.isnot(None))
     total = query.count()
@@ -151,8 +156,8 @@ def update_guest(db: Session, guest: Guest, data: GuestUpdate) -> Guest:
         guest.email = data.email
     if data.status is not None:
         guest.status = data.status
-        # If status is changed to attending/confirmed and guest_count is None, set it to import_count
-        if data.status in ['attending', 'confirmed'] and guest.guest_count is None:
+        # If status changed to a "confirmed" value and guest_count is None, default it.
+        if data.status in GuestStatus.confirmed_values() and guest.guest_count is None:
             guest.guest_count = guest.import_count
     if data.group is not None:
         guest.group = data.group

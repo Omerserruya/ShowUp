@@ -18,10 +18,33 @@ from app.crud import guest as guest_crud, event as event_crud
 from app.schemas.schemas import GuestCreate, GuestOut, GuestUpdate, GuestStatsOut, DailyResponsesOut, DailyResponseData, MilestoneData, PaginatedResponse
 from app.utils import paginate_params, validate_phone
 from shared.auth.deps import get_current_user_id
-from app.models.models import Guest, Campaign
+from shared.domain.enums import GuestStatus
+from shared.domain.roles import Action
+from app.authz import require_event_permission
+from app.models.models import Guest, Campaign, Event
 
 
 router = APIRouter(prefix="/guests", tags=["guests"])
+
+
+def _authorize_event(db: Session, event_id: uuid.UUID, user_id: uuid.UUID, action: Action) -> Event:
+    """Fetch an event and enforce the RBAC permission for `action`.
+
+    Single chokepoint for event-scoped authorization. Raises 404 if the user has
+    no role on the event's tenant, 403 if the role lacks the action.
+    """
+    event = event_crud.get_event(db, event_id)
+    require_event_permission(db, event, user_id, action)
+    return event
+
+
+def _authorize_guest(db: Session, guest_id: uuid.UUID, user_id: uuid.UUID, action: Action) -> Guest:
+    """Single chokepoint for guest-by-id authorization."""
+    guest = guest_crud.get_guest(db, guest_id)
+    if not guest:
+        raise HTTPException(status_code=404, detail="Guest not found")
+    require_event_permission(db, event_crud.get_event(db, guest.event_id), user_id, action)
+    return guest
 
 
 class ExportFormat(str, Enum):
@@ -127,21 +150,21 @@ def list_guests(
     order_by: Optional[str] = Query(None, regex="^(last_response|created_at)$"),
     only_with_responses: bool = Query(False),
     status: Optional[str] = Query(None, regex="^(pending|confirmed|declined|maybe)$"),
+    tag_id: Optional[uuid.UUID] = Query(None),
     return_total: bool = Query(False, description="Return paginated response with total count"),
 ):
-    event = event_crud.get_event(db, event_id)
-    if not event or not event_crud.is_owner(event, user_id):
-        raise HTTPException(status_code=404, detail="Event not found or not permitted")
+    _authorize_event(db, event_id, user_id, Action.GUEST_READ)
     page, page_size = paginate_params(page, page_size)
     items, total = guest_crud.list_guests(
-        db, 
-        event_id=event_id, 
-        page=page, 
-        page_size=page_size, 
+        db,
+        event_id=event_id,
+        page=page,
+        page_size=page_size,
         search=search,
         order_by=order_by,
         only_with_responses=only_with_responses,
         status=status,
+        tag_id=tag_id,
     )
     if return_total:
         # Convert Guest models to GuestOut schemas explicitly
@@ -158,10 +181,8 @@ def get_guest_stats(
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """Get RSVP statistics for an event."""
-    event = event_crud.get_event(db, event_id)
-    if not event or not event_crud.is_owner(event, user_id):
-        raise HTTPException(status_code=404, detail="Event not found or not permitted")
-    
+    _authorize_event(db, event_id, user_id, Action.GUEST_READ)
+
     # Calculate statistics based on counts:
     # - Total: sum of import_count for all guests
     # - Confirmed: sum of guest_count for attending guests, or import_count if guest_count is None
@@ -191,29 +212,36 @@ def get_guest_stats(
         )
     ).filter(
         Guest.event_id == str(event_id),
-        Guest.status.in_(['attending', 'confirmed'])
+        Guest.status.in_(list(GuestStatus.confirmed_values()))
     ).scalar()
     confirmed = int(confirmed_result) if confirmed_result else 0
-    
+
     # Declined: sum of import_count for declined guests
     declined_result = db.query(func.sum(Guest.import_count)).filter(
         Guest.event_id == str(event_id),
-        Guest.status == 'declined'
+        Guest.status.in_(list(GuestStatus.declined_values()))
     ).scalar()
     declined = int(declined_result) if declined_result else 0
-    
-    # Pending: count of guests (not sum of counts)
+
+    # Maybe: count of guests who replied "maybe" (previously dropped from stats entirely)
+    maybe = db.query(Guest).filter(
+        Guest.event_id == str(event_id),
+        Guest.status.in_(list(GuestStatus.maybe_values()))
+    ).count()
+
+    # Pending: count of guests with no decision yet
     pending = db.query(Guest).filter(
         Guest.event_id == str(event_id),
-        Guest.status.in_(['invited', 'pending'])
+        Guest.status.in_(list(GuestStatus.pending_values()))
     ).count()
-    
+
     return GuestStatsOut(
         total=total,
         total_guests=total_guests,
         confirmed=confirmed,
         declined=declined,
-        pending=pending
+        pending=pending,
+        maybe=maybe,
     )
 
 
@@ -583,11 +611,8 @@ def export_guests(
 
 
 @router.get("/{guest_id}", response_model=GuestOut)
-def get_guest(guest_id: uuid.UUID, db: Session = Depends(get_db)):
-    guest = guest_crud.get_guest(db, guest_id)
-    if not guest:
-        raise HTTPException(status_code=404, detail="Guest not found")
-    return guest
+def get_guest(guest_id: uuid.UUID, db: Session = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
+    return _authorize_guest(db, guest_id, user_id, Action.GUEST_READ)
 
 
 @router.post("", response_model=Union[GuestOut, List[GuestOut]], status_code=201)
@@ -609,9 +634,7 @@ def create_guests(
         raise HTTPException(status_code=400, detail="Body must be an object or array of objects")
 
     # AuthZ check once per request
-    event = event_crud.get_event(db, event_id)
-    if not event or not event_crud.is_owner(event, user_id):
-        raise HTTPException(status_code=404, detail="Event not found or not permitted")
+    event = _authorize_event(db, event_id, user_id, Action.GUEST_WRITE)
 
     # Build GuestCreate list with validation
     valid_items: List[GuestCreate] = []
@@ -631,14 +654,19 @@ def create_guests(
     if not valid_items:
         return []
 
-    # Decide single vs bulk persistence
     try:
-        if len(valid_items) == 1:
-            return guest_crud.create_guests_bulk(db, event_id=event_id, items=valid_items)
-        return guest_crud.create_guests_bulk(db, event_id=event_id, items=valid_items)
+        created = guest_crud.create_guests_bulk(db, event_id=event_id, items=valid_items)
     except ValueError as e:
         # Handle capacity limit errors
         raise HTTPException(status_code=400, detail=str(e))
+
+    # Phase 10: meter guests added.
+    if created:
+        from app.usage import record_usage
+        from shared.domain.enums import UsageMetric
+        record_usage(db, account_id=getattr(event, "account_id", None), event_id=event_id,
+                     metric=UsageMetric.GUEST_ADDED, quantity=len(created))
+    return created
 
 
 @router.post("/bulk", response_model=list[GuestOut])
@@ -658,9 +686,7 @@ async def bulk_import(
     - If `body` is provided:
         * Expects a list[GuestCreate]
     """
-    event = event_crud.get_event(db, event_id)
-    if not event or not event_crud.is_owner(event, user_id):
-        raise HTTPException(status_code=404, detail="Event not found or not permitted")
+    _authorize_event(db, event_id, user_id, Action.GUEST_WRITE)
 
     guests_to_create: List[GuestCreate] = []
 
@@ -799,29 +825,42 @@ def delete_guests_by_event(
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    event = event_crud.get_event(db, event_id)
-    if not event or not event_crud.is_owner(event, user_id):
-        raise HTTPException(status_code=404, detail="Event not found or not permitted")
+    _authorize_event(db, event_id, user_id, Action.GUEST_DELETE)
     count = guest_crud.delete_guests_by_event(db, event_id=event_id)
     return {"deleted": count}
 
 
 @router.put("/{guest_id}", response_model=GuestOut)
-def update_guest(guest_id: uuid.UUID, payload: GuestUpdate, db: Session = Depends(get_db)):
-    guest = guest_crud.get_guest(db, guest_id)
-    if not guest:
-        raise HTTPException(status_code=404, detail="Guest not found")
+def update_guest(guest_id: uuid.UUID, payload: GuestUpdate, db: Session = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
+    guest = _authorize_guest(db, guest_id, user_id, Action.GUEST_WRITE)
     if payload.phone is not None and not validate_phone(payload.phone):
         raise HTTPException(status_code=422, detail="Invalid phone format")
     guest = guest_crud.update_guest(db, guest, payload)
+
+    # Phase 9: record the manual edit on the guest timeline.
+    from app.timeline import record_guest_event
+    from shared.domain.enums import GuestEventType, ActorType
+    changed = sorted(payload.model_fields_set)
+    if "status" in payload.model_fields_set and payload.status is not None:
+        st = GuestStatus.normalize(payload.status)
+        type_map = {
+            GuestStatus.CONFIRMED: GuestEventType.CONFIRMED,
+            GuestStatus.DECLINED: GuestEventType.DECLINED,
+            GuestStatus.MAYBE: GuestEventType.MAYBE,
+        }
+        ev_type = type_map.get(st, GuestEventType.MANUAL_OVERRIDE)
+        record_guest_event(db, guest_id=guest.id, event_id=guest.event_id, type=ev_type,
+                           actor_type=ActorType.USER, actor_id=user_id,
+                           data={"status": st.value, "fields": changed, "via": "manual"})
+    else:
+        record_guest_event(db, guest_id=guest.id, event_id=guest.event_id, type=GuestEventType.STAFF_EDIT,
+                           actor_type=ActorType.USER, actor_id=user_id, data={"fields": changed})
     return guest
 
 
 @router.delete("/{guest_id}", status_code=204)
-def delete_guest(guest_id: uuid.UUID, db: Session = Depends(get_db)):
-    guest = guest_crud.get_guest(db, guest_id)
-    if not guest:
-        raise HTTPException(status_code=404, detail="Guest not found")
+def delete_guest(guest_id: uuid.UUID, db: Session = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
+    guest = _authorize_guest(db, guest_id, user_id, Action.GUEST_DELETE)
     guest_crud.delete_guest(db, guest)
     return None
 

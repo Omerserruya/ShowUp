@@ -7,24 +7,31 @@ import ListItemText from '@mui/material/ListItemText';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import PeopleAltIcon from '@mui/icons-material/PeopleAlt';
 import SendIcon from '@mui/icons-material/Send';
+import DescriptionIcon from '@mui/icons-material/Description';
 import EventSeatIcon from '@mui/icons-material/EventSeat';
+import GroupIcon from '@mui/icons-material/Group';
+import CreditCardIcon from '@mui/icons-material/CreditCard';
 import PersonIcon from '@mui/icons-material/Person';
 import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
 import EventIcon from '@mui/icons-material/Event';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import SettingsIcon from '@mui/icons-material/Settings';
+import CelebrationIcon from '@mui/icons-material/Celebration';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
 import Divider from '@mui/material/Divider';
 import { styled } from '@mui/material/styles';
 import Button from '@mui/material/Button';
 import Box from '@mui/material/Box';
+import MailOutlineIcon from '@mui/icons-material/MailOutline';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useUser } from '../../contexts/UserContext';
+import { useEvent } from '../../contexts/EventContext';
+import { useEntitlements, Feature } from '../../hooks/useEntitlements';
 
 const DashboardButton = styled(Button)<{ selected?: boolean }>(({ theme, selected }) => ({
   background: selected 
-    ? 'linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%)'
+    ? 'linear-gradient(90deg, #7C3AED 0%, #EC4899 100%)'
     : 'transparent',
   color: selected ? 'white' : theme.palette.text.primary,
   borderRadius: theme.shape.borderRadius,
@@ -39,7 +46,7 @@ const DashboardButton = styled(Button)<{ selected?: boolean }>(({ theme, selecte
   fontSize: '0.9375rem',
   '&:hover': {
     background: selected
-      ? 'linear-gradient(90deg, #2563eb 0%, #7c3aed 100%)'
+      ? 'linear-gradient(90deg, #6D28D9 0%, #DB2777 100%)'
       : 'rgba(0, 0, 0, 0.04)',
   },
   '& .MuiButton-startIcon': {
@@ -59,16 +66,16 @@ const MenuItemButton = styled(ListItemButton)<{ selected?: boolean }>(({ theme, 
     ? 'transparent'
     : 'transparent',
   background: selected 
-    ? 'linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%)'
+    ? 'linear-gradient(90deg, #7C3AED 0%, #EC4899 100%)'
     : 'transparent',
   color: selected ? 'white' : theme.palette.text.primary,
   '&.Mui-selected': {
     backgroundColor: 'transparent',
-    background: 'linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%)',
+    background: 'linear-gradient(90deg, #7C3AED 0%, #EC4899 100%)',
     color: 'white',
     '&:hover': {
       backgroundColor: 'transparent',
-      background: 'linear-gradient(90deg, #2563eb 0%, #7c3aed 100%)',
+      background: 'linear-gradient(90deg, #6D28D9 0%, #DB2777 100%)',
     },
     '& .MuiListItemIcon-root': {
       color: 'white',
@@ -79,7 +86,7 @@ const MenuItemButton = styled(ListItemButton)<{ selected?: boolean }>(({ theme, 
       ? 'transparent'
       : 'rgba(0, 0, 0, 0.04)',
     background: selected
-      ? 'linear-gradient(90deg, #2563eb 0%, #7c3aed 100%)'
+      ? 'linear-gradient(90deg, #6D28D9 0%, #DB2777 100%)'
       : undefined,
   },
   '& .MuiListItemIcon-root': {
@@ -96,16 +103,25 @@ export default function MenuContent({ onItemClick }: MenuContentProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAdmin } = useUser();
+  const { selectedEvent } = useEvent();
+  const { hasFeature } = useEntitlements(selectedEvent?.planId);
   const [adminOpen, setAdminOpen] = useState(false);
 
   const isDashboardSelected = location.pathname === '/overview';
 
-  const menuItems = [
+  // `feature` gates the item by plan tier; items without one are always shown.
+  const allMenuItems: Array<{ text: string; icon: React.ReactNode; path: string; feature?: Feature }> = [
     { text: 'רשימת אורחים', icon: <PeopleAltIcon />, path: '/guests' },
-    { text: 'ניהול קמפיינים', icon: <SendIcon />, path: '/messages' },
-    { text: 'סידור מושבים', icon: <EventSeatIcon />, path: '/seating' },
+    { text: 'הזמנה דיגיטלית', icon: <MailOutlineIcon />, path: '/invitation', feature: 'web_invitation' },
+    { text: 'ניהול קמפיינים', icon: <SendIcon />, path: '/messages', feature: 'whatsapp_campaigns' },
+    { text: 'תבניות הודעה', icon: <DescriptionIcon />, path: '/templates', feature: 'templates' },
+    { text: 'סידור מושבים', icon: <EventSeatIcon />, path: '/seating', feature: 'seating' },
+    { text: 'חברי צוות', icon: <GroupIcon />, path: '/team', feature: 'team_members' },
+    { text: 'חבילה ושימוש', icon: <CreditCardIcon />, path: '/billing' },
+    { text: 'סיכום האירוע', icon: <CelebrationIcon />, path: '/recap' },
     { text: 'הפרופיל שלי', icon: <PersonIcon />, path: '/profile' },
   ];
+  const menuItems = allMenuItems.filter((item) => !item.feature || hasFeature(item.feature));
 
   const adminMenuItems = [
     { text: 'ניהול משתמשים', icon: <ManageAccountsIcon />, path: '/admin/users' },

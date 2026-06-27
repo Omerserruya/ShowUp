@@ -10,14 +10,28 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, allow_unauthenticated_paths: list[str] | None = None):
+    def __init__(
+        self,
+        app,
+        allow_unauthenticated_paths: list[str] | None = None,
+        allow_unauthenticated_prefixes: list[str] | None = None,
+    ):
         super().__init__(app)
-        self.allow_unauthenticated_paths = set(allow_unauthenticated_paths or ["/healthz", "/docs", "/openapi.json", "/redoc", "/events/test"])
+        self.allow_unauthenticated_paths = set(allow_unauthenticated_paths or ["/healthz"])
+        # Prefix allowlist for routes with path params (e.g. /public/invite/{slug}).
+        self.allow_unauthenticated_prefixes = tuple(allow_unauthenticated_prefixes or [])
         self.jwt_secret = os.getenv("JWT_SECRET")
+
+    def _is_public(self, path: str) -> bool:
+        if path in self.allow_unauthenticated_paths:
+            return True
+        return bool(self.allow_unauthenticated_prefixes) and path.startswith(
+            self.allow_unauthenticated_prefixes
+        )
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Response]) -> Response:
         # Skip auth for public endpoints
-        if request.url.path in self.allow_unauthenticated_paths:
+        if self._is_public(request.url.path):
             return await call_next(request)
 
         # Extract and validate JWT token

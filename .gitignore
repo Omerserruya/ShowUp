@@ -1,6 +1,15 @@
 **/__pycache__/
 node_modules/
 
+# Python tooling / test foundation (V2 transformation)
+.venv/
+**/.venv/
+.pytest_cache/
+**/.pytest_cache/
+*.pyc
+.coverage
+htmlcov/
+
 */.env
 *.env
 **/.env
@@ -9,3 +18,6 @@ node_modules/
 
 .env
 rabbitmqadmin
+.omc
+**/.omc
+**/**/.omc

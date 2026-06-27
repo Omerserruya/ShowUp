@@ -54,21 +54,6 @@ services:
       timeout: 5s
       retries: 5
 
-  mongodb:
-    image: mongo:7
-    ports:
-      - ${MONGO_PORT}:${MONGO_PORT}
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USER}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
-    volumes:
-      - mongodata:/data/db
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   rabbitmq:
     image: rabbitmq:3-management
     ports:
@@ -133,17 +118,15 @@ services:
       - JWT_EXP_SECONDS=${JWT_EXP_SECONDS}
       - OTP_TTL_SEC=${OTP_TTL_SEC}
       - OTP_QUEUE_NAME=${OTP_QUEUE_NAME}
-      - MONGO_HOST=${MONGO_HOST}
-      - MONGO_PORT=${MONGO_PORT}
-      - MONGO_USER=${MONGO_USER}
-      - MONGO_PASSWORD=${MONGO_PASSWORD}
-      - MONGO_DB_NAME=${MONGO_DB_NAME}
       - CORE_SERVICE_URL=${BACKEND_PROTOCOL}://${CORE_SERVICE_HOST}:${CORE_SERVICE_PORT}
+      # iCount PayPage payments — set ICOUNT_API_TOKEN in .env to enable.
+      - ICOUNT_BASE_URL=${ICOUNT_BASE_URL:-}
+      - ICOUNT_API_TOKEN=${ICOUNT_API_TOKEN:-}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
     depends_on:
       - postgres
       - rabbitmq
       - redis
-      - mongodb
   outpost-service:
     build:
       context: ./outpost-service
@@ -191,8 +174,8 @@ services:
 
   campaign-worker:
     build:
-      context: ./campaign-worker
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: campaign-worker/Dockerfile
     environment:
       - DB_HOST=postgres
       - DB_PORT=${DB_PORT}
@@ -252,8 +235,8 @@ services:
 
   webhook-worker:
     build:
-      context: ./webhook-worker
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: webhook-worker/Dockerfile
     environment:
       - DB_HOST=postgres
       - DB_PORT=${DB_PORT}
@@ -284,4 +267,3 @@ networks:
 volumes:
   pgdata:
   redisdata:
-  mongodata:

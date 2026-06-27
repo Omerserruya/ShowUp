@@ -12,6 +12,15 @@ from app.routers.campaigns import router as campaigns_router
 from app.routers.uploads import router as uploads_router
 from app.routers.guest_imports import router as guest_imports_router
 from app.routers.admin import router as admin_router
+from app.routers.custom_fields import router as custom_fields_router
+from app.routers.tags import router as tags_router
+from app.routers.templates import router as templates_router
+from app.routers.timeline import router as timeline_router
+from app.routers.event_ops import router as event_ops_router
+from app.routers.members import router as members_router
+from app.routers.usage_router import router as usage_router
+from app.routers.entitlements import router as entitlements_router
+from app.routers.public_invite import router as public_invite_router
 
 
 def create_app() -> FastAPI:
@@ -70,13 +79,27 @@ def create_app() -> FastAPI:
     app.include_router(uploads_router)
     app.include_router(guest_imports_router)
     app.include_router(admin_router)
+    app.include_router(custom_fields_router)
+    app.include_router(tags_router)
+    app.include_router(templates_router)
+    app.include_router(timeline_router)
+    app.include_router(event_ops_router)
+    app.include_router(members_router)
+    app.include_router(usage_router)
+    app.include_router(entitlements_router)
+    app.include_router(public_invite_router)
 
     @app.get("/healthz")
     def healthz():
         return {"status": "ok"}
 
-    # Auth middleware (currently passthrough; extend to validate JWTs)
-    app.add_middleware(AuthMiddleware)
+    # Auth middleware. Public (unauthenticated) surfaces: health, the static
+    # plan→feature entitlements matrix, and the public web invitation + RSVP pages.
+    app.add_middleware(
+        AuthMiddleware,
+        allow_unauthenticated_paths=["/healthz", "/entitlements"],
+        allow_unauthenticated_prefixes=["/entitlements/", "/public/"],
+    )
 
     return app
 

@@ -63,6 +63,50 @@ def ensure_users_table(env):
             )
 
 
+def _check_internal_secret(x_internal_secret):
+    expected = os.getenv("INTERNAL_API_SECRET")
+    if not expected or x_internal_secret != expected:
+        raise HTTPException(status_code=403, detail="forbidden")
+
+
+@router.get("/internal/user-by-phone")
+def internal_user_by_phone(phone: str, x_internal_secret: str = Header(None)):
+    """Internal: resolve a verified user by phone (cross-service team invites)."""
+    _check_internal_secret(x_internal_secret)
+    env = get_env()
+    ensure_users_table(env)
+    with psycopg2.connect(
+        host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"], password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
+    ) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, first_name, last_name, phone FROM users WHERE phone = %s", (phone,))
+            row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="user not found")
+    return {"user_id": str(row[0]), "first_name": row[1], "last_name": row[2], "phone": row[3]}
+
+
+@router.post("/internal/users")
+def internal_users_by_ids(payload: dict = Body(...), x_internal_secret: str = Header(None)):
+    """Internal: batch-resolve users by id (so core-service can show member names)."""
+    _check_internal_secret(x_internal_secret)
+    ids = payload.get("ids") or []
+    if not ids:
+        return {"users": []}
+    env = get_env()
+    ensure_users_table(env)
+    with psycopg2.connect(
+        host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"], password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
+    ) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, first_name, last_name, phone FROM users WHERE id::text = ANY(%s)",
+                ([str(i) for i in ids],),
+            )
+            rows = cur.fetchall()
+    return {"users": [{"user_id": str(r[0]), "first_name": r[1], "last_name": r[2], "phone": r[3]} for r in rows]}
+
+
 def _otp_key(phone: str) -> str:
     return f"otp:{phone}"
 

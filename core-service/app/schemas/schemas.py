@@ -6,6 +6,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field, EmailStr, field_validator
 
+from shared.domain.enums import CampaignAudience
+
 
 class Pagination(BaseModel):
     page: int = Field(1, ge=1)
@@ -16,6 +18,52 @@ class Pagination(BaseModel):
 class Inviter(BaseModel):
     fn: str = Field(..., description="First name")
     ln: str = Field(..., description="Last name")
+
+
+# ---- Public web invitation (Phase 16) ----
+class InvitationEnvelope(BaseModel):
+    color: str = "#f5efe6"
+    texture: Optional[str] = None        # texture key (e.g. "linen") or image url
+    stampText: Optional[str] = None      # text rendered inside the stamp
+    envelopeText: Optional[str] = None   # text printed on the envelope face
+    font: Optional[str] = None
+
+
+class InvitationHero(BaseModel):
+    imageUrl: Optional[str] = None
+    bigText: Optional[str] = None        # large headline below the photo
+    font: Optional[str] = None
+
+
+class InvitationDetails(BaseModel):
+    showDate: bool = True
+    showTime: bool = True
+    showLocation: bool = True
+
+
+class InvitationConfig(BaseModel):
+    """Design config for the public web invitation. Persisted as Event.invitation."""
+    envelope: InvitationEnvelope = Field(default_factory=InvitationEnvelope)
+    hero: InvitationHero = Field(default_factory=InvitationHero)
+    personalText: Optional[str] = None
+    details: InvitationDetails = Field(default_factory=InvitationDetails)
+    fontFamily: Optional[str] = None
+    rsvpEnabled: bool = True
+
+    class Config:
+        populate_by_name = True
+
+
+class PublicRsvpIn(BaseModel):
+    """Open-form RSVP submitted from the public invitation page (no auth)."""
+    name: str = Field(..., min_length=1, max_length=100)
+    phone: str = Field(..., min_length=5, max_length=20)
+    party_size: int = Field(1, ge=1, le=50, validation_alias="partySize", serialization_alias="partySize")
+    status: str = Field("confirmed", max_length=20)  # confirmed | declined | maybe
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+    class Config:
+        populate_by_name = True
 
 
 # Event Schemas
@@ -30,6 +78,9 @@ class EventBase(BaseModel):
     active: bool = True
     plan_id: Optional[str] = Field(None, serialization_alias="planId")  # Plan ID from MongoDB (serialized as planId)
     seating_layout: Optional[dict] = Field(None, serialization_alias="seatingLayout", validation_alias="seatingLayout")  # { tables: [...] }
+    public_slug: Optional[str] = Field(None, serialization_alias="publicSlug", validation_alias="publicSlug")
+    invitation: Optional[dict] = None  # InvitationConfig design (see schemas.InvitationConfig)
+    invitation_published: Optional[bool] = Field(False, serialization_alias="invitationPublished", validation_alias="invitationPublished")
 
     class Config:
         populate_by_name = True  # Allow both plan_id and planId when parsing
@@ -53,6 +104,7 @@ class EventUpdate(BaseModel):
 
 class EventOut(EventBase):
     id: uuid.UUID
+    state: Optional[str] = None
     created_at: dt.datetime
     updated_at: dt.datetime
 
@@ -127,6 +179,11 @@ class CampaignBase(BaseModel):
     status: str = Field("pending", max_length=20)
     # Number of recipients the campaign was actually sent to (messages enqueued)
     recipient_count: int = Field(0, ge=0)
+    # Phase 6: first-class audience + optional single follow-up.
+    audience: CampaignAudience = CampaignAudience.EVERYONE
+    audience_filter: Optional[dict] = None
+    follow_up_after_hours: Optional[int] = Field(default=None, ge=1)
+    follow_up_audience: Optional[CampaignAudience] = None
 
 
 class CampaignCreate(CampaignBase):
@@ -139,6 +196,10 @@ class CampaignUpdate(BaseModel):
     channel: Optional[str] = Field(default=None, max_length=20)
     schedule_time: Optional[dt.datetime] = None
     status: Optional[str] = Field(default=None, max_length=20)
+    audience: Optional[CampaignAudience] = None
+    audience_filter: Optional[dict] = None
+    follow_up_after_hours: Optional[int] = Field(default=None, ge=1)
+    follow_up_audience: Optional[CampaignAudience] = None
 
 
 class CampaignOut(CampaignBase):
@@ -164,6 +225,7 @@ class GuestStatsOut(BaseModel):
     confirmed: int
     declined: int
     pending: int
+    maybe: int = 0  # guests who replied "maybe" (previously omitted from stats)
 
 
 class DailyResponseData(BaseModel):

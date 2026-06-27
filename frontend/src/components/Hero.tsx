@@ -7,6 +7,7 @@ import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import MenuItem from '@mui/material/MenuItem';
+import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import { keyframes } from '@mui/system';
 import { useNavigate } from 'react-router-dom';
 import { countryOptions, normalizePhoneNumber } from '../utils/countryOptions';
@@ -81,6 +82,38 @@ export default function Hero() {
     } catch (err) {
       console.error('Lead submission failed', err);
     }
+  };
+
+  // Demo CTA: build a per-event-type invite template and open it in WhatsApp, so the
+  // visitor literally receives the message a guest would get. The template links to a
+  // public demo RSVP page (the full guest experience — no signup needed).
+  const handleSeeDemo = () => {
+    const name = fullName.trim();
+    const type = eventType === 'other' && customEventType ? 'other' : (eventType || 'wedding');
+    const rsvpParams = new URLSearchParams();
+    rsvpParams.set('type', eventType || 'wedding');
+    if (name) rsvpParams.set('name', name);
+    const rsvpUrl = `${window.location.origin}/demo/invite?${rsvpParams.toString()}`;
+
+    const greeting = name ? `שלום ${name}! 👋` : 'שלום! 👋';
+    const templates: Record<string, string> = {
+      wedding: `${greeting}\nאתם מוזמנים לחתונה של דנה ❤ יוסי 💍\nיום שלישי, 19:30 · אולמי הגן הקסום, ראשון לציון\nלצפייה בהזמנה ואישור הגעה:\n${rsvpUrl}`,
+      'bar-mitzvah': `${greeting}\nאתם מוזמנים לחגוג את בר המצווה של איתי 🕎\nלצפייה בהזמנה ואישור הגעה:\n${rsvpUrl}`,
+      'bat-mitzvah': `${greeting}\nאתם מוזמנים לחגוג את בת המצווה של מאיה ✨\nלצפייה בהזמנה ואישור הגעה:\n${rsvpUrl}`,
+      brit: `${greeting}\nבשעה טובה — אתם מוזמנים לברית 👶\nלצפייה בהזמנה ואישור הגעה:\n${rsvpUrl}`,
+      corporate: `${greeting}\nאתם מוזמנים לערב ההשקה של ShowUp 🚀\nלצפייה בהזמנה ואישור הגעה:\n${rsvpUrl}`,
+      other: `${greeting}\nאתם מוזמנים לאירוע שלנו 🎉\nלצפייה בהזמנה ואישור הגעה:\n${rsvpUrl}`,
+    };
+    const text = templates[type] || templates.other;
+
+    // Fire-and-forget lead, then open WhatsApp. With a phone we open a chat to that
+    // number (visitor can message themselves); otherwise WhatsApp lets them pick a chat.
+    sendLead('hero_see_demo', LEAD_ENDPOINT_CONTACT);
+    const digits = phone ? normalizePhoneNumber(phone, countryCode).replace(/\D/g, '') : '';
+    const waUrl = digits
+      ? `https://wa.me/${digits}?text=${encodeURIComponent(text)}`
+      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(waUrl, '_blank', 'noopener,noreferrer');
   };
 
   const handleStartNow = () => {
@@ -216,7 +249,8 @@ export default function Hero() {
                 textAlign: 'center',
               }}
             >
-לניהול אורחים חכם.              <br />
+              לניהול אורחים חכם.
+              <br />
               הכל בוואטסאפ.
             </Typography>
             <Typography
@@ -251,9 +285,15 @@ export default function Hero() {
           >
             <Typography
               variant="subtitle1"
-              sx={{ fontWeight: 600, mb: 3, textAlign: 'right' }}
+              sx={{ fontWeight: 600, mb: 0.5, textAlign: 'right' }}
             >
-              רוצים לראות איך האורח יחווה ? נסו בעצמכם
+              רוצים לראות איך האורח יחווה? נסו בעצמכם
+            </Typography>
+            <Typography
+              variant="caption"
+              sx={{ display: 'block', mb: 2.5, textAlign: 'right', color: 'text.secondary' }}
+            >
+              נשלח לכם הזמנת דמו לוואטסאפ — בדיוק כמו שהאורח יקבל 💬
             </Typography>
 
             {/* Full Name Field */}
@@ -474,24 +514,22 @@ export default function Hero() {
               <Button
                 fullWidth
                 variant="contained"
-                onClick={() => {
-                  // Normalize phone number before any potential submission
-                  if (phone && countryCode) {
-                    const normalized = normalizePhoneNumber(phone, countryCode);
-                    console.log('Normalized phone:', normalized);
-                    // Here you can add any submission logic if needed
-                  }
-                }}
+                onClick={handleSeeDemo}
+                startIcon={<WhatsAppIcon />}
                 sx={{
                   borderRadius: 1.5,
-                  py: 0.5,
+                  py: 1,
                   fontSize: 16,
-                  background: 'linear-gradient(90deg,#111827,#000000)',
-                  boxShadow: 'none',
-                  transition: 'transform 0.18s ease, background 0.18s ease',
+                  fontWeight: 700,
+                  gap: 0.5,
+                  background: 'linear-gradient(90deg,#25D366,#128C7E)',
+                  boxShadow: '0 10px 24px rgba(37,211,102,0.35)',
+                  transition: 'transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease',
+                  '& .MuiButton-startIcon': { ml: 0.5, mr: -0.5 },
                   '&:hover': {
-                    background: 'linear-gradient(90deg,#1f2937,#020617)',
-                    transform: 'scale(1.01)',
+                    background: 'linear-gradient(90deg,#1ebe5b,#0f7a6c)',
+                    boxShadow: '0 14px 30px rgba(37,211,102,0.45)',
+                    transform: 'translateY(-1px) scale(1.01)',
                   },
                   '&:active': {
                     transform: 'scale(0.98)',
@@ -499,7 +537,7 @@ export default function Hero() {
                   textTransform: 'none',
                 }}
               >
-                קדימה, תראו לי
+                קדימה, תראו לי בוואטסאפ
               </Button>
             </Box>
 

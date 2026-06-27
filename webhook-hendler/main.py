@@ -146,10 +146,12 @@ def extract_message_data(message: Dict[str, Any], category: str) -> Dict[str, An
                 "button_title": interactive.get("button_reply", {}).get("title")
             }
         else:
-            # Handle direct button type
+            # Handle direct button type (template quick-reply). The payload is the
+            # semantic signal used to resolve the RSVP action downstream.
             button = message.get("button", {})
             return {
                 "button_id": button.get("id"),
+                "button_payload": button.get("payload"),
                 "button_title": button.get("title"),
                 "button_text": button.get("text")
             }
@@ -239,10 +241,10 @@ async def handle_whatsapp_webhook(request: Request):
     try:
         # Get raw body for signature verification and logging
         body = await request.body()
+        # SECURITY: never log request headers (carry the Meta signature) or the
+        # full body (guest PII) at INFO. Size only; full body at DEBUG if enabled.
         try:
-            raw_str = body.decode("utf-8", errors="replace")
-            logger.info(f"Webhook received - raw body: {raw_str}")
-            logger.info(f"Webhook received - headers: {json.dumps(dict(request.headers))}")
+            logger.debug("Webhook received (%d bytes)", len(body))
         except Exception:
             pass
         
@@ -258,9 +260,9 @@ async def handle_whatsapp_webhook(request: Request):
         except json.JSONDecodeError:
             logger.error("Invalid JSON payload")
             raise HTTPException(status_code=400, detail="Invalid JSON")
-        # Log full parsed JSON for debugging/traceability
+        # Full parsed payload contains guest PII; keep at DEBUG only.
         try:
-            logger.info(f"Webhook parsed JSON: {json.dumps(data, ensure_ascii=False)}")
+            logger.debug(f"Webhook parsed JSON: {json.dumps(data, ensure_ascii=False)}")
         except Exception:
             pass
         

@@ -642,6 +642,28 @@ export default function EventWizard() {
     }
   };
 
+  // Payment-free first-run: an authenticated user can create the event now and
+  // pay later (at first real send). Removes the upfront pay-wall before value.
+  const [creatingFree, setCreatingFree] = useState(false);
+  const handleCreateFree = async () => {
+    if (!eventDetails.name?.trim()) {
+      setPaymentErrors({ form: 'יש להזין שם אירוע' });
+      return;
+    }
+    setCreatingFree(true);
+    setPaymentErrors({});
+    try {
+      const eventId = await createEvent();
+      if (eventId) {
+        navigate('/overview');
+      }
+    } catch (error) {
+      setPaymentErrors({ form: 'שגיאה ביצירת האירוע. אנא נסו שוב.' });
+    } finally {
+      setCreatingFree(false);
+    }
+  };
+
   // Info messages for each step
   const getStepInfo = (step: number): string => {
     switch (step) {
@@ -2014,10 +2036,15 @@ export default function EventWizard() {
                   <Button
                     onClick={(e) => {
                       e.preventDefault();
-                      handlePaymentSubmit(e as any);
+                      // The Free plan has no payment step — create the event directly.
+                      if (selectedPackageId === 'free') {
+                        handleCreateFree();
+                      } else {
+                        handlePaymentSubmit(e as any);
+                      }
                     }}
                     variant="contained"
-                    disabled={!canNext || paymentLoading}
+                    disabled={!canNext || paymentLoading || creatingFree}
                     sx={{
                       flex: 1,
                       minWidth: { xs: '120px', sm: '140px' },
@@ -2030,24 +2057,39 @@ export default function EventWizard() {
                       },
                     }}
                   >
-                    {paymentLoading ? <CircularProgress size={24} color="inherit" /> : 'סיום והמשך לתשלום'}
+                    {(paymentLoading || creatingFree)
+                      ? <CircularProgress size={24} color="inherit" />
+                      : selectedPackageId === 'free' ? 'יצירת הזמנה בחינם' : 'סיום והמשך לתשלום'}
                   </Button>
                 </Box>
               ) : activeStep === steps.length - 2 ? (
-                <Button
-                  variant="contained"
-                  onClick={handleNext}
-                  disabled={!canNext}
-                  sx={{
-                    minWidth: { xs: '120px', sm: '140px' },
-                    bgcolor: selectedPlan?.color || 'primary.main',
-                    '&:hover': {
-                      bgcolor: selectedPlan?.color ? alpha(selectedPlan.color, 0.85) : 'primary.dark',
-                    },
-                  }}
-                >
-                  קדימה, בואו נסיים
-                </Button>
+                <Box sx={{ display: 'flex', gap: 1.5, flexDirection: { xs: 'column', sm: 'row-reverse' }, width: '100%' }}>
+                  <Button
+                    variant="contained"
+                    onClick={handleNext}
+                    disabled={!canNext}
+                    sx={{
+                      flex: 1,
+                      minWidth: { xs: '120px', sm: '140px' },
+                      bgcolor: selectedPlan?.color || 'primary.main',
+                      '&:hover': {
+                        bgcolor: selectedPlan?.color ? alpha(selectedPlan.color, 0.85) : 'primary.dark',
+                      },
+                    }}
+                  >
+                    קדימה, בואו נסיים
+                  </Button>
+                  {user && (
+                    <Button
+                      variant="outlined"
+                      onClick={handleCreateFree}
+                      disabled={!canNext || creatingFree}
+                      sx={{ flex: 1, minWidth: { xs: '120px', sm: '140px' } }}
+                    >
+                      {creatingFree ? <CircularProgress size={22} /> : 'צור עכשיו, שלם לפני השליחה'}
+                    </Button>
+                  )}
+                </Box>
               ) : (
                 <Button
                   variant="contained"

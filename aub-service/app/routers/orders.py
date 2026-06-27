@@ -10,12 +10,14 @@ from typing import Any, Dict, List, Optional
 import httpx
 import psycopg2
 import psycopg2.extras
-from fastapi import APIRouter, Body, HTTPException, Path
+from fastapi import APIRouter, Body, HTTPException, Path, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.token_utils import create_jwt
 from app.routers.auth import ensure_users_table, get_env as get_auth_env
+from app.plans_data import get_plan as get_plan_doc
+from app import payments_icount
 
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -71,6 +73,8 @@ def ensure_orders_table(env: Dict[str, Any]) -> None:
           "ALTER TABLE orders ALTER COLUMN location TYPE JSONB USING location::jsonb",
           "ALTER TABLE orders ALTER COLUMN inviters TYPE JSONB USING inviters::jsonb",
           "ALTER TABLE orders ALTER COLUMN campaigns TYPE JSONB USING campaigns::jsonb",
+          # iCount PayPage tracking (maps an iCount sale back to this order).
+          "ALTER TABLE orders ADD COLUMN IF NOT EXISTS icount_sale_id TEXT",
       ]
       for stmt in migration_statements:
         try:
@@ -593,6 +597,158 @@ def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
   }
   print(f"[PROVISION] Provision completed successfully: {json.dumps(result, default=str)}")
   return result
+
+
+def _plan_amount(plan_id: Optional[str]) -> float:
+  """Numeric charge amount for a plan, from the plans JSON config (price like '₪99')."""
+  if not plan_id:
+    return 0.0
+  plan = get_plan_doc(plan_id)
+  if not plan:
+    return 0.0
+  price_str = str(plan.get("price", "0"))
+  digits = "".join(ch for ch in price_str.replace(",", "") if ch.isdigit() or ch == ".")
+  try:
+    return float(digits) if digits else 0.0
+  except ValueError:
+    return 0.0
+
+
+def _public_base(request: Request) -> str:
+  """Public origin for building iCount URLs. Prefer PUBLIC_BASE_URL (must be reachable
+  by iCount's servers for the IPN); fall back to the request origin for local-only use."""
+  cfg = payments_icount.get_config()
+  if cfg["public_base_url"]:
+    return cfg["public_base_url"]
+  return str(request.base_url).rstrip("/")
+
+
+@router.post("/{order_id}/pay/icount", response_model=Dict[str, Any])
+def pay_with_icount(order_id: uuid.UUID = Path(...), request: Request = None) -> Dict[str, Any]:
+  """Generate an iCount PayPage for the order and return the hosted-page `url`
+  (rendered in an iframe by the frontend) plus the sale_id.
+
+  Persists the iCount sale id on the order so the async IPN can verify and
+  provision. Requires buyer identity (set via PATCH /identity) and a positive amount.
+  The charge amount is loaded server-side from the plan config — never from the client.
+  """
+  if not payments_icount.is_configured():
+    raise HTTPException(status_code=503, detail="iCount payments are not configured on the server")
+
+  env = get_env()
+  ensure_orders_table(env)
+  order = _fetch_order(env, order_id)
+
+  if not order.get("phone") or not order.get("first_name"):
+    raise HTTPException(status_code=400, detail="Order is missing buyer identity (call /identity first)")
+
+  amount = _plan_amount(order.get("plan"))
+  if amount <= 0:
+    raise HTTPException(status_code=400, detail="This plan requires no payment")
+
+  full_name = " ".join(filter(None, [order.get("first_name"), order.get("last_name")]))
+  base = _public_base(request)
+  try:
+    result = payments_icount.generate_sale(
+        order_id=str(order_id),
+        amount=amount,
+        description=f"ShowUp · {order.get('event_name') or 'אירוע'} ({order.get('plan')})",
+        full_name=full_name,
+        phone=order.get("phone"),
+        email=order.get("email"),
+        success_url=f"{base}/payment?orderId={order_id}&paid=1",
+        cancel_url=f"{base}/payment?orderId={order_id}&canceled=1",
+        ipn_url=f"{base}/api/orders/icount/callback",
+    )
+  except Exception as e:
+    raise HTTPException(status_code=502, detail=f"iCount error: {e}")
+
+  # Persist the sale id + mark the order awaiting payment.
+  with psycopg2.connect(
+      host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"],
+      password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
+  ) as conn:
+    with conn.cursor() as cur:
+      cur.execute(
+          "UPDATE orders SET icount_sale_id = %s, status = %s, updated_at = NOW() WHERE order_id = %s",
+          (str(result.get("sale_id")), "payment_pending", str(order_id)),
+      )
+      conn.commit()
+
+  return {"url": result.get("url"), "sale_id": result.get("sale_id")}
+
+
+def _order_id_from_callback(env: Dict[str, Any], payload: Dict[str, Any]) -> Optional[uuid.UUID]:
+  """Resolve our order from an iCount IPN: prefer the echoed custom field, else
+  look up by the stored sale id."""
+  # iCount may nest fields under `data`/`sale` and echoes custom fields; be liberal.
+  data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+  sale = data.get("sale") if isinstance(data.get("sale"), dict) else data
+  candidates = [
+      sale.get("custom_order_id"),
+      data.get("custom_order_id"),
+      payload.get("custom_order_id"),
+  ]
+  for c in candidates:
+    if c:
+      try:
+        return uuid.UUID(str(c))
+      except (ValueError, TypeError):
+        pass
+  sale_id = sale.get("sale_id") or data.get("sale_id") or payload.get("sale_id")
+  if sale_id:
+    with psycopg2.connect(
+        host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"],
+        password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
+    ) as conn:
+      with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("SELECT order_id FROM orders WHERE icount_sale_id = %s", (str(sale_id),))
+        row = cur.fetchone()
+        if row:
+          return row["order_id"]
+  return None
+
+
+@router.post("/icount/callback")
+async def icount_callback(request: Request) -> JSONResponse:
+  """Server-to-server IPN from iCount. Re-verifies the sale with iCount
+  (authoritative) and provisions the order on success. Always 200 so iCount does not
+  retry indefinitely; provisioning is idempotent on already-paid orders."""
+  # Accept both form-encoded and JSON IPN bodies.
+  payload: Dict[str, Any] = {}
+  try:
+    ctype = request.headers.get("content-type", "")
+    if "application/json" in ctype:
+      payload = await request.json()
+    else:
+      form = await request.form()
+      payload = dict(form)
+  except Exception:
+    payload = {}
+
+  env = get_env()
+  ensure_orders_table(env)
+  order_id = _order_id_from_callback(env, payload)
+  if not order_id:
+    return JSONResponse(status_code=200, content={"status": "ignored", "reason": "order not found"})
+
+  order = _fetch_order(env, order_id)
+  if order.get("status") == "paid":
+    return JSONResponse(status_code=200, content={"status": "ok", "already_paid": True})
+
+  # Verify with iCount using the stored sale id (don't trust the IPN body alone).
+  sale_id = order.get("icount_sale_id")
+  try:
+    if sale_id:
+      info = payments_icount.get_sale_info(sale_id)
+      if not payments_icount.is_paid(info):
+        return JSONResponse(status_code=200, content={"status": "not_approved"})
+    result = provision_order(order_id)
+    return JSONResponse(status_code=200, content={"status": "ok", "result": result})
+  except Exception as e:
+    # Log and 200 so iCount stops retrying; surfaced in server logs for debugging.
+    print(f"[ICOUNT IPN] provisioning failed for {order_id}: {e}")
+    return JSONResponse(status_code=200, content={"status": "error", "detail": str(e)})
 
 
 @router.post("/webhook/payment", response_model=Dict[str, Any])

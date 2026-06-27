@@ -2,22 +2,29 @@ import React from 'react';
 import { Experimental_CssVarsProvider as CssVarsProvider } from '@mui/material/styles';
 import { experimental_extendTheme as extendTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
-import { brand, gray } from '../shared-theme/themePrimitives';
+import { brand, pink, gray } from '../shared-theme/themePrimitives';
 import { alpha } from '@mui/material/styles';
 
 const theme = extendTheme({
+  shape: { borderRadius: 10 },
   colorSchemes: {
     light: {
       palette: {
         primary: {
-          main: '#1976d2',
-          light: brand[200],
+          main: brand[500],
+          light: brand[300],
           dark: brand[700],
-          contrastText: brand[50],
+          contrastText: '#ffffff',
+        },
+        secondary: {
+          main: pink[400],
+          light: pink[200],
+          dark: pink[600],
+          contrastText: '#ffffff',
         },
         background: {
-          default: 'hsl(0, 0%, 99%)',
-          paper: 'hsl(220, 35%, 97%)',
+          default: 'hsl(0, 0%, 100%)',
+          paper: 'hsl(262, 60%, 99%)',
         },
         text: {
           primary: gray[800],
@@ -32,11 +39,17 @@ const theme = extendTheme({
           main: brand[400],
           light: brand[300],
           dark: brand[700],
-          contrastText: brand[50],
+          contrastText: '#ffffff',
+        },
+        secondary: {
+          main: pink[400],
+          light: pink[300],
+          dark: pink[600],
+          contrastText: '#ffffff',
         },
         background: {
           default: gray[900],
-          paper: 'hsl(220, 30%, 7%)',
+          paper: 'hsl(263, 30%, 9%)',
         },
         text: {
           primary: 'hsl(0, 0%, 100%)',

@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import Toast from '../components/Toast';
+import ResponsiveDialog from '../components/ResponsiveDialog';
+import { fireConfetti, fireConfettiOnce } from '../utils/confetti';
 import {
   Box,
   Typography,
   Paper,
   Button,
-  Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
@@ -303,6 +305,9 @@ function Messages() {
   const [updating, setUpdating] = useState<string | null>(null);
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
   const [selectingTemplateFor, setSelectingTemplateFor] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({ open: false, message: '', severity: 'info' });
+  const [deleteTarget, setDeleteTarget] = useState<Campaign | null>(null);
+  const showToast = (message: string, severity: 'success' | 'error' | 'info' = 'info') => setToast({ open: true, message, severity });
 
   // Map API campaigns to local format and fetch stats
   useEffect(() => {
@@ -581,7 +586,7 @@ function Messages() {
       ));
     } catch (error) {
       console.error('Error pausing campaign:', error);
-      alert('שגיאה בהשהיית הקמפיין');
+      showToast('שגיאה בהשהיית הקמפיין', 'error');
     } finally {
       setUpdating(null);
     }
@@ -601,7 +606,7 @@ function Messages() {
       ));
     } catch (error) {
       console.error('Error resuming campaign:', error);
-      alert('שגיאה בחידוש הקמפיין');
+      showToast('שגיאה בחידוש הקמפיין', 'error');
     } finally {
       setUpdating(null);
     }
@@ -631,9 +636,14 @@ function Messages() {
       ));
       setSendNowDialogOpen(false);
       setSendNowCampaign(null);
+      // Celebrate the first campaign ever sent; fire a normal burst on later sends.
+      if (!fireConfettiOnce('first_campaign_sent')) {
+        fireConfetti();
+      }
+      showToast('הקמפיין נשלח! ההודעות בדרך 🎉', 'success');
     } catch (error) {
       console.error('Error sending campaign:', error);
-      alert('שגיאה בתזמון השליחה');
+      showToast('שגיאה בתזמון השליחה', 'error');
     } finally {
       setUpdating(null);
     }
@@ -700,7 +710,7 @@ function Messages() {
       setEditType(null);
     } catch (error) {
       console.error('Error updating campaign:', error);
-      alert('שגיאה בעדכון הקמפיין');
+      showToast('שגיאה בעדכון הקמפיין', 'error');
     } finally {
       setSaving(false);
     }
@@ -711,25 +721,29 @@ function Messages() {
     setExpandedCampaignId(expandedCampaignId === campaignId ? null : campaignId);
   };
 
-  const handleDelete = async (campaign: Campaign) => {
-    if (!window.confirm(`האם אתה בטוח שברצונך למחוק את הקמפיין "${campaign.name}"?`)) {
-      return;
-    }
+  const handleDelete = (campaign: Campaign) => {
+    setDeleteTarget(campaign);
+  };
 
+  const confirmDelete = async () => {
+    const campaign = deleteTarget;
+    if (!campaign) return;
+    setDeleteTarget(null);
     setUpdating(campaign.id);
     try {
       const response = await fetchWithAuth(`/api/campaigns/${campaign.id}`, {
         method: 'DELETE',
       });
       if (!response.ok) throw new Error('Failed to delete campaign');
-      
+
       setCampaigns(prev => prev.filter(c => c.id !== campaign.id));
       if (expandedCampaignId === campaign.id) {
         setExpandedCampaignId(null);
       }
+      showToast('הקמפיין נמחק', 'success');
     } catch (error) {
       console.error('Error deleting campaign:', error);
-      alert('שגיאה במחיקת הקמפיין');
+      showToast('שגיאה במחיקת הקמפיין', 'error');
     } finally {
       setUpdating(null);
     }
@@ -767,7 +781,7 @@ function Messages() {
       setSelectingTemplateFor(null);
     } catch (error) {
       console.error('Error updating template:', error);
-      alert('שגיאה בעדכון התבנית. נסה שוב.');
+      showToast('שגיאה בעדכון התבנית. נסה שוב.', 'error');
     } finally {
       setUpdating(null);
     }
@@ -1802,7 +1816,7 @@ function Messages() {
       </Paper>
 
       {/* Edit Dialog */}
-      <Dialog
+      <ResponsiveDialog
         open={editDialogOpen}
         onClose={() => {
           if (!saving) {
@@ -1873,10 +1887,10 @@ function Messages() {
             {saving ? <CircularProgress size={20} /> : 'שמור שינויים'}
           </Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
       {/* Send Now Confirmation Dialog */}
-      <Dialog
+      <ResponsiveDialog
         open={sendNowDialogOpen}
         onClose={() => {
           if (!updating) {
@@ -1951,10 +1965,32 @@ function Messages() {
             {updating ? 'שולח...' : 'שלח עכשיו'}
           </Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
+      {/* Delete confirmation */}
+      <ResponsiveDialog open={deleteTarget !== null} onClose={() => setDeleteTarget(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>מחיקת סבב</DialogTitle>
+        <DialogContent>
+          <Typography>
+            האם למחוק את הסבב "{deleteTarget?.name}"? לא ניתן לבטל פעולה זו.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteTarget(null)}>ביטול</Button>
+          <Button color="error" variant="contained" onClick={confirmDelete}>
+            מחק
+          </Button>
+        </DialogActions>
+      </ResponsiveDialog>
+
+      <Toast
+        open={toast.open}
+        message={toast.message}
+        severity={toast.severity}
+        onClose={() => setToast(prev => ({ ...prev, open: false }))}
+      />
     </Box>
   );
 }
 
-export default Messages; 
+export default Messages;

@@ -1,0 +1,87 @@
+![
+  {
+    "id": "free",
+    "title": "Free",
+    "subtitle": "להתחיל בחינם",
+    "price": "₪0",
+    "description": "עד 25 אורחים",
+    "features": [
+      "הזמנה דיגיטלית (דף אינטרנט) עם אישור הגעה",
+      "קישור לשיתוף ידני",
+      "דשבורד תגובות לצפייה",
+      "ייצוא רשימת אורחים ל-CSV"
+    ],
+    "color": "#9E9E9E",
+    "is_popular": false,
+    "is_active": true,
+    "count_limit": 25,
+    "campaigns": []
+  },
+  {
+    "id": "basic",
+    "title": "Basic",
+    "subtitle": "בוא נתחיל",
+    "price": "₪39",
+    "description": "עד 50 אורחים",
+    "features": [
+      "שליחת הודעות בסיסיות בוואטסאפ",
+      "מעקב תגובות בסיסי",
+      "דשבורד תגובות"
+    ],
+    "color": "#4CAF50",
+    "is_popular": false,
+    "is_active": true,
+    "count_limit": 50,
+    "campaigns": [
+      { "enabled": true, "label": "RSVP", "offset_days": 7, "time": "12:00" },
+      { "enabled": true, "label": "rsvp_reminder", "offset_days": 1, "time": "18:00" }
+    ]
+  },
+  {
+    "id": "plus",
+    "title": "Plus",
+    "subtitle": "אירוע בשליטה",
+    "price": "₪99",
+    "description": "עד 250 אורחים",
+    "features": [
+      "תזמון הודעות מתקדם",
+      "תגובות מסווגות לפי תוכן",
+      "ייבוא אנשי קשר מכל פורמט",
+      "תמיכה בצ'אט"
+    ],
+    "color": "#2196F3",
+    "is_popular": true,
+    "is_active": true,
+    "count_limit": 250,
+    "campaigns": [
+      { "enabled": true, "label": "RSVP", "offset_days": 30, "time": "10:00" },
+      { "enabled": true, "label": "nudge_reminder", "offset_days": 7, "time": "12:00" },
+      { "enabled": true, "label": "event_remind", "offset_days": 1, "time": "18:00" },
+      { "enabled": true, "label": "thank_you", "offset_days": -1, "time": "11:00" }
+    ]
+  },
+  {
+    "id": "pro",
+    "title": "Pro",
+    "subtitle": "הכול כלול",
+    "price": "₪199",
+    "description": "ללא הגבלת אורחים",
+    "features": [
+      "אוטומציות ותזכורות מתקדמות",
+      "אינטגרציות עם Google Sheets / CRM",
+      "ניתוחי בינה מלאכותית לתגובות",
+      "תיוגים והערות על אורחים",
+      "תמיכה טלפונית"
+    ],
+    "color": "#9C27B0",
+    "is_popular": false,
+    "is_active": true,
+    "count_limit": null,
+    "campaigns": [
+      { "enabled": true, "label": "RSVP", "offset_days": 30, "time": "10:00" },
+      { "enabled": true, "label": "nudge_reminder", "offset_days": 7, "time": "12:00" },
+      { "enabled": true, "label": "event_remind", "offset_days": 1, "time": "18:00" },
+      { "enabled": true, "label": "thank_you", "offset_days": -1, "time": "11:00" }
+    ]
+  }
+]

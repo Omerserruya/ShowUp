@@ -13,7 +13,6 @@ import {
   InputLabel,
   Chip,
   IconButton,
-  Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
@@ -21,6 +20,7 @@ import {
   Tab,
   Grid,
   Divider,
+  Checkbox,
   useTheme,
   useMediaQuery,
   InputAdornment,
@@ -69,6 +69,11 @@ import { countryOptions, normalizePhoneNumber } from '../utils/countryOptions';
 import { ImportedGuestsSection } from '../components/ImportedGuestsSection';
 import { ImportedGuestsWidget } from '../components/ImportedGuestsWidget';
 
+import ResponsiveDialog from '../components/ResponsiveDialog';
+import GuestTimeline from '../components/GuestTimeline';
+import BulkActionsBar from '../components/BulkActionsBar';
+import TagPickerDialog, { Tag } from '../components/TagPickerDialog';
+import CopyGuestsDialog from '../components/CopyGuestsDialog';
 // Types
 interface Guest {
   _id: string;
@@ -131,7 +136,7 @@ const statusLabels = {
 function Guests() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const { selectedEvent } = useEvent();
+  const { selectedEvent, events } = useEvent();
   // Map plan_id from API to planId for frontend compatibility
   const planId = selectedEvent?.planId || (selectedEvent as any)?.plan_id || null;
   const { plan, loading: planLoading, error: planError } = usePlan(planId);
@@ -171,7 +176,16 @@ function Guests() {
   const [editValues, setEditValues] = useState<Record<string, any>>({});
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingGuestData, setEditingGuestData] = useState<Guest | null>(null);
-  
+
+  // Bulk selection / actions
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [tagDialogOpen, setTagDialogOpen] = useState(false);
+  const [bulkGroupOpen, setBulkGroupOpen] = useState(false);
+  const [bulkGroupValue, setBulkGroupValue] = useState('');
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [copyGuestsOpen, setCopyGuestsOpen] = useState(false);
+
   // New guest (manual add)
   const [newGuest, setNewGuest] = useState({
     name: '',
@@ -193,6 +207,10 @@ function Guests() {
   const [exportLoading, setExportLoading] = useState(false);
   const [exportMenuAnchor, setExportMenuAnchor] = useState<null | HTMLElement>(null);
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<null | {
+    rows: { name: string; phone: string; valid: boolean; issue?: string }[];
+    total: number; validCount: number; invalidCount: number; duplicateCount: number;
+  }>(null);
   const [importing, setImporting] = useState(false);
   const [deleteConfirmGuestId, setDeleteConfirmGuestId] = useState<string | null>(null);
   const [changeCountGuestId, setChangeCountGuestId] = useState<string | null>(null);
@@ -200,6 +218,21 @@ function Guests() {
   const [copiedPhone, setCopiedPhone] = useState(false);
   
   // Read filter from URL query parameter on mount and when URL changes
+  // Respond to global keyboard shortcuts (see KeyboardShortcuts.tsx).
+  useEffect(() => {
+    const openAdd = () => setGuestModalOpen(true);
+    const focusSearch = () => {
+      const input = document.querySelector<HTMLInputElement>('input[placeholder="חיפוש אורח..."]');
+      input?.focus();
+    };
+    window.addEventListener('showup:new-guest', openAdd);
+    window.addEventListener('showup:focus-search', focusSearch);
+    return () => {
+      window.removeEventListener('showup:new-guest', openAdd);
+      window.removeEventListener('showup:focus-search', focusSearch);
+    };
+  }, []);
+
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
     const filter = searchParams.get('filter') || searchParams.get('filtering');
@@ -345,6 +378,99 @@ function Guests() {
     }
   }, []);
 
+  // --- Bulk selection helpers ---
+  const toggleSelect = useCallback((guestId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(guestId)) next.delete(guestId); else next.add(guestId);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
+  const toggleSelectAll = useCallback((ids: string[]) => {
+    setSelectedIds(prev => {
+      const allSelected = ids.length > 0 && ids.every(id => prev.has(id));
+      return allSelected ? new Set() : new Set(ids);
+    });
+  }, []);
+
+  // Bulk delete the selected guests.
+  const bulkDelete = useCallback(async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    let failed = 0;
+    await Promise.all(ids.map(async (id) => {
+      try {
+        const res = await fetchWithAuth(`/api/guests/${id}`, { method: 'DELETE' });
+        if (!res.ok) failed++;
+      } catch { failed++; }
+    }));
+    setBulkBusy(false);
+    setBulkDeleteOpen(false);
+    clearSelection();
+    setRefreshKey(prev => prev + 1);
+    setStatsRefreshKey(prev => prev + 1);
+    setSnackbar({
+      open: true,
+      message: failed ? `נמחקו ${ids.length - failed}, נכשלו ${failed}` : `${ids.length} אורחים נמחקו`,
+      severity: failed ? 'error' : 'success',
+    });
+  }, [selectedIds, clearSelection]);
+
+  // Move all selected guests into a group.
+  const bulkMoveGroup = useCallback(async () => {
+    const ids = Array.from(selectedIds);
+    const group = bulkGroupValue.trim();
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    let failed = 0;
+    await Promise.all(ids.map(async (id) => {
+      try {
+        const res = await fetchWithAuth(`/api/guests/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ group }),
+        });
+        if (!res.ok) failed++;
+      } catch { failed++; }
+    }));
+    setBulkBusy(false);
+    setBulkGroupOpen(false);
+    setBulkGroupValue('');
+    clearSelection();
+    setRefreshKey(prev => prev + 1);
+    setSnackbar({
+      open: true,
+      message: failed ? `עודכנו ${ids.length - failed}, נכשלו ${failed}` : `${ids.length} אורחים הועברו לקבוצה`,
+      severity: failed ? 'error' : 'success',
+    });
+  }, [selectedIds, bulkGroupValue, clearSelection]);
+
+  // Assign a tag to all selected guests.
+  const bulkAssignTag = useCallback(async (tag: Tag) => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    let failed = 0;
+    await Promise.all(ids.map(async (id) => {
+      try {
+        const res = await fetchWithAuth(`/api/guests/${id}/tags/${tag.id}`, { method: 'POST' });
+        if (!res.ok && res.status !== 204) failed++;
+      } catch { failed++; }
+    }));
+    setBulkBusy(false);
+    setTagDialogOpen(false);
+    clearSelection();
+    setRefreshKey(prev => prev + 1);
+    setSnackbar({
+      open: true,
+      message: failed ? `תויגו ${ids.length - failed}, נכשלו ${failed}` : `התגית "${tag.name}" נוספה ל-${ids.length} אורחים`,
+      severity: failed ? 'error' : 'success',
+    });
+  }, [selectedIds, clearSelection]);
+
   // Export guests (CSV/XLSX)
   const handleExport = useCallback(async (format: 'csv' | 'xlsx') => {
     if (!selectedEvent?.id) return;
@@ -405,9 +531,71 @@ function Guests() {
   }, []);
 
   // Import guests from CSV/XLSX
+  // --- CSV preview & validation (gives users confidence before they commit) ---
+  const splitCsvLine = (line: string): string[] => {
+    const out: string[] = [];
+    let cur = '';
+    let q = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (q) {
+        if (c === '"') {
+          if (line[i + 1] === '"') { cur += '"'; i++; } else { q = false; }
+        } else { cur += c; }
+      } else if (c === '"') { q = true; }
+      else if (c === ',') { out.push(cur); cur = ''; }
+      else { cur += c; }
+    }
+    out.push(cur);
+    return out.map((s) => s.trim());
+  };
+
+  const buildCsvPreview = (text: string) => {
+    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    if (lines.length === 0) return { rows: [], total: 0, validCount: 0, invalidCount: 0, duplicateCount: 0 };
+    const header = splitCsvLine(lines[0]);
+    const findIdx = (subs: string[]) => header.findIndex((h) => subs.some((s) => h.includes(s)));
+    let nameIdx = findIdx(['שם']);
+    let phoneIdx = findIdx(['טלפון', 'נייד', 'phone', 'tel']);
+    let dataLines = lines.slice(1);
+    if (nameIdx === -1 && phoneIdx === -1) { nameIdx = 0; phoneIdx = 1; dataLines = lines; }
+    else { if (nameIdx === -1) nameIdx = 0; if (phoneIdx === -1) phoneIdx = 1; }
+    const seen = new Set<string>();
+    let duplicateCount = 0;
+    const rows = dataLines.map((line) => {
+      const cells = splitCsvLine(line);
+      const name = (cells[nameIdx] || '').trim();
+      const phoneRaw = (cells[phoneIdx] || '').trim();
+      const phoneDigits = phoneRaw.replace(/\D/g, '');
+      let valid = true;
+      let issue: string | undefined;
+      if (!name) { valid = false; issue = 'חסר שם'; }
+      else if (phoneDigits.length < 7) { valid = false; issue = 'טלפון לא תקין'; }
+      else if (seen.has(phoneDigits)) { valid = false; issue = 'כפילות'; duplicateCount++; }
+      if (valid) seen.add(phoneDigits);
+      return { name, phone: phoneRaw, valid, issue };
+    });
+    const validCount = rows.filter((r) => r.valid).length;
+    const invalidCount = rows.filter((r) => !r.valid && r.issue !== 'כפילות').length;
+    return { rows, total: rows.length, validCount, invalidCount, duplicateCount };
+  };
+
   const handleImportFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] || null;
     setImportFile(file);
+    setImportPreview(null);
+    if (!file) return;
+    const isCsv = file.name.toLowerCase().endsWith('.csv') || file.type === 'text/csv';
+    if (!isCsv) return; // Excel files are parsed server-side; preview is CSV-only.
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        setImportPreview(buildCsvPreview(String(reader.result || '')));
+      } catch {
+        setImportPreview(null);
+      }
+    };
+    reader.readAsText(file);
   }, []);
 
   const handleImportGuests = useCallback(async () => {
@@ -436,6 +624,7 @@ function Guests() {
       setSnackbar({ open: true, message: 'האורחים יובאו בהצלחה', severity: 'success' });
       setImportModalOpen(false);
       setImportFile(null);
+      setImportPreview(null);
       setRefreshKey(prev => prev + 1);
       setStatsRefreshKey(prev => prev + 1);
     } catch (error) {
@@ -1261,7 +1450,7 @@ function Guests() {
       </Box>
 
       {/* Delete confirmation dialog */}
-      <Dialog
+      <ResponsiveDialog
         open={!!deleteConfirmGuestId}
         onClose={() => setDeleteConfirmGuestId(null)}
       >
@@ -1288,10 +1477,10 @@ function Guests() {
             מחיקה
           </Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
       {/* Change count dialog */}
-      <Dialog
+      <ResponsiveDialog
         open={!!changeCountGuestId}
         onClose={() => setChangeCountGuestId(null)}
         maxWidth="xs"
@@ -1361,7 +1550,7 @@ function Guests() {
             שמור
           </Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
       {/* Content Section */}
       <Box sx={{ p: { xs: 2, sm: 3 } }}>
@@ -1590,6 +1779,14 @@ function Guests() {
             >
               <TableHead>
                 <TableRow>
+                  <TableCell padding="checkbox" sx={{ backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>
+                    <Checkbox
+                      size="small"
+                      checked={filteredGuests.length > 0 && filteredGuests.every(g => selectedIds.has(g._id))}
+                      indeterminate={filteredGuests.some(g => selectedIds.has(g._id)) && !filteredGuests.every(g => selectedIds.has(g._id))}
+                      onChange={() => toggleSelectAll(filteredGuests.map(g => g._id))}
+                    />
+                  </TableCell>
                   <TableCell align="right" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>שם מלא</TableCell>
                   <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>טלפון</TableCell>
                   <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>קבוצה</TableCell>
@@ -1606,7 +1803,7 @@ function Guests() {
           <TableBody>
             {guestsLoading ? (
               <TableRow>
-                <TableCell colSpan={hasTableNumbers ? 9 : 8} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
+                <TableCell colSpan={hasTableNumbers ? 10 : 9} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
                   <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
                     <CircularProgress size={40} />
                   </Box>
@@ -1614,7 +1811,7 @@ function Guests() {
               </TableRow>
             ) : filteredGuests.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={hasTableNumbers ? 9 : 8} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
+                <TableCell colSpan={hasTableNumbers ? 10 : 9} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
                   <Typography variant="body1" color="text.secondary" sx={{ py: 4 }}>
                     {searchQuery ? 'לא נמצאו תוצאות' : 'אין מוזמנים'}
                   </Typography>
@@ -1632,6 +1829,13 @@ function Guests() {
                         borderBottomColor: 'divider'
                       }}
                     >
+                      <TableCell padding="checkbox" sx={{ backgroundColor: 'white' }}>
+                        <Checkbox
+                          size="small"
+                          checked={selectedIds.has(guest._id)}
+                          onChange={() => toggleSelect(guest._id)}
+                        />
+                      </TableCell>
                       <TableCell align="right" sx={{ backgroundColor: 'white', textAlign: 'right' }}>
                         {editingGuest === guest._id && editingField === 'name' ? (
                           <TextField
@@ -2411,6 +2615,14 @@ function Guests() {
                             position: 'relative'
                           }}
                         >
+                          {/* Selection checkbox (top-leading corner) */}
+                          <Checkbox
+                            size="small"
+                            checked={selectedIds.has(guest._id)}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={() => toggleSelect(guest._id)}
+                            sx={{ position: 'absolute', top: 4, left: 4, p: 0.5, zIndex: 1 }}
+                          />
                           {mobileEditingGuest === guest._id ? (
                             /* Edit Mode */
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
@@ -2993,7 +3205,7 @@ function Guests() {
       </Box>
 
       {/* Guest Modal */}
-      <Dialog 
+      <ResponsiveDialog 
         open={guestModalOpen} 
         onClose={() => setGuestModalOpen(false)}
         maxWidth="sm"
@@ -3190,10 +3402,10 @@ function Guests() {
             {savingNewGuest ? 'שומר...' : 'שמירה'}
           </Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
       {/* Import Modal */}
-      <Dialog
+      <ResponsiveDialog
         open={importModalOpen}
         onClose={() => setImportModalOpen(false)}
         maxWidth="md"
@@ -3202,6 +3414,18 @@ function Guests() {
         <DialogTitle>ייבוא אורחים</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, py: 2 }}>
+            {/* Copy from a previous event */}
+            {events.filter((e) => e.id !== selectedEvent?.id).length > 0 && (
+              <Button
+                variant="outlined"
+                fullWidth
+                startIcon={<ContentCopyIcon />}
+                onClick={() => setCopyGuestsOpen(true)}
+                sx={{ justifyContent: 'flex-start', py: 1.5, borderRadius: 2 }}
+              >
+                העתק אורחים מאירוע קודם
+              </Button>
+            )}
             {/* WhatsApp Option - First */}
             <Box
               sx={{
@@ -3357,22 +3581,70 @@ function Guests() {
                 </Button>
               </label>
             </Box>
+
+            {/* Preview & validation (CSV) */}
+            {importPreview && (
+              <Box>
+                <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 600 }}>
+                  בדיקה לפני ייבוא
+                </Typography>
+                <Stack direction="row" spacing={1} sx={{ mb: 1.5, flexWrap: 'wrap', gap: 1 }}>
+                  <Chip color="success" label={`${importPreview.validCount} תקינים`} />
+                  {importPreview.duplicateCount > 0 && (
+                    <Chip color="warning" label={`${importPreview.duplicateCount} כפילויות`} />
+                  )}
+                  {importPreview.invalidCount > 0 && (
+                    <Chip color="error" label={`${importPreview.invalidCount} שגויים`} />
+                  )}
+                </Stack>
+                <Box sx={{ maxHeight: 220, overflowY: 'auto', border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                  {importPreview.rows.slice(0, 50).map((r, i) => (
+                    <Box
+                      key={i}
+                      sx={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        px: 1.5, py: 0.75, borderBottom: '1px solid', borderColor: 'divider',
+                        bgcolor: r.valid ? 'transparent' : alpha(theme.palette.error.main, 0.05),
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', gap: 2, minWidth: 0 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }} noWrap>{r.name || '—'}</Typography>
+                        <Typography variant="body2" color="text.secondary" noWrap>{r.phone || '—'}</Typography>
+                      </Box>
+                      {r.valid
+                        ? <CheckCircleIcon color="success" fontSize="small" />
+                        : <Chip size="small" color={r.issue === 'כפילות' ? 'warning' : 'error'} label={r.issue} />}
+                    </Box>
+                  ))}
+                </Box>
+                {importPreview.total > 50 && (
+                  <Typography variant="caption" color="text.secondary">
+                    מוצגות 50 השורות הראשונות מתוך {importPreview.total}
+                  </Typography>
+                )}
+                {importPreview.validCount === 0 && (
+                  <Alert severity="error" sx={{ mt: 1 }}>
+                    לא נמצאו שורות תקינות. ודאו שהקובץ כולל עמודות "שם" ו"טלפון".
+                  </Alert>
+                )}
+              </Box>
+            )}
           </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setImportModalOpen(false)}>ביטול</Button>
-          <Button 
-            variant="contained" 
+          <Button
+            variant="contained"
             onClick={handleImportGuests}
-            disabled={importing || !importFile}
+            disabled={importing || !importFile || (importPreview !== null && importPreview.validCount === 0)}
           >
-            {importing ? 'מייבא...' : 'ייבוא'}
+            {importing ? 'מייבא...' : importPreview ? `ייבא ${importPreview.validCount} אורחים` : 'ייבוא'}
           </Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
 
       {/* Edit Guest Modal */}
-      <Dialog 
+      <ResponsiveDialog 
         open={editModalOpen} 
         onClose={() => {
           setEditModalOpen(false);
@@ -3457,6 +3729,13 @@ function Guests() {
                   <MenuItem value="declined">דחה</MenuItem>
                 </Select>
               </FormControl>
+
+              {/* Activity timeline */}
+              <Divider sx={{ mt: 1 }} />
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+                היסטוריית פעילות
+              </Typography>
+              <GuestTimeline guestId={editingGuestData._id} />
             </Box>
           )}
         </DialogContent>
@@ -3493,7 +3772,85 @@ function Guests() {
             שמור
           </Button>
         </DialogActions>
-      </Dialog>
+      </ResponsiveDialog>
+
+      {/* Bulk action bar (appears when guests are selected) */}
+      <BulkActionsBar
+        count={selectedIds.size}
+        busy={bulkBusy}
+        onTag={() => setTagDialogOpen(true)}
+        onMoveGroup={() => setBulkGroupOpen(true)}
+        onDelete={() => setBulkDeleteOpen(true)}
+        onClear={clearSelection}
+      />
+
+      {/* Multi-event reuse: copy guests from another event */}
+      {selectedEvent?.id && (
+        <CopyGuestsDialog
+          open={copyGuestsOpen}
+          currentEventId={selectedEvent.id}
+          events={events}
+          onClose={() => setCopyGuestsOpen(false)}
+          onDone={(copied, failed) => {
+            setCopyGuestsOpen(false);
+            setImportModalOpen(false);
+            setRefreshKey(prev => prev + 1);
+            setStatsRefreshKey(prev => prev + 1);
+            setSnackbar({
+              open: true,
+              message: failed ? `הועתקו ${copied} אורחים, נכשלו ${failed}` : `${copied} אורחים הועתקו בהצלחה`,
+              severity: failed ? 'error' : 'success',
+            });
+          }}
+        />
+      )}
+
+      {/* Bulk: tag picker */}
+      {selectedEvent?.id && (
+        <TagPickerDialog
+          open={tagDialogOpen}
+          eventId={selectedEvent.id}
+          selectedCount={selectedIds.size}
+          onClose={() => setTagDialogOpen(false)}
+          onPick={bulkAssignTag}
+        />
+      )}
+
+      {/* Bulk: move to group */}
+      <ResponsiveDialog open={bulkGroupOpen} onClose={() => setBulkGroupOpen(false)} maxWidth="xs" fullWidth dir="rtl">
+        <DialogTitle>העברת {selectedIds.size} אורחים לקבוצה</DialogTitle>
+        <DialogContent>
+          <Autocomplete
+            freeSolo
+            fullWidth
+            options={uniqueGroups}
+            value={bulkGroupValue}
+            onChange={(_, v) => setBulkGroupValue(typeof v === 'string' ? v : v || '')}
+            onInputChange={(_, v) => setBulkGroupValue(v)}
+            renderInput={(params) => <TextField {...params} label="שם הקבוצה" sx={{ mt: 1 }} />}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBulkGroupOpen(false)} disabled={bulkBusy}>ביטול</Button>
+          <Button variant="contained" onClick={bulkMoveGroup} disabled={bulkBusy || !bulkGroupValue.trim()}>
+            העבר
+          </Button>
+        </DialogActions>
+      </ResponsiveDialog>
+
+      {/* Bulk: delete confirmation */}
+      <ResponsiveDialog open={bulkDeleteOpen} onClose={() => setBulkDeleteOpen(false)} maxWidth="xs" fullWidth dir="rtl">
+        <DialogTitle>מחיקת {selectedIds.size} אורחים</DialogTitle>
+        <DialogContent>
+          <Typography>האם למחוק את {selectedIds.size} האורחים שנבחרו? לא ניתן לבטל פעולה זו.</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBulkDeleteOpen(false)} disabled={bulkBusy}>ביטול</Button>
+          <Button variant="contained" color="error" onClick={bulkDelete} disabled={bulkBusy}>
+            מחק
+          </Button>
+        </DialogActions>
+      </ResponsiveDialog>
     </Box>
   );
 }

@@ -47,7 +47,8 @@ def fetch_campaign_by_id(conn: psycopg2.extensions.connection, campaign_id: str)
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
-            SELECT id, event_id, name, template, channel, schedule_time, status, recipient_count
+            SELECT id, event_id, name, template, channel, schedule_time, status, recipient_count,
+                   audience, audience_filter, follow_up_after_hours, follow_up_audience
             FROM campaigns
             WHERE id = %s
             """,
@@ -61,7 +62,7 @@ def fetch_event_by_id(conn: psycopg2.extensions.connection, event_id: str) -> Op
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
-            SELECT id, name, description, event_date, location, active, created_at, updated_at, inviters, owners
+            SELECT id, name, description, event_date, location, active, created_at, updated_at, inviters, owners, account_id
             FROM events
             WHERE id = %s
             """,
@@ -131,6 +132,56 @@ def mark_campaign_completed(
             """,
             (sent_count, campaign_id),
         )
+
+
+def record_message_usage(conn, account_id, event_id: str, quantity: int, ref_id: Optional[str] = None) -> None:
+    """Meter messages sent for a campaign (Phase 10). Internal cost metric only.
+    Safe no-op if the table is absent (older deployments)."""
+    import uuid as _uuid
+    if not quantity:
+        return
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO usage_events (id, account_id, event_id, metric, quantity, ref_id)
+                VALUES (%s, %s, %s, 'message_sent', %s, %s)
+                """,
+                (str(_uuid.uuid4()), account_id, event_id, quantity, ref_id),
+            )
+    except Exception:
+        # Metering must never break sending.
+        pass
+
+
+def create_follow_up_campaign(conn, parent: dict, hours: int, audience: str) -> Optional[str]:
+    """Create ONE follow-up round (no sequence engine): a new pending campaign
+    scheduled `hours` from now, targeting `audience`, reusing the parent's template.
+    follow-up fields are left NULL to prevent chaining. Idempotent on (event, name).
+    Returns the new campaign id, or None if a matching pending follow-up exists.
+    """
+    import uuid as _uuid
+    from datetime import datetime, timedelta, timezone
+
+    follow_name = (parent.get("name") or "Round") + " (follow-up)"
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM campaigns WHERE event_id=%s AND name=%s AND status='pending' LIMIT 1",
+            (parent["event_id"], follow_name),
+        )
+        if cur.fetchone():
+            return None  # already created (e.g. on reprocess)
+
+        new_id = str(_uuid.uuid4())
+        sched = datetime.now(timezone.utc) + timedelta(hours=int(hours))
+        cur.execute(
+            """
+            INSERT INTO campaigns (id, event_id, name, template, channel, schedule_time, status, recipient_count, audience)
+            VALUES (%s, %s, %s, %s, %s, %s, 'pending', 0, %s)
+            """,
+            (new_id, parent["event_id"], follow_name, parent["template"], parent["channel"], sched, audience),
+        )
+        return new_id
 
 
 

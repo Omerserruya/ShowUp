@@ -4,7 +4,6 @@ import pika
 import redis
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from .mongodb import check_mongodb_connection
 from .routers import plans, auth, orders, admin as admin_router
 
 
@@ -93,8 +92,7 @@ def health():
     db_ok = check_db_connection(env) and users_table_ok
     rabbit_ok = check_rabbit_connection(env)
     redis_ok = check_redis_connection(env)
-    mongo_ok = check_mongodb_connection()
-    status_code = 200 if (db_ok and rabbit_ok and redis_ok and mongo_ok) else 503
+    status_code = 200 if (db_ok and rabbit_ok and redis_ok) else 503
     return JSONResponse(
         status_code=status_code,
         content={
@@ -102,7 +100,6 @@ def health():
             "users_table": users_table_ok,
             "rabbit": rabbit_ok,
             "redis": redis_ok,
-            "mongodb": mongo_ok,
         },
     )
 

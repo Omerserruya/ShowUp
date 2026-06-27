@@ -223,14 +223,13 @@ class WhatsAppSender:
             "Content-Type": "application/json"
         }
         
+        # SECURITY: do not log full parameters/payload at INFO (guest PII).
         self.logger.info(
             "Sending WhatsApp message",
             extra={
                 "recipient": recipient,
                 "template": template_name,
                 "parameter_count": len(parameters),
-                "parameters": parameters,
-                "payload": payload
             }
         )
         
@@ -546,47 +545,3 @@ class WhatsAppSender:
             )
             
             return response_data
-    
-    async def send_batch(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        Send multiple WhatsApp messages in batch.
-        
-        Args:
-            messages: List of message dicts with 'recipient', 'template', 'parameters'
-            
-        Returns:
-            List of response dicts
-        """
-        results = []
-        
-        for message in messages:
-            try:
-                result = await self.send_message(
-                    recipient=message["recipient"],
-                    template_name=message["template"],
-                    parameters=message["parameters"]
-                )
-                results.append({
-                    "success": True,
-                    "message": message,
-                    "response": result
-                })
-                
-            except Exception as e:
-                self.logger.error(
-                    "Failed to send WhatsApp message",
-                    extra={
-                        "recipient": message.get("recipient"),
-                        "template": message.get("template"),
-                        "error": str(e)
-                    }
-                )
-                results.append({
-                    "success": False,
-                    "message": message,
-                    "error": str(e)
-                })
-        
-        return results
-    
-    

@@ -1,18 +1,22 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Box, 
-  Typography, 
+import {
+  Box,
+  Typography,
   Grid,
   Paper,
+  Button,
   CircularProgress,
   Alert,
+  alpha,
   useTheme
 } from '@mui/material';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import QuestionMarkIcon from '@mui/icons-material/QuestionMark';
 import PeopleIcon from '@mui/icons-material/People';
+import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
+import SendIcon from '@mui/icons-material/Send';
 
 // Import our custom components
 import StatusCard from '../components/StatusCard';
@@ -27,6 +31,7 @@ import CampaignUpdates, { CampaignUpdate } from '../components/CampaignUpdates';
 // Import hooks
 import { useOverviewStats, useCampaigns, useGuests } from '../hooks/useOverviewData';
 import { useEvent } from '../contexts/EventContext';
+import { fireConfettiOnce } from '../utils/confetti';
 
 // Helper function to map API guest to component format
 function mapGuestFromAPI(apiGuest: any): any {
@@ -158,6 +163,13 @@ function Overview() {
   const { campaigns, loading: campaignsLoading } = useCampaigns();
   const { guests, loading: guestsLoading } = useGuests(1, 10, '');
 
+  // Celebrate the first time this event has any confirmed guest (once per browser).
+  React.useEffect(() => {
+    if (selectedEvent?.id && (stats?.approved || 0) >= 1) {
+      fireConfettiOnce(`first_guest_confirmed_${selectedEvent.id}`);
+    }
+  }, [selectedEvent?.id, stats?.approved]);
+
   // Show loading state if no event selected
   if (!selectedEvent) {
     return (
@@ -198,6 +210,29 @@ function Overview() {
   // Get event date - check both event_date and date fields
   const eventDate = (selectedEvent as any)?.event_date || (selectedEvent as any)?.date;
 
+  // "Needs attention" + active round summary
+  const now = new Date();
+  const pendingCount = stats?.pending || 0;
+  const upcomingRounds = campaigns
+    .filter((c: any) => c.schedule_time && new Date(c.schedule_time) > now && c.status !== 'paused' && c.status !== 'sent')
+    .sort((a: any, b: any) => new Date(a.schedule_time).getTime() - new Date(b.schedule_time).getTime());
+  const nextRound: any = upcomingRounds[0];
+  const lastSentRound: any = campaigns
+    .filter((c: any) => c.status === 'sent' && c.schedule_time)
+    .sort((a: any, b: any) => new Date(b.schedule_time).getTime() - new Date(a.schedule_time).getTime())[0];
+  const roundDateLabel = (c: any) => {
+    const d = new Date(c.schedule_time);
+    const diff = Math.floor(Math.abs((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+    const future = d > now;
+    if (diff === 0) return 'היום';
+    return future ? `בעוד ${diff} ימים` : `לפני ${diff} ימים`;
+  };
+  const activeRoundText = nextRound
+    ? `הסבב הבא: ${nextRound.name} · ${roundDateLabel(nextRound)}`
+    : lastSentRound
+      ? `הסבב האחרון "${lastSentRound.name}" נשלח ${roundDateLabel(lastSentRound)}`
+      : 'עדיין לא הוגדרו סבבי הודעות';
+
   return (
     <Box sx={{ p: { xs: 1, sm: 4 }, direction: 'rtl' }}>
       {statsError && (
@@ -205,6 +240,48 @@ function Overview() {
           {statsError}
         </Alert>
       )}
+
+      {/* Needs attention + active round */}
+      <Paper
+        elevation={0}
+        sx={{
+          mb: { xs: 2, sm: 3 },
+          p: { xs: 2, sm: 2.5 },
+          borderRadius: 2,
+          border: '1px solid',
+          borderColor: pendingCount > 0 ? alpha(theme.palette.warning.main, 0.4) : 'divider',
+          background: pendingCount > 0
+            ? `linear-gradient(135deg, ${alpha(theme.palette.warning.main, 0.12)}, ${alpha(theme.palette.secondary.main, 0.08)})`
+            : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.08)}, ${alpha(theme.palette.secondary.main, 0.06)})`,
+        }}
+      >
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between', gap: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <NotificationsActiveIcon sx={{ color: pendingCount > 0 ? 'warning.main' : 'primary.main' }} />
+            <Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                {pendingCount > 0
+                  ? `${pendingCount} אורחים עדיין לא הגיבו`
+                  : 'כל הכבוד! כל האורחים הגיבו 🎉'}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {activeRoundText}
+              </Typography>
+            </Box>
+          </Box>
+          {pendingCount > 0 && (
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={<SendIcon />}
+              onClick={() => navigate('/messages')}
+              sx={{ borderRadius: 2, whiteSpace: 'nowrap', alignSelf: { xs: 'stretch', sm: 'auto' } }}
+            >
+              שלח תזכורת
+            </Button>
+          )}
+        </Box>
+      </Paper>
 
       {/* Countdown for mobile - show FIRST before stats */}
       <Box sx={{ mb: { xs: 0, md: 0 }, display: { xs: 'block', md: 'none' } }}>

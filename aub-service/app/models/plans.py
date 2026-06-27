@@ -1,11 +1,8 @@
 """
-MongoDB models for plans
+Pydantic models for the plans API (backed by app/data/plans.json — no database).
 """
 from typing import List, Optional
-from datetime import datetime
-from pydantic import BaseModel, Field
-from bson import ObjectId
-from pydantic import field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class CampaignSchedule(BaseModel):
@@ -14,17 +11,17 @@ class CampaignSchedule(BaseModel):
     label: str
     offsetDays: int
     time: str
-    
+
     @field_validator('offsetDays', mode='before')
     @classmethod
     def normalize_offset_days(cls, v):
         """Handle both offset_days and offsetDays"""
         return v
-    
+
     class Config:
         populate_by_name = True
         allow_population_by_field_name = True
-        
+
     def __init__(self, **data):
         # Normalize offset_days to offsetDays for backward compatibility
         if 'offset_days' in data and 'offsetDays' not in data:
@@ -32,30 +29,6 @@ class CampaignSchedule(BaseModel):
         elif 'offsetDays' not in data:
             data['offsetDays'] = data.get('offsetDays', 0)
         super().__init__(**data)
-
-
-class Plan(BaseModel):
-    """Plan document model"""
-    id: str = Field(..., alias="_id")
-    title: str
-    subtitle: str
-    price: str
-    description: str
-    features: List[str]
-    color: str
-    is_popular: bool = False
-    campaigns: List[CampaignSchedule] = []
-    is_active: bool = True
-    count_limit: Optional[int] = None  # Maximum number of guests allowed (None = unlimited)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-
-    class Config:
-        populate_by_name = True
-        json_encoders = {
-            ObjectId: str,
-            datetime: lambda v: v.isoformat()
-        }
 
 
 class PlanResponse(BaseModel):
@@ -67,8 +40,7 @@ class PlanResponse(BaseModel):
     description: str
     features: List[str]
     color: str
-    # Frontend expects camelCase `isPopular`
-    # We map from Mongo's `is_popular` field in the router layer
+    # Frontend expects camelCase `isPopular`; mapped from `is_popular` in the router.
     isPopular: bool = False
     campaigns: List[CampaignSchedule] = []
     countLimit: Optional[int] = None  # Maximum number of guests allowed

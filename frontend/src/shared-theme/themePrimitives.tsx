@@ -31,17 +31,32 @@ const defaultTheme = createTheme();
 
 const customShadows: Shadows = [...defaultTheme.shadows];
 
+// Brand = celebratory deep violet (premium, event-y — not corporate blue).
 export const brand = {
-  50: 'hsl(210, 100%, 95%)',
-  100: 'hsl(210, 100%, 92%)',
-  200: 'hsl(210, 100%, 80%)',
-  300: 'hsl(210, 100%, 65%)',
-  400: 'hsl(210, 98%, 48%)',
-  500: 'hsl(210, 98%, 42%)',
-  600: 'hsl(210, 98%, 55%)',
-  700: 'hsl(210, 100%, 35%)',
-  800: 'hsl(210, 100%, 16%)',
-  900: 'hsl(210, 100%, 21%)',
+  50: 'hsl(262, 100%, 97%)',
+  100: 'hsl(262, 95%, 93%)',
+  200: 'hsl(262, 90%, 85%)',
+  300: 'hsl(262, 85%, 74%)',
+  400: 'hsl(262, 76%, 59%)',
+  500: 'hsl(262, 72%, 50%)',
+  600: 'hsl(262, 75%, 45%)',
+  700: 'hsl(263, 78%, 38%)',
+  800: 'hsl(263, 80%, 28%)',
+  900: 'hsl(263, 82%, 20%)',
+};
+
+// Accent = warm pink for emotional / celebratory CTA moments.
+export const pink = {
+  50: 'hsl(330, 100%, 97%)',
+  100: 'hsl(330, 95%, 93%)',
+  200: 'hsl(330, 90%, 85%)',
+  300: 'hsl(330, 85%, 75%)',
+  400: 'hsl(330, 81%, 60%)',
+  500: 'hsl(330, 78%, 52%)',
+  600: 'hsl(330, 80%, 45%)',
+  700: 'hsl(330, 82%, 38%)',
+  800: 'hsl(330, 84%, 28%)',
+  900: 'hsl(330, 86%, 20%)',
 };
 
 export const gray = {

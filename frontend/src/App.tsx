@@ -13,6 +13,10 @@ import Home from './pages/Home';
 import Overview from './pages/Overview';
 import Guests from './pages/Guests';
 import Messages from './pages/Messages';
+import Templates from './pages/Templates';
+import Team from './pages/Team';
+import Billing from './pages/Billing';
+import Recap from './pages/Recap';
 import Seating from './pages/Seating';
 import Profile from './pages/Profile';
 import { ImportedGuestsReviewScreen } from './components/ImportedGuestsReviewScreen';
@@ -24,6 +28,9 @@ import Privacy from './pages/Privacy';
 import AccessibilityStatement from './pages/AccessibilityStatement';
 import EventWizard from './pages/EventWizard';
 import Payment from './pages/Payment';
+import Invitation from './pages/Invitation';
+import PublicInvitation from './pages/PublicInvitation';
+import DemoInvite from './pages/DemoInvite';
 import AdminRoute from './components/AdminRoute';
 import AdminUsers from './pages/admin/Users';
 import AdminEvents from './pages/admin/Events';
@@ -37,6 +44,10 @@ function App() {
     <ThemeProvider>
         <Routes>
                 <Route path="/" element={<MarketingPage />} />
+        {/* Public web invitation + open-form RSVP (no auth, no Layout) */}
+        <Route path="/i/:slug" element={<PublicInvitation />} />
+        {/* Public no-auth demo invitation (landing-page demo CTA target) */}
+        <Route path="/demo/invite" element={<DemoInvite />} />
         <Route 
           path="/wizard" 
           element={
@@ -91,9 +102,14 @@ function App() {
           } 
         >
           <Route path="/overview" element={<Overview />} />
+          <Route path="/invitation" element={<Invitation />} />
           <Route path="/guests" element={<Guests />} />
           <Route path="/guests/imported" element={<ImportedGuestsReviewScreen />} />
           <Route path="/messages" element={<Messages />} />
+          <Route path="/templates" element={<Templates />} />
+          <Route path="/team" element={<Team />} />
+          <Route path="/billing" element={<Billing />} />
+          <Route path="/recap" element={<Recap />} />
           <Route path="/seating" element={<Seating />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/admin/users" element={<AdminRoute><AdminUsers /></AdminRoute>} />

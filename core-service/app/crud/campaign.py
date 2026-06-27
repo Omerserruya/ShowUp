@@ -10,16 +10,14 @@ from sqlalchemy.orm import Session
 from app.models.models import Campaign, Event, Guest
 from app.schemas.schemas import CampaignCreate, CampaignUpdate
 
-# Configurable minimum gap between campaigns (in minutes)
-CAMPAIGN_MIN_GAP_MINUTES = int(os.getenv("CAMPAIGN_MIN_GAP_MINUTES"))  # 5 hours = 300 minutes
+# Configurable minimum gap between campaigns (in minutes). Defaults to 300 (5h)
+# so a missing env var cannot crash the service at import time.
+CAMPAIGN_MIN_GAP_MINUTES = int(os.getenv("CAMPAIGN_MIN_GAP_MINUTES") or 300)
 
 
-def get_intended_recipient_count(db: Session, event_id: uuid.UUID) -> int:
-    """
-    Number of guests the campaign would be sent to (for unsent campaigns).
-    Used by API to show "to how many" before sending; after sending, use campaign.recipient_count.
-    """
-    return db.query(Guest).filter(Guest.event_id == str(event_id)).count()
+def _aud(value):
+    """Coerce a CampaignAudience enum (or str/None) to its stored string value."""
+    return value.value if hasattr(value, "value") else value
 
 
 def list_campaigns(
@@ -88,6 +86,10 @@ def create_campaign(db: Session, data: CampaignCreate) -> Campaign:
         channel=data.channel,
         schedule_time=data.schedule_time,
         status=data.status,
+        audience=_aud(data.audience),
+        audience_filter=data.audience_filter,
+        follow_up_after_hours=data.follow_up_after_hours,
+        follow_up_audience=_aud(data.follow_up_audience),
     )
     db.add(campaign)
     db.commit()
@@ -122,6 +124,14 @@ def update_campaign(db: Session, campaign: Campaign, data: CampaignUpdate) -> Ca
         campaign.schedule_time = data.schedule_time
     if data.status is not None:
         campaign.status = data.status
+    if data.audience is not None:
+        campaign.audience = _aud(data.audience)
+    if data.audience_filter is not None:
+        campaign.audience_filter = data.audience_filter
+    if data.follow_up_after_hours is not None:
+        campaign.follow_up_after_hours = data.follow_up_after_hours
+    if data.follow_up_audience is not None:
+        campaign.follow_up_audience = _aud(data.follow_up_audience)
     db.add(campaign)
     db.commit()
     db.refresh(campaign)
@@ -145,7 +155,6 @@ def create_campaigns_bulk(db: Session, event_id: uuid.UUID, items: List[Campaign
     for idx, data in enumerate(items):
         key = (data.name, data.template, data.channel, data.schedule_time)
         if key in seen_keys:
-            print(f"[CREATE_CAMPAIGNS_BULK] Campaign[{idx}] skipped: duplicate key {key}")
             continue
         seen_keys.add(key)
         c = Campaign(
@@ -155,6 +164,10 @@ def create_campaigns_bulk(db: Session, event_id: uuid.UUID, items: List[Campaign
             channel=data.channel,
             schedule_time=data.schedule_time,
             status=data.status,
+            audience=_aud(data.audience),
+            audience_filter=data.audience_filter,
+            follow_up_after_hours=data.follow_up_after_hours,
+            follow_up_audience=_aud(data.follow_up_audience),
         )
         # Enforce spacing: check conflicts within DB and within batch
         # BUT: allow multiple campaigns with same schedule_time if they have different template/name
@@ -183,12 +196,9 @@ def create_campaigns_bulk(db: Session, event_id: uuid.UUID, items: List[Campaign
                 for x in created
             )
             if conflict_db:
-                print(f"[CREATE_CAMPAIGNS_BULK] Campaign[{idx}] '{c.name}' ({c.template}) skipped: DB conflict at {c.schedule_time}")
                 continue
             if conflict_batch:
-                print(f"[CREATE_CAMPAIGNS_BULK] Campaign[{idx}] '{c.name}' ({c.template}) skipped: batch conflict at {c.schedule_time}")
                 continue
-        print(f"[CREATE_CAMPAIGNS_BULK] Campaign[{idx}] '{c.name}' ({c.template}) added: schedule_time={c.schedule_time}")
         db.add(c)
         created.append(c)
     db.commit()

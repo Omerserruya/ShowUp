@@ -80,6 +80,45 @@ const Register = () => {
   const [formError, setFormError] = useState('');
   const [otpSentMessage, setOtpSentMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  // Countdown for the "resend code" cooldown.
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
+
+  const handleResendOtp = async () => {
+    if (resendCooldown > 0 || !phoneNumber) return;
+    setOtpError('');
+    setLoading(true);
+    try {
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: phoneNumber,
+          first_name: formData.firstName,
+          last_name: formData.lastName,
+          email: formData.email || undefined,
+        }),
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (response.ok && data.status === 'otp_sent') {
+        setOtpSentMessage('שלחנו קוד חדש ל-WhatsApp שלך');
+        setResendCooldown(60);
+        setOtp(['', '', '', '', '', '']);
+      } else {
+        setOtpError(data.error || 'שליחת הקוד נכשלה. נסו שוב');
+      }
+    } catch (error) {
+      setOtpError('אירעה שגיאה בשליחת הקוד');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const validateForm = () => {
     const newErrors: FormErrors = {};
@@ -129,7 +168,8 @@ const Register = () => {
         setPhoneNumber(fullPhoneNumber);
         setShowOtpScreen(true);
         setFormError('');
-        setOtpSentMessage('קוד OTP נשלח למספר הטלפון שלך');
+        setOtpSentMessage('שלחנו קוד אימות ל-WhatsApp שלך');
+        setResendCooldown(60);
       } else {
         setFormError(
           data.error === 'user_exists' 
@@ -388,7 +428,7 @@ const Register = () => {
               </Typography>
               <Typography color="textSecondary" variant="body2" sx={{ mt: 1 }}>
                 {showOtpScreen 
-                  ? `הזן את קוד ה-OTP שנשלח למספר ${phoneNumber}`
+                  ? `הזן את הקוד שנשלח ל-WhatsApp במספר ${phoneNumber}`
                   : 'הירשם כדי להתחיל'}
               </Typography>
             </Box>
@@ -625,13 +665,13 @@ const Register = () => {
                   padding: '12px',
                   textTransform: 'none',
                   fontSize: '16px',
-                  bgcolor: '#000000',
+                  bgcolor: '#7C3AED',
                   color: '#ffffff',
                   '&:hover': {
-                    bgcolor: '#1a1a1a',
+                    bgcolor: '#6D28D9',
                   },
                   '&:disabled': {
-                    bgcolor: '#666666',
+                    bgcolor: '#B9A8DC',
                     color: '#ffffff',
                   },
                 }}
@@ -767,13 +807,13 @@ const Register = () => {
                     padding: '12px',
                     textTransform: 'none',
                     fontSize: '16px',
-                    bgcolor: '#000000',
+                    bgcolor: '#7C3AED',
                     color: '#ffffff',
                     '&:hover': {
-                      bgcolor: '#1a1a1a',
+                      bgcolor: '#6D28D9',
                     },
                     '&:disabled': {
-                      bgcolor: '#666666',
+                      bgcolor: '#B9A8DC',
                       color: '#ffffff',
                     },
                   }}
@@ -782,10 +822,31 @@ const Register = () => {
                   {loading ? <CircularProgress size={24} color="inherit" /> : 'אימות'}
                 </Button>
 
+                <Box sx={{ textAlign: 'center', mt: 1 }}>
+                  {resendCooldown > 0 ? (
+                    <Typography variant="body2" color="text.secondary">
+                      שליחת קוד חדש בעוד {resendCooldown} שניות
+                    </Typography>
+                  ) : (
+                    <Link
+                      component="button"
+                      type="button"
+                      variant="body2"
+                      color="primary"
+                      onClick={handleResendOtp}
+                      disabled={loading}
+                      sx={{ cursor: 'pointer', border: 'none', background: 'none', textDecoration: 'underline' }}
+                    >
+                      שלח קוד חדש
+                    </Link>
+                  )}
+                </Box>
+
                 <Box sx={{ textAlign: 'center', mt: 2 }}>
-                  <Link 
+                  <Link
                     component="button"
-                    variant="body2" 
+                    type="button"
+                    variant="body2"
                 color="primary"
                     onClick={handleBackToForm}
                     sx={{ 

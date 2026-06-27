@@ -12,6 +12,9 @@ from app.crud import campaign as campaign_crud, event as event_crud
 from app.schemas.schemas import CampaignCreate, CampaignOut, CampaignUpdate
 from app.utils import paginate_params
 from shared.auth.deps import get_current_user_id
+from shared.domain.roles import Action
+from shared.domain.entitlements import Feature
+from app.authz import require_event_permission, require_feature
 
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
@@ -28,30 +31,31 @@ def list_campaigns(
     order_by: Optional[str] = Query(None, regex="^(schedule_time|created_at)$"),
 ):
     event = event_crud.get_event(db, event_id)
-    if not event or not event_crud.is_owner(event, user_id):
-        raise HTTPException(status_code=404, detail="Event not found or not permitted")
+    require_event_permission(db, event, user_id, Action.CAMPAIGN_READ)
     page, page_size = paginate_params(page, page_size)
     items, _ = campaign_crud.list_campaigns(db, event_id=event_id, page=page, page_size=page_size, search=search, order_by=order_by)
-    # For unsent campaigns, return intended recipient count (guest count); for sent, use DB recipient_count
-    intended_count = campaign_crud.get_intended_recipient_count(db, event_id)
+    # For unsent campaigns show the per-campaign audience size; for sent, use the
+    # recorded recipient_count.
+    from app.audience import count_audience
     result = []
     for c in items:
         out = CampaignOut.model_validate(c)
         if c.status != "sent":
-            out = out.model_copy(update={"recipient_count": intended_count})
+            out = out.model_copy(update={"recipient_count": count_audience(db, event_id, c.audience, c.audience_filter)})
         result.append(out)
     return result
 
 
 @router.get("/{campaign_id}", response_model=CampaignOut)
-def get_campaign(campaign_id: uuid.UUID, db: Session = Depends(get_db)):
+def get_campaign(campaign_id: uuid.UUID, db: Session = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
     campaign = campaign_crud.get_campaign(db, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
+    require_event_permission(db, event_crud.get_event(db, campaign.event_id), user_id, Action.CAMPAIGN_READ)
     out = CampaignOut.model_validate(campaign)
     if campaign.status != "sent":
-        intended_count = campaign_crud.get_intended_recipient_count(db, campaign.event_id)
-        out = out.model_copy(update={"recipient_count": intended_count})
+        from app.audience import count_audience
+        out = out.model_copy(update={"recipient_count": count_audience(db, campaign.event_id, campaign.audience, campaign.audience_filter)})
     return out
 
 
@@ -95,8 +99,9 @@ def create_campaigns(
             raise HTTPException(status_code=400, detail="event_id is required (query or in each item)")
 
     event = event_crud.get_event(db, normalized_event_id)
-    if not event or not event_crud.is_owner(event, user_id):
-        raise HTTPException(status_code=404, detail="Event not found or not permitted")
+    require_event_permission(db, event, user_id, Action.CAMPAIGN_WRITE)
+    # Tier gate: WhatsApp campaigns are excluded from the Free plan.
+    require_feature(event, Feature.WHATSAPP_CAMPAIGNS)
 
     # Build CampaignCreate list with validation
     to_create: List[CampaignCreate] = []
@@ -111,16 +116,26 @@ def create_campaigns(
         except ValidationError as e:
             raise HTTPException(status_code=422, detail=e.errors())
 
+    from app.usage import record_usage
+    from shared.domain.enums import UsageMetric
+    account_id = getattr(event, "account_id", None)
+
     if len(to_create) == 1:
         try:
-            return campaign_crud.create_campaign(db, to_create[0])
+            created_one = campaign_crud.create_campaign(db, to_create[0])
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        record_usage(db, account_id=account_id, event_id=normalized_event_id,
+                     metric=UsageMetric.ROUND_LAUNCHED, quantity=1, ref_id=created_one.id)
+        return created_one
 
     try:
         created = campaign_crud.create_campaigns_bulk(db, event_id=normalized_event_id, items=to_create)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if created:
+        record_usage(db, account_id=account_id, event_id=normalized_event_id,
+                     metric=UsageMetric.ROUND_LAUNCHED, quantity=len(created))
     return created
 
 
@@ -135,11 +150,8 @@ def update_campaign(
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     
-    # Verify event ownership
-    event = event_crud.get_event(db, campaign.event_id)
-    if not event or not event_crud.is_owner(event, user_id):
-        raise HTTPException(status_code=404, detail="Campaign not found or not permitted")
-    
+    require_event_permission(db, event_crud.get_event(db, campaign.event_id), user_id, Action.CAMPAIGN_WRITE)
+
     try:
         campaign = campaign_crud.update_campaign(db, campaign, payload)
     except ValueError as e:
@@ -149,10 +161,11 @@ def update_campaign(
 
 
 @router.delete("/{campaign_id}", status_code=204)
-def delete_campaign(campaign_id: uuid.UUID, db: Session = Depends(get_db)):
+def delete_campaign(campaign_id: uuid.UUID, db: Session = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
     campaign = campaign_crud.get_campaign(db, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
+    require_event_permission(db, event_crud.get_event(db, campaign.event_id), user_id, Action.CAMPAIGN_DELETE)
     campaign_crud.delete_campaign(db, campaign)
     return None
 
@@ -163,9 +176,7 @@ def delete_campaigns_by_event(
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    event = event_crud.get_event(db, event_id)
-    if not event or not event_crud.is_owner(event, user_id):
-        raise HTTPException(status_code=404, detail="Event not found or not permitted")
+    require_event_permission(db, event_crud.get_event(db, event_id), user_id, Action.CAMPAIGN_DELETE)
     count = campaign_crud.delete_campaigns_by_event(db, event_id=event_id)
     return {"deleted": count}
 
@@ -181,11 +192,8 @@ def get_campaign_stats(
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     
-    # Verify event ownership
-    event = event_crud.get_event(db, campaign.event_id)
-    if not event or not event_crud.is_owner(event, user_id):
-        raise HTTPException(status_code=404, detail="Campaign not found or not permitted")
-    
+    require_event_permission(db, event_crud.get_event(db, campaign.event_id), user_id, Action.CAMPAIGN_READ)
+
     stats = campaign_crud.get_campaign_stats(db, campaign_id)
     return stats
 
