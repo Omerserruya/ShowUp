@@ -1,9 +1,12 @@
 import React from 'react';
-import { Box, Container, Grid, Typography, Paper, Button, Chip, CircularProgress } from '@mui/material';
+import { Box, Container, Grid, Typography, Paper, Button, Chip } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ShieldRoundedIcon from '@mui/icons-material/ShieldRounded';
+import LockRoundedIcon from '@mui/icons-material/LockRounded';
 import { styled, useTheme } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
-import { usePlans } from '../hooks/usePlans';
+import { plans } from '../config/plans';
+import PriceTag from './PriceTag';
 
 const StyledPaper = styled(Paper, {
   shouldForwardProp: (prop) => prop !== 'accent' && prop !== 'popular',
@@ -79,28 +82,11 @@ const FeaturesBox = styled(Box)(({ theme }) => ({
 export default function Pricing() {
   const theme = useTheme();
   const navigate = useNavigate();
-  const { plans: tiers, loading } = usePlans();
+  const tiers = plans;
 
   const handleStartNow = (planId: string) => {
     navigate(`/wizard?package=${planId}`);
   };
-
-  if (loading) {
-    return (
-      <Box
-        id="pricing"
-        sx={{
-          py: 10,
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          minHeight: 400,
-        }}
-      >
-        <CircularProgress />
-      </Box>
-    );
-  }
 
   return (
     <Box
@@ -109,7 +95,7 @@ export default function Pricing() {
         py: 10,
         bgcolor: theme.palette.mode === 'dark'
           ? theme.palette.background.default
-          : 'linear-gradient(to bottom, #f5f7fb 0%, #ffffff 40%, #f5f7fb 100%)',
+          : '#ffffff',
       }}
     >
       <Container maxWidth="lg" sx={{ overflow: 'visible', px: { md: 4 } }}>
@@ -130,10 +116,10 @@ export default function Pricing() {
               textAlign: 'center',
             }}
           >
-            כמה זה עולה לכם?
+            מחיר אחד. בלי כוכביות.
           </Typography>
           <Typography variant="h6" color="text.secondary" sx={{ textAlign: 'center' }}>
-            שלוש חבילות פשוטות שמותאמות לגודל האירוע – בלי הפתעות ובלי אותיות קטנות.
+            בוחרים לפי כמות האורחים, משלמים פעם אחת ונגמר. בלי מנוי שמתחדש לבד, ובלי אותיות קטנות שמקווים שלא תקראו.
           </Typography>
         </Box>
 
@@ -162,7 +148,7 @@ export default function Pricing() {
               {tier.isPopular ? (
                 <StyledPaper accent={tier.color} popular elevation={0} sx={{ width: '100%' }}>
                   <Chip
-                    label="הכי נבחרה"
+                    label="הכי פופולרית"
                     color="primary"
                     size="small"
                     sx={{
@@ -190,13 +176,9 @@ export default function Pricing() {
                   >
                     {tier.subtitle}
                   </Typography>
-                  <Typography
-                    variant="h3"
-                    color="text.primary"
-                    sx={{ my: 2, direction: 'rtl', textAlign: 'right', fontWeight: 800 }}
-                  >
-                    {tier.price}
-                  </Typography>
+                  <Box sx={{ my: 2 }}>
+                    <PriceTag price={tier.price} size="lg" align="right" />
+                  </Box>
                   <Typography
                     variant="subtitle1"
                     color="text.secondary"
@@ -238,7 +220,7 @@ export default function Pricing() {
                     }}
                     onClick={() => handleStartNow(tier.id)}
                   >
-                    התחל עכשיו
+                    יוצאים לדרך
                   </Button>
                 </StyledPaper>
               ) : (
@@ -259,13 +241,9 @@ export default function Pricing() {
                   >
                     {tier.subtitle}
                   </Typography>
-                  <Typography
-                    variant="h3"
-                    color="text.primary"
-                    sx={{ my: 2, direction: 'rtl', textAlign: 'right', fontWeight: 800 }}
-                  >
-                    {tier.price}
-                  </Typography>
+                  <Box sx={{ my: 2 }}>
+                    <PriceTag price={tier.price} size="lg" align="right" />
+                  </Box>
                   <Typography
                     variant="subtitle1"
                     color="text.secondary"
@@ -308,13 +286,39 @@ export default function Pricing() {
                     }}
                     onClick={() => handleStartNow(tier.id)}
                   >
-                    התחל עכשיו
+                    יוצאים לדרך
                   </Button>
                 </StyledPaper>
               )}
             </Grid>
           ))}
         </Grid>
+
+        <Box
+          sx={{
+            mt: { xs: 4, md: 6 },
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: { xs: 1.5, md: 3 },
+            color: 'text.secondary',
+            direction: 'rtl',
+          }}
+        >
+          {[
+            { icon: <ShieldRoundedIcon fontSize="small" color="success" />, text: 'החזר כספי מלא תוך 14 יום' },
+            { icon: <LockRoundedIcon fontSize="small" color="success" />, text: 'תשלום מאובטח · ללא שמירת פרטי אשראי' },
+            { icon: <CheckCircleIcon fontSize="small" color="success" />, text: 'תשלום חד‑פעמי · ללא מנוי וללא התחייבות' },
+          ].map((item) => (
+            <Box key={item.text} sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              {item.icon}
+              <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                {item.text}
+              </Typography>
+            </Box>
+          ))}
+        </Box>
       </Container>
     </Box>
   );

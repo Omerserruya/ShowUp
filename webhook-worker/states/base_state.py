@@ -7,25 +7,6 @@ import uuid
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from utils.phone import normalize_phone
-from shared.domain.enums import RsvpAction
-from shared.domain.rsvp import resolve_rsvp_action
-
-
-def reply_from_message(message: Dict[str, Any]) -> tuple:
-    """Extract (button_id, button_payload, text) from an incoming message dict.
-
-    The webhook handler places button id/title/payload under
-    payload.extracted_data; quick-reply button payloads may also appear under
-    payload.button. Used to resolve a semantic RsvpAction.
-    """
-    raw = message.get("raw") or {}
-    payload = raw.get("payload") if isinstance(raw.get("payload"), dict) else {}
-    extracted = payload.get("extracted_data") if isinstance(payload.get("extracted_data"), dict) else {}
-    button = payload.get("button") if isinstance(payload.get("button"), dict) else {}
-    button_id = extracted.get("button_id") or button.get("id")
-    button_payload = extracted.get("button_payload") or button.get("payload")
-    text_value = message.get("text") or extracted.get("button_title") or extracted.get("button_text")
-    return button_id, button_payload, text_value
 
 # מיפוי של שמות הימים באנגלית לעברית
 WEEKDAY_HEBREW = {
@@ -77,16 +58,9 @@ def _format_inviters(inviters: List[Dict[str, str]]) -> str:
 class BaseState:
     id: str = "base"
     next_states: Dict[str, str] = {}
-    # Optional semantic routing: {RsvpAction: next_state_id}. When set, transitions
-    # are driven by the resolved RsvpAction (button payload/id), not display text.
-    action_next: Dict[Any, str] = {}
 
     def __init__(self, flow: "FlowManager"):
         self.flow = flow
-
-    def resolve_action(self, message: Dict[str, Any]) -> "RsvpAction":
-        button_id, button_payload, text_value = reply_from_message(message)
-        return resolve_rsvp_action(button_id=button_id, button_payload=button_payload, text=text_value)
 
     async def on_enter(self, session: AsyncSession, conversation: Any) -> None:
         return None
@@ -205,20 +179,14 @@ class BaseState:
             await session.rollback()
 
     def get_next_state(self, message: Dict[str, Any]) -> str:
-        fallback = getattr(self.flow, "fallback_state_id", self.flow.initial_state)
-        # Preferred: semantic action routing (decoupled from display text).
-        if self.action_next:
-            action = self.resolve_action(message)
-            if action in self.action_next:
-                return self.action_next[action]
-            return self.action_next.get(RsvpAction.UNKNOWN, fallback)
-        # Legacy: exact display-text matching (transitional, for states not yet migrated).
         text = (message.get("text") or "").strip()
+        # exact
         if text in self.next_states:
             return self.next_states[text]
+        # wildcard
         if "*" in self.next_states:
             return self.next_states["*"]
-        return fallback
+        return getattr(self.flow, "fallback_state_id", self.flow.initial_state)
 
     async def send(self, session: AsyncSession, conversation: Any) -> Optional[Dict[str, Any]]:
         # Default: plain text noop

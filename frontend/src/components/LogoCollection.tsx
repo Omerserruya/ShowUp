@@ -1,59 +1,94 @@
 import * as React from 'react';
 import Box from '@mui/material/Box';
+import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import Grid from '@mui/material/Grid';
-import { useTheme } from '@mui/system';
+import CelebrationRoundedIcon from '@mui/icons-material/CelebrationRounded';
+import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
+import MarkChatReadRoundedIcon from '@mui/icons-material/MarkChatReadRounded';
+import StarRoundedIcon from '@mui/icons-material/StarRounded';
+import WhatsAppIcon from '@mui/icons-material/WhatsApp';
+import VerifiedRoundedIcon from '@mui/icons-material/VerifiedRounded';
 
-const whiteLogos = [
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/6560628e8573c43893fe0ace_Sydney-white.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f4d520d0517ae8e8ddf13_Bern-white.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f46794c159024c1af6d44_Montreal-white.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/61f12e891fa22f89efd7477a_TerraLight.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/6560a09d1f6337b1dfed14ab_colorado-white.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f5caa77bf7d69fb78792e_Ankara-white.svg',
+/**
+ * Trust band. Numbers are placeholders — wire these to real aggregate metrics
+ * (events created, guests managed, average response rate) before launch.
+ */
+const stats = [
+  { icon: CelebrationRoundedIcon, value: '12,000+', label: 'אירועים נוהלו ב‑ShowUp' },
+  { icon: GroupsRoundedIcon, value: '2.4M', label: 'אורחים שעודכנו אוטומטית' },
+  { icon: MarkChatReadRoundedIcon, value: '92%', label: 'ממוצע אישורי הגעה' },
+  { icon: StarRoundedIcon, value: '4.9', label: 'דירוג ממוצע ממארחים' },
 ];
-
-const darkLogos = [
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/6560628889c3bdf1129952dc_Sydney-black.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f4d4d8b829a89976a419c_Bern-black.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f467502f091ccb929529d_Montreal-black.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/61f12e911fa22f2203d7514c_TerraDark.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/6560a0990f3717787fd49245_colorado-black.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f5ca4e548b0deb1041c33_Ankara-black.svg',
-];
-
-const logoStyle = {
-  width: '100px',
-  height: '80px',
-  margin: '0 32px',
-  opacity: 0.7,
-};
 
 export default function LogoCollection() {
-  const theme = useTheme();
-  const logos = theme.palette.mode === 'light' ? darkLogos : whiteLogos;
-
   return (
-    <Box id="logoCollection" sx={{ py: 4 }}>
-      <Typography
-        component="p"
-        variant="subtitle2"
-        align="center"
-        sx={{ color: 'text.secondary' }}
+    <Container id="trust" sx={{ py: { xs: 4, sm: 6 } }}>
+      <Box
+        sx={{
+          borderRadius: 4,
+          border: '1px solid',
+          borderColor: 'divider',
+          bgcolor: 'background.paper',
+          px: { xs: 2, sm: 5 },
+          py: { xs: 4, sm: 5 },
+        }}
       >
-        Trusted by the best companies
-      </Typography>
-      <Grid container sx={{ justifyContent: 'center', mt: 0.5, opacity: 0.6 }}>
-        {logos.map((logo, index) => (
-          <Grid key={index}>
-            <img
-              src={logo}
-              alt={`Fake company number ${index + 1}`}
-              style={logoStyle}
-            />
-          </Grid>
-        ))}
-      </Grid>
-    </Box>
+        {/* Official-WhatsApp trust cue — anchors the numbers in credibility. */}
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 1,
+            mb: { xs: 3, sm: 4 },
+            direction: 'rtl',
+            color: 'text.secondary',
+            flexWrap: 'wrap',
+            textAlign: 'center',
+          }}
+        >
+          <WhatsAppIcon sx={{ fontSize: 20, color: '#25D366' }} />
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+            פועלת על תשתית WhatsApp Business הרשמית
+          </Typography>
+          <VerifiedRoundedIcon sx={{ fontSize: 18, color: 'primary.main' }} />
+        </Box>
+        <Grid container spacing={{ xs: 3, sm: 2 }}>
+          {stats.map((s) => (
+            <Grid xs={6} md={3} key={s.label}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  textAlign: 'center',
+                  gap: 0.75,
+                }}
+              >
+                <s.icon sx={{ color: 'primary.main', fontSize: 30, mb: 0.5 }} />
+                <Typography
+                  variant="h4"
+                  sx={{
+                    fontWeight: 800,
+                    lineHeight: 1,
+                    backgroundImage: (theme) =>
+                      `linear-gradient(90deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+                    backgroundClip: 'text',
+                    WebkitBackgroundClip: 'text',
+                    color: 'transparent',
+                  }}
+                >
+                  {s.value}
+                </Typography>
+                <Typography variant="body2" sx={{ color: 'text.secondary', maxWidth: 180 }}>
+                  {s.label}
+                </Typography>
+              </Box>
+            </Grid>
+          ))}
+        </Grid>
+      </Box>
+    </Container>
   );
 }

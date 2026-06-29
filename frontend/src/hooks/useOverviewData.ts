@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useEvent } from '../contexts/EventContext';
 
@@ -171,8 +171,8 @@ export function useCampaigns() {
 }
 
 export function useGuests(
-  page: number = 1,
-  pageSize: number = 10,
+  page: number = 1, 
+  pageSize: number = 10, 
   searchTerm: string = '',
   orderBy: 'last_response' | 'created_at' = 'last_response',
   onlyWithResponses: boolean = true,
@@ -183,65 +183,71 @@ export function useGuests(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
-  const depsRef = useRef({ page, pageSize, searchTerm, orderBy, onlyWithResponses, statusFilter });
-  depsRef.current = { page, pageSize, searchTerm, orderBy, onlyWithResponses, statusFilter };
 
-  const fetchGuests = useCallback(async () => {
+  const fetchGuests = useCallback(() => {
     if (!selectedEvent?.id) {
       setLoading(false);
       return;
     }
+
     setLoading(true);
     setError(null);
-    const { page: p, pageSize: ps, searchTerm: st, orderBy: ob, onlyWithResponses: owr, statusFilter: sf } = depsRef.current;
-    const cleanSearchTerm = st.replace(/_refresh_\d+$/, '');
+
+    // Remove refresh suffix from searchTerm before sending to API
+    const cleanSearchTerm = searchTerm.replace(/_refresh_\d+$/, '');
     const searchParam = cleanSearchTerm ? `&search=${encodeURIComponent(cleanSearchTerm)}` : '';
-    const orderByParam = ob ? `&order_by=${ob}` : '';
-    const onlyWithResponsesParam = owr ? `&only_with_responses=true` : '';
-    const statusParam = sf && sf !== 'all' ? `&status=${encodeURIComponent(sf)}` : '';
-    const returnTotalParam = (sf && sf !== 'all') || ps >= 200 ? `&return_total=true` : '';
-    const url = `/api/guests?event_id=${selectedEvent.id}&page=${p}&page_size=${ps}${searchParam}${orderByParam}${onlyWithResponsesParam}${statusParam}${returnTotalParam}`;
-    const res = await fetchWithAuth(url);
-    if (!res.ok) {
-      if (res.status === 401) {
-        const errorData = await res.json().catch(() => ({ detail: 'Unauthorized' }));
-        console.error('Authentication error:', errorData);
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('token');
-        throw new Error('Authentication failed. Please log in again.');
-      }
-      throw new Error(`Failed to load guests: ${res.statusText}`);
-    }
-    const data = await res.json();
-    if (data && typeof data === 'object' && 'items' in data && 'total' in data) {
-      setGuests(data.items || []);
-      setTotal(data.total || 0);
-    } else {
-      const guestsList = Array.isArray(data) ? data : [];
-      setGuests(guestsList);
-      setTotal(guestsList.length);
-    }
-    setLoading(false);
-  }, [selectedEvent?.id]);
+    const orderByParam = orderBy ? `&order_by=${orderBy}` : '';
+    const onlyWithResponsesParam = onlyWithResponses ? `&only_with_responses=true` : '';
+    const statusParam = statusFilter && statusFilter !== 'all' ? `&status=${encodeURIComponent(statusFilter)}` : '';
+    // Request total count when filtering by status or when pageSize is large (fetching all)
+    const returnTotalParam = (statusFilter && statusFilter !== 'all') || pageSize >= 200 ? `&return_total=true` : '';
+    
+    const url = `/api/guests?event_id=${selectedEvent.id}&page=${page}&page_size=${pageSize}${searchParam}${orderByParam}${onlyWithResponsesParam}${statusParam}${returnTotalParam}`;
+    console.log('Fetching guests with URL:', url);
+    
+    fetchWithAuth(url)
+      .then(async res => {
+        if (!res.ok) {
+          // Handle 401 specifically - might need to refresh token or redirect to login
+          if (res.status === 401) {
+            const errorData = await res.json().catch(() => ({ detail: 'Unauthorized' }));
+            console.error('Authentication error:', errorData);
+            // Clear invalid token
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('token');
+            throw new Error('Authentication failed. Please log in again.');
+          }
+          throw new Error(`Failed to load guests: ${res.statusText}`);
+        }
+        return res.json();
+      })
+      .then(data => {
+        // Check if response is paginated (has total field) or just an array
+        if (data && typeof data === 'object' && 'items' in data && 'total' in data) {
+          // Paginated response
+          setGuests(data.items || []);
+          setTotal(data.total || 0);
+        } else {
+          // Array response (backward compatibility)
+          const guestsList = Array.isArray(data) ? data : [];
+          setGuests(guestsList);
+          setTotal(guestsList.length);
+        }
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error('Failed to load guests:', err);
+        setError(err.message || 'Failed to load guests');
+        setLoading(false);
+        setGuests([]);
+        setTotal(0);
+      });
+  }, [selectedEvent?.id, page, pageSize, searchTerm, orderBy, onlyWithResponses, statusFilter]);
 
   useEffect(() => {
-    if (!selectedEvent?.id) {
-      setLoading(false);
-      return;
-    }
-    fetchGuests().catch(err => {
-      console.error('Failed to load guests:', err);
-      setError(err.message || 'Failed to load guests');
-      setLoading(false);
-      setGuests([]);
-      setTotal(0);
-    });
-  }, [selectedEvent?.id, page, pageSize, searchTerm, orderBy, onlyWithResponses, statusFilter, fetchGuests]);
-
-  const refetch = useCallback(async () => {
-    await fetchGuests();
+    fetchGuests();
   }, [fetchGuests]);
 
-  return { guests, loading, error, total, refetch };
+  return { guests, loading, error, total, refetch: fetchGuests };
 }
 

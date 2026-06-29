@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 
 export interface Event {
@@ -13,6 +13,10 @@ export interface Event {
   rsvpDeadline?: string;
   active?: boolean;
   planId?: string | null; // Plan ID from MongoDB
+  /** Persistent lifecycle state of the event (from backend) */
+  state?: 'draft' | 'active' | 'completed' | 'archived' | 'cancelled';
+  /** Persistent payment status of the event (from backend) */
+  paymentStatus?: 'paid' | 'free' | 'pending' | 'unpaid';
   /** Saved seating map: { tables: [ { id, name, seats, style, side, position, size, ... } ] } */
   seatingLayout?: { tables?: Array<Record<string, unknown>> } | null;
   createdAt: string;
@@ -27,6 +31,8 @@ interface EventContextType {
   updateEvent: (event: Event) => void;
   deleteEvent: (eventId: string) => Promise<void>;
   loading: boolean;
+  /** True once the first /api/events fetch has settled (success or failure). */
+  eventsLoaded: boolean;
   error: string | null;
   fetchEvents: () => Promise<void>;
 }
@@ -34,18 +40,20 @@ interface EventContextType {
 const EventContext = createContext<EventContextType | undefined>(undefined);
 
 export function EventProvider({ children }: { children: React.ReactNode }) {
-  // Load selected event from localStorage on mount
-  const [selectedEvent, setSelectedEventState] = useState<Event | null>(() => {
-    const saved = localStorage.getItem('selected_event_id');
-    return saved ? ({ id: saved } as Event) : null;
-  });
+  // `selectedEvent` is exposed as null until it's been validated against the
+  // fetched events list — we never hand pages an unverified id. The desired
+  // selection (from localStorage / manual switch) is tracked separately.
+  const [selectedEvent, setSelectedEventState] = useState<Event | null>(null);
+  const desiredEventIdRef = useRef<string | null>(localStorage.getItem('selected_event_id'));
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(false);
+  const [eventsLoaded, setEventsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Custom setter that also saves to localStorage
+  // Custom setter that also records the desired id + persists it.
   const setSelectedEvent = (event: Event | null) => {
     setSelectedEventState(event);
+    desiredEventIdRef.current = event ? event.id : null;
     if (event) {
       localStorage.setItem('selected_event_id', event.id);
     } else {
@@ -57,44 +65,37 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
     fetchEvents();
   }, []);
 
-  // When events are loaded, try to restore selected event
+  // Resilient reconciliation. Once events have loaded:
+  //  • if the desired event exists → select it (full object).
+  //  • if it's gone/inaccessible → auto-select the newest event and persist it.
+  //  • if there are no events → clear the selection (Layout routes to onboarding).
+  // This guarantees pages only ever fetch with a valid id, so a stale
+  // localStorage id can never cause repeated 404s.
   useEffect(() => {
-    if (events.length > 0 && selectedEvent?.id) {
-      const foundEvent = events.find(e => e.id === selectedEvent.id);
-      if (foundEvent) {
-        setSelectedEventState(foundEvent);
-      } else {
-        // Selected event not found, clear it
-        setSelectedEventState(null);
-        localStorage.removeItem('selected_event_id');
-      }
-    } else if (events.length > 0 && !selectedEvent) {
-      // If no event is selected but we have events, try to restore from localStorage
-      const savedEventId = localStorage.getItem('selected_event_id');
-      if (savedEventId) {
-        const foundEvent = events.find(e => e.id === savedEventId);
-        if (foundEvent) {
-          setSelectedEventState(foundEvent);
-          return;
-        } else {
-          localStorage.removeItem('selected_event_id');
-        }
-      }
+    if (!eventsLoaded) return;
 
-      // No saved event or saved one not found – auto-select the newest event (by createdAt)
-      const latestEvent = [...events].sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      )[0];
-      if (latestEvent) {
-        // Use full setter so it also updates localStorage
-        setSelectedEvent(latestEvent);
-      }
+    if (events.length === 0) {
+      if (selectedEvent !== null) setSelectedEventState(null);
+      localStorage.removeItem('selected_event_id');
+      return;
+    }
+
+    const desired = desiredEventIdRef.current;
+    const target =
+      (desired ? events.find((e) => e.id === desired) : undefined) ||
+      [...events].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+
+    if (target) {
+      desiredEventIdRef.current = target.id;
+      localStorage.setItem('selected_event_id', target.id);
+      setSelectedEventState((prev) => (prev && prev.id === target.id ? prev : target));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [events]);
+  }, [events, eventsLoaded]);
 
   const fetchEvents = async () => {
     setLoading(true);
+    setError(null);
     try {
       const response = await fetchWithAuth('/api/events');
       if (!response.ok) throw new Error('Failed to fetch events');
@@ -103,6 +104,8 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
       const mappedData = data.map((event: any) => ({
         ...event,
         planId: event.planId || event.plan_id || null,
+        paymentStatus: event.paymentStatus ?? event.payment_status ?? undefined,
+        state: event.state ?? undefined,
       }));
       setEvents(mappedData);
     } catch (err) {
@@ -110,6 +113,7 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
       console.error('Error fetching events:', err);
     } finally {
       setLoading(false);
+      setEventsLoaded(true);
     }
   };
 
@@ -179,6 +183,7 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
         updateEvent,
         deleteEvent,
         loading,
+        eventsLoaded,
         error,
         fetchEvents,
       }}

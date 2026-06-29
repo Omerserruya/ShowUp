@@ -274,7 +274,7 @@ interface Campaign {
   template: string;
   status: CampaignStatus;
   scheduleTime: Date | null;
-  channel: 'whatsapp' | 'sms' | 'email';
+  channel: 'whatsapp' | 'email';
   /**
    * Number of recipients the campaign was actually sent to.
    * Prefer campaign-specific data from the API; fallback to a general estimate when not available.
@@ -345,7 +345,7 @@ function Messages() {
         template: apiCampaign.template,
         status,
         scheduleTime: apiCampaign.schedule_time ? new Date(apiCampaign.schedule_time) : null,
-        channel: apiCampaign.channel as 'whatsapp' | 'sms' | 'email',
+        channel: apiCampaign.channel as 'whatsapp' | 'email',
         recipientCount: specificRecipientCount,
         sentCount: undefined, // Will be loaded separately
         readCount: undefined, // Will be loaded separately

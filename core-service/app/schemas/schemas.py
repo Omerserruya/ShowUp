@@ -76,6 +76,10 @@ class EventBase(BaseModel):
     # Stored as free-form text (often JSON string from places autocomplete)
     location: Optional[str] = None
     active: bool = True
+    # Event type (wedding, brit, ...) — drives adaptive timeline + template recommendations.
+    event_type: Optional[str] = Field(None, serialization_alias="eventType", validation_alias="eventType")
+    # Payment dimension (paid | free | pending | unpaid), independent of `state`.
+    payment_status: Optional[str] = Field(None, serialization_alias="paymentStatus", validation_alias="paymentStatus")
     plan_id: Optional[str] = Field(None, serialization_alias="planId")  # Plan ID from MongoDB (serialized as planId)
     seating_layout: Optional[dict] = Field(None, serialization_alias="seatingLayout", validation_alias="seatingLayout")  # { tables: [...] }
     public_slug: Optional[str] = Field(None, serialization_alias="publicSlug", validation_alias="publicSlug")
@@ -174,6 +178,8 @@ class CampaignBase(BaseModel):
     event_id: uuid.UUID
     name: str = Field(..., max_length=100)
     template: str
+    # Optional user-written body that overrides the template at send time.
+    custom_message: Optional[str] = None
     channel: str = Field(..., max_length=20)
     schedule_time: Optional[dt.datetime] = None
     status: str = Field("pending", max_length=20)

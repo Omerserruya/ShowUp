@@ -1,5 +1,6 @@
 """
-OTP Worker - Consumes OTP messages from RabbitMQ and sends them via Telegram/WhatsApp
+OTP Worker - Consumes OTP messages from RabbitMQ and delivers them over WhatsApp
+using the approved Hebrew authentication template "otp".
 """
 
 import json
@@ -7,12 +8,17 @@ import logging
 import os
 import signal
 import sys
+import time
 from typing import Dict, Any
 
 import pika
 
 from mq import get_rabbit_params, connect_to_rabbitmq
-from telegram_sender import send_otp_via_telegram
+from whatsapp_sender import send_otp_via_whatsapp
+
+# Seconds to wait before requeueing a transiently-failed OTP, so a sustained
+# WhatsApp outage retries slowly instead of in a tight CPU/API-burning loop.
+RETRY_BACKOFF_SECONDS = float(os.getenv("OTP_RETRY_BACKOFF_SECONDS", "5"))
 
 # Configure logging
 logging.basicConfig(
@@ -99,22 +105,36 @@ class OTPWorker:
             platform = message_data.get('platform', 'WA')
             
             logger.info(f"Processing OTP: phone={phone}, code={code}, platform={platform}")
-            
-            # Send OTP via Telegram (currently)
-            # In the future, this can be extended to support WhatsApp based on platform
-            send_otp_via_telegram(phone, code)
-            
-            # Acknowledge message
-            ch.basic_ack(delivery_tag=method.delivery_tag)
-            logger.info(f"Successfully processed OTP for phone: {phone}")
-            
+
+            # Deliver the OTP over WhatsApp using the approved "otp" template.
+            outcome = send_otp_via_whatsapp(phone, code)
+
+            if outcome == "sent":
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                logger.info(f"Successfully sent OTP via WhatsApp for phone: {phone}")
+            elif outcome == "permanent":
+                # Will never succeed as-is (e.g. expired token, bad params).
+                # Requeuing would hot-loop and flood the API/logs, so drop it.
+                logger.error(
+                    f"Permanent WhatsApp OTP failure for {phone}; dropping message "
+                    f"(check WA_API_B token / template config)"
+                )
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+            else:
+                # Transient failure — back off before requeueing so a sustained
+                # outage retries slowly instead of in a tight loop.
+                logger.warning(f"Transient WhatsApp OTP failure for {phone}; requeueing after backoff")
+                time.sleep(RETRY_BACKOFF_SECONDS)
+                ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+
         except ValueError as e:
             # Invalid message format - acknowledge to remove from queue
             logger.error(f"Invalid message format: {e}")
             ch.basic_ack(delivery_tag=method.delivery_tag)
         except Exception as e:
-            # Error processing - reject and requeue
+            # Unexpected error - back off then requeue to avoid a hot loop.
             logger.error(f"Error processing message: {e}", exc_info=True)
+            time.sleep(RETRY_BACKOFF_SECONDS)
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
     
     def start_consuming(self):

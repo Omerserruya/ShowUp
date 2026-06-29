@@ -8,7 +8,7 @@ import CampaignIcon from '@mui/icons-material/Campaign';
 import { useNavigate } from 'react-router-dom';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useEvent } from '../contexts/EventContext';
-import { usePlan } from '../hooks/usePlans';
+import { getPlan, getCampaignsForPlan } from '../config/plans';
 
 interface Usage { event_id: string; plan_id: string | null; guests_used: number; rounds_used: number; }
 
@@ -34,7 +34,8 @@ export default function Billing() {
   const navigate = useNavigate();
   const { selectedEvent } = useEvent();
   const planId = (selectedEvent as any)?.planId || (selectedEvent as any)?.plan_id || null;
-  const { plan, loading: planLoading } = usePlan(planId);
+  const plan = getPlan(planId);
+  const planLoading = false;
   const [usage, setUsage] = useState<Usage | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -61,7 +62,7 @@ export default function Billing() {
   }
 
   const guestLimit = plan?.countLimit ?? null;
-  const roundLimit = plan?.campaigns ? plan.campaigns.length : null;
+  const roundLimit = plan ? getCampaignsForPlan(planId).length : null;
   const nearLimit = guestLimit != null && usage != null && usage.guests_used / guestLimit >= 0.8;
 
   return (

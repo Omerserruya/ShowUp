@@ -38,19 +38,6 @@ const float = keyframes`
   }
 `;
 
-const blob = keyframes`
-  0%,
-  100% {
-    transform: translate(0, 0) scale(1);
-  }
-  33% {
-    transform: translate(30px, -40px) scale(1.05);
-  }
-  66% {
-    transform: translate(-20px, 20px) scale(0.97);
-  }
-`;
-
 export default function Hero() {
   const navigate = useNavigate();
   const [countryCode, setCountryCode] = React.useState('+972');
@@ -100,7 +87,7 @@ export default function Hero() {
       wedding: `${greeting}\nאתם מוזמנים לחתונה של דנה ❤ יוסי 💍\nיום שלישי, 19:30 · אולמי הגן הקסום, ראשון לציון\nלצפייה בהזמנה ואישור הגעה:\n${rsvpUrl}`,
       'bar-mitzvah': `${greeting}\nאתם מוזמנים לחגוג את בר המצווה של איתי 🕎\nלצפייה בהזמנה ואישור הגעה:\n${rsvpUrl}`,
       'bat-mitzvah': `${greeting}\nאתם מוזמנים לחגוג את בת המצווה של מאיה ✨\nלצפייה בהזמנה ואישור הגעה:\n${rsvpUrl}`,
-      brit: `${greeting}\nבשעה טובה — אתם מוזמנים לברית 👶\nלצפייה בהזמנה ואישור הגעה:\n${rsvpUrl}`,
+      brit: `${greeting}\nבשעה טובה ומוצלחת! אתם מוזמנים לברית 👶\nלצפייה בהזמנה ואישור הגעה:\n${rsvpUrl}`,
       corporate: `${greeting}\nאתם מוזמנים לערב ההשקה של ShowUp 🚀\nלצפייה בהזמנה ואישור הגעה:\n${rsvpUrl}`,
       other: `${greeting}\nאתם מוזמנים לאירוע שלנו 🎉\nלצפייה בהזמנה ואישור הגעה:\n${rsvpUrl}`,
     };
@@ -146,64 +133,17 @@ export default function Hero() {
         px: 0,
         background: theme.palette.mode === 'dark'
           ? theme.palette.background.default
-          : 'radial-gradient(circle at 0 100%, #e0f2ff 0, #ffffff 55%)',
+          : 'linear-gradient(180deg, #faf8ff 0%, #ffffff 100%)',
         fontFamily: '"Noto Sans Hebrew", Arial, sans-serif',
       })}
     >
-      {/* background gradient orbs */}
+      {/* Calm, premium background — a single soft brand wash, no decorative noise. */}
       <Box
         sx={{
           position: 'absolute',
           inset: 0,
           background:
-            'radial-gradient(circle at 0% 100%, rgba(191,219,254,0.6) 0, transparent 55%), radial-gradient(circle at 80% 0%, rgba(221,214,254,0.5) 0, transparent 55%)',
-          pointerEvents: 'none',
-        }}
-      />
-      <Box
-        sx={{
-          position: 'absolute',
-          top: -80,
-          right: -80,
-          width: 260,
-          height: 260,
-          borderRadius: '50%',
-          background: 'radial-gradient(circle at 30% 30%, rgba(59,130,246,0.65), rgba(125,211,252,0.12))',
-          filter: 'blur(26px)',
-          opacity: 0.24,
-          animation: `${blob} 18s ease-in-out infinite`,
-          pointerEvents: 'none',
-        }}
-      />
-      <Box
-        sx={{
-          position: 'absolute',
-          top: '32%',
-          left: -120,
-          width: 320,
-          height: 320,
-          borderRadius: '50%',
-          background: 'radial-gradient(circle at 40% 40%, rgba(168,85,247,0.6), rgba(244,114,182,0.12))',
-          filter: 'blur(30px)',
-          opacity: 0.22,
-          animation: `${blob} 22s ease-in-out infinite`,
-          animationDelay: '4s',
-          pointerEvents: 'none',
-        }}
-      />
-      <Box
-        sx={{
-          position: 'absolute',
-          bottom: -120,
-          right: '25%',
-          width: 260,
-          height: 260,
-          borderRadius: '50%',
-          background: 'radial-gradient(circle at 40% 40%, rgba(52,211,153,0.6), rgba(56,189,248,0.14))',
-          filter: 'blur(28px)',
-          opacity: 0.2,
-          animation: `${blob} 20s ease-in-out infinite`,
-          animationDelay: '8s',
+            'radial-gradient(900px 620px at 85% -8%, rgba(136,140,238,0.08) 0, transparent 60%), radial-gradient(760px 560px at -5% 105%, rgba(170,176,244,0.06) 0, transparent 55%)',
           pointerEvents: 'none',
         }}
       />
@@ -235,37 +175,43 @@ export default function Hero() {
           }}
           dir="rtl"
         >
-          <Box>
+          <Box sx={{ textAlign: 'right' }}>
             <Typography
               component="h1"
               sx={{
-                fontSize: { xs: '2.3rem', md: '3.2rem' },
+                fontSize: { xs: '2.4rem', md: '3.3rem' },
                 fontWeight: 800,
-                lineHeight: 1.15,
-                backgroundImage: 'linear-gradient(90deg,#3b82f6,#8b5cf6,#ec4899)',
-                color: 'transparent',
-                WebkitBackgroundClip: 'text',
-                backgroundClip: 'text',
-                textAlign: 'center',
+                lineHeight: 1.12,
+                color: 'text.primary',
               }}
             >
-              לניהול אורחים חכם.
+              אתם מזמינים.
               <br />
-              הכל בוואטסאפ.
+              אנחנו דואגים{' '}
+              <Box
+                component="span"
+                sx={{
+                  backgroundImage: 'linear-gradient(90deg,#888cee,#aab0f4)',
+                  color: 'transparent',
+                  WebkitBackgroundClip: 'text',
+                  backgroundClip: 'text',
+                }}
+              >
+                שכולם יגיעו.
+              </Box>
             </Typography>
             <Typography
               variant="h6"
               sx={{
                 mt: 2,
                 color: 'text.secondary',
-                maxWidth: 480,
-                mx: 'auto',
+                maxWidth: 520,
                 fontWeight: 400,
-                textAlign: 'center',
+                lineHeight: 1.6,
               }}
             >
-מערכת אוטמטית שעושה לכם סדר בהכל - אישורי הגעה, בחירת מנות, שאלות של אורחים והכול ללא לינקים מסורבלים.
-ואם זה לא הספיק - נציג AI שידע לענות על כל שאלה שלכם ולהרגיע            </Typography>
+    שולחים את ההזמנות, ומי ששכח כבר יקבל תזכורת. האישורים נאספים לבד, בתוך וואטסאפ. אנחנו נרדוף אחרי האישורים, אתם תרדפו אחרי הרחבה.
+            </Typography>
           </Box>
 
           {/* White card with form */}
@@ -285,15 +231,15 @@ export default function Hero() {
           >
             <Typography
               variant="subtitle1"
-              sx={{ fontWeight: 600, mb: 0.5, textAlign: 'right' }}
+              sx={{ fontWeight: 700, mb: 0.5, textAlign: 'right' }}
             >
-              רוצים לראות איך האורח יחווה? נסו בעצמכם
+              יאללה, מתחילים
             </Typography>
             <Typography
               variant="caption"
               sx={{ display: 'block', mb: 2.5, textAlign: 'right', color: 'text.secondary' }}
             >
-              נשלח לכם הזמנת דמו לוואטסאפ — בדיוק כמו שהאורח יקבל 💬
+              כמה פרטים, ויש לכם לוח הודעות מוכן לאירוע. רוצים טעימה קודם? נשלח לכם הזמנת דמו ישר לוואטסאפ 💬
             </Typography>
 
             {/* Full Name Field */}
@@ -321,8 +267,8 @@ export default function Hero() {
                       : '#d1d5db',
                   },
                   '&.Mui-focused fieldset': {
-                    borderColor: '#3b82f6',
-                    boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
+                    borderColor: '#888cee',
+                    boxShadow: '0 0 0 1px rgba(136,140,238,0.32)',
                   },
                 },
               })}
@@ -332,7 +278,7 @@ export default function Hero() {
             <TextField
               select
               fullWidth
-              placeholder="בחר אירוע"
+              placeholder="איזה אירוע?"
               value={eventType}
               onChange={(e) => setEventType(e.target.value as string)}
               sx={(theme) => ({
@@ -352,15 +298,15 @@ export default function Hero() {
                       : '#d1d5db',
                   },
                   '&.Mui-focused fieldset': {
-                    borderColor: '#3b82f6',
-                    boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
+                    borderColor: '#888cee',
+                    boxShadow: '0 0 0 1px rgba(136,140,238,0.32)',
                   },
                 },
               })}
               SelectProps={{
                 displayEmpty: true,
                 renderValue: (value) => {
-                  if (!value) return 'בחר אירוע';
+                  if (!value) return 'איזה אירוע?';
                   const options = [
                     { value: 'wedding', label: 'חתונה' },
                     { value: 'bar-mitzvah', label: 'בר מצווה' },
@@ -386,7 +332,7 @@ export default function Hero() {
             {eventType === 'other' && (
               <TextField
                 fullWidth
-                placeholder="נא להזין סוג אירוע"
+                placeholder="אז מה חוגגים?"
                 value={customEventType}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCustomEventType(e.target.value)}
                 inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
@@ -408,8 +354,8 @@ export default function Hero() {
                         : '#d1d5db',
                     },
                     '&.Mui-focused fieldset': {
-                      borderColor: '#3b82f6',
-                      boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
+                      borderColor: '#888cee',
+                      boxShadow: '0 0 0 1px rgba(136,140,238,0.32)',
                     },
                   },
                 })}
@@ -445,8 +391,8 @@ export default function Hero() {
                         : '#d1d5db',
                     },
                     '&.Mui-focused fieldset': {
-                      borderColor: '#3b82f6',
-                      boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
+                      borderColor: '#888cee',
+                      boxShadow: '0 0 0 1px rgba(136,140,238,0.32)',
                     },
                   },
                 })}
@@ -465,19 +411,13 @@ export default function Hero() {
               <TextField
                 fullWidth
                 type="tel"
-                placeholder="הזינו מספר טלפון"
+                placeholder="הטלפון שלכם"
                 value={phone}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  // Keep exactly what the user typed (e.g. 05XXXXXXXX). We normalize
+                  // to E.164 only when building the API payload — never rewrite the
+                  // visible value, which used to strip the leading 0.
                   setPhone(e.target.value);
-                }}
-                onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
-                  // Normalize phone number when user leaves the field
-                  if (phone && countryCode) {
-                    const normalized = normalizePhoneNumber(phone, countryCode);
-                    // Extract just the phone part (without country code) for display
-                    const phonePart = normalized.replace(countryCode, '');
-                    setPhone(phonePart);
-                  }
                 }}
                 inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
                 sx={(theme) => ({
@@ -497,131 +437,69 @@ export default function Hero() {
                         : '#d1d5db',
                     },
                     '&.Mui-focused fieldset': {
-                      borderColor: '#3b82f6',
-                      boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
+                      borderColor: '#888cee',
+                      boxShadow: '0 0 0 1px rgba(136,140,238,0.32)',
                     },
                   },
                 })}
               />
             </Box>
 
-            <Box
+            {/* Primary action — start the wizard with the captured details. */}
+            <Button
+              fullWidth
+              variant="contained"
+              onClick={handleStartNow}
               sx={{
-                mb: 1,
-                bgcolor: 'transparent',
+                borderRadius: 1.5,
+                py: 1.15,
+                fontSize: 16,
+                fontWeight: 700,
+                textTransform: 'none',
+                background: 'linear-gradient(90deg,#888cee,#aab0f4)',
+                boxShadow: '0 10px 24px rgba(136,140,238,0.26)',
+                transition: 'transform 0.18s ease, box-shadow 0.18s ease',
+                '&:hover': {
+                  background: 'linear-gradient(90deg,#7378e4,#9a9ff2)',
+                  boxShadow: '0 14px 30px rgba(136,140,238,0.34)',
+                  transform: 'translateY(-1px)',
+                },
+                '&:active': { transform: 'scale(0.99)' },
               }}
             >
-              <Button
-                fullWidth
-                variant="contained"
-                onClick={handleSeeDemo}
-                startIcon={<WhatsAppIcon />}
-                sx={{
-                  borderRadius: 1.5,
-                  py: 1,
-                  fontSize: 16,
-                  fontWeight: 700,
-                  gap: 0.5,
-                  background: 'linear-gradient(90deg,#25D366,#128C7E)',
-                  boxShadow: '0 10px 24px rgba(37,211,102,0.35)',
-                  transition: 'transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease',
-                  '& .MuiButton-startIcon': { ml: 0.5, mr: -0.5 },
-                  '&:hover': {
-                    background: 'linear-gradient(90deg,#1ebe5b,#0f7a6c)',
-                    boxShadow: '0 14px 30px rgba(37,211,102,0.45)',
-                    transform: 'translateY(-1px) scale(1.01)',
-                  },
-                  '&:active': {
-                    transform: 'scale(0.98)',
-                  },
-                  textTransform: 'none',
-                }}
-              >
-                קדימה, תראו לי בוואטסאפ
-              </Button>
-            </Box>
+              יוצאים לדרך
+            </Button>
+
+            {/* Secondary action — feel the guest experience over WhatsApp. */}
+            <Button
+              fullWidth
+              variant="outlined"
+              onClick={handleSeeDemo}
+              startIcon={<WhatsAppIcon />}
+              sx={(theme) => ({
+                mt: 1.25,
+                mb: 1.5,
+                borderRadius: 1.5,
+                py: 1,
+                fontSize: 14,
+                fontWeight: 600,
+                textTransform: 'none',
+                color: '#0f7a52',
+                borderColor: 'rgba(37,211,102,0.5)',
+                bgcolor: theme.palette.mode === 'dark' ? 'transparent' : 'rgba(37,211,102,0.04)',
+                '& .MuiButton-startIcon': { ml: 0.5, mr: -0.25 },
+                '&:hover': { borderColor: '#25D366', bgcolor: 'rgba(37,211,102,0.08)' },
+              })}
+            >
+              שלחו לי דמו לוואטסאפ
+            </Button>
 
             <Typography
               variant="caption"
-              sx={{ display: 'block', mb: 1, textAlign: 'right', color: 'text.secondary' }}
+              sx={{ display: 'block', textAlign: 'right', color: 'text.secondary', lineHeight: 1.7 }}
             >
-              על ידי הזנת מספר הטלפון, אתם מסכימים לתנאי השימוש.
+              בלי התחייבות, אפשר לעצור מתי שבא לכם. ההודעות יוצאות מוואטסאפ הרשמי, והתשלום מאובטח לגמרי.
             </Typography>
-
-            <Box
-              sx={{
-                display: 'flex',
-                gap: { xs: 1, md: 2 },
-                justifyContent: 'flex-end',
-                flexWrap: { xs: 'wrap', sm: 'nowrap' },
-                flexDirection: { xs: 'column', sm: 'row' },
-                width: '100%',
-              }}
-            >
-              <Button
-                variant="outlined"
-                fullWidth={false}
-                sx={(theme) => ({
-                  borderRadius: 1.5,
-                  py: 1.1,
-                  textTransform: 'none',
-                  borderColor: theme.palette.divider,
-                  color: theme.palette.text.primary,
-                  bgcolor: theme.palette.mode === 'dark'
-                    ? theme.palette.background.paper
-                    : '#ffffff',
-                  whiteSpace: 'nowrap',
-                  flex: { xs: '1 1 100%', sm: '1 1 50%' },
-                  width: { xs: '100%', sm: 'auto' },
-                  maxWidth: { xs: '100%', sm: '50%' },
-                  fontSize: { xs: 13, md: 14 },
-                  '&:hover': {
-                    borderColor: theme.palette.mode === 'dark'
-                      ? theme.palette.divider
-                      : '#cbd5e1',
-                    bgcolor: theme.palette.mode === 'dark'
-                      ? theme.palette.action.hover
-                      : '#f8fafc',
-                  },
-                })}
-                onClick={() => sendLead('hero_contact', LEAD_ENDPOINT_CONTACT)}
-              >
-                שנציג יספר לי עוד
-              </Button>
-              <Button
-                variant="contained"
-                fullWidth={false}
-                sx={{
-                  borderRadius: 1.5,
-                  py: 1.1,
-                  textTransform: 'none',
-                  background: 'linear-gradient(90deg,#3b82f6,#a855f7)',
-                  border: 'none',
-                  boxShadow: 'none',
-                  outline: 'none',
-                  whiteSpace: 'nowrap',
-                  flex: { xs: '1 1 100%', sm: '1 1 50%' },
-                  width: { xs: '100%', sm: 'auto' },
-                  maxWidth: { xs: '100%', sm: '50%' },
-                  fontSize: { xs: 13, md: 14 },
-                  fontWeight: 600,
-                  '&:hover': {
-                    background: 'linear-gradient(90deg,#2563eb,#9333ea)',
-                    border: 'none',
-                    boxShadow: 'none',
-                    transform: 'translateY(-1px)',
-                  },
-                  '&:focus-visible': {
-                    outline: 'none',
-                    boxShadow: 'none',
-                    border: 'none',
-                  },
-                }}
-                onClick={handleStartNow}
-              >
-                התחילו עכשיו - בחרו חבילה
-              </Button>
-            </Box>
           </Box>
         </Box>
 
@@ -671,14 +549,15 @@ export default function Hero() {
               }}
             >
               <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#111827' }}>
-                שלום! 👋
+                היי! 👋
               </Typography>
               <Typography
                 variant="body2"
                 sx={{ mt: 0.5, color: '#6b7280', fontSize: 13.5 }}
               >
-הנכם מוזמנים לחתונה של ...              </Typography>
-              {["כן, אני בא! 🎉", "לצערי לא אוכל להגיע", "לצערי לא אוכל"].map((label) => (
+                מוזמנים לחתונה של דנה ויוסי 💍
+              </Typography>
+              {["כן, באים! 🎉", "לא נצליח הפעם"].map((label) => (
                 <Box
                   key={label}
                   sx={{
@@ -731,7 +610,7 @@ export default function Hero() {
                 fontWeight: 600,
               }}
             >
-              כן, אני בא! 🎉
+              כן, באים! 🎉
             </Box>
           </Box>
 
@@ -771,18 +650,16 @@ export default function Hero() {
                 variant="body2"
                 sx={{ mt: 0.5, color: '#6b7280', fontSize: 13.5 }}
               >
-אנחנו כבר מתרגשים לקראת הערב, מקווים שגם אתם! 💗 
-מזכירים - היום, 19:30 באולמי..
-
-מחכים לראותכם! 💗 
-         
+מתרגשים לקראת הערב, מקווים שגם אתם! 💗
+מזכירים: היום ב‑19:30, אולמי הגן.
+נתראה בשמחה 🥂
           </Typography>
           <Typography variant="body2" sx={{ mt: 0.5, color: '#6b7280', fontSize: 13.5 }}>
             <br />
-          לנוחיותכם ניווט מהיר באמצעות waze ע״י הכפתור למטה     
+          וכדי שלא תתעכבו בדרך, לחצו לניווט עם waze 👇
           </Typography>
               <Box
-                  key={"waze לאירוע"}
+                  key={"ניווט עם waze"}
                   sx={{
                     mt: 0.5,
                     borderRadius: 1,
@@ -794,7 +671,7 @@ export default function Hero() {
                     color: '#374151',
                   }}
                 >
-                    {"waze לאירוע"}
+                    {"ניווט עם waze"}
                 </Box>
             </Box>
           </Box>

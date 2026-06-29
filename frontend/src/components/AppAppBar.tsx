@@ -38,7 +38,7 @@ const StyledToolbar = styled(Toolbar)(({ theme }: { theme: Theme & { vars?: any 
 }));
 
 const menuItems = [
-  { title: 'תכונות', href: '#highlights' },
+  { title: 'מה מקבלים', href: '#what-you-get' },
   { title: 'תעריפים', href: '#pricing' },
   { title: 'שאלות נפוצות', href: '#faq' },
 ];
@@ -91,7 +91,7 @@ export default function AppAppBar() {
           }}
         >
           <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 2 }}>
-            <Logo />
+            <Logo height={44} />
             <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 1 }}>
               {menuItems.map((item) => (
                 <Button
@@ -153,7 +153,7 @@ export default function AppAppBar() {
             </IconButton>
           </Box>
           <Box sx={{ display: { xs: 'flex', md: 'none' }, alignItems: 'center' }}>
-            <Logo />
+            <Logo height={44} />
           </Box>
             <Drawer
               anchor="top"
@@ -188,7 +188,7 @@ export default function AppAppBar() {
                     alignItems: 'center',
                   }}
                 >
-                  <Logo />
+                  <Logo height={44} />
                   <IconButton aria-label="Close menu" onClick={toggleDrawer(false)}>
                     <CloseRoundedIcon />
                   </IconButton>

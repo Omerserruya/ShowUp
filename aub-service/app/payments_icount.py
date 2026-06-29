@@ -33,6 +33,10 @@ def get_config() -> Dict[str, str]:
         "base_url": os.getenv("ICOUNT_BASE_URL", DEFAULT_BASE).rstrip("/") + "/",
         "api_token": os.getenv("ICOUNT_API_TOKEN", ""),
         "public_base_url": os.getenv("PUBLIC_BASE_URL", "").rstrip("/"),
+        # Which iCount PayPage (עמוד סליקה) to charge against. Created in the iCount
+        # dashboard; its id must be passed to generate_sale or iCount rejects with
+        # "missing_paypage_id".
+        "paypage_id": os.getenv("ICOUNT_PAYPAGE_ID", ""),
     }
 
 
@@ -81,10 +85,19 @@ def generate_sale(
     if not is_configured():
         raise RuntimeError("iCount is not configured (set ICOUNT_API_TOKEN)")
 
+    cfg = get_config()
+    if not cfg["paypage_id"]:
+        raise RuntimeError(
+            "No iCount PayPage configured: create a PayPage (עמוד סליקה) in the "
+            "iCount dashboard and set ICOUNT_PAYPAGE_ID"
+        )
+
     payload: Dict[str, Any] = {
+        "paypage_id": cfg["paypage_id"],
         "doc_type": "invrec",  # tax invoice + receipt on successful charge
         "currency_code": "ILS",
-        # Single line item priced from our plan config (incl. VAT).
+        # Single line item. `unitprice` is BEFORE VAT — iCount adds VAT per the
+        # PayPage settings, so the customer pays net + VAT = the displayed price.
         "items": [
             {
                 "description": description,
@@ -110,14 +123,17 @@ def generate_sale(
 
     # iCount has returned the hosted page under a few different keys; accept any.
     url = (
-        body.get("paypage_url")
+        body.get("sale_url")
+        or body.get("paypage_url")
         or body.get("url")
         or body.get("redirect_url")
         or (body.get("data") or {}).get("paypage_url")
         or (body.get("data") or {}).get("url")
     )
     sale_id = (
-        body.get("sale_id")
+        body.get("sale_uniqid")
+        or body.get("sale_id")
+        or body.get("sale_sid")
         or body.get("id")
         or (body.get("data") or {}).get("sale_id")
         or (body.get("data") or {}).get("id")
@@ -135,21 +151,36 @@ def get_sale_info(sale_id: str) -> Dict[str, Any]:
     return _post("paypage/get_sale_info", {"sale_id": str(sale_id)})
 
 
+def _num(v: Any) -> float:
+    try:
+        return float(str(v).replace(",", "").strip())
+    except (ValueError, TypeError):
+        return 0.0
+
+
 def is_paid(sale_info: Dict[str, Any]) -> bool:
     """True when iCount reports the sale as successfully paid.
 
-    Liberal parsing: a truthy top-level `status` plus, when present, a paid/success
-    flag on the sale record. iCount marks completed sales with `confirmation_code`
-    or a `paid` / `payment_status` field depending on account configuration.
+    Handles BOTH shapes:
+      • the paypage IPN — which has NO top-level `status`, and signals a completed
+        charge with a `confirmation_code` + a positive `total_paid`/`cc_total`;
+      • a get_sale_info response — which uses a truthy top-level `status`.
     """
-    if not _ok(sale_info):
-        return False
     data = sale_info.get("sale") or sale_info.get("data") or sale_info
     if not isinstance(data, dict):
-        return True  # top-level status was OK and no detail to contradict it
+        data = sale_info if isinstance(sale_info, dict) else {}
+
+    # Paypage IPN: a confirmation_code (iCount only issues one on a completed sale)
+    # or a positive paid total is proof of payment.
+    if str(data.get("confirmation_code") or "").strip():
+        return True
+    if _num(data.get("total_paid")) > 0 or _num(data.get("cc_total")) > 0:
+        return True
     if data.get("paid") in (True, 1, "1"):
         return True
     payment_status = str(data.get("payment_status") or data.get("status") or "").lower()
     if payment_status in ("paid", "success", "completed", "1", "true"):
         return True
-    return bool(data.get("confirmation_code"))
+
+    # Fallback: explicit server-side OK status (get_sale_info responses).
+    return _ok(sale_info)

@@ -68,35 +68,31 @@ EVENT_NAMES = [
     "יום הולדת 50 של משה"
 ]
 
-# Campaign templates matching template_registry.py and frontend templates.ts
 CAMPAIGN_TEMPLATES = [
     {
-        "name": "RSVP",
-        "template_id": "event_no_pic",  # Template ID from template_registry.py
-        "channel": "whatsapp",
-        "offset_days": 30,  # 30 days before event
-        "time": "10:00"
+        "name": "הודעת 'שמרו את התאריך'",
+        "template": "שלום {{guest.name}}! אנחנו שמחים להזמין אותך ל{{event.name}} שיתקיים ב{{event.date}} ב{{event.location}}. שמרו את התאריך!",
+        "channel": "whatsapp"
     },
     {
-        "name": "תזכורת שבוע לפני",
-        "template_id": "reminder",  # For pending guests
-        "channel": "whatsapp",
-        "offset_days": 7,  # 7 days before event
-        "time": "12:00"
+        "name": "הזמנה ראשונית",
+        "template": "שלום {{guest.name}}, הזמנה רשמית ל{{event.name}} ב{{event.date}} ב{{event.location}}. נשמח לראותך!",
+        "channel": "whatsapp"
     },
     {
-        "name": "תזכורת יום לפני",
-        "template_id": "event_remind",  # For all guests
-        "channel": "whatsapp",
-        "offset_days": 1,  # 1 day before event
-        "time": "18:00"
+        "name": "תזכורת ראשונה",
+        "template": "שלום {{guest.name}}, תזכורת: {{event.name}} יתקיים ב{{event.date}}. אנא אשר/י הגעה.",
+        "channel": "whatsapp"
     },
     {
-        "name": "תודה אחרי האירוע",
-        "template_id": "thank_you",  # For attending guests
-        "channel": "whatsapp",
-        "offset_days": -1,  # 1 day after event
-        "time": "11:00"
+        "name": "תזכורת שנייה",
+        "template": "שלום {{guest.name}}, תזכורת אחרונה: {{event.name}} ב{{event.date}}. אנא אשר/י הגעה בהקדם.",
+        "channel": "whatsapp"
+    },
+    {
+        "name": "הודעת תודה",
+        "template": "שלום {{guest.name}}, תודה רבה שהגעת ל{{event.name}}! היה לנו כיף לראות אותך.",
+        "channel": "whatsapp"
     }
 ]
 
@@ -146,7 +142,7 @@ def create_user(conn, phone="+972525401686", first_name="משתמש", last_name=
         return user_id
 
 
-def create_event(conn, user_id, event_name=None, event_date=None, location=None, plan_id=None):
+def create_event(conn, user_id, event_name=None, event_date=None, location="אולם אירועים, תל אביב"):
     """Create a demo event."""
     event_id = uuid.uuid4()
     now = datetime.now(timezone.utc)
@@ -158,35 +154,16 @@ def create_event(conn, user_id, event_name=None, event_date=None, location=None,
         # Event in 2 months from now
         event_date = now + timedelta(days=60)
     
-    # Default plan_id to "plus" if not provided
-    if plan_id is None:
-        plan_id = "plus"  # Use "plus" plan as default for demo data
-    
     # Create inviters (demo couple)
     inviters = Json([
         {"fn": "דוד", "ln": "כהן"},
         {"fn": "שרה", "ln": "לוי"}
     ])
     
-    # Location as JSON object (matching frontend structure)
-    if location is None:
-        location_obj = {
-            "name": "אולם אירועים גרנד",
-            "address": "רחוב רוטשילד 10, תל אביב",
-            "coordinates": {
-                "lat": 32.0853,
-                "lng": 34.7818
-            }
-        }
-        # Store as JSON string (core-service expects TEXT/string)
-        location_str = json.dumps(location_obj, ensure_ascii=False)
-    else:
-        location_str = location
-    
     with conn.cursor() as cur:
         cur.execute("""
-            INSERT INTO events (id, owners, inviters, name, description, event_date, location, active, plan_id, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO events (id, owners, inviters, name, description, event_date, location, active, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             str(event_id),
@@ -195,9 +172,8 @@ def create_event(conn, user_id, event_name=None, event_date=None, location=None,
             event_name,
             f"אירוע דמו: {event_name}",
             event_date,
-            location_str,  # TEXT column - JSON string
+            location,
             True,
-            plan_id,  # Plan ID from MongoDB
             now,
             now
         ))
@@ -209,50 +185,41 @@ def create_event(conn, user_id, event_name=None, event_date=None, location=None,
 
 
 def create_campaigns(conn, event_id, event_date):
-    """Create demo campaigns for the event using updated template IDs."""
+    """Create demo campaigns for the event."""
     campaigns = []
     now = datetime.now(timezone.utc)
     
+    # Schedule campaigns at different times relative to event
+    campaign_schedules = [
+        (event_date - timedelta(days=90), CAMPAIGN_TEMPLATES[0], "sent"),  # Save the date - 90 days before
+        (event_date - timedelta(days=60), CAMPAIGN_TEMPLATES[1], "sent"),  # Initial invite - 60 days before
+        (event_date - timedelta(days=30), CAMPAIGN_TEMPLATES[2], "pending"),  # First reminder - 30 days before
+        (event_date - timedelta(days=7), CAMPAIGN_TEMPLATES[3], "pending"),  # Second reminder - 7 days before
+        (event_date + timedelta(days=1), CAMPAIGN_TEMPLATES[4], "pending"),  # Thank you - 1 day after
+    ]
+    
     with conn.cursor() as cur:
-        for template_data in CAMPAIGN_TEMPLATES:
+        for schedule_time, template_data, status in campaign_schedules:
             campaign_id = uuid.uuid4()
-            
-            # Calculate schedule_time based on offset_days and time
-            offset_days = template_data.get("offset_days", 0)
-            time_str = template_data.get("time", "12:00")
-            [hours, minutes] = time_str.split(":")
-            
-            # Calculate scheduled time: event_date - offset_days (positive = before, negative = after)
-            base_date = event_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            scheduled_date = base_date - timedelta(days=offset_days)
-            schedule_time = scheduled_date.replace(hour=int(hours), minute=int(minutes))
-            
-            # Determine status: "sent" if in the past, "pending" if in the future
-            status = "sent" if schedule_time < now else "pending"
-            
-            # For demo data, use reasonable recipient_count
-            recipient_count = 50 if status == "sent" else 0
-
             cur.execute("""
-                INSERT INTO campaigns (id, event_id, name, template, channel, schedule_time, status, recipient_count, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO campaigns (id, event_id, name, template, channel, schedule_time, status, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             """, (
                 str(campaign_id),
                 str(event_id),
                 template_data["name"],
-                template_data["template_id"],  # Use template_id (e.g., "event_no_pic")
+                template_data["template"],
                 template_data["channel"],
                 schedule_time,
                 status,
-                recipient_count,
                 now,
                 now if status == "sent" else schedule_time
             ))
             
             campaign_id = cur.fetchone()[0]
             campaigns.append(campaign_id)
-            print(f"  ✓ Created campaign: {template_data['name']} (template={template_data['template_id']}, status={status}, schedule={schedule_time.isoformat()}), recipients={recipient_count}")
+            print(f"  ✓ Created campaign: {template_data['name']} ({status})")
     
     conn.commit()
     return campaigns

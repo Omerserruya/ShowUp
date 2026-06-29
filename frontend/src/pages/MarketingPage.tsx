@@ -1,33 +1,35 @@
 import * as React from 'react';
-import CssBaseline from '@mui/material/CssBaseline';
-import Divider from '@mui/material/Divider';
-import AppTheme from '../shared-theme/AppTheme';
 import AppAppBar from '../components/AppAppBar';
 import Hero from '../components/Hero';
-import LogoCollection from '../components/LogoCollection';
-import Highlights from '../components/Highlights';
+import HowItWorks from '../components/HowItWorks';
+import Assistant from '../components/Assistant';
+import WhatYouGet from '../components/WhatYouGet';
 import Pricing from '../components/Pricing';
-import Features from '../components/Features';
-import Testimonials from '../components/Testimonials';
 import FAQ from '../components/FAQ';
+import ClosingCTA from '../components/ClosingCTA';
 import Footer from '../components/Footer';
 
-export default function MarketingPage(props: { disableCustomTheme?: boolean }) {
+/**
+ * Landing page. Funnel order tells a story: hook (Hero) → the modern way
+ * (HowItWorks feature scenes) → the differentiator (Assistant — manage the event
+ * by talking) → decision (Pricing) → objections (FAQ) → final ask (ClosingCTA).
+ * No dividers between sections — backgrounds flow so it reads as one long page.
+ * The page inherits the global unified theme (color-mode toggle too).
+ */
+export default function MarketingPage() {
   return (
-    <AppTheme {...props}>
-      <CssBaseline enableColorScheme />
-
+    <>
       <AppAppBar />
       <Hero />
       <div>
-        <Highlights />
-        <Divider />
+        <WhatYouGet />
+        <HowItWorks />
+        <Assistant />
         <Pricing />
-        <Divider />
         <FAQ />
-        <Divider />
+        <ClosingCTA />
         <Footer />
       </div>
-    </AppTheme>
+    </>
   );
 }

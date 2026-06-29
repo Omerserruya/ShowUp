@@ -22,10 +22,10 @@ function Copyright() {
     >
       {'© '}
       {new Date().getFullYear()}{' '}
-      <Link color="inherit" href="https://mui.com/">
+      <Link component={RouterLink} to="/" color="inherit" sx={{ textDecoration: 'none' }}>
         ShowUp
       </Link>
-      {'ֿ כל הזכויות שמורות'}
+      {' · כל הזכויות שמורות'}
     </Typography>
   );
 }
@@ -74,14 +74,24 @@ export default function Footer() {
             }}
           >
             <Logo height={40} mr={0} />
-            <Typography 
-              variant="body2" 
+            <Typography
+              variant="body2"
               color="text.secondary"
               sx={{
                 textAlign: { xs: 'center', sm: 'left' },
+                maxWidth: 320,
               }}
             >
-              ShowUp - העוזר החכם שלך לניהול אורחים
+              ShowUp. אישורי הגעה לאירועים, ישר בוואטסאפ. אתם תחגגו, אנחנו כבר נדאג לשאר. נתראה בשמחות 🥂
+            </Typography>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ textAlign: { xs: 'center', sm: 'left' }, mt: 0.5, lineHeight: 1.8 }}
+            >
+              support@showup.co.il · תמיכה בוואטסאפ
+              <br />
+              פועלת על תשתית WhatsApp Business הרשמית
             </Typography>
           </Box>
           <Box
@@ -116,13 +126,13 @@ export default function Footer() {
           <Typography variant="body2" fontWeight={600}>
             מוצר
           </Typography>
-          <Link color="text.secondary" href="#">
-            תכונות
+          <Link color="text.secondary" href="#what-you-get">
+            מה מקבלים
           </Link>
-          <Link color="text.secondary" href="#">
+          <Link color="text.secondary" href="#pricing">
             תעריפים
           </Link>
-          <Link color="text.secondary" href="#">
+          <Link color="text.secondary" href="#faq">
             שאלות נפוצות
           </Link>
         </Box>
@@ -134,70 +144,16 @@ export default function Footer() {
           }}
         >
           <Typography variant="body2" fontWeight={600}>
-            חברה
+            תמיכה
           </Typography>
-          <Link color="text.secondary" href="#">
-            אודות
+          <Link color="text.secondary" href="#faq">
+            שאלות נפוצות
           </Link>
-          <Link color="text.secondary" href="#">
-            קריירה
-          </Link>
-          <Link color="text.secondary" href="#">
+          <Link color="text.secondary" href="mailto:support@showup.co.il">
             צור קשר
           </Link>
-        </Box>
-        <Box
-          sx={{
-            display: { xs: 'none', sm: 'flex' },
-            flexDirection: 'column',
-            gap: 1,
-          }}
-        >
-          <Typography variant="body2" fontWeight={600}>
-            משפטי
-          </Typography>
-          <Link 
-            component={RouterLink} 
-            to="/terms" 
-            color="text.secondary" 
-            sx={{ 
-              textDecoration: 'none', 
-              '&:hover': { 
-                textDecoration: 'underline' 
-              } 
-            }}
-          >
-            תנאי שימוש
-          </Link>
-          <Link 
-            component={RouterLink} 
-            to="/privacy" 
-            color="text.secondary" 
-            sx={{ 
-              textDecoration: 'none', 
-              '&:hover': { 
-                textDecoration: 'underline' 
-              } 
-            }}
-          >
-            מדיניות פרטיות
-          </Link>
-          <Link 
-            component={RouterLink} 
-            to="/accessibility" 
-            color="text.secondary" 
-            sx={{ 
-              textDecoration: 'none', 
-              '&:hover': { 
-                textDecoration: 'underline' 
-              },
-              display: 'flex',
-              alignItems: 'center',
-              gap: 0.5
-            }}
-          >
-            <AccessibilityNewIcon fontSize="small" />
-            הצהרת נגישות
+          <Link color="text.secondary" href="https://wa.me/972500000000" target="_blank" rel="noopener noreferrer">
+            תמיכה בוואטסאפ
           </Link>
         </Box>
       </Box>

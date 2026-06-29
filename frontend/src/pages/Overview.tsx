@@ -27,6 +27,7 @@ import ResponsePieChart from '../components/ResponsePieChart';
 import EventCountdown from '../components/EventCountdown';
 import CampaignTimeline, { CampaignTimelineItem } from '../components/CampaignTimeline';
 import CampaignUpdates, { CampaignUpdate } from '../components/CampaignUpdates';
+import EventStatusBadge from '../components/EventStatusBadge';
 
 // Import hooks
 import { useOverviewStats, useCampaigns, useGuests } from '../hooks/useOverviewData';
@@ -235,6 +236,22 @@ function Overview() {
 
   return (
     <Box sx={{ p: { xs: 1, sm: 4 }, direction: 'rtl' }}>
+      {/* Event header: name + persistent status */}
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 1.5,
+          mb: { xs: 2, sm: 3 },
+        }}
+      >
+        <Typography variant="h5" component="h1" sx={{ fontWeight: 700, color: 'text.primary' }}>
+          {selectedEvent.name}
+        </Typography>
+        <EventStatusBadge state={selectedEvent.state} paymentStatus={selectedEvent.paymentStatus} />
+      </Box>
+
       {statsError && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {statsError}

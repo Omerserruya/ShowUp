@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 # BASE_URL = "https://dev.28042000.xyz/api" 
 BASE_URL =  "http://localhost/api" 
-TOKEN= "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiMjc2MzkzMmUtMzIyYS00M2JhLWEyZTQtZDE5N2U3YjQ0N2RmIiwic3ViIjoiKzk3MjUyNTQwMTY4NiIsImlhdCI6MTc2ODkzODUwMCwiZXhwIjoxNzY5MDI0OTAwfQ.0AwfMbInbTMjXSb8pBfgtJCDZoXNK1ef7TP8R4Bw5Kc"
+TOKEN= "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiYzllZjQ2NzYtNDYxZS00ODIyLTg5MzAtYzlhNzRlZGY2YjMwIiwic3ViIjoiMTIzNDU2Nzg5IiwiaWF0IjoxNzY0NjY2MzAxLCJleHAiOjE3NjQ3NTI3MDF9.AIwkWKntGcsaqMbwBy-qjuwonfjRQ_1DtBtaty9-T5A"
 
 def create_event(headers):
     payload = {

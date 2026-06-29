@@ -2,74 +2,38 @@ import React from 'react';
 import { Experimental_CssVarsProvider as CssVarsProvider } from '@mui/material/styles';
 import { experimental_extendTheme as extendTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
-import { brand, pink, gray } from '../shared-theme/themePrimitives';
-import { alpha } from '@mui/material/styles';
+import {
+  colorSchemes,
+  typography,
+  shadows,
+  shape,
+} from '../shared-theme/themePrimitives';
+import { inputsCustomizations } from '../shared-theme/customizations/inputs';
+import { dataDisplayCustomizations } from '../shared-theme/customizations/dataDisplay';
+import { feedbackCustomizations } from '../shared-theme/customizations/feedback';
+import { navigationCustomizations } from '../shared-theme/customizations/navigation';
+import { surfacesCustomizations } from '../shared-theme/customizations/surfaces';
 
+/**
+ * Single source of truth for the ShowUp design system.
+ *
+ * Historically the app shipped two themes: a rich, fully-customized theme that
+ * only wrapped the marketing page, and a stripped-down one (no typography, no
+ * shadows, no component styling) that wrapped the entire authenticated app.
+ * This unifies them — the full design system now applies everywhere, so every
+ * screen inherits the brand font, the elevation ramp, and the component polish.
+ */
 const theme = extendTheme({
-  shape: { borderRadius: 10 },
-  colorSchemes: {
-    light: {
-      palette: {
-        primary: {
-          main: brand[500],
-          light: brand[300],
-          dark: brand[700],
-          contrastText: '#ffffff',
-        },
-        secondary: {
-          main: pink[400],
-          light: pink[200],
-          dark: pink[600],
-          contrastText: '#ffffff',
-        },
-        background: {
-          default: 'hsl(0, 0%, 100%)',
-          paper: 'hsl(262, 60%, 99%)',
-        },
-        text: {
-          primary: gray[800],
-          secondary: gray[600],
-        },
-        // Add other colors as needed
-      },
-    },
-    dark: {
-      palette: {
-        primary: {
-          main: brand[400],
-          light: brand[300],
-          dark: brand[700],
-          contrastText: '#ffffff',
-        },
-        secondary: {
-          main: pink[400],
-          light: pink[300],
-          dark: pink[600],
-          contrastText: '#ffffff',
-        },
-        background: {
-          default: gray[900],
-          paper: 'hsl(263, 30%, 9%)',
-        },
-        text: {
-          primary: 'hsl(0, 0%, 100%)',
-          secondary: gray[400],
-        },
-        divider: alpha(gray[700], 0.6),
-        action: {
-          hover: alpha(gray[600], 0.2),
-          selected: alpha(gray[600], 0.3),
-        },
-        // Add other colors as needed
-      },
-    },
-  },
-});
-
-// Add smooth transition for theme switching
-const themeWithTransitions = {
-  ...theme,
+  colorSchemes,
+  typography,
+  shadows,
+  shape,
   components: {
+    ...(inputsCustomizations as any),
+    ...(dataDisplayCustomizations as any),
+    ...(feedbackCustomizations as any),
+    ...(navigationCustomizations as any),
+    ...(surfacesCustomizations as any),
     MuiCssBaseline: {
       styleOverrides: {
         body: {
@@ -78,6 +42,8 @@ const themeWithTransitions = {
         },
         html: {
           overflowX: 'hidden',
+          // Smooth in-page anchor scrolling (landing nav) + focus jumps.
+          scrollBehavior: 'smooth',
         },
         '#root': {
           overflowX: 'hidden',
@@ -85,7 +51,7 @@ const themeWithTransitions = {
       },
     },
   },
-};
+});
 
 interface ThemeProviderProps {
   children: React.ReactNode;
@@ -93,11 +59,15 @@ interface ThemeProviderProps {
 
 const ThemeProvider = ({ children }: ThemeProviderProps) => {
   return (
-    <CssVarsProvider theme={themeWithTransitions} defaultMode="light" modeStorageKey="show-up-color-scheme">
+    <CssVarsProvider
+      theme={theme}
+      defaultMode="light"
+      modeStorageKey="show-up-color-scheme"
+    >
       <CssBaseline />
       {children}
     </CssVarsProvider>
   );
-}
+};
 
-export default ThemeProvider; 
+export default ThemeProvider;

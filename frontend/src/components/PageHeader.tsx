@@ -18,14 +18,15 @@ const PageHeader: React.FC<PageHeaderProps> = ({
         position: 'sticky',
         top: stickyOffset,
         zIndex: (theme) => theme.zIndex.appBar,
-        bgcolor: '#ffffff',
-        borderBottom: '1px solid #e5e7eb',
+        bgcolor: 'background.paper',
+        borderBottom: '1px solid',
+        borderColor: 'divider',
         mb: 3,
       }}
     >
       <Box
         sx={{
-          px: 4,
+          px: { xs: 2.5, sm: 4 },
           py: 2.5,
           display: 'flex',
           flexDirection: 'column',
@@ -38,7 +39,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
           component="h1"
           sx={{
             fontWeight: 700,
-            color: '#0f172a',
+            color: 'text.primary',
           }}
         >
           {title}
@@ -47,8 +48,8 @@ const PageHeader: React.FC<PageHeaderProps> = ({
           <Typography
             variant="subtitle1"
             sx={{
-              mt: 1,
-              color: '#6b7280',
+              mt: 0.5,
+              color: 'text.secondary',
             }}
           >
             {subtitle}

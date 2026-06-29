@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Box, CircularProgress, useTheme, Paper, BottomNavigation, BottomNavigationAction, alpha } from "@mui/material";
+import { Box, Button, CircularProgress, Typography, useTheme, Paper, BottomNavigation, BottomNavigationAction, alpha } from "@mui/material";
 import { Outlet, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import SideMenu from './SideMenuCustom/SideMenu';
 import Header from './Header';
@@ -7,6 +7,7 @@ import AssistantWidget from './AssistantWidget';
 import KeyboardShortcuts from './KeyboardShortcuts';
 import { useUser } from '../contexts/UserContext';
 import { useBanner } from '../contexts/BannerContext';
+import { useEvent } from '../contexts/EventContext';
 import HomeIcon from '@mui/icons-material/Home';
 import PeopleIcon from '@mui/icons-material/People';
 import SendIcon from '@mui/icons-material/Send';
@@ -14,6 +15,7 @@ import PersonIcon from '@mui/icons-material/Person';
 
 function Layout() {
   const { user, loading } = useUser();
+  const { events, eventsLoaded, error: eventsError, fetchEvents } = useEvent();
   const location = useLocation();
   const navigate = useNavigate();
   const theme = useTheme();
@@ -99,6 +101,47 @@ function Layout() {
   // Redirect to login if not authenticated
   if (!loading && !user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Event-resolution guard, shared by every event-scoped page. Pages under the
+  // dashboard assume a valid selected event; we make that guarantee here instead
+  // of each page re-implementing recovery.
+  const path = location.pathname;
+  const eventOptional = path.startsWith('/profile') || path.startsWith('/admin');
+
+  if (!eventOptional) {
+    // Wait for the events list before rendering, so no page fires a fetch against
+    // an unresolved/stale selection.
+    if (!eventsLoaded) {
+      return (
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+          <CircularProgress />
+        </Box>
+      );
+    }
+
+    // The list loaded but came back empty.
+    if (events.length === 0) {
+      // A real fetch error (network/server) — offer a retry rather than wrongly
+      // sending the user to onboarding.
+      if (eventsError) {
+        return (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, justifyContent: 'center', alignItems: 'center', height: '100vh', px: 3, textAlign: 'center', direction: 'rtl' }}>
+            <Typography variant="h6" sx={{ fontWeight: 700 }}>לא הצלחנו לטעון את האירועים</Typography>
+            <Typography color="text.secondary">בדקו את החיבור ונסו שוב.</Typography>
+            <Button variant="contained" onClick={() => fetchEvents()}>נסו שוב</Button>
+          </Box>
+        );
+      }
+      // No events yet, but there's an unfinished order → resume at checkout
+      // (survives closing the browser / returning days later, same device).
+      const pendingOrderId = localStorage.getItem('pending_order_id');
+      if (pendingOrderId) {
+        return <Navigate to={`/payment?orderId=${encodeURIComponent(pendingOrderId)}`} replace />;
+      }
+      // Otherwise genuinely no events → onboarding / create-event experience.
+      return <Navigate to="/wizard" replace />;
+    }
   }
 
   return (

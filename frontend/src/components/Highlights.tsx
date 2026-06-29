@@ -7,39 +7,43 @@ import { styled, useTheme } from '@mui/material/styles';
 
 // Icons
 import WhatsAppIcon from '@mui/icons-material/WhatsApp';
-import TrackChangesIcon from '@mui/icons-material/TrackChanges';
-import CloudUploadIcon from '@mui/icons-material/CloudUpload';
-import SmartToyIcon from '@mui/icons-material/SmartToy';
+import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded';
+import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
+import SupportAgentRoundedIcon from '@mui/icons-material/SupportAgentRounded';
+
+// Brand-consistent accents: WhatsApp keeps its recognizable green; everything
+// else uses the brand violet so the page reads as one calm, premium product.
+const BRAND = '#888cee';
 
 // --- Feature Data ---
 const featureData = [
   {
     icon: WhatsAppIcon,
-    title: 'אישורי הגעה אוטומטיים בוואטסאפ, בלי לינקים',
+    title: 'אישורי הגעה ישירות בוואטסאפ',
     description:
-      'חוויה אישית ונוחה למענה שמבטיחה שהאורחים שלכם באמת יענו – הכל קורה ישירות בוואטסאפ, בלי טפסים מסורבלים.',
-    color: '#16a34a', // Green
+      'האורחים מאשרים בלחיצה אחת, בצ׳אט שהם כבר מכירים — בלי אפליקציות, בלי לינקים ובלי טפסים. כך מגיעים ליותר אישורים, ובאמת.',
+    color: '#16a34a',
   },
   {
-    icon: TrackChangesIcon,
-    title: 'ניהול מתקדם בדשבורד בזמן אמת',
+    icon: InsightsRoundedIcon,
+    title: 'תמונה מלאה בזמן אמת',
     description:
-      'עדכוני סטטוס לייב, סידורי הושבה ותצוגה ברורה של כמה מגיעים, מי אישר, מי מתלבט ומה המצב בשטח בכל רגע.',
-    color: '#2563eb', // Blue
+      'מי אישר, מי מתלבט וכמה בדיוק מגיעים — הכול מתעדכן לבד בדשבורד אחד ונקי, עד הרגע האחרון. אתם תמיד יודעים איפה הדברים עומדים.',
+    color: BRAND,
   },
   {
-    icon: SmartToyIcon,
-    title: 'נציג AI זמין 24/7',
+    icon: ScheduleRoundedIcon,
+    title: 'תקשורת אוטומטית, בתזמון הנכון',
     description:
-      'העוזר האישי שלכם לשאלות כמו כמה אישורי הגעה התקבלו, מי אישר ומה, כמה צמחונים, ואפילו בקשות מיוחדות מאורחים – במילה אחת: שקט.',
-    color: '#7c3aed', // Purple
+      'הזמנה, תזכורות ותודה שאחרי — נשלחות מעצמן בדיוק בזמן הנכון לכל אירוע. מגדירים פעם אחת, והכול ממשיך לבד.',
+    color: BRAND,
   },
   {
-    icon: CloudUploadIcon,
-    title: 'העלאת אורחים מהירה ופשוטה דרך הבוט',
+    icon: SupportAgentRoundedIcon,
+    title: 'מענה מיידי לשאלות של אורחים',
     description:
-      'ייבוא אנשי קשר מאקסל או מהמחשב, או שליחה ישירה לבוט – אנחנו נטפל בסידור וניהול הרשימה, בלי כאב ראש.',
-    color: '#f97316', // Orange
+      'שעה, מיקום, חניה, מתנות — האורחים מקבלים תשובה ברגע, בכל שעה. עוזר חכם עונה במקומכם, כדי שתישארו רגועים.',
+    color: BRAND,
   },
 ];
 
@@ -92,7 +96,7 @@ export default function Highlights() {
               component="span"
               sx={{
                 ml: 0.5,
-                background: 'linear-gradient(90deg,#2563eb,#7c3aed)',
+                background: 'linear-gradient(90deg,#aab0f4,#888cee)',
                 WebkitBackgroundClip: 'text',
                 color: 'transparent',
                 fontWeight: 800,
@@ -102,7 +106,7 @@ export default function Highlights() {
             </Box>
           </Typography>
           <Typography variant="h6" sx={{ color: theme.palette.text.secondary, mt: 1 }}>
-            כל מה שאתם צריכים לניהול אורחים חכם – בפלטפורמה אחת פשוטה ויעילה.
+            כל מה שצריך כדי שהאורחים יידעו, יאשרו ויגיעו — במקום אחד, בלי כאב ראש.
           </Typography>
         </Box>
 

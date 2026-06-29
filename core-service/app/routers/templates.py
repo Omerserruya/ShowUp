@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -51,6 +52,34 @@ class TransitionIn(BaseModel):
     rejection_reason: Optional[str] = None
 
 
+# Flow stage -> legacy campaign label (the wizard's lookup key).
+_LABEL_BY_STAGE = {
+    "invitation": "Save the date",
+    "reminder": "תזכורת שבוע לפני",
+    "final_reminder": "תזכורת יום לפני",
+    "thank_you": "תודה אחרי האירוע",
+}
+
+
+class PublicTemplateOut(BaseModel):
+    """Metadata-rich template DTO consumed by the wizard's template fetch+filter."""
+    id: uuid.UUID
+    name: str
+    title: Optional[str] = None
+    body: str
+    language: str
+    flow_stage: Optional[str] = None
+    campaign_label: Optional[str] = None
+    event_type: Optional[str] = None
+    event_types: Optional[List[str]] = None
+    visibility: str
+    lifecycle: str
+    event_id: Optional[uuid.UUID] = None
+    expires_at: Optional[datetime] = None
+    components: Optional[dict] = None
+    is_default: bool = False
+
+
 def _template_or_404(db: Session, template_id: uuid.UUID) -> WaTemplate:
     t = db.query(WaTemplate).filter(WaTemplate.id == template_id).first()
     if not t:
@@ -93,6 +122,60 @@ def list_templates(event_id: uuid.UUID, db: Session = Depends(get_db), user_id: 
         .order_by(WaTemplate.created_at)
         .all()
     )
+
+
+@router.get("/templates/public", response_model=List[PublicTemplateOut])
+def public_templates(
+    event_type: Optional[str] = None,
+    flow_stage: Optional[str] = None,
+    language: str = "he",
+    db: Session = Depends(get_db),
+):
+    """Public, pre-approved templates available to everyone — the source of truth
+    the wizard fetches and filters by metadata (event type, flow stage, language).
+    Unauthenticated by design: the wizard needs these before the user signs in.
+    Adding a public template (a new seed row or via admin) surfaces here with no
+    frontend change."""
+    usable = [TemplateState.APPROVED.value, TemplateState.ACTIVE.value]
+    q = (
+        db.query(WaTemplate)
+        .filter(
+            WaTemplate.event_id.is_(None),
+            WaTemplate.visibility == "public",
+            WaTemplate.lifecycle.in_(usable),
+        )
+    )
+    if language:
+        q = q.filter(WaTemplate.language == language)
+    if flow_stage:
+        q = q.filter(WaTemplate.flow_stage == flow_stage)
+    rows = q.order_by(WaTemplate.created_at).all()
+    out: List[PublicTemplateOut] = []
+    for r in rows:
+        # event_type NULL/empty = fits all types; otherwise must match the query.
+        if event_type and r.event_type and r.event_type != event_type:
+            continue
+        comp = r.components or {}
+        out.append(
+            PublicTemplateOut(
+                id=r.id,
+                name=r.name,
+                title=comp.get("title"),
+                body=r.body,
+                language=r.language,
+                flow_stage=r.flow_stage,
+                campaign_label=_LABEL_BY_STAGE.get(r.flow_stage or ""),
+                event_type=r.event_type,
+                event_types=[r.event_type] if r.event_type else [],
+                visibility=r.visibility,
+                lifecycle=r.lifecycle,
+                event_id=r.event_id,
+                expires_at=r.expires_at,
+                components=r.components,
+                is_default=bool(comp.get("is_default")),
+            )
+        )
+    return out
 
 
 @router.post("/templates/{template_id}/validate", response_model=TemplateOut)

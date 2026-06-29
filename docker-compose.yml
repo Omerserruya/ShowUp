@@ -107,6 +107,10 @@ services:
       - ICOUNT_BASE_URL=${ICOUNT_BASE_URL:-}
       - ICOUNT_API_TOKEN=${ICOUNT_API_TOKEN:-}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
+      # VAT rate (fraction) for the before-VAT price breakdown. Default 0.18.
+      - TAX_RATE=${TAX_RATE:-0.18}
+      # Coupon catalogue as JSON, e.g. {"WELCOME10":{"type":"percent","value":10}}. Empty = coupons disabled.
+      - COUPONS_JSON=${COUPONS_JSON:-}
     depends_on:
       - postgres
       - rabbitmq
@@ -261,8 +265,11 @@ services:
       - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
       - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
       - OTP_QUEUE_NAME=${OTP_QUEUE_NAME}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      # OTP is delivered over WhatsApp via the approved "otp" authentication template.
+      - WA_API_B=${WA_API_B}
+      - WA_PHONE_ID=${WA_PHONE_ID}
+      - WA_OTP_TEMPLATE_NAME=${WA_OTP_TEMPLATE_NAME:-otp}
+      - WA_OTP_LANG=${WA_OTP_LANG:-he}
     depends_on:
       rabbitmq:
         condition: service_started

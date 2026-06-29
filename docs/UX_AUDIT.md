@@ -310,7 +310,7 @@ The current theme is the **stock MUI template** — exactly the "generic admin d
 # PHASE 6 — Conversion & Retention
 
 **Drop-off risks (ranked):**
-1. **Pay-before-value wizard** — highest. Move payment to point-of-send. *(biggest single conversion lever in the product)*
+1. ~~**Pay-before-value wizard** — highest. Move payment to point-of-send.~~ **(REJECTED — product decision: keep payment before activation. The "create now, pay before sending" direction was abandoned; the single supported flow is pay → provision. Do not reintroduce.)**
 2. **Package-first decision** before guest count is known → analysis paralysis.
 3. **Silent import failures** → user gives up after one bad upload.
 4. **OTP dead-end** (no resend timer) → abandoned signup.
@@ -381,4 +381,4 @@ WhatsApp-native RSVP + bot guest capture (rare and genuinely valuable), the huma
 | Scalability | 8 | Backend multi-tenant, metered, role-based — strong |
 | **Overall** | **5.0** | Strong engine, weak cockpit. Close the backend↔UI gap *simply* and this is an 8. |
 
-**Top 3 levers, in order:** (1) kill pay-before-value, (2) make import unbreakable, (3) re-skin + replace native alerts. Do those three and ShowUp stops feeling like an admin panel and starts feeling like the premium event product it already is under the hood.
+**Top 3 levers, in order:** (1) ~~kill pay-before-value~~ *(REJECTED — payment stays before activation; see above)*, (2) make import unbreakable, (3) re-skin + replace native alerts. Do those three and ShowUp stops feeling like an admin panel and starts feeling like the premium event product it already is under the hood.

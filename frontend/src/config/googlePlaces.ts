@@ -30,12 +30,13 @@ export const loadGooglePlacesScript = async (callback: () => void) => {
       loaderInstance = new Loader({
         apiKey: GOOGLE_PLACES_API_KEY,
         version: 'weekly',
-        libraries: ['places'],
         language: 'he',
       });
     }
 
-    await loaderInstance.load();
+    // Use importLibrary (recommended for the new Places API) so that
+    // AutocompleteSuggestion / AutocompleteSessionToken become available.
+    await loaderInstance.importLibrary('places');
     isLoaded = true;
     callback();
   } catch (error) {

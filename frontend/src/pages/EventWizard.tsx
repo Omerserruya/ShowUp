@@ -16,6 +16,10 @@ import {
   Alert,
   Checkbox,
   CircularProgress,
+  ClickAwayListener,
+  ToggleButton,
+  ToggleButtonGroup,
+  Link,
   alpha,
 } from '@mui/material';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
@@ -26,28 +30,40 @@ import EventIcon from '@mui/icons-material/Event';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import DescriptionIcon from '@mui/icons-material/Description';
 import VerifiedIcon from '@mui/icons-material/Verified';
-import AddIcon from '@mui/icons-material/Add';
-import DeleteIcon from '@mui/icons-material/Delete';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import NotificationsOffIcon from '@mui/icons-material/NotificationsOff';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import InfoIcon from '@mui/icons-material/Info';
+import TuneIcon from '@mui/icons-material/Tune';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import EditIcon from '@mui/icons-material/Edit';
 import dayjs, { Dayjs } from 'dayjs';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { LocalizationProvider, DatePicker } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import { useTheme } from '@mui/material/styles';
-import { usePlans, usePlanCampaigns, Plan, CampaignSchedule } from '../hooks/usePlans';
+import { plans, PlanTier } from '../config/plans';
+import PriceTag from '../components/PriceTag';
+import PriceSummary from '../components/PriceSummary';
+import { fireConfetti } from '../utils/confetti';
+import { CampaignSchedule } from '../config/campaigns';
+import { buildAdaptiveTimeline } from '../config/scheduling';
 import { israelTimeToISOUTC } from '../utils/israelTime';
-// CampaignSchedule type is now imported from usePlans hook
-import { templates, getTemplatesByCampaign, getDefaultTemplateForCampaign, processTemplate, MessageTemplate } from '../config/templates';
+// CampaignSchedule type is now imported from config/campaigns
+import { selectTemplates, processTemplate, MessageTemplate, BRIT_SECRET_INVITE_LINE, getVariableGroups, CONTENT_BLOCKS } from '../config/templates';
+import { useTemplates } from '../hooks/useTemplates';
+import CustomMessageEditor from '../components/CustomMessageEditor';
 import { useUser } from '../contexts/UserContext';
 import { countryOptions, normalizePhoneNumber } from '../utils/countryOptions';
 import PersonIcon from '@mui/icons-material/Person';
 import EmailIcon from '@mui/icons-material/Email';
 import PhoneIcon from '@mui/icons-material/Phone';
 import { usePlacesAutocomplete } from '../hooks/usePlacesAutocomplete';
+import { saveWizardDraft, loadWizardDraft, clearWizardDraft, draftHasProgress, WizardDraft } from '../utils/wizardDraft';
+import RestoreRoundedIcon from '@mui/icons-material/RestoreRounded';
 
 interface Inviter {
   fn: string; // first name
@@ -73,30 +89,62 @@ interface EventDetails {
   inviters: Inviter[];
 }
 
-// Helper function removed - campaigns come from API via usePlanCampaigns hook
+// Helper function removed - campaigns come from config via getCampaignsForPlan
 
 // Helper function to get variables from event details
-const getTemplateVariables = (eventDetails: EventDetails, inviters: Inviter[]): Record<string, string> => {
+const getTemplateVariables = (eventDetails: EventDetails, inviters: Inviter[], subjects?: EventSubjects): Record<string, string> => {
   const inviterName = inviters.length > 0 && (inviters[0].fn || inviters[0].ln)
     ? `${inviters[0].fn} ${inviters[0].ln}`.trim()
     : 'המזמינים';
+
+  // Event-specific subjects (couple / parents / honoree …) for the picker's
+  // "מותאם לאירוע" group. Each falls back to gentle copy so the preview is clean.
+  const couple = subjects ? joinHe(subjects.p1, subjects.p2) : '';
+  const parents = subjects ? joinHe(subjects.parent1, subjects.parent2) : '';
+  const brideName = subjects
+    ? (subjects.role1 === 'bride' ? subjects.p1 : subjects.role2 === 'bride' ? subjects.p2 : subjects.p1)
+    : '';
+  const groomName = subjects
+    ? (subjects.role1 === 'groom' ? subjects.p1 : subjects.role2 === 'groom' ? subjects.p2 : subjects.p2)
+    : '';
   
   const eventTypeMap: Record<string, string> = {
     'wedding': 'חתונה',
+    'brit': 'ברית',
+    'brita': 'בריתה',
     'bar': 'בר מצווה',
     'bat': 'בת מצווה',
-    'corporate': 'אירוע חברה',
+    'corporate': 'אירוע עסקי',
+    'birthday': 'יום הולדת',
     'other': 'אירוע',
   };
-  
+
+  // Every variable resolves to real, human-friendly text — never a raw {{placeholder}}.
+  // Optional fields (date/time/location) fall back to gentle Hebrew copy so previews
+  // and summaries stay clean even before everything is filled in.
   return {
     'שם': 'דוד כהן', // דוגמה - בפועל זה יגיע מהאורח
     'שם_מזמין': inviterName,
     'סוג_אירוע': eventTypeMap[eventDetails.type] || 'אירוע',
-    'תאריך': eventDetails.date ? eventDetails.date.format('DD/MM/YYYY') : '{{תאריך}}',
-    'שעה': eventDetails.time || '{{שעה}}',
-    'מיקום': eventDetails.location?.address || eventDetails.location?.name || '{{מיקום}}',
-    'שם_אירוע': eventDetails.name || '{{שם_אירוע}}',
+    'תאריך': eventDetails.date ? eventDetails.date.format('DD/MM/YYYY') : 'בקרוב',
+    'שעה': eventDetails.time || 'בקרוב',
+    'מיקום': eventDetails.location?.address || eventDetails.location?.name || 'יתעדכן בקרוב',
+    'שם_אירוע': eventDetails.name || 'האירוע שלנו',
+    // Links & counts (server fills real values per guest at send time).
+    'ניווט': 'https://waze.to/ul/show-up',
+    'דף_הזמנה': 'https://show-up.co.il/i/dana-amit',
+    'קישור_אישור': 'https://show-up.co.il/r/9f2k',
+    'כמות_אורחים': '2',
+    // Event-specific
+    'בני_הזוג': couple || 'בני הזוג',
+    'הורים': parents || 'המשפחה',
+    'כלה': brideName?.trim() || 'הכלה',
+    'חתן': groomName?.trim() || 'החתן',
+    'אמא': subjects?.parent1?.trim() || 'האמא',
+    'אבא': subjects?.parent2?.trim() || 'האבא',
+    'רך_נולד': subjects?.honoree?.trim() || 'הרך הנולד',
+    'חוגג': subjects?.honoree?.trim() || 'בעל/ת השמחה',
+    'חברה': subjects?.company?.trim() || 'החברה',
   };
 };
 
@@ -249,15 +297,142 @@ const WhatsAppBubble = ({ template, variables }: { template: MessageTemplate; va
 
 const steps = [
   { label: 'חבילה', icon: InventoryIcon },
-  { label: 'אירוע', icon: EventIcon },
-  { label: 'תזמון', icon: ScheduleIcon },
-  { label: 'תבניות', icon: DescriptionIcon },
-  { label: 'אישור', icon: VerifiedIcon },
+  { label: 'האירוע', icon: EventIcon },
+  { label: 'לוח זמנים', icon: ScheduleIcon },
+  { label: 'ההזמנות', icon: DescriptionIcon },
+  { label: 'סיכום', icon: VerifiedIcon },
   { label: 'תשלום', icon: VerifiedIcon },
 ];
 
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  wedding: 'חתונה',
+  brit: 'ברית',
+  brita: 'בריתה',
+  bar: 'בר מצווה',
+  bat: 'בת מצווה',
+  corporate: 'אירוע עסקי',
+  birthday: 'יום הולדת',
+  other: 'אירוע שלכם',
+};
+
+// The selectable event types shown as cards on the first wizard step.
+const EVENT_TYPES: Array<{ id: string; emoji: string; title: string; subtitle: string }> = [
+  { id: 'wedding', emoji: '💍', title: 'חתונה', subtitle: 'המלצות, הודעות ולוח זמנים מותאמים לחתונה' },
+  { id: 'brit', emoji: '👶', title: 'ברית', subtitle: 'הכול מוכן לרגע המרגש של המשפחה' },
+  { id: 'brita', emoji: '🍼', title: 'בריתה', subtitle: 'הכול מוכן לרגע המרגש של המשפחה' },
+  { id: 'bar', emoji: '🎉', title: 'בר מצווה', subtitle: 'התאמה מלאה לאירוע בר המצווה' },
+  { id: 'bat', emoji: '🎀', title: 'בת מצווה', subtitle: 'הודעות ותזכורות שמותאמות למשפחה' },
+  { id: 'corporate', emoji: '🏢', title: 'אירוע עסקי', subtitle: 'ניהול אישורי הגעה מקצועי לאירועים עסקיים' },
+  { id: 'birthday', emoji: '🎂', title: 'יום הולדת', subtitle: 'דרך פשוטה לנהל את רשימת המוזמנים' },
+];
+
+// A warm, celebratory opener per event type — used across the wizard so a wedding
+// feels different from a brit, and a brit from a business event.
+const EVENT_CONGRATS: Record<string, string> = {
+  wedding: 'מזל טוב! 💍',
+  brit: 'בשעה טובה ומוצלחת! 👶',
+  brita: 'בשעה טובה ומוצלחת! 🍼',
+  bar: 'מזל טוב! 🎉',
+  bat: 'מזל טוב! 🎀',
+  corporate: 'בהצלחה עם האירוע! 🥂',
+  birthday: 'יום הולדת שמח! 🎂',
+};
+
+// The invitation campaign — the first message guests receive. We weave the
+// brit/brita "secret name" flavor line into this one only.
+const INVITE_CAMPAIGN_LABEL = 'Save the date';
+
+// Contextual subjects captured per event type (couple / parents / honoree / company …).
+interface EventSubjects {
+  p1: string;
+  p2: string;
+  ln1: string;
+  ln2: string;
+  role1: 'bride' | 'groom';
+  role2: 'bride' | 'groom';
+  honoree: string; // baby / child / celebrant
+  parent1: string;
+  parent2: string;
+  company: string;
+  bizEventName: string;
+  age: string;
+  // Brit/Brita: parents often keep the baby's name a secret until the event.
+  // When true we don't require the name and derive a name-free event title.
+  secretName: boolean;
+}
+
+const EMPTY_SUBJECTS: EventSubjects = {
+  p1: '', p2: '', ln1: '', ln2: '', role1: 'bride', role2: 'groom',
+  honoree: '', parent1: '', parent2: '', company: '', bizEventName: '', age: '',
+  secretName: false,
+};
+
+const joinHe = (a: string, b: string): string => {
+  const x = (a || '').trim();
+  const y = (b || '').trim();
+  if (x && y) return `${x} ו${y}`;
+  return x || y || '';
+};
+
+// Derive the auto-generated event title + the inviter name (used in messages) from
+// the contextual subjects. Title stays editable; this only sets the suggestion.
+const deriveEventFromSubjects = (
+  type: string,
+  s: EventSubjects
+): { name: string; inviterName: string } => {
+  switch (type) {
+    case 'wedding': {
+      const couple = joinHe(s.p1, s.p2);
+      return { name: couple ? `החתונה של ${couple}` : '', inviterName: couple };
+    }
+    case 'brit':
+    case 'brita': {
+      const label = type === 'brit' ? 'הברית' : 'הבריתה';
+      const parents = joinHe(s.parent1, s.parent2);
+      // Name kept secret → derive a warm, name-free title from the parents.
+      if (s.secretName) {
+        return { name: parents ? `${label} של ${parents}` : `${label} שלנו`, inviterName: parents };
+      }
+      const baby = s.honoree.trim();
+      return { name: baby ? `${label} של ${baby}` : '', inviterName: parents };
+    }
+    case 'bar':
+    case 'bat': {
+      const label = type === 'bar' ? 'בר המצווה' : 'בת המצווה';
+      const child = s.honoree.trim();
+      return { name: child ? `${label} של ${child}` : '', inviterName: joinHe(s.parent1, s.parent2) };
+    }
+    case 'corporate':
+      return { name: s.bizEventName.trim(), inviterName: s.company.trim() };
+    case 'birthday': {
+      const who = s.honoree.trim();
+      const age = s.age.trim();
+      const name = who ? (age ? `יום ההולדת ה-${age} של ${who}` : `יום ההולדת של ${who}`) : '';
+      return { name, inviterName: who };
+    }
+    default:
+      return { name: '', inviterName: '' };
+  }
+};
+
+// Human-readable description of when a campaign fires, relative to the event.
+const describeCampaignTiming = (offsetDays: number, time: string): string => {
+  const at = time ? `בשעה ${time}` : '';
+  if (offsetDays > 0) {
+    const d = offsetDays === 1 ? 'יום אחד' : `${offsetDays} ימים`;
+    return `${d} לפני האירוע ${at}`.trim();
+  }
+  if (offsetDays < 0) {
+    const n = Math.abs(offsetDays);
+    const d = n === 1 ? 'יום אחד' : `${n} ימים`;
+    return `${d} אחרי האירוע ${at}`.trim();
+  }
+  return `ביום האירוע ${at}`.trim();
+};
+
 export default function EventWizard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [params] = useSearchParams();
   const theme = useTheme();
   const { user } = useUser();
@@ -304,7 +479,14 @@ export default function EventWizard() {
         return { code: code || fallbackCode, phone: local };
       }
     }
-    return { code: fallbackCode, phone: cleaned };
+    // Plain local number. Self-heal an IL mobile that arrived without its leading
+    // 0 (e.g. from an older session that stored it stripped) so the user always
+    // sees 05XXXXXXXX, the format they originally entered.
+    let local = cleaned;
+    if (fallbackCode === '+972' && /^\d{9}$/.test(local) && !local.startsWith('0')) {
+      local = `0${local}`;
+    }
+    return { code: fallbackCode, phone: local };
   };
 
   const initialCountryCode = countryCodeFromQuery || getCountryCodeFromPhone(phoneFromQuery || '');
@@ -316,9 +498,11 @@ export default function EventWizard() {
     if (value === 'bar-mitzvah') return { type: 'bar', other: '' };
     if (value === 'bat-mitzvah') return { type: 'bat', other: '' };
     if (value === 'corporate') return { type: 'corporate', other: '' };
-    if (value === 'brit') return { type: 'other', other: otherValue || 'ברית' };
-    if (value === 'other') return { type: 'other', other: otherValue || '' };
-    return { type: 'other', other: otherValue || value };
+    if (value === 'brit') return { type: 'brit', other: '' };
+    if (value === 'brita') return { type: 'brita', other: '' };
+    if (value === 'birthday') return { type: 'birthday', other: '' };
+    if (value === 'other') return { type: '', other: otherValue || '' };
+    return { type: '', other: otherValue || value };
   };
 
   const normalizedHeroType = normalizeEventTypeFromHero(eventTypeFromQuery, eventTypeOtherFromQuery ?? undefined);
@@ -332,13 +516,26 @@ export default function EventWizard() {
     location: null,
     inviters: [{ fn: firstNameFromQuery, ln: lastNameFromQuery }], // מתחיל עם מזמין אחד מהנתונים מה-Hero
   });
-  // Fetch plans from API
-  const { plans, loading: plansLoading } = usePlans();
-  const { campaigns: planCampaigns, loading: campaignsLoading } = usePlanCampaigns(selectedPackageId);
-  
+  // Plans come from static config (frontend SSOT for marketing copy). Campaigns are
+  // resolved by the Adaptive Timeline Engine from the event type, plan and date.
   const [campaigns, setCampaigns] = useState<CampaignSchedule[]>([]);
   const [selectedTemplates, setSelectedTemplates] = useState<Record<string, string>>({}); // campaign label -> template id
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+  // Approve-or-Customize: the recommended plan is shown by default; these flip to
+  // the detailed editors only if the user chooses to tweak.
+  const [scheduleCustomize, setScheduleCustomize] = useState(false);
+  const [templatesCustomize, setTemplatesCustomize] = useState(false);
+  // Custom message text per campaign label. A campaign is "custom" iff its label
+  // is a key here; the value is the user-written body (variables still apply).
+  const [customMessages, setCustomMessages] = useState<Record<string, string>>({});
+  // Editable, user-facing title per custom message (for their own organization).
+  const [customTitles, setCustomTitles] = useState<Record<string, string>>({});
+  // Per-campaign WhatsApp/Meta validity of the custom message (false = breaks a rule).
+  const [customMsgValid, setCustomMsgValid] = useState<Record<string, boolean>>({});
+  // Contextual subjects for the first step's dynamic form, and whether the user has
+  // manually edited the auto-generated event name (which stops further auto-fill).
+  const [subjects, setSubjects] = useState<EventSubjects>(EMPTY_SUBJECTS);
+  const [nameManuallyEdited, setNameManuallyEdited] = useState(false);
   const [paymentData, setPaymentData] = useState({
     firstName: firstNameFromQuery,
     lastName: lastNameFromQuery,
@@ -349,8 +546,33 @@ export default function EventWizard() {
   const [paymentErrors, setPaymentErrors] = useState<Record<string, string>>({});
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
+  // Payment step shows a confirmation of the identity we already know; the user
+  // flips this to true to edit the prefilled values.
+  const [editIdentity, setEditIdentity] = useState(false);
+
+  // Abandoned-wizard recovery: a draft saved on a previous visit, offered for
+  // restore via a banner. While it's pending we pause autosave so the freshly
+  // mounted (empty) state doesn't overwrite the work we're about to restore.
+  const [pendingDraft, setPendingDraft] = useState<WizardDraft | null>(() => {
+    const d = loadWizardDraft();
+    return draftHasProgress(d) ? d : null;
+  });
+
+  // Scalable template architecture: fetch the available templates (public + this
+  // event's private ones) and let the wizard filter them by metadata, instead of
+  // hardcoding a per-campaign list. Falls back to the built-in seed if the backend
+  // template service isn't reachable.
+  const { pool: templatePool } = useTemplates({ eventId: null });
+  // Metadata-driven selection for a campaign label, narrowed to the event type.
+  const templatesForLabel = (label: string): MessageTemplate[] =>
+    selectTemplates(templatePool, { campaignLabel: label, eventType: eventDetails.type });
+  const defaultTemplateForLabel = (label: string): MessageTemplate | undefined => {
+    const matches = templatesForLabel(label);
+    return matches.find((t) => t.isDefault) || matches[0];
+  };
 
   // Places Autocomplete hook - must be at component level
+  const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
   const placesAutocomplete = usePlacesAutocomplete({
     onPlaceSelected: (location) => {
       setEventDetails((prev) => ({ ...prev, location }));
@@ -394,6 +616,84 @@ export default function EventWizard() {
     }
   }, [user, firstNameFromQuery, lastNameFromQuery, phoneFromQuery, initialCountryCode]);
 
+  // When the payment step is reached, decide the initial mode once: confirmation if
+  // the identity is already prefilled (account/Hero), otherwise the editable form.
+  // Keyed on activeStep only so typing into the form never flips it back.
+  useEffect(() => {
+    if (activeStep === 5) {
+      const prefilled = Boolean(
+        paymentData.firstName.trim() && paymentData.lastName.trim() && paymentData.phone.trim()
+      );
+      setEditIdentity(!prefilled);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStep]);
+
+  // Autosave the wizard so nothing is lost on refresh / close / return-tomorrow.
+  // Paused while a restorable draft is pending the user's decision.
+  useEffect(() => {
+    if (pendingDraft) return;
+    saveWizardDraft({
+      activeStep,
+      selectedPackageId,
+      orderId,
+      eventDetails: { ...eventDetails, date: eventDetails.date && eventDetails.date.isValid() ? eventDetails.date.toISOString() : null },
+      subjects,
+      campaigns,
+      selectedTemplates,
+      customMessages,
+      scheduleCustomize,
+      templatesCustomize,
+      nameManuallyEdited,
+      paymentData,
+    });
+  }, [
+    pendingDraft, activeStep, selectedPackageId, orderId, eventDetails, subjects, campaigns,
+    selectedTemplates, customMessages, scheduleCustomize, templatesCustomize, nameManuallyEdited, paymentData,
+  ]);
+
+  const restoreDraft = () => {
+    const d = pendingDraft;
+    if (!d) return;
+    setSelectedPackageId(d.selectedPackageId || '');
+    setEventDetails({
+      ...(d.eventDetails as any),
+      // Only restore a valid date — never let an invalid Dayjs into state.
+      date: (() => {
+        const restored = d.eventDetails?.date ? dayjs(d.eventDetails.date as string) : null;
+        return restored && restored.isValid() ? restored : null;
+      })(),
+    });
+    setSubjects(d.subjects as any);
+    setCampaigns(d.campaigns as CampaignSchedule[]);
+    setSelectedTemplates(d.selectedTemplates || {});
+    setCustomMessages(d.customMessages || {});
+    setScheduleCustomize(!!d.scheduleCustomize);
+    setTemplatesCustomize(!!d.templatesCustomize);
+    setNameManuallyEdited(!!d.nameManuallyEdited);
+    if (d.paymentData) setPaymentData(d.paymentData as any);
+    setOrderId(d.orderId ?? null);
+    setActiveStep(typeof d.activeStep === 'number' ? d.activeStep : 0);
+    setPendingDraft(null);
+  };
+
+  const discardDraft = () => {
+    clearWizardDraft();
+    localStorage.removeItem('pending_order_id');
+    setPendingDraft(null);
+  };
+
+  // Arriving from the OTP "change phone number" action: silently restore the
+  // saved draft (no resume banner) and drop the user back on the payment step
+  // with their details editable — it should feel like one step back.
+  useEffect(() => {
+    if ((location.state as any)?.resumeDraft && pendingDraft) {
+      restoreDraft();
+      setEditIdentity(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Update event details when data comes from Hero (on mount)
   useEffect(() => {
     if (firstNameFromQuery || lastNameFromQuery) {
@@ -406,17 +706,28 @@ export default function EventWizard() {
     }
   }, [firstNameFromQuery, lastNameFromQuery]);
 
-  // Update campaigns when plan campaigns are loaded from API
+  // Adaptive Timeline Engine: resolve the recommended communication plan from the
+  // event type, plan tier and (crucially) how much time is left before the event.
+  // We only auto-apply while the user hasn't taken over the schedule via "Customize"
+  // — once they edit it, the schedule is theirs and we never clobber it.
   useEffect(() => {
-    if (planCampaigns && planCampaigns.length > 0) {
-      // Sort by offsetDays descending (30, 7, 1, -1)
-      const sorted = [...planCampaigns].sort((a, b) => b.offsetDays - a.offsetDays);
-      setCampaigns(sorted);
-    } else if (selectedPackageId && !campaignsLoading) {
-      // If no campaigns found and not loading, clear campaigns
+    if (scheduleCustomize) return;
+    if (!selectedPackageId || !eventDetails.type) {
       setCampaigns([]);
+      return;
     }
-  }, [planCampaigns, selectedPackageId, campaignsLoading]);
+    const resolved = buildAdaptiveTimeline({
+      eventType: eventDetails.type,
+      planId: selectedPackageId,
+      eventDate: eventDetails.date,
+      eventTime: eventDetails.time,
+      now: dayjs(),
+      // Campaigns with a user-written body may need WhatsApp/Meta approval first,
+      // so the engine keeps a lead buffer before they can send.
+      customLabels: Object.keys(customMessages),
+    });
+    setCampaigns(resolved);
+  }, [selectedPackageId, eventDetails.type, eventDetails.date, eventDetails.time, customMessages, scheduleCustomize]);
 
   const selectedPlan = useMemo(() => {
     return plans.find(p => p.id === selectedPackageId);
@@ -430,7 +741,8 @@ export default function EventWizard() {
         eventDetails.name && 
         eventDetails.name.trim().length > 0 &&
         eventDetails.date !== null &&
-        eventDetails.time && 
+        eventDetails.date.isValid() &&
+        eventDetails.time &&
         eventDetails.time.trim().length > 0 &&
         eventDetails.type && 
         eventDetails.type.trim().length > 0
@@ -438,8 +750,11 @@ export default function EventWizard() {
     }
     if (activeStep === 2) return true;
     if (activeStep === 3) {
-      // שלב התבניות - לא חובה לבחור, אפשר להמשיך (התבנית הדיפולטית תיבחר אוטומטית)
-      return true;
+      // אפשר להמשיך, אלא אם הודעה מותאמת אישית מפרה כלל של WhatsApp/Meta.
+      const hasInvalidCustom = campaigns.some(
+        (c) => c.enabled && c.label in customMessages && customMsgValid[c.label] === false
+      );
+      return !hasInvalidCustom;
     }
     if (activeStep === 4) return agreedToTerms; // שלב הסיכום - צריך הסכמה לתנאים
     if (activeStep === 5) {
@@ -448,7 +763,7 @@ export default function EventWizard() {
       return !!(paymentData.firstName.trim() && paymentData.lastName.trim() && paymentData.phone.trim());
     }
     return true;
-  }, [activeStep, selectedPackageId, eventDetails, campaigns, selectedTemplates, agreedToTerms, user, paymentData]);
+  }, [activeStep, selectedPackageId, eventDetails, campaigns, selectedTemplates, agreedToTerms, user, paymentData, customMessages, customMsgValid]);
 
   const handleNext = () => {
     // אם עוברים משלב התבניות (שלב 3), וודא שכל קמפיין פעיל יש לו תבנית (דיפולטית או נבחרת)
@@ -459,7 +774,7 @@ export default function EventWizard() {
       activeCampaigns.forEach((campaign) => {
         // אם לא נבחרה תבנית לקמפיין הזה, בחר את התבנית הדיפולטית
         if (!updatedTemplates[campaign.label]) {
-          const defaultTemplate = getDefaultTemplateForCampaign(campaign.label);
+          const defaultTemplate = defaultTemplateForLabel(campaign.label);
           if (defaultTemplate) {
             updatedTemplates[campaign.label] = defaultTemplate.id;
           }
@@ -496,15 +811,20 @@ export default function EventWizard() {
           })
         : null;
 
-      // Prepare event payload
+      // Prepare event payload. This path creates the event directly (Free plan);
+      // paid plans are provisioned server-side after payment. Tag the payment
+      // state + plan so the dashboard shows the right status from creation.
       const eventPayload = {
         name: eventDetails.name,
         description: eventDetails.description || undefined,
+        event_type: eventDetails.type || undefined,
         event_date: eventDateTime || undefined,
         location: locationJson,
         inviters: eventDetails.inviters
           .filter(inv => inv.fn || inv.ln)
           .map(inv => ({ fn: inv.fn, ln: inv.ln })),
+        plan_id: selectedPackageId || 'free',
+        payment_status: selectedPackageId && selectedPackageId !== 'free' ? 'paid' : 'free',
       };
 
       const response = await fetchWithAuth('/api/events', {
@@ -568,11 +888,23 @@ export default function EventWizard() {
       const campaignsPayload = campaigns
         .filter((c) => c.enabled)
         .map((c) => {
-          const templateId = selectedTemplates[c.label] || null;
+          const templateId =
+            selectedTemplates[c.label] || defaultTemplateForLabel(c.label)?.id || null;
+          // In secret-name mode the flavor line lives in the composed copy, not in the
+          // stored template, so send it as a custom_message to guarantee delivery.
+          const customMessage = c.label in customMessages
+            ? customMessages[c.label]
+            : isSecretInvite(c.label)
+              ? getBaseTemplate(c.label)?.body ?? null
+              : null;
 
-          // scheduled_at: interpret as Israel time and convert to UTC so no drift
+          // scheduled_at: prefer the engine-resolved send time (already compressed to
+          // fit the available window and guaranteed not to be in the past). Fall back
+          // to computing it from the offset for any manually-edited rows.
           let scheduledAt: Date | null = null;
-          if (eventDetails.date) {
+          if (c.scheduledAt) {
+            scheduledAt = new Date(c.scheduledAt);
+          } else if (eventDetails.date) {
             const offsetDays = typeof c.offsetDays === 'number' ? c.offsetDays : 0;
             const at = eventDetails.date.subtract(offsetDays, 'day');
             const timeStr = c.time || '12:00';
@@ -583,6 +915,7 @@ export default function EventWizard() {
           return {
             label: c.label,
             template_id: templateId,
+            custom_message: customMessage,
             scheduled_at: scheduledAt,
           };
         });
@@ -612,6 +945,10 @@ export default function EventWizard() {
         setOrderId(currentOrderId);
       }
 
+      // Remember the unfinished order so a returning user resumes straight at
+      // checkout (instead of onboarding). Cleared once the order is paid.
+      if (currentOrderId) localStorage.setItem('pending_order_id', String(currentOrderId));
+
       // 2) Enrich order with buyer identity (pre-payment)
       if (currentOrderId) {
         const normalizedPhone = normalizePhoneNumber(paymentData.phone, paymentData.countryCode);
@@ -631,10 +968,49 @@ export default function EventWizard() {
         }
       }
 
-      // 3) TODO: integrate payment provider here using currentOrderId
+      // 3) Verify the buyer via OTP BEFORE payment so they reach the pay page
+      //    already authenticated. Create the account (register); if it already
+      //    exists, trigger a login OTP instead. Either way an OTP is sent.
+      const buyerPhone = normalizePhoneNumber(paymentData.phone, paymentData.countryCode);
+      const regRes = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: buyerPhone,
+          email: paymentData.email.trim() || null,
+          first_name: paymentData.firstName,
+          last_name: paymentData.lastName,
+        }),
+      });
+      if (regRes.status === 409) {
+        // Existing account — send a login OTP instead.
+        const loginRes = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: buyerPhone }),
+        });
+        if (!loginRes.ok) throw new Error('Failed to send verification code');
+      } else if (!regRes.ok) {
+        throw new Error('Failed to start verification');
+      }
+
+      // Persist names so the app can greet the user after login.
+      localStorage.setItem('user_first_name', paymentData.firstName);
+      localStorage.setItem('user_last_name', paymentData.lastName);
+      if (paymentData.email.trim()) localStorage.setItem('user_email', paymentData.email.trim());
 
       setPaymentLoading(false);
-      navigate(`/payment?orderId=${encodeURIComponent(currentOrderId || '')}`); // שלב תשלום (placeholder)
+      // OTP verification happens BEFORE payment; after verifying, continue to pay.
+      navigate('/login', {
+        state: {
+          phone: buyerPhone,
+          otpAlreadySent: true,
+          next: `/payment?orderId=${encodeURIComponent(currentOrderId || '')}`,
+          // Lets the OTP "change phone number" action go one step BACK into the
+          // wizard (restoring all data) instead of dumping the user on Login.
+          fromWizard: true,
+        },
+      });
     } catch (error) {
       console.error('Order / payment flow error:', error);
       setPaymentErrors({ form: 'שגיאה ביצירת ההזמנה. אנא נסו שוב.' });
@@ -642,8 +1018,9 @@ export default function EventWizard() {
     }
   };
 
-  // Payment-free first-run: an authenticated user can create the event now and
-  // pay later (at first real send). Removes the upfront pay-wall before value.
+  // Free-plan creation: the Free plan (₪0) has nothing to pay, so we create the
+  // event directly and go straight to the dashboard. Paid plans always go
+  // through the order → payment flow.
   const [creatingFree, setCreatingFree] = useState(false);
   const handleCreateFree = async () => {
     if (!eventDetails.name?.trim()) {
@@ -655,6 +1032,8 @@ export default function EventWizard() {
     try {
       const eventId = await createEvent();
       if (eventId) {
+        clearWizardDraft(); // event created — the draft is no longer needed
+        localStorage.removeItem('pending_order_id');
         navigate('/overview');
       }
     } catch (error) {
@@ -668,19 +1047,19 @@ export default function EventWizard() {
   const getStepInfo = (step: number): string => {
     switch (step) {
       case 0:
-        return 'בחרו את החבילה המתאימה לאירוע שלכם. כל חבילה כוללת קמפיינים שונים ותכונות שונות.';
+        return 'כל חבילה כוללת את כל מה שצריך כדי שהאורחים יידעו, יאשרו ויגיעו. בחרו לפי כמות האורחים.';
       case 1:
-        return 'מלאו את פרטי האירוע. שם האירוע הוא שדה חובה, שאר השדות הם אופציונליים וניתן למלא אותם מאוחר יותר.';
+        return '';
       case 2:
-        return 'הגדירו את תזמון הקמפיינים. ניתן להפעיל או לכבות כל קמפיין ולשנות את התאריך והשעה שלו.';
+        return '';
       case 3:
-        return 'בחרו את סגנון התבנית המתאים לאירוע שלכם. התבנית תשפיע על הטון והניסוח של ההודעות.';
+        return '';
       case 4:
-        return 'בדקו את כל הפרטים לפני הסיום. ניתן לחזור לשלבים קודמים לעריכה.';
+        return 'רגע לפני שמתחילים — הנה הכול במקום אחד. תמיד אפשר לחזור ולערוך.';
       case 5:
-        return user 
-          ? 'אנא בדקו את פרטי התשלום והמשיכו להשלמת ההזמנה.'
-          : 'מלאו את הפרטים הבאים כדי להשלים את ההזמנה. אם אין לכם חשבון, ניצור אחד עבורכם.';
+        return user
+          ? 'עוד פרט אחרון ואתם מסודרים — נשמור את הכול בבטחה.'
+          : 'נשאיר לכם את האירוע מוכן ומחכה — רק נסיים את הפרטים והכול יוצא לדרך.';
       default:
         return '';
     }
@@ -715,19 +1094,31 @@ export default function EventWizard() {
     );
   };
 
+  // A warm way to refer to the event in copy — the actual name once known
+  // ("החתונה של דנה ועמית"), otherwise the type ("החתונה"), otherwise a soft fallback.
+  const warmEventRef = (): string => {
+    if (eventDetails.name?.trim()) return eventDetails.name.trim();
+    const label = EVENT_TYPE_LABELS[eventDetails.type];
+    return label ? `ה${label}` : 'האירוע שלכם';
+  };
+
+  // "We've prepared this for you" header used by the Approve-or-Customize steps.
+  const renderPreparedHeader = (title: string, subtitle: string) => (
+    <Box sx={{ mb: 3, textAlign: 'right', direction: 'rtl' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5, flexDirection: 'row-reverse', justifyContent: 'flex-end' }}>
+        <AutoAwesomeIcon sx={{ color: 'primary.main', fontSize: 22 }} />
+        <Typography variant="h6" sx={{ fontWeight: 700 }}>{title}</Typography>
+      </Box>
+      <Typography variant="body2" sx={{ color: 'text.secondary' }}>{subtitle}</Typography>
+    </Box>
+  );
+
   const renderPackageStep = () => {
-    if (plansLoading) {
-      return (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-          <CircularProgress />
-        </Box>
-      );
-    }
 
     return (
       <Box>
         <Typography variant="h6" sx={{ mb: 2, fontWeight: 800 }}>
-          בחרו חבילה
+          כמה אורחים אתם מזמינים?
         </Typography>
         {renderInfoBox()}
         <Box
@@ -749,7 +1140,7 @@ export default function EventWizard() {
             scrollbarWidth: 'none',
           }}
         >
-          {plans.map((plan: Plan) => {
+          {plans.map((plan: PlanTier) => {
           const selected = selectedPackageId === plan.id;
           return (
             <Paper
@@ -806,9 +1197,9 @@ export default function EventWizard() {
               <Typography variant="subtitle1" color="text.secondary" sx={{ textAlign: 'right', direction: 'rtl' }}>
                 {plan.subtitle}
               </Typography>
-              <Typography variant="h4" fontWeight={800} sx={{ mt: 1, color: plan.color, textAlign: 'right', direction: 'rtl' }}>
-                {plan.price}
-              </Typography>
+              <Box sx={{ mt: 1 }}>
+                <PriceTag price={plan.price} size="md" align="right" color={plan.color} />
+              </Box>
               <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'right', mb: 1, direction: 'rtl' }}>
                 {plan.description}
               </Typography>
@@ -853,104 +1244,295 @@ export default function EventWizard() {
     );
   };
 
-  const renderEventStep = () => (
-    <Box
-      sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 3,
-        direction: 'rtl',
-      }}
-    >
-      {renderInfoBox()}
-      {/* שם האירוע */}
+  const renderEventStep = () => {
+    const t = eventDetails.type;
+    const typeSelected = !!t;
+    const typeMeta = EVENT_TYPES.find((e) => e.id === t);
+
+    // Pick an event type: set the type and (re)generate the suggested name + inviter.
+    const selectEventType = (typeId: string) => {
+      const { name, inviterName } = deriveEventFromSubjects(typeId, subjects);
+      setNameManuallyEdited(false);
+      // A small, subtle celebration when a type is first chosen (not on re-toggle).
+      if (typeId && typeId !== eventDetails.type) {
+        fireConfetti(1400);
+      }
+      setEventDetails((ed) => ({
+        ...ed,
+        type: typeId,
+        name: name || '',
+        inviters: [{ fn: inviterName, ln: '' }],
+      }));
+    };
+
+    // Update a contextual subject → re-derive the inviter + the name (unless edited).
+    const updateSubjects = (patch: Partial<EventSubjects>) => {
+      const next = { ...subjects, ...patch };
+      setSubjects(next);
+      const { name, inviterName } = deriveEventFromSubjects(t, next);
+      setEventDetails((ed) => ({
+        ...ed,
+        inviters: [{ fn: inviterName, ln: '' }],
+        name: nameManuallyEdited ? ed.name : name || '',
+      }));
+    };
+
+    const fieldBox = (
+      label: string,
+      value: string,
+      onChange: (v: string) => void,
+      placeholder?: string
+    ) => (
       <Box>
         <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, textAlign: 'right' }}>
-          שם האירוע *
+          {label}
         </Typography>
         <TextField
           fullWidth
-          placeholder="לדוגמה: חתונת דוד ורות"
-          value={eventDetails.name}
-          onChange={(e) => setEventDetails({ ...eventDetails, name: e.target.value })}
-          inputProps={{ 
-            style: { direction: 'rtl', textAlign: 'right' },
-            maxLength: 100,
-          }}
-          sx={{
-            '& .MuiOutlinedInput-root': {
-              direction: 'rtl',
-            },
-          }}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
+          sx={{ '& .MuiOutlinedInput-root': { direction: 'rtl' } }}
         />
       </Box>
+    );
 
-      {/* תיאור האירוע */}
-      <Box>
-        <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, textAlign: 'right' }}>
-          תיאור האירוע
-        </Typography>
-        <TextField
-          fullWidth
-          multiline
-          rows={3}
-          placeholder="תיאור קצר של האירוע (אופציונלי)"
-          value={eventDetails.description}
-          onChange={(e) => setEventDetails({ ...eventDetails, description: e.target.value })}
-          inputProps={{ 
-            style: { direction: 'rtl', textAlign: 'right' },
-          }}
-          sx={{
-            '& .MuiOutlinedInput-root': {
-              direction: 'rtl',
-            },
-          }}
-        />
+    const twoCol = (a: React.ReactNode, b: React.ReactNode) => (
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
+        {a}
+        {b}
       </Box>
+    );
 
-      {/* סוג האירוע */}
-      <Box>
-        <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, textAlign: 'right' }}>
-          סוג האירוע *
-        </Typography>
-        <TextField
-          select
-          fullWidth
-          required
-          value={eventDetails.type}
-          onChange={(e) => setEventDetails({ ...eventDetails, type: e.target.value })}
-          error={!eventDetails.type || eventDetails.type.trim().length === 0}
-          helperText={(!eventDetails.type || eventDetails.type.trim().length === 0) ? 'שדה חובה' : ''}
-          SelectProps={{
-            MenuProps: {
-              PaperProps: {
-                sx: {
-                  direction: 'rtl',
-                  '& .MuiMenuItem-root': {
-                    direction: 'rtl',
-                    textAlign: 'right',
-                  },
-                },
-              },
-            },
-          }}
-          sx={{
-            '& .MuiOutlinedInput-root': {
-              direction: 'rtl',
-              '& .MuiSelect-select': {
-                textAlign: 'right',
-                direction: 'rtl',
-              },
-            },
-          }}
-        >
-          <MenuItem value="wedding" dir="rtl">חתונה</MenuItem>
-          <MenuItem value="bar" dir="rtl">בר מצווה</MenuItem>
-          <MenuItem value="bat" dir="rtl">בת מצווה</MenuItem>
-          <MenuItem value="corporate" dir="rtl">אירוע חברה</MenuItem>
-          <MenuItem value="other" dir="rtl">אחר</MenuItem>
-        </TextField>
-      </Box>
+    // One partner in the wedding step: their own first name, last name, and a
+    // bride/groom toggle. Default roles are first=bride, second=groom.
+    const weddingPersonBlock = (
+      label: string,
+      fnVal: string,
+      lnVal: string,
+      role: 'bride' | 'groom',
+      onFn: (v: string) => void,
+      onLn: (v: string) => void,
+      onRole: (r: 'bride' | 'groom') => void
+    ) => (
+      <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
+          <Typography variant="body2" sx={{ fontWeight: 700, textAlign: 'right' }}>
+            {label}
+          </Typography>
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={role}
+            onChange={(_, v) => { if (v) onRole(v as 'bride' | 'groom'); }}
+            sx={{ direction: 'rtl' }}
+          >
+            <ToggleButton value="bride">כלה</ToggleButton>
+            <ToggleButton value="groom">חתן</ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
+        {twoCol(
+          fieldBox('שם פרטי', fnVal, onFn, 'שם פרטי'),
+          fieldBox('שם משפחה', lnVal, onLn, 'שם משפחה')
+        )}
+      </Paper>
+    );
+
+    const renderContextualFields = () => {
+      switch (t) {
+        case 'wedding':
+          return (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {weddingPersonBlock(
+                'אני',
+                subjects.p1, subjects.ln1, subjects.role1,
+                (v) => updateSubjects({ p1: v }),
+                (v) => updateSubjects({ ln1: v }),
+                (r) => updateSubjects({ role1: r })
+              )}
+              {weddingPersonBlock(
+                'החצי שמשלים אותי',
+                subjects.p2, subjects.ln2, subjects.role2,
+                (v) => updateSubjects({ p2: v }),
+                (v) => updateSubjects({ ln2: v }),
+                (r) => updateSubjects({ role2: r })
+              )}
+            </Box>
+          );
+        case 'brit':
+        case 'brita':
+          return (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {!subjects.secretName && fieldBox(
+                t === 'brit' ? 'שם התינוק' : 'שם התינוקת',
+                subjects.honoree,
+                (v) => updateSubjects({ honoree: v }),
+                'איך קוראים לרך הנולד?'
+              )}
+              {/* Keeping the name a secret is a cherished tradition — never force it. */}
+              <Paper
+                variant="outlined"
+                role="button"
+                aria-pressed={subjects.secretName}
+                onClick={() => updateSubjects({ secretName: !subjects.secretName })}
+                sx={{
+                  cursor: 'pointer',
+                  p: 1.75,
+                  borderRadius: 3,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1.5,
+                  borderColor: subjects.secretName ? 'primary.main' : 'divider',
+                  bgcolor: subjects.secretName ? alpha(theme.palette.primary.main, 0.06) : 'background.paper',
+                  transition: 'border-color .18s ease, background-color .18s ease',
+                  '&:hover': { borderColor: 'primary.main' },
+                }}
+              >
+                <Typography component="span" sx={{ fontSize: 24, lineHeight: 1 }}>🧿</Typography>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    ששש… אנחנו מעדיפים לשמור את השם בסוד 😉
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
+                    {subjects.secretName
+                      ? 'מצוין — נשמור את ההפתעה לרגע הגדול וניצור שם אירוע בלי לחשוף את השם.'
+                      : 'אפשר להמשיך גם בלי לגלות — פשוט סמנו כאן ונדאג לשאר.'}
+                  </Typography>
+                </Box>
+                <Switch
+                  checked={subjects.secretName}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={() => updateSubjects({ secretName: !subjects.secretName })}
+                />
+              </Paper>
+              {twoCol(
+                fieldBox('הורה ראשון', subjects.parent1, (v) => updateSubjects({ parent1: v }), 'שם פרטי'),
+                fieldBox('הורה שני', subjects.parent2, (v) => updateSubjects({ parent2: v }), 'שם פרטי')
+              )}
+            </Box>
+          );
+        case 'bar':
+        case 'bat':
+          return (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {fieldBox(
+                t === 'bar' ? 'שם חתן בר המצווה' : 'שם כלת בת המצווה',
+                subjects.honoree,
+                (v) => updateSubjects({ honoree: v }),
+                'שם פרטי'
+              )}
+              {twoCol(
+                fieldBox('הורה ראשון', subjects.parent1, (v) => updateSubjects({ parent1: v }), 'שם פרטי'),
+                fieldBox('הורה שני', subjects.parent2, (v) => updateSubjects({ parent2: v }), 'שם פרטי')
+              )}
+            </Box>
+          );
+        case 'corporate':
+          return (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {fieldBox('שם החברה', subjects.company, (v) => updateSubjects({ company: v }), 'שם החברה או הארגון')}
+              {fieldBox('שם האירוע', subjects.bizEventName, (v) => updateSubjects({ bizEventName: v }), 'לדוגמה: ערב גיבוש 2026')}
+            </Box>
+          );
+        case 'birthday':
+          return (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {twoCol(
+                fieldBox('למי חוגגים?', subjects.honoree, (v) => updateSubjects({ honoree: v }), 'שם החוגג/ת'),
+                fieldBox('גיל (אופציונלי)', subjects.age, (v) => updateSubjects({ age: v }), 'לדוגמה: 30')
+              )}
+            </Box>
+          );
+        default:
+          return null;
+      }
+    };
+
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, direction: 'rtl' }}>
+        <Box sx={{ textAlign: 'right' }}>
+          <Typography variant="h6" sx={{ fontWeight: 700 }}>איזה אירוע אתם חוגגים?</Typography>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            בחרו את סוג האירוע ונתפור לכם חוויה שמתאימה בדיוק לו.
+          </Typography>
+        </Box>
+
+        {/* Event-type cards */}
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)' }, gap: 1.5 }}>
+          {EVENT_TYPES.map((et) => {
+            const selected = t === et.id;
+            return (
+              <Paper
+                key={et.id}
+                variant="outlined"
+                onClick={() => selectEventType(et.id)}
+                role="button"
+                aria-pressed={selected}
+                sx={{
+                  cursor: 'pointer',
+                  p: 2,
+                  borderRadius: 3,
+                  textAlign: 'center',
+                  borderWidth: selected ? 2 : 1,
+                  borderColor: selected ? 'primary.main' : 'divider',
+                  bgcolor: selected ? alpha(theme.palette.primary.main, 0.06) : 'background.paper',
+                  boxShadow: selected ? 6 : 0,
+                  transform: selected ? 'translateY(-3px)' : 'none',
+                  transition: 'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease',
+                  '&:hover': { borderColor: 'primary.main', transform: 'translateY(-3px)', boxShadow: 4 },
+                }}
+              >
+                <Typography component="div" sx={{ fontSize: 34, lineHeight: 1 }}>{et.emoji}</Typography>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700, mt: 1 }}>{et.title}</Typography>
+                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5, lineHeight: 1.4 }}>
+                  {et.subtitle}
+                </Typography>
+              </Paper>
+            );
+          })}
+        </Box>
+
+        {typeSelected && (
+          <>
+            <Alert
+              icon={<AutoAwesomeIcon fontSize="inherit" />}
+              severity="success"
+              sx={{ borderRadius: 2, '& .MuiAlert-message': { direction: 'rtl', textAlign: 'right' } }}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>{EVENT_CONGRATS[t] || 'בחירה מצוינת! ✨'}</Typography>
+              כבר הכנו עבורכם את כל מהלך התקשורת ל{EVENT_TYPE_LABELS[t] || typeMeta?.title} — מההזמנה ועד התודה שאחרי. נשארו רק כמה פרטים שרק אתם יודעים.
+            </Alert>
+
+            {renderContextualFields()}
+
+            {/* Auto-generated event name (editable) */}
+            <Box>
+              <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, textAlign: 'right' }}>
+                איך נקרא לאירוע?
+              </Typography>
+              <TextField
+                fullWidth
+                value={eventDetails.name}
+                onChange={(e) => {
+                  setNameManuallyEdited(true);
+                  setEventDetails({ ...eventDetails, name: e.target.value });
+                }}
+                placeholder="שם האירוע"
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <AutoAwesomeIcon sx={{ fontSize: 18, color: 'primary.main' }} />
+                    </InputAdornment>
+                  ),
+                }}
+                inputProps={{ style: { direction: 'rtl', textAlign: 'right' }, maxLength: 100 }}
+                sx={{ '& .MuiOutlinedInput-root': { direction: 'rtl' } }}
+              />
+              <Typography variant="caption" sx={{ color: 'text.secondary', mt: 0.5, display: 'block', textAlign: 'right' }}>
+                יצרנו שם אוטומטית מהפרטים שמילאתם — אפשר לערוך בכל רגע.
+              </Typography>
+            </Box>
 
       {/* תאריך ושעה */}
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
@@ -962,7 +1544,15 @@ export default function EventWizard() {
             <DatePicker
               value={eventDetails.date}
               minDate={dayjs().startOf('day')}
+              format="DD/MM/YYYY"
               onChange={(val) => setEventDetails({ ...eventDetails, date: val })}
+              // The theme is LTR (RTL is applied per-element), so MUI X doesn't
+              // auto-swap the month-nav arrows. Swap them here: in RTL "previous"
+              // sits on the right and must point right, "next" on the left.
+              slots={{
+                leftArrowIcon: ChevronRightRoundedIcon,
+                rightArrowIcon: ChevronLeftRoundedIcon,
+              }}
               slotProps={{
                 textField: {
                   fullWidth: true,
@@ -972,11 +1562,20 @@ export default function EventWizard() {
                   helperText: eventDetails.date === null ? 'שדה חובה' : '',
                   inputProps: { style: { direction: 'rtl', textAlign: 'right' } },
                   sx: {
-                    '& .MuiOutlinedInput-root': {
-                      direction: 'rtl',
-                    },
+                    '& .MuiOutlinedInput-root': { direction: 'rtl' },
+                    // Keep the calendar trigger icon a consistent size + spacing.
+                    '& .MuiInputAdornment-root': { ml: 0, mr: 0.5 },
+                    '& .MuiSvgIcon-root': { fontSize: 20 },
                   },
                 },
+                // The popup must render RTL so the month-nav arrows and layout align.
+                desktopPaper: { sx: { direction: 'rtl' } },
+                mobilePaper: { sx: { direction: 'rtl' } },
+                popper: { sx: { direction: 'rtl' } },
+                // Normalise the prev/next-month arrow buttons (were unsized/clipped).
+                previousIconButton: { size: 'small', sx: { color: 'text.secondary' } },
+                nextIconButton: { size: 'small', sx: { color: 'text.secondary' } },
+                switchViewButton: { size: 'small' },
               }}
             />
           </LocalizationProvider>
@@ -1010,27 +1609,69 @@ export default function EventWizard() {
         <Typography variant="body2" sx={{ mb: 1, fontWeight: 600, textAlign: 'right' }}>
           מיקום האירוע
         </Typography>
-        <TextField
-          fullWidth
-          inputRef={placesAutocomplete.inputRef}
-          placeholder={placesAutocomplete.isLoaded ? "הקלד כתובת או שם מקום..." : "טוען חיפוש כתובות..."}
-          value={placesAutocomplete.inputValue}
-          onChange={(e) => {
-            placesAutocomplete.setInputValue(e.target.value);
-            if (!e.target.value) {
-              setEventDetails({ ...eventDetails, location: null });
-            }
-          }}
-          inputProps={{ 
-            style: { direction: 'rtl', textAlign: 'right' },
-            maxLength: 200,
-          }}
-          sx={{
-            '& .MuiOutlinedInput-root': {
-              direction: 'rtl',
-            },
-          }}
-        />
+        <ClickAwayListener onClickAway={() => setShowLocationSuggestions(false)}>
+          <Box sx={{ position: 'relative' }}>
+            <TextField
+              fullWidth
+              inputRef={placesAutocomplete.inputRef}
+              placeholder={placesAutocomplete.isLoaded ? "הקלד כתובת או שם מקום..." : "טוען חיפוש כתובות..."}
+              value={placesAutocomplete.inputValue}
+              autoComplete="off"
+              onChange={(e) => {
+                placesAutocomplete.setInputValue(e.target.value);
+                setShowLocationSuggestions(true);
+                if (!e.target.value) {
+                  setEventDetails({ ...eventDetails, location: null });
+                }
+              }}
+              onFocus={() => setShowLocationSuggestions(true)}
+              inputProps={{
+                style: { direction: 'rtl', textAlign: 'right' },
+                maxLength: 200,
+              }}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  direction: 'rtl',
+                },
+              }}
+            />
+            {showLocationSuggestions && placesAutocomplete.suggestions.length > 0 && (
+              <Paper
+                elevation={4}
+                sx={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  zIndex: 1300,
+                  mt: 0.5,
+                  maxHeight: 280,
+                  overflowY: 'auto',
+                }}
+              >
+                {placesAutocomplete.suggestions.map((suggestion) => (
+                  <MenuItem
+                    key={suggestion.placeId}
+                    onClick={() => {
+                      placesAutocomplete.selectSuggestion(suggestion.placeId);
+                      setShowLocationSuggestions(false);
+                    }}
+                    sx={{ display: 'block', textAlign: 'right', direction: 'rtl', whiteSpace: 'normal', py: 1 }}
+                  >
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {suggestion.primaryText}
+                    </Typography>
+                    {suggestion.secondaryText && (
+                      <Typography variant="caption" color="text.secondary">
+                        {suggestion.secondaryText}
+                      </Typography>
+                    )}
+                  </MenuItem>
+                ))}
+              </Paper>
+            )}
+          </Box>
+        </ClickAwayListener>
         {eventDetails.location && (
           <Typography variant="caption" color="success.main" sx={{ mt: 0.5, display: 'block', textAlign: 'right' }}>
             ✓ {eventDetails.location.name || eventDetails.location.address}
@@ -1038,88 +1679,84 @@ export default function EventWizard() {
         )}
       </Box>
 
-      {/* מזמינים */}
-      <Box>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-          <Typography variant="body2" sx={{ fontWeight: 600, textAlign: 'right' }}>
-            מזמינים (מי מזמין את האירוע)
-          </Typography>
-          <IconButton
-            size="small"
-            onClick={() => {
-              setEventDetails({
-                ...eventDetails,
-                inviters: [...eventDetails.inviters, { fn: '', ln: '' }],
-              });
-            }}
-            sx={{ color: 'primary.main' }}
-          >
-            <AddIcon />
-          </IconButton>
-        </Box>
-        {eventDetails.inviters.map((inviter, index) => (
-          <Box key={index} sx={{ display: 'flex', gap: 1, mb: 1.5, alignItems: 'flex-start' }}>
-            <TextField
-              placeholder="שם פרטי"
-              value={inviter.fn}
-              onChange={(e) => {
-                const updatedInviters = [...eventDetails.inviters];
-                updatedInviters[index] = { ...updatedInviters[index], fn: e.target.value };
-                setEventDetails({ ...eventDetails, inviters: updatedInviters });
-              }}
-              inputProps={{ 
-                style: { direction: 'rtl', textAlign: 'right' },
-              }}
-              sx={{
-                flex: 1,
-                '& .MuiOutlinedInput-root': {
-                  direction: 'rtl',
-                },
-              }}
-            />
-            <TextField
-              placeholder="שם משפחה"
-              value={inviter.ln}
-              onChange={(e) => {
-                const updatedInviters = [...eventDetails.inviters];
-                updatedInviters[index] = { ...updatedInviters[index], ln: e.target.value };
-                setEventDetails({ ...eventDetails, inviters: updatedInviters });
-              }}
-              inputProps={{ 
-                style: { direction: 'rtl', textAlign: 'right' },
-              }}
-              sx={{
-                flex: 1,
-                '& .MuiOutlinedInput-root': {
-                  direction: 'rtl',
-                },
-              }}
-            />
-            {eventDetails.inviters.length > 1 && (
-              <IconButton
-                size="small"
-                onClick={() => {
-                  const updatedInviters = eventDetails.inviters.filter((_, i) => i !== index);
-                  setEventDetails({ ...eventDetails, inviters: updatedInviters });
-                }}
-                sx={{ color: 'error.main', mt: 0.5 }}
-              >
-                <DeleteIcon />
-              </IconButton>
-            )}
-          </Box>
-        ))}
+          </>
+        )}
       </Box>
-    </Box>
-  );
+    );
+  };
 
   const renderScheduleStep = () => {
     // Sort campaigns by offsetDays descending (30, 7, 1, -1)
     const sortedCampaigns = [...campaigns].sort((a, b) => b.offsetDays - a.offsetDays);
-    
+    const enabledCampaigns = sortedCampaigns.filter((c) => c.enabled);
+
+    // Did the Adaptive Timeline Engine have to compress the plan to fit a short window?
+    const wasCompressed = enabledCampaigns.some((c) => c.note);
+
+    // Default: show the recommended timeline as a clean checklist. The wizard's
+    // "הבא" button = "keep recommended"; "התאמה אישית" reveals the editable grid.
+    if (!scheduleCustomize) {
+      return (
+        <Box>
+          {renderPreparedHeader(
+            'מתי ניצור קשר עם האורחים?',
+            `סידרנו תזמון חכם ל${warmEventRef()} — מההזמנה הראשונה ועד התודה שאחרי. אפשר להשאיר כך, או להתאים בקליק.`
+          )}
+          {wasCompressed && (
+            <Alert severity="info" icon={<AutoAwesomeIcon />} sx={{ mb: 2, borderRadius: 2, textAlign: 'right', direction: 'rtl' }}>
+              המועד קרוב, אז התאמנו את לוח הזמנים כך שכל הודעה עדיין תצא בזמן — בלי הודעות בעבר ובסדר הנכון.
+            </Alert>
+          )}
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+            {enabledCampaigns.map((c) => (
+              <Paper
+                key={c.label}
+                variant="outlined"
+                sx={{ p: 2, borderRadius: 2, display: 'flex', alignItems: 'center', gap: 1.5, direction: 'rtl' }}
+              >
+                <CheckCircleIcon sx={{ color: 'success.main', fontSize: 22, flexShrink: 0 }} />
+                <Box sx={{ flex: 1, textAlign: 'right' }}>
+                  <Typography variant="body1" sx={{ fontWeight: 600 }}>{c.title || c.label}</Typography>
+                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                    {describeCampaignTiming(c.offsetDays, c.time)}
+                  </Typography>
+                  {c.note && (
+                    <Typography variant="caption" sx={{ color: 'primary.main', display: 'block', mt: 0.25 }}>
+                      ✨ {c.note}
+                    </Typography>
+                  )}
+                </Box>
+              </Paper>
+            ))}
+          </Box>
+          <Button
+            onClick={() => setScheduleCustomize(true)}
+            startIcon={<TuneIcon />}
+            sx={{ mt: 2.5 }}
+          >
+            התאמה אישית של לוח הזמנים
+          </Button>
+        </Box>
+      );
+    }
+
     return (
       <Box>
-        {renderInfoBox()}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, direction: 'rtl', flexWrap: 'wrap', gap: 1 }}>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            התאמה אישית — הפעילו, כבו או שנו תזמון לכל הודעה.
+          </Typography>
+          <Button
+            size="small"
+            variant="outlined"
+            color="primary"
+            onClick={() => setScheduleCustomize(false)}
+            startIcon={<AutoAwesomeIcon />}
+            sx={{ fontWeight: 600, borderRadius: 999, '& .MuiButton-startIcon': { ml: 0.75, mr: -0.25 } }}
+          >
+            חזרה ללו״ז המומלץ
+          </Button>
+        </Box>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
         {/* Header row */}
         <Box 
@@ -1279,7 +1916,9 @@ export default function EventWizard() {
                       value={c.offsetDays}
                       onChange={(e) => {
                         const updated = [...campaigns];
-                        updated[originalIdx] = { ...c, offsetDays: Number(e.target.value) };
+                        // Manual edit overrides the engine's resolved time; drop it so
+                        // the order payload recomputes scheduled_at from this offset.
+                        updated[originalIdx] = { ...c, offsetDays: Number(e.target.value), scheduledAt: undefined };
                         setCampaigns(updated);
                       }}
                       disabled={!c.enabled}
@@ -1309,7 +1948,7 @@ export default function EventWizard() {
                       value={c.time}
                       onChange={(e) => {
                         const updated = [...campaigns];
-                        updated[originalIdx] = { ...c, time: e.target.value };
+                        updated[originalIdx] = { ...c, time: e.target.value, scheduledAt: undefined };
                         setCampaigns(updated);
                       }}
                       disabled={!c.enabled}
@@ -1360,18 +1999,132 @@ export default function EventWizard() {
     );
   };
 
+  // True when this brit/brita keeps the baby's name a secret and the campaign is
+  // the guest invitation — the one place we add the playful "secret" flavor line.
+  const isSecretInvite = (label: string): boolean =>
+    label === INVITE_CAMPAIGN_LABEL &&
+    subjects.secretName &&
+    (eventDetails.type === 'brit' || eventDetails.type === 'brita');
+
+  // Weave a single, classy secret-themed sentence into the invitation copy.
+  // Never leaks a name (there is none in secret mode); appended once, idempotently.
+  const withSecretFlavor = (template: MessageTemplate | null, label: string): MessageTemplate | null => {
+    if (!template || !isSecretInvite(label)) return template;
+    if (template.body.includes(BRIT_SECRET_INVITE_LINE)) return template;
+    return { ...template, body: `${template.body}\n\n${BRIT_SECRET_INVITE_LINE}` };
+  };
+
+  // The base (recommended/selected) template for a campaign, ignoring any custom override.
+  const getBaseTemplate = (label: string): MessageTemplate | null => {
+    const id = selectedTemplates[label] || defaultTemplateForLabel(label)?.id;
+    const base =
+      templatesForLabel(label).find((t) => t.id === id) ||
+      defaultTemplateForLabel(label) ||
+      null;
+    return withSecretFlavor(base, label);
+  };
+
+  // The message actually shown/used for a campaign — a custom override if present,
+  // otherwise the base template.
+  const getChosenMessage = (label: string): MessageTemplate | null => {
+    const base = getBaseTemplate(label);
+    if (label in customMessages) {
+      return {
+        id: `custom:${label}`,
+        campaignLabel: label,
+        name: 'הודעה מותאמת אישית',
+        title: customTitles[label] ?? base?.title ?? '',
+        body: customMessages[label],
+      } as MessageTemplate;
+    }
+    return base;
+  };
+
+  const isCustomMessage = (label: string) => label in customMessages;
+
+  const enableCustomMessage = (label: string) => {
+    const base = getBaseTemplate(label);
+    setCustomMessages((prev) => ({ ...prev, [label]: prev[label] ?? (base?.body || '') }));
+    setCustomTitles((prev) => ({ ...prev, [label]: prev[label] ?? (base?.title || '') }));
+  };
+
+  const clearCustomMessage = (label: string) => {
+    setCustomMessages((prev) => {
+      const next = { ...prev };
+      delete next[label];
+      return next;
+    });
+  };
+
   const renderTemplatesStep = () => {
     const activeCampaigns = campaigns.filter(c => c.enabled);
-    const templateVariables = getTemplateVariables(eventDetails, eventDetails.inviters);
-    
+    const templateVariables = getTemplateVariables(eventDetails, eventDetails.inviters, subjects);
+
+    // Default: show the recommended message for each campaign as a ready preview.
+    if (!templatesCustomize) {
+      return (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {renderPreparedHeader(
+            'איך תרצו להזמין את האורחים?',
+            'כתבנו עבורכם הודעות חמות ואישיות שמביאות יותר אישורי הגעה. אפשר לאשר — או לכתוב משלכם.'
+          )}
+          {activeCampaigns.map((campaign) => {
+            const chosen = getChosenMessage(campaign.label);
+            if (!chosen) return null;
+            return (
+              <Box key={campaign.label} sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, direction: 'rtl', flexWrap: 'wrap' }}>
+                  <CheckCircleIcon sx={{ color: 'success.main', fontSize: 20 }} />
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{campaign.label}</Typography>
+                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>· {chosen.name}</Typography>
+                </Box>
+                <Box
+                  sx={{
+                    bgcolor: theme.palette.mode === 'dark' ? alpha('#1a2e1a', 0.5) : '#ece5dd',
+                    p: 2,
+                    borderRadius: 2,
+                    maxWidth: 380,
+                  }}
+                >
+                  <WhatsAppBubble template={chosen} variables={templateVariables} />
+                </Box>
+              </Box>
+            );
+          })}
+          <Button
+            onClick={() => setTemplatesCustomize(true)}
+            startIcon={<TuneIcon />}
+            sx={{ alignSelf: 'flex-start' }}
+          >
+            התאמת ההודעות
+          </Button>
+        </Box>
+      );
+    }
+
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        {renderInfoBox()}
-        
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', direction: 'rtl', flexWrap: 'wrap', gap: 1 }}>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            בחרו את הנוסח שהכי מדבר אליכם לכל הודעה.
+          </Typography>
+          <Button
+            size="small"
+            variant="outlined"
+            color="primary"
+            onClick={() => setTemplatesCustomize(false)}
+            startIcon={<AutoAwesomeIcon />}
+            sx={{ fontWeight: 600, borderRadius: 999, '& .MuiButton-startIcon': { ml: 0.75, mr: -0.25 } }}
+          >
+            חזרה למומלץ
+          </Button>
+        </Box>
+
         {activeCampaigns.map((campaign) => {
-          const campaignTemplates = getTemplatesByCampaign(campaign.label);
+          const campaignTemplates = templatesForLabel(campaign.label);
           const selectedTemplateId = selectedTemplates[campaign.label];
-          
+          const custom = isCustomMessage(campaign.label);
+
           return (
             <Box key={campaign.label} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
@@ -1398,7 +2151,7 @@ export default function EventWizard() {
                 scrollbarWidth: 'none',
               }}>
                 {campaignTemplates.map((template) => {
-                  const isSelected = selectedTemplateId === template.id;
+                  const isSelected = !custom && selectedTemplateId === template.id;
                   const isDefault = template.isDefault === true;
                   
                   return (
@@ -1406,6 +2159,7 @@ export default function EventWizard() {
                       key={template.id}
                       variant="outlined"
                       onClick={() => {
+                        clearCustomMessage(campaign.label);
                         setSelectedTemplates({
                           ...selectedTemplates,
                           [campaign.label]: template.id,
@@ -1480,6 +2234,84 @@ export default function EventWizard() {
                   );
                 })}
               </Box>
+
+              {/* Write your own message */}
+              {!custom ? (
+                <Button
+                  variant="outlined"
+                  startIcon={<EditIcon />}
+                  onClick={() => enableCustomMessage(campaign.label)}
+                  sx={{ alignSelf: 'flex-start', borderRadius: 2, '& .MuiButton-startIcon': { ml: 0.75, mr: -0.25 } }}
+                >
+                  כתבו הודעה משלכם
+                </Button>
+              ) : (
+                <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, borderColor: 'primary.main', borderWidth: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5, flexDirection: 'row-reverse', direction: 'rtl' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexDirection: 'row-reverse' }}>
+                      <EditIcon sx={{ fontSize: 18, color: 'primary.main' }} />
+                      <Typography variant="body2" fontWeight={700}>הודעה מותאמת אישית</Typography>
+                    </Box>
+                    <Button size="small" onClick={() => clearCustomMessage(campaign.label)} sx={{ color: 'text.secondary' }}>
+                      ביטול
+                    </Button>
+                  </Box>
+                  <CustomMessageEditor
+                    title={customTitles[campaign.label] ?? getBaseTemplate(campaign.label)?.title ?? ''}
+                    onTitleChange={(v) =>
+                      setCustomTitles((prev) => ({ ...prev, [campaign.label]: v }))
+                    }
+                    value={customMessages[campaign.label] ?? ''}
+                    onChange={(v) =>
+                      setCustomMessages((prev) => ({ ...prev, [campaign.label]: v }))
+                    }
+                    groups={getVariableGroups(eventDetails.type)}
+                    blocks={CONTENT_BLOCKS}
+                    variables={templateVariables}
+                    onValidityChange={(valid) =>
+                      setCustomMsgValid((prev) =>
+                        prev[campaign.label] === valid ? prev : { ...prev, [campaign.label]: valid }
+                      )
+                    }
+                  />
+                  {(() => {
+                    // A custom message becomes a new WhatsApp template that Meta must
+                    // approve before it can be sent. Warn if the campaign is scheduled
+                    // too soon for that approval to realistically complete.
+                    const c = campaigns.find((x) => x.label === campaign.label);
+                    const sendAt = c?.scheduledAt
+                      ? new Date(c.scheduledAt)
+                      : eventDetails.date
+                        ? eventDetails.date.subtract(c?.offsetDays || 0, 'day').toDate()
+                        : null;
+                    const APPROVAL_LEAD_MS = 24 * 60 * 60 * 1000; // ~1 day for WhatsApp/Meta
+                    const tooSoon = sendAt ? sendAt.getTime() - Date.now() < APPROVAL_LEAD_MS : false;
+                    return tooSoon ? (
+                      <Alert severity="warning" sx={{ mt: 1.5, textAlign: 'right', direction: 'rtl' }}>
+                        ההודעה המותאמת שלכם דורשת אישור WhatsApp, שעשוי לקחת עד 24 שעות. מועד השליחה קרוב מדי — נשלח אותה ברגע שתאושר, או שאפשר להשתמש באחת ההודעות המוכנות שמאושרות מראש.
+                      </Alert>
+                    ) : (
+                      <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: 'text.secondary', textAlign: 'right' }}>
+                        ℹ️ הודעה מותאמת עוברת אישור WhatsApp לפני השליחה (בדרך כלל עד 24 שעות).
+                      </Typography>
+                    );
+                  })()}
+                  <Box
+                    sx={{
+                      bgcolor: theme.palette.mode === 'dark' ? alpha('#1a2e1a', 0.5) : '#ece5dd',
+                      p: 2,
+                      borderRadius: 2,
+                      mt: 2,
+                      maxWidth: 380,
+                    }}
+                  >
+                    <WhatsAppBubble
+                      template={getChosenMessage(campaign.label) as MessageTemplate}
+                      variables={templateVariables}
+                    />
+                  </Box>
+                </Paper>
+              )}
             </Box>
           );
         })}
@@ -1489,20 +2321,16 @@ export default function EventWizard() {
 
   const renderReviewStep = () => {
     // selectedPlan is already defined in component scope via useMemo
-    const eventTypeMap: Record<string, string> = {
-      'wedding': 'חתונה',
-      'bar': 'בר מצווה',
-      'bat': 'בת מצווה',
-      'corporate': 'אירוע חברה',
-      'other': 'אחר',
-    };
+    const eventTypeMap: Record<string, string> = EVENT_TYPE_LABELS;
+    // Resolve template variables so the summary shows real titles, never raw {{...}}.
+    const reviewVariables = getTemplateVariables(eventDetails, eventDetails.inviters, subjects);
     
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         {renderInfoBox()}
         
         <Typography variant="h5" fontWeight={800} sx={{ textAlign: 'center', mb: 1 }}>
-          סיכום הזמנה
+          האירוע שלכם כמעט מוכן 🎉
         </Typography>
 
         {/* Package and Price */}
@@ -1516,9 +2344,9 @@ export default function EventWizard() {
                 {selectedPlan?.description || ''}
               </Typography>
             </Box>
-            <Typography variant="h4" fontWeight={800} sx={{ color: selectedPlan?.color || 'text.primary' }}>
-              {selectedPlan?.price || '—'}
-            </Typography>
+            {selectedPlan?.price
+              ? <PriceTag price={selectedPlan.price} size="md" align="right" color={selectedPlan?.color || undefined} />
+              : <Typography variant="h4" fontWeight={800}>—</Typography>}
           </Box>
           <Divider sx={{ my: 2 }} />
           
@@ -1570,17 +2398,21 @@ export default function EventWizard() {
 
           {/* Campaigns Summary */}
           <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5, textAlign: 'right' }}>
-            קמפיינים פעילים
+            מה האורחים יקבלו
           </Typography>
           <Box sx={{ display: 'grid', gap: 1, mb: 2 }}>
             {campaigns.filter(c => c.enabled).map((c) => {
-              const templateId = selectedTemplates[c.label];
-              const template = templates.find(t => t.id === templateId);
+              // Use the message actually chosen (custom override or base template, incl.
+              // any secret-name flavor) and resolve its title — never show raw {{...}}.
+              const chosen = getChosenMessage(c.label);
+              const resolvedTitle = chosen
+                ? processTemplate({ ...chosen, body: chosen.title }, reviewVariables)
+                : 'הודעה מותאמת';
               return (
-                <Box key={c.label} sx={{ display: 'flex', justifyContent: 'space-between', flexDirection: 'row' }}>
-                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'right' }}>{c.label}:</Typography>
+                <Box key={c.label} sx={{ display: 'flex', justifyContent: 'space-between', flexDirection: 'row', gap: 2 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{c.title || c.label}:</Typography>
                   <Typography variant="body2" fontWeight={500} sx={{ textAlign: 'right' }}>
-                    {template?.title || 'לא נבחרה'} ({c.offsetDays} ימים, {c.time})
+                    {resolvedTitle} · {describeCampaignTiming(c.offsetDays, c.time)}
                   </Typography>
                 </Box>
               );
@@ -1621,7 +2453,15 @@ export default function EventWizard() {
             }
             label={
               <Typography variant="body2" sx={{ textAlign: 'right', direction: 'rtl' }}>
-                קראתי והסכמתי לתנאי השימוש והשירות
+                קראתי ואני מסכים/ה{' '}
+                <Link href="/terms" target="_blank" rel="noopener noreferrer" sx={{ fontWeight: 600 }}>
+                  לתנאי השימוש
+                </Link>
+                {' '}ול
+                <Link href="/privacy" target="_blank" rel="noopener noreferrer" sx={{ fontWeight: 600 }}>
+                  מדיניות הפרטיות
+                </Link>
+                .
               </Typography>
             }
             sx={{ 
@@ -1644,30 +2484,108 @@ export default function EventWizard() {
             borderWidth: 2,
           }}
         >
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexDirection: 'row' }}>
-            <Typography variant="h6" fontWeight={700} sx={{ textAlign: 'right' }}>
-              סה"כ לתשלום
-            </Typography>
-            <Typography variant="h4" fontWeight={800} sx={{ color: selectedPlan?.color || 'text.primary' }}>
-              {selectedPlan?.price || '—'}
-            </Typography>
-          </Box>
+          {selectedPlan?.price
+            ? <PriceSummary price={selectedPlan.price} />
+            : (
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="h6" fontWeight={700}>סה"כ לתשלום</Typography>
+                <Typography variant="h4" fontWeight={800}>—</Typography>
+              </Box>
+            )}
         </Paper>
       </Box>
     );
   };
 
+  // Total-price block, shared by the payment confirmation + edit views.
+  const renderPaymentTotal = () => (
+    <Paper
+      variant="outlined"
+      sx={{
+        p: 2,
+        bgcolor: selectedPlan?.color ? alpha(selectedPlan.color, 0.06) : 'transparent',
+        borderColor: selectedPlan?.color || 'divider',
+        borderWidth: 2,
+        borderRadius: 3,
+      }}
+    >
+      {selectedPlan?.price
+        ? <PriceSummary price={selectedPlan.price} />
+        : (
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6" fontWeight={700}>סה"כ לתשלום</Typography>
+            <Typography variant="h5" fontWeight={800}>—</Typography>
+          </Box>
+        )}
+    </Paper>
+  );
+
   const renderPaymentStep = () => {
+    // We already collected the buyer's identity earlier in the flow (or from their
+    // logged-in account). Default to a clean confirmation of those known values
+    // instead of asking the user to type everything again; "עריכה" reveals the form.
+    const hasIdentity = Boolean(
+      paymentData.firstName.trim() && paymentData.lastName.trim() && paymentData.phone.trim()
+    );
+
+    if (hasIdentity && !editIdentity) {
+      const fullName = `${paymentData.firstName} ${paymentData.lastName}`.trim();
+      const detailRow = (icon: React.ReactNode, label: string, value: string) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, direction: 'rtl' }}>
+          {icon}
+          <Box sx={{ textAlign: 'right' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{label}</Typography>
+            <Typography variant="body1" sx={{ fontWeight: 600 }}>{value}</Typography>
+          </Box>
+        </Box>
+      );
+      return (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <Box sx={{ textAlign: 'center', mb: 1 }}>
+            <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>עוד רגע וזה אמיתי 🎉</Typography>
+            <Typography variant="body2" color="text.secondary">
+              {user ? 'אלו הפרטים שלכם — נשאר רק לאשר.' : 'אלו הפרטים שלכם — נאמת אותם בקצרה ונמשיך.'}
+            </Typography>
+          </Box>
+
+          <Paper variant="outlined" sx={{ p: { xs: 2.5, md: 3 }, borderRadius: 3 }}>
+            {paymentErrors.form && (
+              <Alert severity="error" sx={{ mb: 2, textAlign: 'right' }}>{paymentErrors.form}</Alert>
+            )}
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, direction: 'rtl' }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>הפרטים שלכם</Typography>
+              <Button size="small" startIcon={<EditIcon />} onClick={() => setEditIdentity(true)} sx={{ '& .MuiButton-startIcon': { ml: 0.5, mr: -0.25 } }}>
+                עריכה
+              </Button>
+            </Box>
+            <Box sx={{ display: 'grid', gap: 2 }}>
+              {detailRow(<PersonIcon sx={{ color: 'text.secondary' }} />, 'שם מלא', fullName)}
+              {detailRow(<PhoneIcon sx={{ color: 'text.secondary' }} />, 'טלפון', `${paymentData.countryCode} ${paymentData.phone}`.trim())}
+              {paymentData.email.trim() && detailRow(<EmailIcon sx={{ color: 'text.secondary' }} />, 'אימייל', paymentData.email.trim())}
+            </Box>
+          </Paper>
+
+          {renderPaymentTotal()}
+
+          {!user && (
+            <Alert severity="info" sx={{ textAlign: 'right' }}>
+              נשלח לכם קוד אימות קצר בוואטסאפ — וכבר נחזיר אתכם לכאן להמשך.
+            </Alert>
+          )}
+        </Box>
+      );
+    }
+
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         <Box sx={{ textAlign: 'center', mb: 2 }}>
           <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>
-            {user ? 'פרטי התשלום' : 'בואו נסיים את ההזמנה'}
+            עוד רגע וזה אמיתי 🎉
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            {user 
-              ? 'אנא בדקו את הפרטים והמשיכו לתשלום' 
-              : 'אנא מלאו את הפרטים הבאים כדי להשלים את התשלום'}
+            {user
+              ? 'נשאר רק לאשר — והאירוע יוצא לדרך.'
+              : 'כמה פרטים אחרונים ונשמור לכם את האירוע מוכן ומחכה.'}
           </Typography>
         </Box>
 
@@ -1829,19 +2747,19 @@ export default function EventWizard() {
                 borderRadius: 3,
               }}
             >
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexDirection: 'row' }}>
-                <Typography variant="h6" fontWeight={700} sx={{ textAlign: 'right' }}>
-                  סה"כ לתשלום
-                </Typography>
-                <Typography variant="h5" fontWeight={800} sx={{ color: selectedPlan?.color || 'text.primary' }}>
-                  {selectedPlan?.price || '—'}
-                </Typography>
-              </Box>
+              {selectedPlan?.price
+                ? <PriceSummary price={selectedPlan.price} />
+                : (
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="h6" fontWeight={700}>סה"כ לתשלום</Typography>
+                    <Typography variant="h5" fontWeight={800}>—</Typography>
+                  </Box>
+                )}
             </Paper>
 
             {!user && (
               <Alert severity="info" sx={{ mb: 2, textAlign: 'right' }}>
-                לאחר מילוי הפרטים, תועברו לדף אימות OTP להשלמת ההרשמה
+                נשלח לכם קוד אימות קצר בוואטסאפ — וכבר נחזיר אתכם לכאן להמשך.
               </Alert>
             )}
           </Box>
@@ -1984,12 +2902,39 @@ export default function EventWizard() {
         >
         <Box sx={{ mb: 4, textAlign: 'center' }}>
           <Typography variant="h4" fontWeight={800} sx={{ mb: 1 }}>
-            הקמה מהירה של אירוע
+            בואו נארגן את האירוע שלכם ✨
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            בחרו חבילה, התחברו, הגדירו אירוע וקמפיינים – צעד-אחר-צעד.
+            כמה צעדים קצרים, ואנחנו נדאג שכל האורחים יידעו, יאשרו ויגיעו.
           </Typography>
         </Box>
+
+        {/* Abandoned-wizard recovery: pick up exactly where you left off. */}
+        {pendingDraft && (
+          <Alert
+            icon={<RestoreRoundedIcon />}
+            severity="info"
+            sx={{ mb: 4, borderRadius: 3, textAlign: 'right', direction: 'rtl', alignItems: 'center' }}
+            action={
+              <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
+                <Button color="inherit" size="small" onClick={discardDraft}>
+                  אירוע חדש
+                </Button>
+                <Button variant="contained" size="small" onClick={restoreDraft} sx={{ fontWeight: 700 }}>
+                  המשך מאיפה שעצרתי
+                </Button>
+              </Box>
+            }
+          >
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+              שמרנו את האירוע שהתחלתם להכין
+              {(pendingDraft.eventDetails?.name as string) ? ` — ${pendingDraft.eventDetails?.name as string}` : ''}.
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              אפשר להמשיך בדיוק מהמקום שעצרתם.
+            </Typography>
+          </Alert>
+        )}
 
         {/* Mobile horizontal progress bar */}
         <Box sx={{ display: { xs: 'block', md: 'none' }, mb: 4 }}>
@@ -2059,7 +3004,7 @@ export default function EventWizard() {
                   >
                     {(paymentLoading || creatingFree)
                       ? <CircularProgress size={24} color="inherit" />
-                      : selectedPackageId === 'free' ? 'יצירת הזמנה בחינם' : 'סיום והמשך לתשלום'}
+                      : selectedPackageId === 'free' ? 'יוצרים את האירוע 🎉' : 'למעבר לתשלום מאובטח'}
                   </Button>
                 </Box>
               ) : activeStep === steps.length - 2 ? (
@@ -2077,34 +3022,31 @@ export default function EventWizard() {
                       },
                     }}
                   >
-                    קדימה, בואו נסיים
+                    מעולה, בואו נסיים
                   </Button>
-                  {user && (
-                    <Button
-                      variant="outlined"
-                      onClick={handleCreateFree}
-                      disabled={!canNext || creatingFree}
-                      sx={{ flex: 1, minWidth: { xs: '120px', sm: '140px' } }}
-                    >
-                      {creatingFree ? <CircularProgress size={22} /> : 'צור עכשיו, שלם לפני השליחה'}
-                    </Button>
-                  )}
                 </Box>
               ) : (
-                <Button
-                  variant="contained"
-                  onClick={handleNext}
-                  disabled={!canNext}
-                  sx={{
-                    minWidth: { xs: '120px', sm: '140px' },
-                  }}
-                >
-                  הבא
+                // On the package step keep the primary action fully hidden until a
+                // package is chosen — selecting a card is the action; an empty/disabled
+                // "next" is just noise.
+                (activeStep !== 0 || !!selectedPackageId) && (
+                  <Button
+                    variant="contained"
+                    onClick={handleNext}
+                    disabled={!canNext}
+                    sx={{
+                      minWidth: { xs: '120px', sm: '140px' },
+                    }}
+                  >
+                    ממשיכים
+                  </Button>
+                )
+              )}
+              {activeStep !== 0 && (
+                <Button variant="text" onClick={handleBack}>
+                  חזרה
                 </Button>
               )}
-              <Button variant="text" onClick={handleBack} disabled={activeStep === 0}>
-                הקודם
-              </Button>
             </Box>
             </Box>
           </Box>

@@ -52,7 +52,7 @@ Event management microservice for managing Events, Guests, and Campaigns. Provid
 | event_id      | לאיזה אירוע שייך הקמפיין                    | UUID         |
 | name          | שם הקמפיין (למשל “Save the Date”)           | VARCHAR(100) |
 | template      | תוכן הודעה / תבנית                          | TEXT         |
-| channel       | ערוץ שליחה (whatsapp / sms / email)         | VARCHAR(20)  |
+| channel       | ערוץ שליחה (whatsapp)                       | VARCHAR(20)  |
 | schedule_time | מועד שליחה מתוכנן                           | TIMESTAMP    |
 | status        | סטטוס (pending / scheduled / sent / failed) | VARCHAR(20)  |
 | created_at    | תאריך יצירה                                 | TIMESTAMP    |

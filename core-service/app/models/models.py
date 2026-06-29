@@ -41,10 +41,18 @@ class Event(Base):
     # V2 lifecycle (Phase 13): see shared.domain.enums.EventState. Kept in sync
     # with the legacy `active` boolean (active for draft/active states).
     state = Column(String(20), nullable=False, server_default='active')
+    # Payment dimension, independent of the lifecycle `state`. One of
+    # 'paid' (a paid plan was purchased), 'free' (free plan, nothing owed),
+    # 'pending' (awaiting payment), 'unpaid' (legacy/unknown). Set to 'paid' by
+    # the aub-service provisioning path and 'free' on free-plan creation.
+    payment_status = Column(String(20), nullable=False, server_default='unpaid')
     # V2 tenancy: nullable during migration; new events are bound to an account.
     # Legacy events keep ownership via the `owners` JSON array until backfilled.
     account_id = Column(PG_UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=True, index=True)
     plan_id = Column(String(50), nullable=True)  # Plan ID from MongoDB (e.g., "basic", "plus", "pro")
+    # Event type (wedding, brit, brita, bar, bat, corporate, birthday, other). Drives
+    # the adaptive timeline + which templates are recommended. Loosely typed string.
+    event_type = Column(String(50), nullable=True)
     # Seating map: { "tables": [ { "id", "name", "seats", "style", "side", "position", "size", "seatsBride?", "seatsGroom?" }, ... ] }
     seating_layout = Column(JSON, nullable=True)
 
@@ -109,6 +117,10 @@ class Campaign(Base):
 
     name = Column(String(100), nullable=False)
     template = Column(Text, nullable=False)
+    # Optional user-written body that overrides the template at send time (once an
+    # approved WhatsApp template backs it). Captured in the wizard; persisted here
+    # so the custom copy is never lost between order provisioning and sending.
+    custom_message = Column(Text, nullable=True)
     channel = Column(String(20), nullable=False)
     schedule_time = Column(DateTime(timezone=True), nullable=True)
     status = Column(String(20), nullable=False, default="pending")
@@ -348,10 +360,21 @@ class WaTemplate(Base):
     category = Column(String(30), nullable=True)
     body = Column(Text, nullable=False)
     allowed_vars = Column(JSON, nullable=True)        # vars detected at validation time
-    components = Column(JSON, nullable=True)           # header/body/buttons structure
+    components = Column(JSON, nullable=True)           # header/body/buttons structure (+ title)
     lifecycle = Column(String(20), nullable=False, server_default="draft")
     meta_template_id = Column(String(128), nullable=True)
     rejection_reason = Column(Text, nullable=True)
+    # --- Scalable metadata (Phase 17): metadata-driven template selection. ---
+    # flow_stage: invitation | reminder | final_reminder | thank_you (the campaign
+    #   stage this template serves). visibility: 'public' (everyone) | 'private'
+    #   (event-scoped; event_id is set). event_type: which event type it fits
+    #   (NULL/empty = all). expires_at: private templates may auto-expire after the
+    #   event so they can be cleaned up. created_by: the user who authored it.
+    flow_stage = Column(String(30), nullable=True, index=True)
+    visibility = Column(String(10), nullable=False, server_default="public")
+    event_type = Column(String(50), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    created_by = Column(PG_UUID(as_uuid=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 

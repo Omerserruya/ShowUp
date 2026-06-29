@@ -27,7 +27,7 @@ import MailOutlineIcon from '@mui/icons-material/MailOutline';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useUser } from '../../contexts/UserContext';
 import { useEvent } from '../../contexts/EventContext';
-import { useEntitlements, Feature } from '../../hooks/useEntitlements';
+import { hasFeature, Feature } from '../../config/entitlements';
 
 const DashboardButton = styled(Button)<{ selected?: boolean }>(({ theme, selected }) => ({
   background: selected 
@@ -104,7 +104,6 @@ export default function MenuContent({ onItemClick }: MenuContentProps) {
   const location = useLocation();
   const { isAdmin } = useUser();
   const { selectedEvent } = useEvent();
-  const { hasFeature } = useEntitlements(selectedEvent?.planId);
   const [adminOpen, setAdminOpen] = useState(false);
 
   const isDashboardSelected = location.pathname === '/overview';
@@ -121,7 +120,7 @@ export default function MenuContent({ onItemClick }: MenuContentProps) {
     { text: 'סיכום האירוע', icon: <CelebrationIcon />, path: '/recap' },
     { text: 'הפרופיל שלי', icon: <PersonIcon />, path: '/profile' },
   ];
-  const menuItems = allMenuItems.filter((item) => !item.feature || hasFeature(item.feature));
+  const menuItems = allMenuItems.filter((item) => !item.feature || hasFeature(selectedEvent?.planId, item.feature));
 
   const adminMenuItems = [
     { text: 'ניהול משתמשים', icon: <ManageAccountsIcon />, path: '/admin/users' },

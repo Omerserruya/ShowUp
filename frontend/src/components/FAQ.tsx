@@ -7,15 +7,48 @@ import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
+const faqs = [
+  {
+    q: 'ההודעות באמת מגיעות בוואטסאפ?',
+    a: 'כן, וזה כל הסיפור. אנחנו עובדים על וואטסאפ הרשמי (WhatsApp Business), אז ההזמנות והתזכורות נוחתות ישר בצ׳אט של האורח. מוכר, מיידי, ובלי שאף אחד צריך לחפש איפה זה.',
+  },
+  {
+    q: 'האורחים צריכים להתקין משהו?',
+    a: 'כלום. מקבלים הודעה רגילה בוואטסאפ, לוחצים, וזהו. בלי אפליקציה, בלי לינק מוזר, בלי הרשמה. גם הדודה שמתקשרת לשאול איך פותחים PDF תסתדר לבד.',
+  },
+  {
+    q: 'אני אפס בטכנולוגיה. זה מסובך?',
+    a: 'ממש לא. ממלאים כמה פרטים, ואנחנו כבר מכינים מראש את כל ההודעות והתזמונים. אתם רק מאשרים, ויוצאים לדרך. זה הכי קרוב שיש ל"לחיצת כפתור".',
+  },
+  {
+    q: 'כמה הודעות כל אורח מקבל?',
+    a: 'בדרך כלל שלוש: הזמנה, תזכורת, ותזכורת אחרונה. ועוד תודה חמה אחרי האירוע. אפשר לשנות הכול, התזמון מסתדר לבד לפי כמה זמן נשאר, ואפשר גם באנגלית, רוסית, ערבית ועוד.',
+  },
+  {
+    q: 'אפשר לעדכן את רשימת האורחים תוך כדי?',
+    a: 'כמובן. מוסיפים, מורידים ומעדכנים בכל רגע. כל אורח חדש יקבל בדיוק מה שצריך, וזה שכבר אישר לא ייפגז בהודעות מיותרות.',
+  },
+  {
+    q: 'המידע שלי ושל האורחים בטוח?',
+    a: 'לגמרי. הכול שמור היטב ומשמש רק לאירוע שלכם. פרטי אשראי לא נשמרים אצלנו בכלל. התשלום עובר בעמוד סליקה מאובטח בתקן PCI.',
+  },
+  {
+    q: 'ואם אסתבך באמצע?',
+    a: 'אנחנו פה. בוואטסאפ, בצ׳אט, ובחבילות המתאימות גם בטלפון. מול האירוע שלכם אתם אף פעם לא לבד.',
+  },
+  {
+    q: 'אפשר לבטל? יש החזר?',
+    a: 'בטח. משלמים פעם אחת, בלי התחייבות, ויש החזר מלא תוך 14 יום. אפשר לנסות בלב שקט.',
+  },
+];
+
 export default function FAQ() {
   const [expanded, setExpanded] = React.useState<string[]>([]);
 
   const handleChange =
     (panel: string) => (event: React.SyntheticEvent, isExpanded: boolean) => {
       setExpanded(
-        isExpanded
-          ? [...expanded, panel]
-          : expanded.filter((item) => item !== panel),
+        isExpanded ? [...expanded, panel] : expanded.filter((item) => item !== panel),
       );
     };
 
@@ -29,137 +62,43 @@ export default function FAQ() {
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: { xs: 3, sm: 6 },
+        gap: { xs: 3, sm: 5 },
       }}
     >
-      <Typography
-        component="h2"
-        variant="h4"
-        sx={{
-          color: 'text.primary',
-          width: { sm: '100%', md: '60%' },
-          textAlign: 'center',
-          mx: 'auto',
-        }}
-      >
-        שאלות נפוצות
-      </Typography>
-      <Box sx={{ width: '100%', direction: 'rtl' }}>
-        <Accordion
-          expanded={expanded.includes('panel1')}
-          onChange={handleChange('panel1')}
-        >
-          <AccordionSummary
-            expandIcon={<ExpandMoreIcon />}
-            aria-controls="panel1d-content"
-            id="panel1d-header"
-          >
-            <Typography component="span" variant="subtitle2">
-              האם אתם באמת שולחים הודעות בוואטסאפ ולא SMS?
-            </Typography>
-          </AccordionSummary>
-          <AccordionDetails>
-            <Typography
-              variant="body2"
-              gutterBottom
-              sx={{ maxWidth: { sm: '100%', md: '70%' } }}
+      <Box sx={{ textAlign: 'center', maxWidth: 640, mx: 'auto', direction: 'rtl' }}>
+        <Typography component="h2" variant="h4" sx={{ color: 'text.primary', fontWeight: 800 }}>
+          שאלות נפוצות
+        </Typography>
+        <Typography variant="body1" sx={{ color: 'text.secondary', mt: 1.5 }}>
+          כל מה ששאלתם, ועוד כמה דברים שלא הספקתם. לא מצאתם? אנחנו במרחק הודעה אחת.
+        </Typography>
+      </Box>
+      <Box sx={{ width: '100%', maxWidth: 820, direction: 'rtl' }}>
+        {faqs.map((item, i) => {
+          const panel = `panel${i + 1}`;
+          return (
+            <Accordion
+              key={panel}
+              expanded={expanded.includes(panel)}
+              onChange={handleChange(panel)}
             >
-              בהחלט. המערכת שלנו מבוססת על WhatsApp Business API – ההודעות מגיעות מיידית וישירות.
-            </Typography>
-          </AccordionDetails>
-        </Accordion>
-        <Accordion
-          expanded={expanded.includes('panel2')}
-          onChange={handleChange('panel2')}
-        >
-          <AccordionSummary
-            expandIcon={<ExpandMoreIcon />}
-            aria-controls="panel2d-content"
-            id="panel2d-header"
-          >
-            <Typography component="span" variant="subtitle2">
-              אני לא מבין בטכנולוגיה – איך מגדירים את האירוע?
-            </Typography>
-          </AccordionSummary>
-          <AccordionDetails>
-            <Typography
-              variant="body2"
-              gutterBottom
-              sx={{ maxWidth: { sm: '100%', md: '70%' } }}
-            >
-              קל מאוד. כל מה שצריך זה למלא טופס קצר – ואת השאר אנחנו עושים.
-            </Typography>
-          </AccordionDetails>
-        </Accordion>
-        <Accordion
-          expanded={expanded.includes('panel3')}
-          onChange={handleChange('panel3')}
-        >
-          <AccordionSummary
-            expandIcon={<ExpandMoreIcon />}
-            aria-controls="panel3d-content"
-            id="panel3d-header"
-          >
-            <Typography component="span" variant="subtitle2">
-              אפשר לשנות את רשימת האורחים אחרי ההגדרה?
-            </Typography>
-          </AccordionSummary>
-          <AccordionDetails>
-            <Typography
-              variant="body2"
-              gutterBottom
-              sx={{ maxWidth: { sm: '100%', md: '70%' } }}
-            >
-              בוודאי. ניתן לעדכן, למחוק ולהוסיף אורחים בכל שלב.
-            </Typography>
-          </AccordionDetails>
-        </Accordion>
-        <Accordion
-          expanded={expanded.includes('panel4')}
-          onChange={handleChange('panel4')}
-        >
-          <AccordionSummary
-            expandIcon={<ExpandMoreIcon />}
-            aria-controls="panel4d-content"
-            id="panel4d-header"
-          >
-            <Typography component="span" variant="subtitle2">
-              כמה הודעות נשלחות לאורח?
-            </Typography>
-          </AccordionSummary>
-          <AccordionDetails>
-            <Typography
-              variant="body2"
-              gutterBottom
-              sx={{ maxWidth: { sm: '100%', md: '70%' } }}
-            >
-              ברירת מחדל היא 3: הזמנה, תזכורת, ותזכורת שנייה – ניתן לשנות את זה בכל חבילה.
-            </Typography>
-          </AccordionDetails>
-        </Accordion>
-        <Accordion
-          expanded={expanded.includes('panel5')}
-          onChange={handleChange('panel5')}
-        >
-          <AccordionSummary
-            expandIcon={<ExpandMoreIcon />}
-            aria-controls="panel5d-content"
-            id="panel5d-header"
-          >
-            <Typography component="span" variant="subtitle2">
-              האם השירות תומך באירועים באנגלית?
-            </Typography>
-          </AccordionSummary>
-          <AccordionDetails>
-            <Typography
-              variant="body2"
-              gutterBottom
-              sx={{ maxWidth: { sm: '100%', md: '70%' } }}
-            >
-              כן. ניתן להגדיר שפה של ההודעות, כולל אנגלית, רוסית, ערבית ועוד.
-            </Typography>
-          </AccordionDetails>
-        </Accordion>
+              <AccordionSummary
+                expandIcon={<ExpandMoreIcon />}
+                aria-controls={`${panel}d-content`}
+                id={`${panel}d-header`}
+              >
+                <Typography component="span" variant="subtitle1" sx={{ fontWeight: 600 }}>
+                  {item.q}
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.8 }}>
+                  {item.a}
+                </Typography>
+              </AccordionDetails>
+            </Accordion>
+          );
+        })}
       </Box>
     </Container>
   );

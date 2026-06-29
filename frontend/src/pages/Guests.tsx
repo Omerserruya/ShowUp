@@ -63,7 +63,7 @@ import {
 } from '@mui/icons-material';
 import { useGuests, useOverviewStats } from '../hooks/useOverviewData';
 import { useEvent } from '../contexts/EventContext';
-import { usePlan } from '../hooks/usePlans';
+import { getPlan } from '../config/plans';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { countryOptions, normalizePhoneNumber } from '../utils/countryOptions';
 import { ImportedGuestsSection } from '../components/ImportedGuestsSection';
@@ -139,7 +139,7 @@ function Guests() {
   const { selectedEvent, events } = useEvent();
   // Map plan_id from API to planId for frontend compatibility
   const planId = selectedEvent?.planId || (selectedEvent as any)?.plan_id || null;
-  const { plan, loading: planLoading, error: planError } = usePlan(planId);
+  const plan = getPlan(planId);
   const location = useLocation();
   const navigate = useNavigate();
   const tableRef = useRef<HTMLDivElement>(null);

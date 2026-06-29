@@ -112,7 +112,6 @@ export const inputsCustomizations: InputComponents = {
               backgroundColor: gray[900],
               backgroundImage: `linear-gradient(to bottom, ${gray[700]}, ${gray[800]})`,
               boxShadow: `inset 0 1px 0 ${gray[600]}, inset 0 -1px 0 1px hsl(220, 0%, 0%)`,
-              border: `1px solid ${gray[700]}`,
               '&:hover': {
                 backgroundImage: 'none',
                 backgroundColor: gray[700],
@@ -126,7 +125,6 @@ export const inputsCustomizations: InputComponents = {
                 backgroundColor: gray[50],
                 backgroundImage: `linear-gradient(to bottom, ${gray[100]}, ${gray[50]})`,
                 boxShadow: 'inset 0 -1px 0  hsl(220, 30%, 80%)',
-                border: `1px solid ${gray[50]}`,
                 '&:hover': {
                   backgroundImage: 'none',
                   backgroundColor: gray[300],
@@ -304,19 +302,36 @@ export const inputsCustomizations: InputComponents = {
       }),
     },
   },
+  // Segmented control, styled as a padded "track" with independently-rounded
+  // pill segments. Because every segment is symmetric, this renders correctly
+  // in RTL and LTR alike — there are no first/last corners to flip.
   MuiToggleButtonGroup: {
     styleOverrides: {
       root: ({ theme }: StyleProps<ToggleButtonGroupProps>) => ({
-        borderRadius: '10px',
-        boxShadow: `0 4px 16px ${alpha(gray[400], 0.2)}`,
+        display: 'inline-flex',
+        gap: 4,
+        padding: 4,
+        borderRadius: 14,
+        backgroundColor: alpha(gray[500], 0.08),
+        border: `1px solid ${alpha(gray[400], 0.3)}`,
+        boxShadow: 'none',
+        // Neutralise MUI's default flush-seam grouping (negative margins,
+        // stripped middle radii) so each child is a free-standing pill.
+        [`& .${toggleButtonGroupClasses.grouped}`]: {
+          margin: 0,
+          border: 0,
+          borderRadius: 10,
+          '&:not(:first-of-type)': { marginInlineStart: 0 },
+        },
         [`& .${toggleButtonGroupClasses.selected}`]: {
-          color: brand[500],
+          color: brand[600],
         },
         ...applyDarkStyles(theme, {
+          backgroundColor: alpha('#000', 0.28),
+          border: `1px solid ${alpha(gray[700], 0.6)}`,
           [`& .${toggleButtonGroupClasses.selected}`]: {
             color: '#fff',
           },
-          boxShadow: `0 4px 16px ${alpha(brand[700], 0.5)}`,
         }),
       }),
     },
@@ -324,18 +339,45 @@ export const inputsCustomizations: InputComponents = {
   MuiToggleButton: {
     styleOverrides: {
       root: ({ theme }: StyleProps<ToggleButtonProps>) => ({
-        padding: '12px 16px',
+        flex: 1,
+        padding: '9px 18px',
         textTransform: 'none',
-        borderRadius: '10px',
-        fontWeight: 500,
+        borderRadius: 10,
+        border: 0,
+        fontWeight: 600,
+        color: gray[600],
+        whiteSpace: 'nowrap',
+        transition: 'background-color .2s ease, color .2s ease, box-shadow .2s ease',
+        '&:hover': {
+          backgroundColor: alpha(gray[500], 0.12),
+        },
+        [`&.${toggleButtonClasses.selected}`]: {
+          backgroundColor: theme.palette.background.paper,
+          color: brand[600],
+          boxShadow: `0 2px 8px ${alpha(gray[500], 0.28)}`,
+          '&:hover': {
+            backgroundColor: theme.palette.background.paper,
+          },
+        },
         ...applyDarkStyles(theme, {
           color: gray[400],
-          boxShadow: '0 4px 16px rgba(0, 0, 0, 0.5)',
+          '&:hover': {
+            backgroundColor: alpha('#fff', 0.06),
+          },
           [`&.${toggleButtonClasses.selected}`]: {
-            color: brand[300],
+            backgroundColor: alpha(brand[500], 0.92),
+            color: '#fff',
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.4)',
+            '&:hover': {
+              backgroundColor: alpha(brand[500], 0.92),
+            },
           },
         }),
       }),
+      sizeSmall: {
+        padding: '6px 12px',
+        fontSize: '0.8125rem',
+      },
     },
   },
   MuiCheckbox: {

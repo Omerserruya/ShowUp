@@ -8,7 +8,7 @@ import UploadIcon from '@mui/icons-material/Upload';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useEvent } from '../contexts/EventContext';
-import { useEntitlements } from '../hooks/useEntitlements';
+import { hasFeature } from '../config/entitlements';
 import InvitationView from '../components/invitation/InvitationView';
 import { InvitationConfig, InvitationData, DEFAULT_INVITATION } from '../components/invitation/types';
 
@@ -27,8 +27,7 @@ const TEXTURES = [
 export default function Invitation() {
   const { selectedEvent } = useEvent();
   const eventId = selectedEvent?.id;
-  const { hasFeature } = useEntitlements(selectedEvent?.planId);
-  const canCustomize = hasFeature('invitation_customization');
+  const canCustomize = hasFeature(selectedEvent?.planId, 'invitation_customization');
 
   const [cfg, setCfg] = useState<InvitationConfig>(DEFAULT_INVITATION);
   const [eventMeta, setEventMeta] = useState<InvitationData | null>(null);

@@ -36,7 +36,6 @@ class MessageLog(Base):
     payload = Column(Text, nullable=True)
     state = Column(String(128), nullable=True)
     status = Column(String(32), nullable=True)
-    campaign_id = Column(UUID(as_uuid=True), nullable=True)  # Link to campaign if this is a campaign message
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 

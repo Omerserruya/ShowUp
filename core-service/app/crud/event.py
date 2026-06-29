@@ -67,6 +67,10 @@ def create_event(db: Session, data: EventCreate) -> Event:
         event_date=data.event_date,
         location=data.location,
         plan_id=data.plan_id,
+        event_type=getattr(data, "event_type", None),
+        # Default to 'unpaid' when the client doesn't specify; the free-plan
+        # path sends 'free' and the payment provisioning path sends 'paid'.
+        payment_status=getattr(data, "payment_status", None) or "unpaid",
         seating_layout=None,
     )
     db.add(event)

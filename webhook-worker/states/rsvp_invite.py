@@ -6,32 +6,30 @@ from sqlalchemy import text
 
 from states.base_state import BaseState
 from utils.phone import normalize_phone
-from shared.domain.enums import RsvpAction
 
 
 class RsvpInviteState(BaseState):
     id = "rsvp_invite"
-    # Semantic routing: the next state is chosen by the resolved RsvpAction
-    # (button payload/id), never by matching the displayed button text.
-    action_next = {
-        RsvpAction.CONFIRMED: "rsvp_count",
-        RsvpAction.DECLINED: "rsvp_decline",
-        RsvpAction.MAYBE: "rsvp_decline",
-        RsvpAction.UNKNOWN: "didnt_understand",
+    # These should reflect conversation_flow.yaml next map for rsvp_invite
+    next_states = {
+        "ברור שאני בא!": "rsvp_count",
+        "ברור שנגיע !": "rsvp_count",
+        "ברור שאגיע!": "rsvp_count",
+        "לצערי לא אוכל להגיע ):": "rsvp_decline",
+        "עוד מתלבט, תחזרו אלי?": "rsvp_decline",
+        "לצערי לא אוכל": "rsvp_decline",
+        "לצערי לא אוכל להגיע": "rsvp_decline",
+        "עוד מתלבט/ת, תחזרו אלי?": "rsvp_decline",
+        "*": "didnt_understand"
     }
 
     async def process_incoming(self, session: AsyncSession, message: Dict[str, Any], conversation: Any) -> None:
         # Call parent to update last_response
         await super().process_incoming(session, message, conversation)
         
-        # Resolve the semantic action; the status is derived from it, never from
-        # matching button text. Any confirm/decline/maybe label maps consistently.
-        action = self.resolve_action(message)
-        guest_status = action.to_guest_status()
-        if guest_status is None:
-            return  # UNKNOWN -> not a status-changing response
-        status_value = guest_status.value  # canonical: 'confirmed' / 'declined' / 'maybe'
-
+        # Check if the response is a decline or maybe
+        text_content = (message.get("text") or "").strip()
+        
         # Get conversation values
         try:
             guest_id_value = conversation.guest_id
@@ -40,6 +38,17 @@ class RsvpInviteState(BaseState):
         except Exception as e:
             logger = __import__('logging').getLogger(__name__)
             logger.warning(f"Failed to get conversation values: {e}")
+            return
+        
+        # Determine status based on response
+        if text_content == "ברור שאני בא!":
+            status_value = "attending"
+        elif text_content == "לצערי לא אוכל להגיע ):":
+            status_value = "declined"
+        elif text_content == "עוד מתלבט, תחזרו אלי?":
+            status_value = "maybe"
+        else:
+            # Not a status-changing response
             return
         
         logger = __import__('logging').getLogger(__name__)

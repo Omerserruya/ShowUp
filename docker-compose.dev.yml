@@ -33,8 +33,12 @@ services:
       - HOST=0.0.0.0
       - CHOKIDAR_USEPOLLING=true
       - WATCHPACK_POLLING=true
+      # HMR client must connect through the proxy (443), not the dev server's
+      # internal port 3000 which isn't exposed via Cloudflare/nginx.
+      - WDS_SOCKET_PORT=0
       - REACT_APP_API_URL=http://localhost:${HTTP_PORT}
       - REACT_APP_GOOGLE_PLACES_API_KEY=${REACT_APP_GOOGLE_PLACES_API_KEY}
+      - REACT_APP_TAX_RATE=${REACT_APP_TAX_RATE:-0.18}
     stdin_open: true
     tty: true
 
@@ -122,7 +126,12 @@ services:
       # iCount PayPage payments — set ICOUNT_API_TOKEN in .env to enable.
       - ICOUNT_BASE_URL=${ICOUNT_BASE_URL:-}
       - ICOUNT_API_TOKEN=${ICOUNT_API_TOKEN:-}
+      - ICOUNT_PAYPAGE_ID=${ICOUNT_PAYPAGE_ID:-}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
+      # VAT rate (fraction) for the before-VAT price breakdown. Default 0.18.
+      - TAX_RATE=${TAX_RATE:-0.18}
+      # Coupon catalogue as JSON, e.g. {"WELCOME10":{"type":"percent","value":10}}. Empty = coupons disabled.
+      - COUPONS_JSON=${COUPONS_JSON:-}
     depends_on:
       - postgres
       - rabbitmq
@@ -191,6 +200,24 @@ services:
       - MEDIA_S3_URL=${MEDIA_S3_URL}
     depends_on:
       - postgres
+      - rabbitmq
+
+  otp-worker:
+    build:
+      context: ./otp-worker
+      dockerfile: Dockerfile
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=${RABBITMQ_PORT}
+      - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
+      - OTP_QUEUE_NAME=${OTP_QUEUE_NAME}
+      # OTP is delivered over WhatsApp via the approved "otp" authentication template.
+      - WA_API_B=${WA_API_B}
+      - WA_PHONE_ID=${WA_PHONE_ID}
+      - WA_OTP_TEMPLATE_NAME=${WA_OTP_TEMPLATE_NAME:-otp}
+      - WA_OTP_LANG=${WA_OTP_LANG:-he}
+    depends_on:
       - rabbitmq
 
   webhook-hendler:

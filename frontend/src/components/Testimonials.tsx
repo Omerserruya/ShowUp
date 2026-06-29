@@ -1,158 +1,152 @@
 import * as React from 'react';
+import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
-import CardHeader from '@mui/material/CardHeader';
 import CardContent from '@mui/material/CardContent';
 import Avatar from '@mui/material/Avatar';
 import Typography from '@mui/material/Typography';
-import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
 import Grid from '@mui/material/Grid';
-import { useTheme } from '@mui/system';
+import Rating from '@mui/material/Rating';
+import FormatQuoteRoundedIcon from '@mui/icons-material/FormatQuoteRounded';
 
+/**
+ * Social proof. Copy/avatars are representative samples — replace `userTestimonials`
+ * and the aggregate rating with real, opt-in customer quotes before launch.
+ */
 const userTestimonials = [
   {
-    avatar: <Avatar alt="Remy Sharp" src="/static/images/avatar/1.jpg" />,
-    name: 'Remy Sharp',
-    occupation: 'Senior Engineer',
+    initials: 'נ״א',
+    name: 'נועה ואורן',
+    occupation: 'חתונה · 420 אורחים',
+    color: 'hsl(262, 76%, 59%)',
     testimonial:
-      "I absolutely love how versatile this product is! Whether I'm tackling work projects or indulging in my favorite hobbies, it seamlessly adapts to my changing needs. Its intuitive design has truly enhanced my daily routine, making tasks more efficient and enjoyable.",
+      'הפסקנו לרדוף אחרי אנשים בטלפון. תוך יומיים היו לנו 80% אישורי הגעה, והכול עודכן לבד בדשבורד. פשוט קסם.',
   },
   {
-    avatar: <Avatar alt="Travis Howard" src="/static/images/avatar/2.jpg" />,
-    name: 'Travis Howard',
-    occupation: 'Lead Product Designer',
+    initials: 'ל״מ',
+    name: 'ליאת מזרחי',
+    occupation: 'בר מצווה · 180 אורחים',
+    color: 'hsl(330, 81%, 60%)',
     testimonial:
-      "One of the standout features of this product is the exceptional customer support. In my experience, the team behind this product has been quick to respond and incredibly helpful. It's reassuring to know that they stand firmly behind their product.",
+      'הכי אהבתי שהאורחים פשוט מקבלים הודעה בוואטסאפ ועונים. בלי אפליקציות, בלי לינקים מסובכים. גם סבתא הסתדרה.',
   },
   {
-    avatar: <Avatar alt="Cindy Baker" src="/static/images/avatar/3.jpg" />,
-    name: 'Cindy Baker',
-    occupation: 'CTO',
+    initials: 'ד״כ',
+    name: 'דניאל כהן',
+    occupation: 'אירוע חברה · 600 אורחים',
+    color: 'hsl(199, 89%, 48%)',
     testimonial:
-      'The level of simplicity and user-friendliness in this product has significantly simplified my life. I appreciate the creators for delivering a solution that not only meets but exceeds user expectations.',
+      'ארגנתי כנס לחברה והמערכת חסכה לי ימי עבודה. התזכורות האוטומטיות הביאו עוד עשרות מאשרים בלי שנגעתי בכלום.',
   },
   {
-    avatar: <Avatar alt="Remy Sharp" src="/static/images/avatar/4.jpg" />,
-    name: 'Julia Stewart',
-    occupation: 'Senior Engineer',
+    initials: 'ש״ב',
+    name: 'שירה בן דוד',
+    occupation: 'חתונה · 300 אורחים',
+    color: 'hsl(120, 44%, 53%)',
     testimonial:
-      "I appreciate the attention to detail in the design of this product. The small touches make a big difference, and it's evident that the creators focused on delivering a premium experience.",
+      'הדבר הכי מלחיץ בחתונה זה לא לדעת כמה באים. פה ראינו את המספר מתעדכן בזמן אמת וישבנו רגועים מול האולם.',
   },
   {
-    avatar: <Avatar alt="Travis Howard" src="/static/images/avatar/5.jpg" />,
-    name: 'John Smith',
-    occupation: 'Product Designer',
+    initials: 'י״פ',
+    name: 'יוסי פרץ',
+    occupation: 'ברית · 120 אורחים',
+    color: 'hsl(45, 90%, 45%)',
     testimonial:
-      "I've tried other similar products, but this one stands out for its innovative features. It's clear that the makers put a lot of thought into creating a solution that truly addresses user needs.",
+      'הכול היה מוכן בעשר דקות. שלחנו הזמנה אחת והמערכת המשיכה לבד עם תזכורות. שווה כל שקל.',
   },
   {
-    avatar: <Avatar alt="Cindy Baker" src="/static/images/avatar/6.jpg" />,
-    name: 'Daniel Wolf',
-    occupation: 'CDO',
+    initials: 'מ״ל',
+    name: 'מאיה לוי',
+    occupation: 'בת מצווה · 220 אורחים',
+    color: 'hsl(280, 70%, 55%)',
     testimonial:
-      "The quality of this product exceeded my expectations. It's durable, well-designed, and built to last. Definitely worth the investment!",
+      'גם בחירת המנות עברה דרך וואטסאפ. הגענו לאולם עם רשימה מסודרת לפי שולחנות. הקייטרינג חשב שאנחנו אלופים.',
   },
 ];
 
-const whiteLogos = [
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/6560628e8573c43893fe0ace_Sydney-white.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f4d520d0517ae8e8ddf13_Bern-white.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f46794c159024c1af6d44_Montreal-white.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/61f12e891fa22f89efd7477a_TerraLight.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/6560a09d1f6337b1dfed14ab_colorado-white.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f5caa77bf7d69fb78792e_Ankara-white.svg',
-];
-
-const darkLogos = [
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/6560628889c3bdf1129952dc_Sydney-black.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f4d4d8b829a89976a419c_Bern-black.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f467502f091ccb929529d_Montreal-black.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/61f12e911fa22f2203d7514c_TerraDark.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/6560a0990f3717787fd49245_colorado-black.svg',
-  'https://assets-global.website-files.com/61ed56ae9da9fd7e0ef0a967/655f5ca4e548b0deb1041c33_Ankara-black.svg',
-];
-
-const logoStyle = {
-  width: '64px',
-  opacity: 0.3,
-};
+const AGGREGATE_RATING = 4.9;
+const REVIEW_COUNT = 1280;
 
 export default function Testimonials() {
-  const theme = useTheme();
-  const logos = theme.palette.mode === 'light' ? darkLogos : whiteLogos;
-
   return (
     <Container
       id="testimonials"
       sx={{
-        pt: { xs: 4, sm: 12 },
-        pb: { xs: 8, sm: 16 },
-        position: 'relative',
+        pt: { xs: 6, sm: 12 },
+        pb: { xs: 8, sm: 14 },
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: { xs: 3, sm: 6 },
+        gap: { xs: 4, sm: 6 },
       }}
     >
-      <Box
-        sx={{
-          width: { sm: '100%', md: '60%' },
-          textAlign: { sm: 'left', md: 'center' },
-        }}
-      >
-        <Typography
-          component="h2"
-          variant="h4"
-          gutterBottom
-          sx={{ color: 'text.primary' }}
+      <Box sx={{ width: { sm: '100%', md: '70%' }, textAlign: 'center' }}>
+        <Typography component="h2" variant="h3" sx={{ fontWeight: 700, mb: 1.5 }}>
+          מארחים מספרים
+        </Typography>
+        <Box
+          sx={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 1,
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+          }}
         >
-          Testimonials
-        </Typography>
-        <Typography variant="body1" sx={{ color: 'text.secondary' }}>
-          See what our customers love about our products. Discover how we excel in
-          efficiency, durability, and satisfaction. Join us for quality, innovation,
-          and reliable support.
-        </Typography>
+          <Rating value={AGGREGATE_RATING} precision={0.1} readOnly size="small" />
+          <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+            {AGGREGATE_RATING.toFixed(1)}
+          </Typography>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            מתוך {REVIEW_COUNT.toLocaleString('he-IL')} מארחים שדירגו אותנו
+          </Typography>
+        </Box>
       </Box>
-      <Grid container spacing={2}>
-        {userTestimonials.map((testimonial, index) => (
+
+      <Grid container spacing={3}>
+        {userTestimonials.map((t, index) => (
           <Grid xs={12} sm={6} md={4} key={index} sx={{ display: 'flex' }}>
             <Card
               variant="outlined"
               sx={{
                 display: 'flex',
                 flexDirection: 'column',
-                justifyContent: 'space-between',
                 flexGrow: 1,
+                p: 1,
+                borderRadius: 3,
+                transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                '&:hover': {
+                  transform: 'translateY(-4px)',
+                  boxShadow: 6,
+                },
               }}
             >
-              <CardContent>
+              <CardContent
+                sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1, gap: 2 }}
+              >
+                <FormatQuoteRoundedIcon
+                  sx={{ color: 'primary.main', opacity: 0.35, fontSize: 36, transform: 'scaleX(-1)' }}
+                />
                 <Typography
                   variant="body1"
-                  gutterBottom
-                  sx={{ color: 'text.secondary' }}
+                  sx={{ color: 'text.primary', flexGrow: 1, lineHeight: 1.7 }}
                 >
-                  {testimonial.testimonial}
+                  {t.testimonial}
                 </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 1 }}>
+                  <Avatar sx={{ bgcolor: t.color, color: '#fff', fontWeight: 700, fontSize: 14 }}>
+                    {t.initials}
+                  </Avatar>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                      {t.name}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                      {t.occupation}
+                    </Typography>
+                  </Box>
+                </Box>
               </CardContent>
-              <Box
-                sx={{
-                  display: 'flex',
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <CardHeader
-                  avatar={testimonial.avatar}
-                  title={testimonial.name}
-                  subheader={testimonial.occupation}
-                />
-                <img
-                  src={logos[index]}
-                  alt={`Logo ${index + 1}`}
-                  style={logoStyle}
-                />
-              </Box>
             </Card>
           </Grid>
         ))}

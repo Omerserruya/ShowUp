@@ -48,19 +48,22 @@ export function fireConfetti(durationMs = 2200): void {
 
   const w = window.innerWidth;
   const h = window.innerHeight;
-  const count = Math.min(160, Math.round(w / 6));
+  const count = Math.min(180, Math.round(w / 5));
   const particles: Particle[] = [];
+  // Single celebratory burst from the centre of the screen, radiating outward in
+  // all directions; gravity then pulls everything down for a natural fall.
+  const originX = w * 0.5;
+  const originY = h * 0.42;
   for (let i = 0; i < count; i++) {
-    // Two emitters from the bottom corners, fired upward and inward.
-    const fromLeft = i % 2 === 0;
-    const originX = fromLeft ? w * 0.15 : w * 0.85;
-    const angle = (fromLeft ? -1 : 1) * (Math.PI / 4) - Math.PI / 2;
-    const speed = 8 + ((i * 37) % 60) / 6; // pseudo-varied, no Math.random dependency at import time
+    // Spread evenly around a full circle, biased slightly upward, with a varied
+    // speed so the burst has depth (no Math.random dependency at import time).
+    const angle = (i / count) * Math.PI * 2 + (i % 7) * 0.09;
+    const speed = 6 + ((i * 53) % 90) / 9;
     particles.push({
       x: originX,
-      y: h + 10,
-      vx: Math.cos(angle) * speed + (fromLeft ? 2 : -2),
-      vy: Math.sin(angle) * speed,
+      y: originY,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 3, // slight upward bias
       size: 6 + ((i * 13) % 7),
       color: BRAND_COLORS[i % BRAND_COLORS.length],
       rotation: (i * 0.5) % (Math.PI * 2),

@@ -18,6 +18,7 @@ from app.token_utils import create_jwt
 from app.routers.auth import ensure_users_table, get_env as get_auth_env
 from app.plans_data import get_plan as get_plan_doc
 from app import payments_icount
+from app.pricing import vat_breakdown, validate_coupon, price_before_vat
 
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -75,6 +76,11 @@ def ensure_orders_table(env: Dict[str, Any]) -> None:
           "ALTER TABLE orders ALTER COLUMN campaigns TYPE JSONB USING campaigns::jsonb",
           # iCount PayPage tracking (maps an iCount sale back to this order).
           "ALTER TABLE orders ADD COLUMN IF NOT EXISTS icount_sale_id TEXT",
+          # Applied promo/coupon code (validated + priced server-side).
+          "ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_code TEXT",
+          # The core-service event this order was provisioned into (set on payment).
+          # Lets the dashboard open the freshly created event instead of guessing.
+          "ALTER TABLE orders ADD COLUMN IF NOT EXISTS event_id UUID",
       ]
       for stmt in migration_statements:
         try:
@@ -89,6 +95,8 @@ def ensure_orders_table(env: Dict[str, Any]) -> None:
 class CampaignItem(BaseModel):
   label: str
   template_id: Optional[str] = None
+  # Optional user-written message body that overrides the template at send time.
+  custom_message: Optional[str] = None
   scheduled_at: Optional[datetime] = None
 
 
@@ -113,6 +121,9 @@ class OrderIdentityUpdate(BaseModel):
 class OrderOut(BaseModel):
   order_id: uuid.UUID
   status: str
+  # The core-service event created on payment (null until provisioned). The
+  # checkout uses this to open the new event on the dashboard.
+  event_id: Optional[uuid.UUID] = None
   plan: str
   event_name: str
   event_description: Optional[str] = None
@@ -127,6 +138,18 @@ class OrderOut(BaseModel):
   email: Optional[str] = None
   order_date: datetime
   updated_at: datetime
+  # VAT-inclusive charge plus its before-VAT breakdown (computed server-side
+  # from the plan price; the client never sets the amount). See app.pricing.
+  # `amount_gross` is the final charge AFTER any coupon discount; `amount_subtotal`
+  # is the pre-discount total and `amount_discount` the coupon savings.
+  amount_subtotal: Optional[float] = None
+  amount_discount: Optional[float] = None
+  amount_gross: Optional[float] = None
+  amount_net: Optional[float] = None
+  amount_vat: Optional[float] = None
+  tax_rate: Optional[float] = None
+  coupon_code: Optional[str] = None
+  currency: str = "ILS"
 
 
 @router.post("", response_model=Dict[str, uuid.UUID])
@@ -303,8 +326,70 @@ def get_order(order_id: uuid.UUID = Path(..., description="Order ID")) -> OrderO
   ensure_orders_table(env)
 
   row = _fetch_order(env, order_id)
+  # Attach the server-side price breakdown (net / VAT / gross, less any coupon)
+  # so the checkout can show "before VAT" + discount consistently without ever
+  # trusting a client amount.
+  bd = _order_breakdown(row)
+  row = {
+      **row,
+      "amount_subtotal": bd["subtotal"],
+      "amount_discount": bd["discount"],
+      "amount_gross": bd["gross"],
+      "amount_net": bd["net"],
+      "amount_vat": bd["vat"],
+      "tax_rate": bd["tax_rate"],
+      # Only surface the coupon if it still yields a discount (a code that became
+      # invalid shouldn't show as "applied" with zero savings).
+      "coupon_code": row.get("coupon_code") if bd["discount"] > 0 else None,
+  }
   # Decode JSONB if needed (psycopg2 usually returns proper Python types)
   return OrderOut(**row)
+
+
+class CouponApply(BaseModel):
+  code: str
+
+
+def _persist_coupon(env: Dict[str, Any], order_id: uuid.UUID, code: Optional[str]) -> None:
+  with psycopg2.connect(
+      host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"],
+      password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
+  ) as conn:
+    with conn.cursor() as cur:
+      cur.execute(
+          "UPDATE orders SET coupon_code = %s, updated_at = NOW() WHERE order_id = %s",
+          (code, str(order_id)),
+      )
+      conn.commit()
+
+
+@router.post("/{order_id}/coupon", response_model=OrderOut)
+def apply_coupon(
+    order_id: uuid.UUID = Path(..., description="Order ID"),
+    payload: CouponApply = Body(...),
+) -> OrderOut:
+  """Validate a coupon code against the order's plan price and, if valid,
+  persist it. Returns the order with the refreshed (discounted) breakdown.
+  422 if the code is unknown or yields no discount."""
+  env = get_env()
+  ensure_orders_table(env)
+  order = _fetch_order(env, order_id)
+  gross = _plan_amount(order.get("plan"))
+  coupon = validate_coupon((payload.code or "").strip(), gross)
+  if not coupon:
+    raise HTTPException(status_code=422, detail="קוד הקופון אינו תקף")
+  _persist_coupon(env, order_id, coupon["code"])
+  return get_order(order_id)
+
+
+@router.delete("/{order_id}/coupon", response_model=OrderOut)
+def remove_coupon(order_id: uuid.UUID = Path(..., description="Order ID")) -> OrderOut:
+  """Remove any applied coupon and return the order at full price."""
+  env = get_env()
+  ensure_orders_table(env)
+  _fetch_order(env, order_id)  # 404 if missing
+  _persist_coupon(env, order_id, None)
+  return get_order(order_id)
 
 
 class PaymentWebhookPayload(BaseModel):
@@ -446,6 +531,13 @@ def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
       "event_date": event_date_str,
       "location": location_str,
       "inviters": inviters_data,
+      # Carry the event type through so core-service drives the adaptive timeline
+      # and template recommendations from it (was previously dropped here).
+      "event_type": order_row.get("event_type"),
+      # Provisioned only after a confirmed payment → mark the event paid, and
+      # carry the purchased plan so the dashboard shows the right tier.
+      "payment_status": "paid",
+      "plan_id": order_row.get("plan"),
   }
   print(f"[PROVISION] Event payload: name={event_payload['name']}, location={location_str[:100] if location_str else None}...")
   
@@ -502,7 +594,8 @@ def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
       label = camp.get("label") or camp.get("name") or "Campaign"
       template_id = camp.get("template_id")
       scheduled_at = camp.get("scheduled_at")
-      print(f"[PROVISION] Campaign[{idx}]: label={label}, template_id={template_id}, scheduled_at={scheduled_at}")
+      custom_message = camp.get("custom_message")
+      print(f"[PROVISION] Campaign[{idx}]: label={label}, template_id={template_id}, scheduled_at={scheduled_at}, custom={bool(custom_message)}")
       
       # Parse scheduled_at if it's a string
       schedule_time = None
@@ -525,6 +618,9 @@ def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
             "channel": "whatsapp",  # Default channel
             "status": "pending",
         }
+        # Carry the user-written body so the custom copy is persisted (was dropped).
+        if custom_message:
+          campaign_item["custom_message"] = custom_message
         # Add schedule_time only if it exists
         if schedule_time:
           campaign_item["schedule_time"] = schedule_time.isoformat()
@@ -569,8 +665,9 @@ def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
   else:
     print(f"[PROVISION] WARNING: No campaigns data found in order or not a list")
   
-  # Update order status to 'paid'
-  print(f"[PROVISION] Updating order status to 'paid'")
+  # Mark the order paid AND link the created event back to it, so the dashboard
+  # can open exactly this event after payment (never a stale selection).
+  print(f"[PROVISION] Updating order status to 'paid', linking event_id={event_id}")
   with psycopg2.connect(
       host=env["DB_HOST"],
       port=env["DB_PORT"],
@@ -582,10 +679,10 @@ def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
       cur.execute(
           """
           UPDATE orders
-          SET status = %s, updated_at = NOW()
+          SET status = %s, event_id = %s, updated_at = NOW()
           WHERE order_id = %s
           """,
-          ("paid", str(order_id)),
+          ("paid", str(event_id), str(order_id)),
       )
       conn.commit()
   
@@ -612,6 +709,16 @@ def _plan_amount(plan_id: Optional[str]) -> float:
     return float(digits) if digits else 0.0
   except ValueError:
     return 0.0
+
+
+def _order_breakdown(order: Dict[str, Any]) -> Dict[str, float]:
+  """Authoritative price breakdown for an order: plan gross, less any valid
+  coupon, split into net + VAT. Coupons are re-validated on every read so an
+  expired/removed coupon never lingers in the price."""
+  gross = _plan_amount(order.get("plan"))
+  coupon = validate_coupon(order.get("coupon_code"), gross)
+  discount = coupon["discount"] if coupon else 0.0
+  return vat_breakdown(gross, discount)
 
 
 def _public_base(request: Request) -> str:
@@ -642,7 +749,10 @@ def pay_with_icount(order_id: uuid.UUID = Path(...), request: Request = None) ->
   if not order.get("phone") or not order.get("first_name"):
     raise HTTPException(status_code=400, detail="Order is missing buyer identity (call /identity first)")
 
-  amount = _plan_amount(order.get("plan"))
+  # iCount adds VAT itself, so strip the VAT off the (discounted) price before
+  # sending — the customer ends up paying the displayed VAT-inclusive amount.
+  bd = _order_breakdown(order)
+  amount = price_before_vat(bd["gross"])
   if amount <= 0:
     raise HTTPException(status_code=400, detail="This plan requires no payment")
 
@@ -658,7 +768,10 @@ def pay_with_icount(order_id: uuid.UUID = Path(...), request: Request = None) ->
         email=order.get("email"),
         success_url=f"{base}/payment?orderId={order_id}&paid=1",
         cancel_url=f"{base}/payment?orderId={order_id}&canceled=1",
-        ipn_url=f"{base}/api/orders/icount/callback",
+        # iCount's paypage IPN does NOT echo custom fields, so carry our order id on
+        # the IPN URL query string (preserved on the server-to-server POST). The
+        # callback resolves the order from there.
+        ipn_url=f"{base}/api/orders/icount/callback?orderId={order_id}",
     )
   except Exception as e:
     raise HTTPException(status_code=502, detail=f"iCount error: {e}")
@@ -688,6 +801,10 @@ def _order_id_from_callback(env: Dict[str, Any], payload: Dict[str, Any]) -> Opt
       sale.get("custom_order_id"),
       data.get("custom_order_id"),
       payload.get("custom_order_id"),
+      # We pass our order id on the IPN URL query string (merged into payload).
+      payload.get("orderId"),
+      data.get("orderId"),
+      sale.get("orderId"),
   ]
   for c in candidates:
     if c:
@@ -714,17 +831,37 @@ async def icount_callback(request: Request) -> JSONResponse:
   """Server-to-server IPN from iCount. Re-verifies the sale with iCount
   (authoritative) and provisions the order on success. Always 200 so iCount does not
   retry indefinitely; provisioning is idempotent on already-paid orders."""
-  # Accept both form-encoded and JSON IPN bodies.
+  # Parse the IPN defensively from the RAW body + query string. iCount posts
+  # form-urlencoded data (and sometimes echoes ids on the query string). We do NOT
+  # rely on request.form() — it raises when python-multipart is absent and a bare
+  # except would silently leave payload={}, which is exactly what skipped
+  # provisioning before. parse_qs handles urlencoded without any extra dependency.
   payload: Dict[str, Any] = {}
+  raw_body = b""
+  ctype = (request.headers.get("content-type") or "").lower()
   try:
-    ctype = request.headers.get("content-type", "")
-    if "application/json" in ctype:
-      payload = await request.json()
-    else:
-      form = await request.form()
-      payload = dict(form)
-  except Exception:
+    raw_body = await request.body()
+    text = raw_body.decode("utf-8", "ignore").strip()
+    if text:
+      if "json" in ctype or text.startswith("{"):
+        try:
+          payload = json.loads(text)
+        except Exception:
+          payload = {}
+      if not payload:
+        from urllib.parse import parse_qs
+        payload = {k: (v[0] if len(v) == 1 else v) for k, v in parse_qs(text).items()}
+  except Exception as e:
+    print(f"[ICOUNT IPN] body parse error: {e}")
+  if not isinstance(payload, dict):
     payload = {}
+  # iCount may also pass identifiers on the query string — merge them in.
+  query_params = dict(request.query_params)
+  payload = {**query_params, **payload}
+
+  # Log the raw IPN (body + content-type + query) so the field shape is never a
+  # mystery again.
+  print(f"[ICOUNT IPN] ctype={ctype!r} query={query_params} body={raw_body[:800]!r} parsed={payload}")
 
   env = get_env()
   ensure_orders_table(env)
@@ -736,13 +873,21 @@ async def icount_callback(request: Request) -> JSONResponse:
   if order.get("status") == "paid":
     return JSONResponse(status_code=200, content={"status": "ok", "already_paid": True})
 
-  # Verify with iCount using the stored sale id (don't trust the IPN body alone).
+  # Verify the sale before provisioning. iCount's paypage API has no sale-info
+  # lookup (get_sale_info => "bad_method"), so verify from the IPN payload, with a
+  # server-side lookup only as a best-effort when it happens to be available.
   sale_id = order.get("icount_sale_id")
+  verified = payments_icount.is_paid(payload)
+  if not verified and sale_id:
+    try:
+      verified = payments_icount.is_paid(payments_icount.get_sale_info(sale_id))
+    except Exception as e:
+      print(f"[ICOUNT IPN] get_sale_info unavailable ({e}); relying on IPN payload")
+  if not verified:
+    print(f"[ICOUNT IPN] sale not verified as paid for {order_id}; payload={payload}")
+    return JSONResponse(status_code=200, content={"status": "not_approved"})
+
   try:
-    if sale_id:
-      info = payments_icount.get_sale_info(sale_id)
-      if not payments_icount.is_paid(info):
-        return JSONResponse(status_code=200, content={"status": "not_approved"})
     result = provision_order(order_id)
     return JSONResponse(status_code=200, content={"status": "ok", "result": result})
   except Exception as e:
