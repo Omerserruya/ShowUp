@@ -1,4 +1,4 @@
-"""Phase 11 — AI tool layer tests (RBAC + ownership + audit, no AI)."""
+"""Phase 11 - AI tool layer tests (RBAC + ownership + audit, no AI)."""
 from __future__ import annotations
 
 import uuid

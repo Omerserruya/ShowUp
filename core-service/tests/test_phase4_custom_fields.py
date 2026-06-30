@@ -1,4 +1,4 @@
-"""Phase 4 — Custom fields tests."""
+"""Phase 4 - Custom fields tests."""
 from __future__ import annotations
 
 import uuid

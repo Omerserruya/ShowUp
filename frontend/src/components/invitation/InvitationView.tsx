@@ -27,7 +27,7 @@ function hebDate(iso?: string | null) {
 
 /**
  * The envelope: a closed envelope whose flap opens (revealing the invitation)
- * the first time it scrolls into view, and on click. Pure CSS transforms — no
+ * the first time it scrolls into view, and on click. Pure CSS transforms - no
  * animation library.
  */
 function Envelope({ config, opened, onOpen }: { config: InvitationConfig; opened: boolean; onOpen: () => void }) {
@@ -197,7 +197,7 @@ export default function InvitationView({ data, rsvpSlot, forceOpen }: Props) {
         <Envelope config={cfg} opened={opened} onOpen={() => setOpened(true)} />
       </Box>
 
-      {/* Invitation content — revealed when opened */}
+      {/* Invitation content - revealed when opened */}
       <Box
         sx={{
           maxWidth: 1100, mx: 'auto', px: { xs: 3, md: 6 }, pb: 10,

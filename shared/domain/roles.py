@@ -1,7 +1,7 @@
 """RBAC single source of truth: roles, actions, and the permission matrix.
 
 Primary customer is the event OWNER; producers (Manager/Editor/Viewer/Guest
-Coordinator) are supported but intentionally simple — a flat per-account role,
+Coordinator) are supported but intentionally simple - a flat per-account role,
 not a complex per-resource ACL.
 """
 from __future__ import annotations

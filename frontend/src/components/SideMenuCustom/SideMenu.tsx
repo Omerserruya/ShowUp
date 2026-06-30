@@ -1,21 +1,11 @@
 import * as React from 'react';
-import { styled, useTheme } from '@mui/material/styles';
+import { styled } from '@mui/material/styles';
 import MuiDrawer, { drawerClasses } from '@mui/material/Drawer';
-import Box from '@mui/material/Box';
-import IconButton from '@mui/material/IconButton';
-import CloseIcon from '@mui/icons-material/Close';
+import { Box, IconButton, Typography, alpha, useTheme } from '@mui/material';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import MenuContent from './MenuContent';
 import UserCard from './UserCard';
-import Divider from '@mui/material/Divider';
 import SelectContent from './SelectContent';
-import List from '@mui/material/List';
-import ListItem from '@mui/material/ListItem';
-import ListItemButton from '@mui/material/ListItemButton';
-import ListItemIcon from '@mui/material/ListItemIcon';
-import ListItemText from '@mui/material/ListItemText';
-import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
-import InfoRoundedIcon from '@mui/icons-material/InfoRounded';
-import { useNavigate, useLocation } from 'react-router-dom';
 import { useBanner } from '../../contexts/BannerContext';
 
 const drawerWidth = 280;
@@ -24,95 +14,40 @@ const Drawer = styled(MuiDrawer)({
   width: drawerWidth,
   flexShrink: 0,
   boxSizing: 'border-box',
-  [`& .${drawerClasses.paper}`]: {
-    width: drawerWidth,
-    boxSizing: 'border-box',
-  },
+  [`& .${drawerClasses.paper}`]: { width: drawerWidth, boxSizing: 'border-box' },
 });
 
-interface SideMenuProps {
-  mobileOpen?: boolean;
-  onMobileClose?: () => void;
-}
+interface SideMenuProps { mobileOpen?: boolean; onMobileClose?: () => void; }
 
 export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenuProps) {
-  const navigate = useNavigate();
-  const location = useLocation();
   const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const { isBannerVisible } = useBanner();
 
-  const bottomMenuItems = [
-    { text: 'הגדרות', icon: <SettingsRoundedIcon />, path: '/setting' },
-    { text: 'עלינו', icon: <InfoRoundedIcon />, path: '/about' },
-  ];
-
-  const drawerContent = (
-    <Box sx={{
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100%',
-      bgcolor: 'background.paper',
-    }}>
-      {/* Close button for mobile */}
-      <Box sx={{
-        display: { xs: 'flex', md: 'none' },
-        justifyContent: 'flex-start',
-        alignItems: 'center',
-        p: 1,
-        borderBottom: '1px solid',
-        borderColor: 'divider',
-      }}>
-        <IconButton
-          onClick={onMobileClose}
-          sx={{ color: 'text.primary' }}
-        >
-          <CloseIcon />
-        </IconButton>
+  const content = (
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', bgcolor: 'background.paper' }}>
+      {/* Mobile close */}
+      <Box sx={{ display: { xs: 'flex', md: 'none' }, justifyContent: 'flex-end', p: 1 }}>
+        <IconButton onClick={onMobileClose} sx={{ color: 'text.secondary' }}><CloseRoundedIcon /></IconButton>
       </Box>
 
-      {/* Logo */}
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-        <img
-          src={'./logo.png'}
-          alt="ShowUp Logo"
-          style={{
-            width: '180px',
-            height: 'auto',
-            display: 'block',
-            margin: '15px auto'
-          }}
-        />
+      {/* Wordmark */}
+      <Box sx={{ px: 3, pt: { xs: 0, md: 3 }, pb: 2.5, display: 'flex', alignItems: 'center', gap: 1.25 }}>
+        <Box sx={{ width: 34, height: 34, borderRadius: '11px', background: 'linear-gradient(135deg, #6f74e0, #888cee)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 900, fontSize: '1.1rem', boxShadow: `0 6px 14px ${alpha('#888cee', 0.4)}` }}>S</Box>
+        <Box>
+          <Typography sx={{ fontWeight: 900, fontSize: '1.2rem', letterSpacing: '-0.01em', lineHeight: 1, color: 'text.primary' }}>ShowUp</Typography>
+          <Typography sx={{ fontSize: '0.68rem', color: 'text.secondary' }}>אישורי הגעה, בלי כאב ראש</Typography>
+        </Box>
       </Box>
 
-      {/* Main scrollable area */}
-      <Box sx={{
-        flex: 1,
-        overflowY: 'auto',
-        minHeight: 0, // allows flex child to shrink
-      }}>
+      {/* Scrollable area */}
+      <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0, '&::-webkit-scrollbar': { width: 6 }, '&::-webkit-scrollbar-thumb': { borderRadius: 6, backgroundColor: alpha(theme.palette.text.primary, 0.12) } }}>
         <SelectContent />
         <MenuContent onItemClick={onMobileClose} />
       </Box>
 
-      {/* Bottom section - uses flex instead of absolute positioning */}
-      <Box sx={{ flexShrink: 0, bgcolor: 'background.paper' }}>
-        <List dense>
-          {bottomMenuItems.map((item) => (
-            <ListItem key={item.text} disablePadding>
-              <ListItemButton
-                selected={location.pathname === item.path}
-                onClick={() => {
-                  navigate(item.path);
-                  onMobileClose?.();
-                }}
-              >
-                <ListItemIcon>{item.icon}</ListItemIcon>
-                <ListItemText primary={item.text} sx={{ display: 'flex', justifyContent: 'right' }} />
-              </ListItemButton>
-            </ListItem>
-          ))}
-        </List>
-        <Divider />
+      {/* Bottom: user */}
+      <Box sx={{ flexShrink: 0, p: 1.5, borderTop: '1px solid', borderColor: isDark ? alpha('#fff', 0.06) : alpha(theme.palette.text.primary, 0.06) }}>
         <UserCard />
       </Box>
     </Box>
@@ -120,46 +55,23 @@ export default function SideMenu({ mobileOpen = false, onMobileClose }: SideMenu
 
   return (
     <>
-      {/* Mobile drawer - full screen */}
       <MuiDrawer
         variant="temporary"
         open={mobileOpen}
         onClose={onMobileClose}
         anchor="right"
-        ModalProps={{
-          keepMounted: true,
-        }}
-        sx={{
-          display: { xs: 'block', md: 'none' },
-          '& .MuiDrawer-paper': {
-            boxSizing: 'border-box',
-            width: '100%',
-            maxWidth: '100vw',
-            bgcolor: 'background.paper',
-            borderRight: 'none',
-          },
-        }}
+        ModalProps={{ keepMounted: true }}
+        sx={{ display: { xs: 'block', md: 'none' }, '& .MuiDrawer-paper': { boxSizing: 'border-box', width: '100%', maxWidth: '100vw', bgcolor: 'background.paper', borderRight: 'none' } }}
       >
-        {drawerContent}
+        {content}
       </MuiDrawer>
 
-      {/* Desktop permanent drawer */}
       <Drawer
         variant="permanent"
         anchor="right"
-        sx={{
-          display: { xs: 'none', md: 'block' },
-          '& .MuiDrawer-paper': {
-            bgcolor: 'background.paper',
-            borderRight: '1px solid',
-            borderColor: 'divider',
-            width: drawerWidth,
-            zIndex: 1200,
-            pt: isBannerVisible ? '48px' : 0,
-          }
-        }}
+        sx={{ display: { xs: 'none', md: 'block' }, '& .MuiDrawer-paper': { bgcolor: 'background.paper', borderRight: '1px solid', borderColor: isDark ? alpha('#fff', 0.06) : alpha(theme.palette.text.primary, 0.06), width: drawerWidth, zIndex: 1200, pt: isBannerVisible ? '48px' : 0 } }}
       >
-        {drawerContent}
+        {content}
       </Drawer>
     </>
   );

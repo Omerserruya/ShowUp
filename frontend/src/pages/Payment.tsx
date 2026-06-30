@@ -51,7 +51,7 @@ type OrderOut = {
   currency?: string | null;
 };
 
-// What the customer gets the moment they pay — shown on the branded left panel.
+// What the customer gets the moment they pay - shown on the branded left panel.
 const afterPayment = [
   'האירוע שלכם נוצר ומוכן לניהול',
   'דף הזמנה אישי מוכן לשיתוף',

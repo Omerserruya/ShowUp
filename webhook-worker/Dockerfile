@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Application code
 COPY webhook-worker/ /app/
-# Shared domain kernel (enums, rsvp resolver, roles) — single source of truth.
+# Shared domain kernel (enums, rsvp resolver, roles) - single source of truth.
 COPY shared /app/shared
 
 # Run the worker

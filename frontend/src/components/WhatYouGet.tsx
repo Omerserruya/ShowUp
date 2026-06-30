@@ -9,7 +9,7 @@ import PersonAddAltRoundedIcon from '@mui/icons-material/PersonAddAltRounded';
 import HowToRegRoundedIcon from '@mui/icons-material/HowToRegRounded';
 import QuestionAnswerRoundedIcon from '@mui/icons-material/QuestionAnswerRounded';
 
-// A few pastel cards, staggered in a zigzag — each one's top sits around the
+// A few pastel cards, staggered in a zigzag - each one's top sits around the
 // middle of its neighbour. Outcomes & experiences, not feature bullets.
 type Card = {
   icon: React.ElementType;

@@ -43,7 +43,7 @@ interface Template {
   rejection_reason?: string | null;
 }
 
-// Plain-language status — users should never see "meta_pending" or "HSM".
+// Plain-language status - users should never see "meta_pending" or "HSM".
 const STATUS_META: Record<string, { label: string; color: 'default' | 'info' | 'warning' | 'success' }> = {
   draft: { label: 'טיוטה', color: 'default' },
   validated: { label: 'מוכן לשליחה לאישור', color: 'info' },
@@ -194,7 +194,7 @@ export default function Templates() {
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 700 }}>תבניות הודעה</Typography>
           <Typography variant="body2" color="text.secondary">
-            ההודעות שנשלחות לאורחים. WhatsApp מאשרת כל תבנית לפני שאפשר לשלוח אותה — בדרך כלל עד 24 שעות.
+            ההודעות שנשלחות לאורחים. WhatsApp מאשרת כל תבנית לפני שאפשר לשלוח אותה - בדרך כלל עד 24 שעות.
           </Typography>
         </Box>
         <Button variant="contained" startIcon={<AddIcon />} onClick={() => setCreateOpen(true)} sx={{ borderRadius: 2 }}>
@@ -211,7 +211,7 @@ export default function Templates() {
           <DescriptionIcon sx={{ fontSize: 56, color: 'primary.main', opacity: 0.6 }} />
           <Typography variant="h6" sx={{ mt: 2, fontWeight: 600 }}>עדיין אין תבניות</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-            צרו את ההזמנה הראשונה שלכם — אנחנו נדאג שהיא תאושר ל-WhatsApp 🎉
+            צרו את ההזמנה הראשונה שלכם - אנחנו נדאג שהיא תאושר ל-WhatsApp 🎉
           </Typography>
           <Button variant="contained" startIcon={<AddIcon />} onClick={() => setCreateOpen(true)} sx={{ borderRadius: 2 }}>
             צור תבנית ראשונה

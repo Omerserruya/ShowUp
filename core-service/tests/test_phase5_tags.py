@@ -1,4 +1,4 @@
-"""Phase 5 — Tags tests."""
+"""Phase 5 - Tags tests."""
 from __future__ import annotations
 
 import uuid

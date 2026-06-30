@@ -98,7 +98,7 @@ export default function Billing() {
           </Paper>
 
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2, textAlign: 'center' }}>
-            התשלום הוא על אורחים וסבבים — ההודעות עצמן כלולות וללא הגבלה.
+            התשלום הוא על אורחים וסבבים - ההודעות עצמן כלולות וללא הגבלה.
           </Typography>
         </>
       )}

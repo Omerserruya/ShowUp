@@ -304,7 +304,7 @@ export const inputsCustomizations: InputComponents = {
   },
   // Segmented control, styled as a padded "track" with independently-rounded
   // pill segments. Because every segment is symmetric, this renders correctly
-  // in RTL and LTR alike — there are no first/last corners to flip.
+  // in RTL and LTR alike - there are no first/last corners to flip.
   MuiToggleButtonGroup: {
     styleOverrides: {
       root: ({ theme }: StyleProps<ToggleButtonGroupProps>) => ({

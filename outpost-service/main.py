@@ -61,7 +61,7 @@ class OutpostService:
         signal.signal(signal.SIGTERM, self._signal_handler)
         
         self.running = True
-        self.logger.info("📡 Outpost Service started — listening on queue: outpost_queue")
+        self.logger.info("📡 Outpost Service started - listening on queue: outpost_queue")
         
         try:
             await self.consumer.start_consuming()

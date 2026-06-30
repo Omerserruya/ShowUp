@@ -52,7 +52,7 @@ export function planTierOf(planId: string | null | undefined): number {
   return PLAN_TIER[planId] ?? 0;
 }
 
-// Canonical campaign labels — these are the template lookup keys in config/templates.
+// Canonical campaign labels - these are the template lookup keys in config/templates.
 const L = {
   invite: 'Save the date',
   reminderWeek: 'תזכורת שבוע לפני',
@@ -86,7 +86,7 @@ const SCHEDULES: Record<string, CampaignSpec[]> = {
     { stage: 'final_reminder', label: L.reminderDay, title: T.finalReminder, preferredOffsetDays: 1, minOffsetDays: 0, priority: 1, optional: false, time: '18:00', minTier: 0 },
     { stage: 'thank_you', label: L.thankYou, title: T.thankYou, preferredOffsetDays: -1, minOffsetDays: -1, priority: 3, optional: true, time: '11:00', minTier: 1 },
   ],
-  // Brit/brita timelines are short by nature — guests are often invited just days ahead.
+  // Brit/brita timelines are short by nature - guests are often invited just days ahead.
   brit: [
     { stage: 'invitation', label: L.invite, title: T.invite, preferredOffsetDays: 5, minOffsetDays: 0, priority: 1, optional: false, time: '10:00', minTier: 0 },
     { stage: 'final_reminder', label: L.reminderDay, title: T.reminder, preferredOffsetDays: 1, minOffsetDays: 0, priority: 2, optional: false, time: '09:00', minTier: 0 },

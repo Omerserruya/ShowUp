@@ -1,4 +1,4 @@
-"""Phase 7 — Semantic RSVP resolution tests.
+"""Phase 7 - Semantic RSVP resolution tests.
 
 The resolver is the SSOT for turning a reply into a meaning. These prove the
 audit's core concern is fixed: meaning derives from semantic signals, all

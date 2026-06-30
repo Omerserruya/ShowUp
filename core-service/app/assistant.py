@@ -1,7 +1,7 @@
 """AI assistant infrastructure (Phase 12): identity verification + scoped sessions.
 
 No LLM here. This is the trust boundary and session lifecycle the assistant runs
-on. The inbound WhatsApp sender phone is NEVER trusted on its own — a session
+on. The inbound WhatsApp sender phone is NEVER trusted on its own - a session
 only opens for a phone with a verified identity link AND a role on the target
 event. Tool calls go through the Phase 11 registry, which re-checks RBAC and
 audits every call.

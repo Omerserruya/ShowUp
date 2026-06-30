@@ -1,12 +1,12 @@
-"""iCount PayPage payment integration — embedded iframe flow.
+"""iCount PayPage payment integration - embedded iframe flow.
 
 Replaces the previous GROW (Meshulam) integration. All credentials come from env
 vars (nothing committed):
   ICOUNT_BASE_URL  default: https://api.icount.co.il/api/v3.php/
   ICOUNT_API_TOKEN iCount API token (generated in the iCount dashboard). Sent as a
-                   Bearer token — no username/password are stored.
+                   Bearer token - no username/password are stored.
   PUBLIC_BASE_URL  public origin used to build success/cancel/ipn URLs
-                  (e.g. https://abcd.ngrok.io) — iCount must be able to reach it.
+                  (e.g. https://abcd.ngrok.io) - iCount must be able to reach it.
 
 Flow (embedded iframe):
   1. generate_sale -> iCount returns a hosted PayPage `url` we render in an iframe,
@@ -96,7 +96,7 @@ def generate_sale(
         "paypage_id": cfg["paypage_id"],
         "doc_type": "invrec",  # tax invoice + receipt on successful charge
         "currency_code": "ILS",
-        # Single line item. `unitprice` is BEFORE VAT — iCount adds VAT per the
+        # Single line item. `unitprice` is BEFORE VAT - iCount adds VAT per the
         # PayPage settings, so the customer pays net + VAT = the displayed price.
         "items": [
             {
@@ -162,9 +162,9 @@ def is_paid(sale_info: Dict[str, Any]) -> bool:
     """True when iCount reports the sale as successfully paid.
 
     Handles BOTH shapes:
-      • the paypage IPN — which has NO top-level `status`, and signals a completed
+      • the paypage IPN - which has NO top-level `status`, and signals a completed
         charge with a `confirmation_code` + a positive `total_paid`/`cc_total`;
-      • a get_sale_info response — which uses a truthy top-level `status`.
+      • a get_sale_info response - which uses a truthy top-level `status`.
     """
     data = sale_info.get("sale") or sale_info.get("data") or sale_info
     if not isinstance(data, dict):

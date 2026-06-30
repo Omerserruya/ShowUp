@@ -41,7 +41,7 @@ const EventContext = createContext<EventContextType | undefined>(undefined);
 
 export function EventProvider({ children }: { children: React.ReactNode }) {
   // `selectedEvent` is exposed as null until it's been validated against the
-  // fetched events list — we never hand pages an unverified id. The desired
+  // fetched events list - we never hand pages an unverified id. The desired
   // selection (from localStorage / manual switch) is tracked separately.
   const [selectedEvent, setSelectedEventState] = useState<Event | null>(null);
   const desiredEventIdRef = useRef<string | null>(localStorage.getItem('selected_event_id'));

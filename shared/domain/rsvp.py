@@ -5,7 +5,7 @@ The business meaning of a guest's reply MUST come from a stable semantic signal
 ('Coming', 'Absolutely', 'See you there') are cosmetic and may change freely.
 
 A transitional text map is kept for templates that still send only a title, so
-existing Meta templates keep working — but it is centralized here (one place),
+existing Meta templates keep working - but it is centralized here (one place),
 not scattered across state classes, and every confirm/decline/maybe variant maps
 to the SAME action (fixing the V1 bug where title variants changed state but not
 guest status).

@@ -58,7 +58,7 @@ class Event(Base):
 
     # Public web invitation (Phase 16). slug is the shareable handle in the URL
     # (/i/{slug}); invitation holds the design config (envelope, hero, personal
-    # text, detail toggles) — see schemas.InvitationConfig. published gates whether
+    # text, detail toggles) - see schemas.InvitationConfig. published gates whether
     # the public page + open-form RSVP are live.
     public_slug = Column(String(120), nullable=True, unique=True, index=True)
     invitation = Column(JSON, nullable=True)
@@ -275,7 +275,7 @@ class GuestTag(Base):
 class AssistantIdentityLink(Base):
     """Binds a WhatsApp phone to a verified user for the AI assistant (Phase 12).
 
-    The assistant NEVER trusts the inbound sender phone alone — only a row with
+    The assistant NEVER trusts the inbound sender phone alone - only a row with
     verified=True (established via an explicit OTP/deep-link step) authenticates.
     """
     __tablename__ = "assistant_identity_links"

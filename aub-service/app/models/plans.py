@@ -1,5 +1,5 @@
 """
-Pydantic models for the plans API (backed by app/data/plans.json — no database).
+Pydantic models for the plans API (backed by app/data/plans.json - no database).
 """
 from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator

@@ -1,4 +1,4 @@
-"""Public entitlements API — exposes the plan→feature matrix from the shared
+"""Public entitlements API - exposes the plan→feature matrix from the shared
 SSOT (`shared.domain.entitlements`) so the frontend can gate UI consistently
 with backend enforcement.
 

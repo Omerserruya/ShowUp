@@ -1,7 +1,7 @@
 """Campaign audience resolution (Phase 6).
 
 Translates a campaign's audience (+ optional custom filter) into a guest query.
-This is the single place audience selection lives — decoupled from templates.
+This is the single place audience selection lives - decoupled from templates.
 Custom filter supported keys: status (list), group (str), tag_id (uuid).
 """
 from __future__ import annotations

@@ -1195,7 +1195,7 @@ export default function Seating() {
                 label="מקומות צד כלה"
                 value={selectedTable?.seatsBride ?? ''}
                 inputProps={{ min: 0, max: 20 }}
-                placeholder="—"
+                placeholder="-"
                 onChange={(e) => {
                   const v = e.target.value;
                   const bride = v === '' ? undefined : parseInt(v, 10);
@@ -1214,7 +1214,7 @@ export default function Seating() {
                 label="מקומות צד חתן"
                 value={selectedTable?.seatsGroom ?? ''}
                 inputProps={{ min: 0, max: 20 }}
-                placeholder="—"
+                placeholder="-"
                 onChange={(e) => {
                   const v = e.target.value;
                   const groom = v === '' ? undefined : parseInt(v, 10);

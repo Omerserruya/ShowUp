@@ -20,7 +20,7 @@ import { surfacesCustomizations } from '../shared-theme/customizations/surfaces'
  * Historically the app shipped two themes: a rich, fully-customized theme that
  * only wrapped the marketing page, and a stripped-down one (no typography, no
  * shadows, no component styling) that wrapped the entire authenticated app.
- * This unifies them — the full design system now applies everywhere, so every
+ * This unifies them - the full design system now applies everywhere, so every
  * screen inherits the brand font, the elevation ramp, and the component polish.
  */
 const theme = extendTheme({

@@ -121,7 +121,7 @@ class OTPWorker:
                 )
                 ch.basic_ack(delivery_tag=method.delivery_tag)
             else:
-                # Transient failure — back off before requeueing so a sustained
+                # Transient failure - back off before requeueing so a sustained
                 # outage retries slowly instead of in a tight loop.
                 logger.warning(f"Transient WhatsApp OTP failure for {phone}; requeueing after backoff")
                 time.sleep(RETRY_BACKOFF_SECONDS)

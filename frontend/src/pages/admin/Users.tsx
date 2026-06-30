@@ -238,7 +238,7 @@ function Users() {
                     <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                       {user.last_login
                         ? new Date(user.last_login).toLocaleDateString('he-IL')
-                        : '—'}
+                        : '-'}
                     </TableCell>
                     <TableCell>
                       <Stack direction="row" spacing={0.5}>

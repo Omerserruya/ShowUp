@@ -11,9 +11,9 @@ import Footer from '../components/Footer';
 
 /**
  * Landing page. Funnel order tells a story: hook (Hero) → the modern way
- * (HowItWorks feature scenes) → the differentiator (Assistant — manage the event
+ * (HowItWorks feature scenes) → the differentiator (Assistant - manage the event
  * by talking) → decision (Pricing) → objections (FAQ) → final ask (ClosingCTA).
- * No dividers between sections — backgrounds flow so it reads as one long page.
+ * No dividers between sections - backgrounds flow so it reads as one long page.
  * The page inherits the global unified theme (color-mode toggle too).
  */
 export default function MarketingPage() {

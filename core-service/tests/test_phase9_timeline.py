@@ -1,4 +1,4 @@
-"""Phase 9 — Guest timeline tests."""
+"""Phase 9 - Guest timeline tests."""
 from __future__ import annotations
 
 import uuid

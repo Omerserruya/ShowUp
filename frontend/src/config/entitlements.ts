@@ -68,7 +68,7 @@ export const entitlementMatrix: Record<string, Feature[]> = {
 /**
  * True if the given plan unlocks the feature.
  *
- * Null / unknown plan ids are treated as fully entitled (legacy bridge — mirrors
+ * Null / unknown plan ids are treated as fully entitled (legacy bridge - mirrors
  * the backend), so existing pre-tiering events never lose access in the UI.
  */
 export const hasFeature = (planId: string | null | undefined, feature: Feature): boolean => {

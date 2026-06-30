@@ -1,4 +1,4 @@
-"""Phase 1 — Security Foundation regression tests.
+"""Phase 1 - Security Foundation regression tests.
 
 Proves the IDOR fixes: by-id guest/campaign endpoints must verify tenant
 ownership, unauthenticated access is rejected, and the public /events/test

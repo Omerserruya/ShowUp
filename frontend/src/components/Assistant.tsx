@@ -12,7 +12,7 @@ const BRAND = '#888cee';
 const SOFT = '#aab0f4';
 const WA = '#25D366';
 
-// Things you simply say — shown as command chips (intelligence through use).
+// Things you simply say - shown as command chips (intelligence through use).
 const askChips = [
   '"שנה את שעת האירוע"',
   '"כמה עדיין לא אישרו?"',
@@ -96,7 +96,7 @@ export default function Assistant() {
         overflow: 'hidden',
       }}
     >
-      {/* Full-bleed brand "infographic" panel on the left — square at the page edge,
+      {/* Full-bleed brand "infographic" panel on the left - square at the page edge,
           rounded only on the inner (center-facing) side. The chat floats over it. */}
       <Box
         sx={{
@@ -145,7 +145,7 @@ export default function Assistant() {
             alignItems: 'center',
           }}
         >
-          {/* INFO — right side (read first in RTL) */}
+          {/* INFO - right side (read first in RTL) */}
           <Box sx={{ order: { xs: 1, md: 1 }, direction: 'rtl', textAlign: 'right' }}>
             <Typography variant="overline" sx={{ color: BRAND, fontWeight: 700, letterSpacing: 1.5 }}>
               העוזר של ShowUp
@@ -161,7 +161,7 @@ export default function Assistant() {
               בתוך וואטסאפ. בלי מסכים, בלי טפסים, בלי לחפש איפה לחצתם פעם שעברה.
             </Typography>
 
-            {/* FEATURES — restyled as a cloud of spoken-command chips */}
+            {/* FEATURES - restyled as a cloud of spoken-command chips */}
             <Typography variant="subtitle2" sx={{ fontWeight: 800, mt: 4, mb: 1.5 }}>
               פשוט אומרים לו:
             </Typography>
@@ -214,7 +214,7 @@ export default function Assistant() {
             </Button>
           </Box>
 
-          {/* CHAT — just the messages, floating directly over the brand panel */}
+          {/* CHAT - just the messages, floating directly over the brand panel */}
           <Box sx={{ order: { xs: 2, md: 2 }, display: 'flex', justifyContent: 'center' }}>
             <Box sx={{ width: '100%', maxWidth: 460 }}>
               <ChatMock />

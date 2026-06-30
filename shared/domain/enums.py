@@ -1,4 +1,4 @@
-"""Canonical domain enums — the single source of truth shared across services.
+"""Canonical domain enums - the single source of truth shared across services.
 
 Before V2 these concepts were expressed as ad-hoc magic strings that disagreed
 between services (e.g. guest status was 'attending' in the RSVP flow but stats

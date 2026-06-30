@@ -1,214 +1,110 @@
 import React, { useState } from 'react';
-import List from '@mui/material/List';
-import ListItem from '@mui/material/ListItem';
-import ListItemButton from '@mui/material/ListItemButton';
-import ListItemIcon from '@mui/material/ListItemIcon';
-import ListItemText from '@mui/material/ListItemText';
-import BarChartIcon from '@mui/icons-material/BarChart';
-import PeopleAltIcon from '@mui/icons-material/PeopleAlt';
-import SendIcon from '@mui/icons-material/Send';
-import DescriptionIcon from '@mui/icons-material/Description';
-import EventSeatIcon from '@mui/icons-material/EventSeat';
-import GroupIcon from '@mui/icons-material/Group';
-import CreditCardIcon from '@mui/icons-material/CreditCard';
-import PersonIcon from '@mui/icons-material/Person';
-import ManageAccountsIcon from '@mui/icons-material/ManageAccounts';
-import EventIcon from '@mui/icons-material/Event';
-import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
-import SettingsIcon from '@mui/icons-material/Settings';
-import CelebrationIcon from '@mui/icons-material/Celebration';
-import ExpandLess from '@mui/icons-material/ExpandLess';
-import ExpandMore from '@mui/icons-material/ExpandMore';
-import Divider from '@mui/material/Divider';
-import { styled } from '@mui/material/styles';
-import Button from '@mui/material/Button';
-import Box from '@mui/material/Box';
-import MailOutlineIcon from '@mui/icons-material/MailOutline';
+import { Box, List, ListItemButton, ListItemIcon, ListItemText, Collapse, Typography, alpha, useTheme } from '@mui/material';
+import SpaceDashboardRoundedIcon from '@mui/icons-material/SpaceDashboardRounded';
+import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
+import MailRoundedIcon from '@mui/icons-material/MailRounded';
+import CampaignRoundedIcon from '@mui/icons-material/CampaignRounded';
+import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded';
+import EventSeatRoundedIcon from '@mui/icons-material/EventSeatRounded';
+import Diversity3RoundedIcon from '@mui/icons-material/Diversity3Rounded';
+import CreditCardRoundedIcon from '@mui/icons-material/CreditCardRounded';
+import CelebrationRoundedIcon from '@mui/icons-material/CelebrationRounded';
+import PersonRoundedIcon from '@mui/icons-material/PersonRounded';
+import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded';
+import EventRoundedIcon from '@mui/icons-material/EventRounded';
+import ShoppingCartRoundedIcon from '@mui/icons-material/ShoppingCartRounded';
+import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
+import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded';
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useUser } from '../../contexts/UserContext';
 import { useEvent } from '../../contexts/EventContext';
 import { hasFeature, Feature } from '../../config/entitlements';
 
-const DashboardButton = styled(Button)<{ selected?: boolean }>(({ theme, selected }) => ({
-  background: selected 
-    ? 'linear-gradient(90deg, #7C3AED 0%, #EC4899 100%)'
-    : 'transparent',
-  color: selected ? 'white' : theme.palette.text.primary,
-  borderRadius: theme.shape.borderRadius,
-  padding: theme.spacing(1.25, 2),
-  textTransform: 'none',
-  fontWeight: selected ? 500 : 400,
-  width: '100%',
-  justifyContent: 'flex-start',
-  gap: theme.spacing(1),
-  minHeight: 48,
-  height: 48,
-  fontSize: '0.9375rem',
-  '&:hover': {
-    background: selected
-      ? 'linear-gradient(90deg, #6D28D9 0%, #DB2777 100%)'
-      : 'rgba(0, 0, 0, 0.04)',
-  },
-  '& .MuiButton-startIcon': {
-    marginRight: 0,
-    marginLeft: theme.spacing(1),
-    color: selected ? 'white' : theme.palette.text.secondary,
-  },
-}));
+const BRAND = '#888cee';
+const DEEP = '#6f74e0';
 
-const MenuItemButton = styled(ListItemButton)<{ selected?: boolean }>(({ theme, selected }) => ({
-  borderRadius: theme.shape.borderRadius,
-  margin: theme.spacing(0.5, 1),
-  minHeight: 48,
-  height: 48,
-  padding: theme.spacing(1.25, 2),
-  backgroundColor: selected 
-    ? 'transparent'
-    : 'transparent',
-  background: selected 
-    ? 'linear-gradient(90deg, #7C3AED 0%, #EC4899 100%)'
-    : 'transparent',
-  color: selected ? 'white' : theme.palette.text.primary,
-  '&.Mui-selected': {
-    backgroundColor: 'transparent',
-    background: 'linear-gradient(90deg, #7C3AED 0%, #EC4899 100%)',
-    color: 'white',
-    '&:hover': {
-      backgroundColor: 'transparent',
-      background: 'linear-gradient(90deg, #6D28D9 0%, #DB2777 100%)',
-    },
-    '& .MuiListItemIcon-root': {
-      color: 'white',
-    },
-  },
-  '&:hover': {
-    backgroundColor: selected
-      ? 'transparent'
-      : 'rgba(0, 0, 0, 0.04)',
-    background: selected
-      ? 'linear-gradient(90deg, #6D28D9 0%, #DB2777 100%)'
-      : undefined,
-  },
-  '& .MuiListItemIcon-root': {
-    color: selected ? 'white' : theme.palette.text.secondary,
-    minWidth: 40,
-  },
-}));
+interface NavItem { text: string; icon: React.ReactNode; path: string; feature?: Feature; }
 
-interface MenuContentProps {
-  onItemClick?: () => void;
-}
+interface MenuContentProps { onItemClick?: () => void; }
 
 export default function MenuContent({ onItemClick }: MenuContentProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const { isAdmin } = useUser();
   const { selectedEvent } = useEvent();
   const [adminOpen, setAdminOpen] = useState(false);
 
-  const isDashboardSelected = location.pathname === '/overview';
-
-  // `feature` gates the item by plan tier; items without one are always shown.
-  const allMenuItems: Array<{ text: string; icon: React.ReactNode; path: string; feature?: Feature }> = [
-    { text: 'רשימת אורחים', icon: <PeopleAltIcon />, path: '/guests' },
-    { text: 'הזמנה דיגיטלית', icon: <MailOutlineIcon />, path: '/invitation', feature: 'web_invitation' },
-    { text: 'ניהול קמפיינים', icon: <SendIcon />, path: '/messages', feature: 'whatsapp_campaigns' },
-    { text: 'תבניות הודעה', icon: <DescriptionIcon />, path: '/templates', feature: 'templates' },
-    { text: 'סידור מושבים', icon: <EventSeatIcon />, path: '/seating', feature: 'seating' },
-    { text: 'חברי צוות', icon: <GroupIcon />, path: '/team', feature: 'team_members' },
-    { text: 'חבילה ושימוש', icon: <CreditCardIcon />, path: '/billing' },
-    { text: 'סיכום האירוע', icon: <CelebrationIcon />, path: '/recap' },
-    { text: 'הפרופיל שלי', icon: <PersonIcon />, path: '/profile' },
+  const primary: NavItem[] = [
+    { text: 'לוח בקרה', icon: <SpaceDashboardRoundedIcon />, path: '/overview' },
+    { text: 'האורחים', icon: <GroupsRoundedIcon />, path: '/guests' },
+    { text: 'ההזמנה', icon: <MailRoundedIcon />, path: '/invitation', feature: 'web_invitation' },
+    { text: 'תזכורות והודעות', icon: <CampaignRoundedIcon />, path: '/messages', feature: 'whatsapp_campaigns' },
+    { text: 'תבניות הודעה', icon: <DescriptionRoundedIcon />, path: '/templates', feature: 'templates' },
+    { text: 'סידור מושבים', icon: <EventSeatRoundedIcon />, path: '/seating', feature: 'seating' },
+    { text: 'צוות', icon: <Diversity3RoundedIcon />, path: '/team', feature: 'team_members' },
   ];
-  const menuItems = allMenuItems.filter((item) => !item.feature || hasFeature(selectedEvent?.planId, item.feature));
-
-  const adminMenuItems = [
-    { text: 'ניהול משתמשים', icon: <ManageAccountsIcon />, path: '/admin/users' },
-    { text: 'ניהול אירועים', icon: <EventIcon />, path: '/admin/events' },
-    { text: 'רכישות ובילינג', icon: <ShoppingCartIcon />, path: '/admin/purchases' },
-    { text: 'הגדרות מערכת', icon: <SettingsIcon />, path: '/admin/settings' },
+  const secondary: NavItem[] = [
+    { text: 'חבילה ושימוש', icon: <CreditCardRoundedIcon />, path: '/billing' },
+    { text: 'סיכום האירוע', icon: <CelebrationRoundedIcon />, path: '/recap' },
+    { text: 'הפרופיל שלי', icon: <PersonRoundedIcon />, path: '/profile' },
+  ];
+  const adminItems: NavItem[] = [
+    { text: 'ניהול משתמשים', icon: <ManageAccountsRoundedIcon />, path: '/admin/users' },
+    { text: 'ניהול אירועים', icon: <EventRoundedIcon />, path: '/admin/events' },
+    { text: 'רכישות ובילינג', icon: <ShoppingCartRoundedIcon />, path: '/admin/purchases' },
+    { text: 'הגדרות מערכת', icon: <SettingsRoundedIcon />, path: '/admin/settings' },
   ];
 
-  const handleAdminClick = () => {
-    setAdminOpen(!adminOpen);
-  };
+  const visiblePrimary = primary.filter((i) => !i.feature || hasFeature(selectedEvent?.planId, i.feature));
 
-  const handleNavigation = (path: string) => {
-    navigate(path);
-    onItemClick?.();
+  const go = (path: string) => { navigate(path); onItemClick?.(); };
+
+  const itemSx = (selected: boolean) => ({
+    borderRadius: 2.5,
+    mb: 0.25,
+    px: 1.5,
+    py: 1.05,
+    minHeight: 0,
+    color: selected ? DEEP : 'text.secondary',
+    bgcolor: selected ? alpha(BRAND, isDark ? 0.18 : 0.1) : 'transparent',
+    transition: 'background-color .15s ease, color .15s ease',
+    '& .MuiListItemIcon-root': { minWidth: 32, color: selected ? DEEP : (isDark ? alpha('#fff', 0.55) : alpha(theme.palette.text.primary, 0.55)) },
+    '& .MuiListItemText-primary': { fontSize: '0.92rem', fontWeight: selected ? 700 : 500, textAlign: 'right' as const },
+    '&:hover': { bgcolor: selected ? alpha(BRAND, isDark ? 0.22 : 0.14) : alpha(theme.palette.text.primary, isDark ? 0.06 : 0.04) },
+  });
+
+  const renderItem = (item: NavItem) => {
+    const selected = location.pathname === item.path;
+    return (
+      <ListItemButton key={item.path} dir="rtl" onClick={() => go(item.path)} sx={itemSx(selected)}>
+        <ListItemIcon>{item.icon}</ListItemIcon>
+        <ListItemText primary={item.text} />
+      </ListItemButton>
+    );
   };
 
   return (
-    <List sx={{ px: 1 }}>
-      {/* Dashboard Button */}
-      <ListItem disablePadding sx={{ mb: 1 }}>
-        <DashboardButton
-          startIcon={<BarChartIcon />}
-          onClick={() => handleNavigation('/overview')}
-          fullWidth
-          selected={isDashboardSelected}
-        >
-          לוח בקרה
-        </DashboardButton>
-      </ListItem>
+    <List sx={{ px: 1.5, py: 0 }}>
+      {visiblePrimary.map(renderItem)}
 
-      {/* Regular Menu Items */}
-      {menuItems.map((item) => {
-        const isSelected = location.pathname === item.path;
-        return (
-        <ListItem key={item.text} disablePadding>
-            <MenuItemButton
-              selected={isSelected}
-              onClick={() => handleNavigation(item.path)}
-              dir="rtl"
-          >
-              <ListItemIcon>
-                {item.icon}
-              </ListItemIcon>
-              <ListItemText 
-                primary={item.text}
-                sx={{ 
-                  textAlign: 'right',
-                  '& .MuiListItemText-primary': {
-                    fontSize: '0.9375rem',
-                    color: isSelected ? 'white' : 'text.primary',
-                  },
-                }}
-/>
-            </MenuItemButton>
-        </ListItem>
-        );
-      })}
+      <Typography sx={{ px: 1.5, pt: 2, pb: 0.75, fontSize: '0.68rem', fontWeight: 800, letterSpacing: '0.08em', color: 'text.disabled', textAlign: 'right' }}>
+        החשבון
+      </Typography>
+      {secondary.map(renderItem)}
 
       {isAdmin && (
         <>
-          <Divider sx={{ my: 1 }} />
-
-          <ListItem disablePadding>
-            <ListItemButton onClick={handleAdminClick}>
-              <ListItemIcon>
-                <SettingsIcon />
-              </ListItemIcon>
-              <ListItemText primary="ניהול" sx={{ display: 'flex', justifyContent: 'right' }} />
-              {adminOpen ? <ExpandLess /> : <ExpandMore />}
-            </ListItemButton>
-          </ListItem>
-
-          {adminOpen && (
-            <List component="div" disablePadding>
-              {adminMenuItems.map((item) => (
-                <ListItem key={item.text} disablePadding sx={{ pr: 4 }}>
-                  <ListItemButton
-                    selected={location.pathname === item.path}
-                    onClick={() => handleNavigation(item.path)}
-                  >
-                    <ListItemIcon>{item.icon}</ListItemIcon>
-                    <ListItemText primary={item.text} sx={{ display: 'flex', justifyContent: 'right' }} />
-                  </ListItemButton>
-                </ListItem>
-              ))}
-            </List>
-          )}
+          <ListItemButton dir="rtl" onClick={() => setAdminOpen((v) => !v)} sx={itemSx(false)}>
+            <ListItemIcon><SettingsRoundedIcon /></ListItemIcon>
+            <ListItemText primary="ניהול מערכת" />
+            {adminOpen ? <ExpandLessRoundedIcon sx={{ color: 'text.disabled' }} /> : <ExpandMoreRoundedIcon sx={{ color: 'text.disabled' }} />}
+          </ListItemButton>
+          <Collapse in={adminOpen} timeout="auto" unmountOnExit>
+            <Box sx={{ pr: 1.5 }}>{adminItems.map(renderItem)}</Box>
+          </Collapse>
         </>
       )}
     </List>

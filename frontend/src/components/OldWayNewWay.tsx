@@ -10,7 +10,7 @@ import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 const BRAND = '#888cee';
 const MUTE = '#94a3b8';
 
-// Old-world "scraps" — the mess ShowUp clears away. Muted, tilted, overlapping.
+// Old-world "scraps" - the mess ShowUp clears away. Muted, tilted, overlapping.
 function Scrap({
   children,
   sx,
@@ -80,11 +80,11 @@ export default function OldWayNewWay() {
               </Box>
             </Typography>
             <Typography variant="h6" sx={{ color: 'text.secondary', mt: 2.5, fontWeight: 400, lineHeight: 1.75, maxWidth: 520 }}>
-              אקסלים אינסופיים, עשרות טלפונים, תזכורות ידניות והתחושה ההיא של "מי בעצם אישר?" — כל זה נגמר.
+              אקסלים אינסופיים, עשרות טלפונים, תזכורות ידניות והתחושה ההיא של "מי בעצם אישר?" - כל זה נגמר.
               ShowUp לוקחת את כל הבלגן והופכת אותו לשיחה אחת רגועה בוואטסאפ, שמנהלת את עצמה.
             </Typography>
 
-            {/* old-world words, crossed out — elegant, not a checklist */}
+            {/* old-world words, crossed out - elegant, not a checklist */}
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 3.5 }}>
               {oldTags.map((t) => (
                 <Box
@@ -140,7 +140,7 @@ export default function OldWayNewWay() {
               <Typography sx={{ fontSize: 12, fontWeight: 600 }}>לשלוח תזכורת… שוב</Typography>
             </Scrap>
 
-            {/* the calm card — order from chaos, in focus */}
+            {/* the calm card - order from chaos, in focus */}
             <Box
               sx={{
                 position: 'absolute',
@@ -178,7 +178,7 @@ export default function OldWayNewWay() {
                 <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>אישרו הגעה</Typography>
               </Box>
               <Typography sx={{ fontSize: 12.5, color: 'text.secondary', mt: 1 }}>
-                נשלח, נאסף ועודכן — אוטומטית בוואטסאפ.
+                נשלח, נאסף ועודכן - אוטומטית בוואטסאפ.
               </Typography>
             </Box>
           </Box>

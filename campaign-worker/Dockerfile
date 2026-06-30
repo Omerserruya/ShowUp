@@ -8,7 +8,7 @@ COPY campaign-worker/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY campaign-worker/ /app/
-# Shared domain kernel (enums, audience values) — single source of truth.
+# Shared domain kernel (enums, audience values) - single source of truth.
 COPY shared /app/shared
 
 ENV PYTHONUNBUFFERED=1

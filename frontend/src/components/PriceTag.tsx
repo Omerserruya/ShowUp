@@ -4,7 +4,7 @@ import { breakdownFromPrice, formatILS } from '../utils/pricing';
 type Size = 'sm' | 'md' | 'lg';
 
 interface PriceTagProps {
-  /** Price as a number or "₪99" string — the final price shown to the customer. */
+  /** Price as a number or "₪99" string - the final price shown to the customer. */
   price: string | number | null | undefined;
   size?: Size;
   align?: 'center' | 'right' | 'left';

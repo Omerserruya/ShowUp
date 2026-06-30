@@ -1,4 +1,4 @@
-"""Phase 2 — Domain cleanup tests.
+"""Phase 2 - Domain cleanup tests.
 
 Verifies the shared GuestStatus SSOT normalization and that stats no longer
 drop 'maybe' guests and correctly fold the legacy 'attending' value into

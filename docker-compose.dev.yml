@@ -123,7 +123,7 @@ services:
       - OTP_TTL_SEC=${OTP_TTL_SEC}
       - OTP_QUEUE_NAME=${OTP_QUEUE_NAME}
       - CORE_SERVICE_URL=${BACKEND_PROTOCOL}://${CORE_SERVICE_HOST}:${CORE_SERVICE_PORT}
-      # iCount PayPage payments — set ICOUNT_API_TOKEN in .env to enable.
+      # iCount PayPage payments - set ICOUNT_API_TOKEN in .env to enable.
       - ICOUNT_BASE_URL=${ICOUNT_BASE_URL:-}
       - ICOUNT_API_TOKEN=${ICOUNT_API_TOKEN:-}
       - ICOUNT_PAYPAGE_ID=${ICOUNT_PAYPAGE_ID:-}

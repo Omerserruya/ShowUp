@@ -1,6 +1,6 @@
 # OTP Worker
 
-Worker service that consumes OTP messages from RabbitMQ and delivers them over **WhatsApp** using the approved Hebrew authentication template named **`otp`**. WhatsApp is the single, canonical channel for verification codes — there is no other delivery channel or fallback.
+Worker service that consumes OTP messages from RabbitMQ and delivers them over **WhatsApp** using the approved Hebrew authentication template named **`otp`**. WhatsApp is the single, canonical channel for verification codes - there is no other delivery channel or fallback.
 
 ## Overview
 

@@ -44,7 +44,7 @@ def _require_published_event(db: Session, slug: str):
 
 
 def _public_event_view(event) -> dict:
-    """Whitelist of fields safe to expose on the public page — no PII/guest data."""
+    """Whitelist of fields safe to expose on the public page - no PII/guest data."""
     return {
         "slug": event.public_slug,
         "name": event.name,
@@ -81,7 +81,7 @@ def submit_public_rsvp(slug: str, payload: PublicRsvpIn, db: Session = Depends(g
     )
 
     if existing:
-        # Returning guest updating their own response — no new capacity consumed.
+        # Returning guest updating their own response - no new capacity consumed.
         existing.name = payload.name or existing.name
         existing.status = status
         if status in GuestStatus.confirmed_values():

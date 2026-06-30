@@ -1,4 +1,4 @@
-"""Phase 6 — Campaign engine refactor tests.
+"""Phase 6 - Campaign engine refactor tests.
 
 Audience is first-class and decoupled from the template; optional follow-up
 fields persist; intended recipient count reflects the audience.

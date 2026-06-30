@@ -1,4 +1,4 @@
-"""Phase 3 — Tenancy & RBAC tests.
+"""Phase 3 - Tenancy & RBAC tests.
 
 Covers the permission matrix (unit) and membership-scoped access enforcement
 through the real HTTP + middleware + authz stack.

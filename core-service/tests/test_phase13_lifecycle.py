@@ -1,4 +1,4 @@
-"""Phase 13 — Event lifecycle + template archival tests."""
+"""Phase 13 - Event lifecycle + template archival tests."""
 from __future__ import annotations
 
 import uuid

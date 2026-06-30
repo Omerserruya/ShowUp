@@ -13,7 +13,7 @@ const BRAND = '#888cee';
 const SOFT = '#aab0f4';
 const DEEP = '#6f74e0';
 
-// Shared, premium field style for the auth forms — generous, modern, accessible.
+// Shared, premium field style for the auth forms - generous, modern, accessible.
 export const authFieldSx = (theme: Theme) => ({
   '& .MuiOutlinedInput-root': {
     borderRadius: 2.5,
@@ -29,7 +29,7 @@ export const authFieldSx = (theme: Theme) => ({
   '& .MuiInputBase-input': { color: theme.palette.text.primary },
 });
 
-// Shared primary button style — large, confident, on-brand pastel.
+// Shared primary button style - large, confident, on-brand pastel.
 export const authButtonSx = {
   py: 1.5,
   borderRadius: 2.5,
@@ -215,7 +215,7 @@ export default function AuthLayout({ children, panel }: { children: React.ReactN
         gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
       }}
     >
-      {/* RIGHT — content (first child sits on the right in RTL; the only column on mobile) */}
+      {/* RIGHT - content (first child sits on the right in RTL; the only column on mobile) */}
       <Box
         sx={{
           display: 'flex',
@@ -233,7 +233,7 @@ export default function AuthLayout({ children, panel }: { children: React.ReactN
         <Box sx={{ width: '100%', maxWidth: 440 }}>{children}</Box>
       </Box>
 
-      {/* LEFT — branded panel */}
+      {/* LEFT - branded panel */}
       {panel ?? <MarketingPanel />}
     </Box>
   );

@@ -799,7 +799,7 @@ function Messages() {
     ? Math.round(((stats.approved + stats.declined) / stats.total) * 100)
     : 0;
   
-  // For sent campaigns: read rate = (read_count / recipient_count) — webhook updates read per message
+  // For sent campaigns: read rate = (read_count / recipient_count) - webhook updates read per message
   const getCampaignReadRate = (campaign: Campaign): number => {
     if (campaign.status !== 'sent') return 0;
     const sentCount = campaign.sentCount ?? campaign.recipientCount ?? 0;

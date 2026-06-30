@@ -2,7 +2,7 @@
 
 Plans are static product config (~4 documents): tier id, marketing copy, price,
 guest `count_limit`, and default campaign schedule. They live in `data/plans.json`
-and are read here. (Previously stored in MongoDB; that dependency was removed —
+and are read here. (Previously stored in MongoDB; that dependency was removed -
 the file IS the source of truth, edited via deploy.)
 
 Feature/tier *entitlements* are a separate SSOT in `shared/domain/entitlements.py`.

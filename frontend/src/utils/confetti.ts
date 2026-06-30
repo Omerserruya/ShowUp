@@ -111,7 +111,7 @@ export function fireConfettiOnce(key: string): boolean {
     if (localStorage.getItem(storageKey)) return false;
     localStorage.setItem(storageKey, '1');
   } catch {
-    // localStorage unavailable — just fire it.
+    // localStorage unavailable - just fire it.
   }
   fireConfetti();
   return true;

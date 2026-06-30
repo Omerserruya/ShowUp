@@ -12,7 +12,7 @@ import {
  * The wizard no longer hardcodes which templates to show. It asks the backend for
  * the available templates (public, plus any private ones scoped to the event) and
  * filters them by metadata via `selectTemplates`. New PUBLIC templates added on the
- * backend therefore appear automatically — no frontend change needed.
+ * backend therefore appear automatically - no frontend change needed.
  *
  * Until the backend template service is live (or if the request fails), this hook
  * gracefully falls back to the built-in local seed so the wizard always works.
@@ -93,7 +93,7 @@ export function useTemplates(opts: UseTemplatesOptions = {}): { pool: MessageTem
         setPool(rows.map(mapBackendTemplate));
       })
       .catch(() => {
-        // Backend not available yet — keep the local seed. Recovery is silent.
+        // Backend not available yet - keep the local seed. Recovery is silent.
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

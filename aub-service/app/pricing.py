@@ -4,12 +4,12 @@ VAT / pricing helpers.
 Plan prices in plans.json are VAT-INCLUSIVE (the amount actually charged). For
 display we break that gross figure into the net (before-VAT) price and the VAT
 component, using a configurable tax rate. Displaying before-VAT does NOT change
-what is charged — only how it's presented.
+what is charged - only how it's presented.
 
     net = gross / (1 + TAX_RATE)
     vat = gross - net
 
-TAX_RATE is read from the environment (default 0.18 — Israeli VAT) and is never
+TAX_RATE is read from the environment (default 0.18 - Israeli VAT) and is never
 hardcoded at call sites.
 """
 from __future__ import annotations

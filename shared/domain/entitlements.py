@@ -12,7 +12,7 @@ Mongo `plans` collection still owns marketing copy, price, and numeric limits
 (e.g. guest `count_limit`); this module owns the feature gate.
 
 Plans with an unknown / None id (legacy pre-tiering events) are treated as fully
-entitled so the migration never breaks existing events — mirrors the legacy
+entitled so the migration never breaks existing events - mirrors the legacy
 owner-bridge in `authz.py`.
 """
 from __future__ import annotations
@@ -95,10 +95,10 @@ def has_feature(plan_id: str | None, feature: Feature) -> bool:
 
 
 def feature_keys_for(plan_id: str | None) -> list[str]:
-    """Sorted feature string keys for a plan — for API exposure to the frontend."""
+    """Sorted feature string keys for a plan - for API exposure to the frontend."""
     return sorted(f.value for f in features_for(plan_id))
 
 
 def entitlement_matrix() -> dict[str, list[str]]:
-    """Full {plan_id: [feature_key, ...]} matrix — for the public entitlements API."""
+    """Full {plan_id: [feature_key, ...]} matrix - for the public entitlements API."""
     return {plan_id: sorted(f.value for f in feats) for plan_id, feats in _MATRIX.items()}

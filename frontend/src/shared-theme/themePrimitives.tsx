@@ -31,7 +31,7 @@ const defaultTheme = createTheme();
 
 const customShadows: Shadows = [...defaultTheme.shadows];
 
-// Brand = celebratory deep violet (premium, event-y — not corporate blue).
+// Brand = celebratory deep violet (premium, event-y - not corporate blue).
 export const brand = {
   50: 'hsl(262, 100%, 97%)',
   100: 'hsl(262, 95%, 93%)',

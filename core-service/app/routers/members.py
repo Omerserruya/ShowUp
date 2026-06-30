@@ -2,7 +2,7 @@
 
 Exposes the existing Account/Membership tenancy so an owner can see and manage
 their event team. Scoped by event_id (the event's account) so any account member
-— not just the personal-account owner — can be managed. Invite-by-phone resolves
+- not just the personal-account owner - can be managed. Invite-by-phone resolves
 the user via aub-service (users live there, not here).
 """
 from __future__ import annotations

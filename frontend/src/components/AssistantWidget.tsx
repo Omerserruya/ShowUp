@@ -21,12 +21,12 @@ import { useEvent } from '../contexts/EventContext';
 
 interface Msg { from: 'bot' | 'user'; text: string }
 
-// Action-shortcut starters — each one actually does something useful today.
+// Action-shortcut starters - each one actually does something useful today.
 const STARTERS: { label: string; path?: string; reply: string }[] = [
   { label: 'מי עוד לא הגיב?', path: '/guests?filter=pending', reply: 'מעביר אותך לרשימת האורחים שעדיין לא הגיבו 👇' },
-  { label: 'כמה אישרו הגעה?', path: '/overview', reply: 'הנה הסיכום בלוח הבקרה — מספר המאשרים מופיע למעלה ✅' },
+  { label: 'כמה אישרו הגעה?', path: '/overview', reply: 'הנה הסיכום בלוח הבקרה - מספר המאשרים מופיע למעלה ✅' },
   { label: 'שלח תזכורת לאורחים', path: '/messages', reply: 'פותח את ניהול הקמפיינים כדי לשלוח סבב תזכורת ⏰' },
-  { label: 'הוסף אורחים חדשים', path: '/guests', reply: 'פותח את רשימת האורחים — אפשר להוסיף ידנית או לייבא קובץ 📋' },
+  { label: 'הוסף אורחים חדשים', path: '/guests', reply: 'פותח את רשימת האורחים - אפשר להוסיף ידנית או לייבא קובץ 📋' },
 ];
 
 export default function AssistantWidget() {
@@ -77,7 +77,7 @@ export default function AssistantWidget() {
     } catch {
       setMessages((m) => [
         ...m,
-        { from: 'bot', text: 'העוזר החכם בדרך אליך בקרוב 💜 בינתיים אפשר להשתמש בקיצורים למעלה — הם יקפיצו אותך בדיוק למקום הנכון.' },
+        { from: 'bot', text: 'העוזר החכם בדרך אליך בקרוב 💜 בינתיים אפשר להשתמש בקיצורים למעלה - הם יקפיצו אותך בדיוק למקום הנכון.' },
       ]);
     } finally {
       setSending(false);

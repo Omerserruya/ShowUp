@@ -1,6 +1,6 @@
 """Template engine SSOT (Phase 8): allowed variables + lifecycle state machine.
 
-Templates may ONLY use approved variables — never arbitrary placeholders. The
+Templates may ONLY use approved variables - never arbitrary placeholders. The
 base allow-list is fixed; per-event custom fields flagged applies_to_template
 extend it. The lifecycle is an explicit state machine; only APPROVED/ACTIVE
 templates may be used to send.

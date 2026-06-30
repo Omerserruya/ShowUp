@@ -153,7 +153,7 @@ def ensure_events_v2_columns(engine: Engine) -> None:
                 logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
                 continue
 
-    # Add the accounts FK separately — there's no ADD CONSTRAINT IF NOT EXISTS,
+    # Add the accounts FK separately - there's no ADD CONSTRAINT IF NOT EXISTS,
     # so guard on the constraint not already existing.
     fk_stmt = (
         "ALTER TABLE events ADD CONSTRAINT fk_events_account_id "
@@ -229,7 +229,7 @@ def ensure_campaign_custom_message(engine: Engine) -> None:
 def ensure_campaign_audience(engine: Engine) -> None:
     """Ensure the Phase 6 V2 audience / follow-up columns exist on campaigns.
     The ORM model declares them, so without these every campaigns query fails with
-    UndefinedColumn (HTTP 500) — which is why order provisioning couldn't create
+    UndefinedColumn (HTTP 500) - which is why order provisioning couldn't create
     the default reminder campaigns."""
     statements = [
         "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS audience VARCHAR(20) NOT NULL DEFAULT 'everyone'",
@@ -270,7 +270,7 @@ def ensure_wa_template_metadata(engine: Engine) -> None:
 
 # Built-in PUBLIC templates. Seeded once so the wizard can fetch+filter templates
 # by metadata instead of hardcoding them. Adding a public template later is just a
-# new row here (or via API) — no frontend change required. Mirrors the frontend
+# new row here (or via API) - no frontend change required. Mirrors the frontend
 # seed in frontend/src/config/templates.ts.
 _PUBLIC_TEMPLATE_SEED = [
     {
@@ -333,7 +333,7 @@ def seed_public_templates(engine: Engine) -> None:
                 text("SELECT COUNT(*) FROM wa_templates WHERE event_id IS NULL AND visibility = 'public'")
             ).scalar()
             if existing and int(existing) > 0:
-                logger.info("Public templates already present (%s) — skipping seed", existing)
+                logger.info("Public templates already present (%s) - skipping seed", existing)
                 return
             for t in _PUBLIC_TEMPLATE_SEED:
                 components = {"title": t["title"], "is_default": t["is_default"]}

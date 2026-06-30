@@ -305,10 +305,10 @@ function Events() {
                       <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>
                         {event.event_date
                           ? new Date(event.event_date).toLocaleDateString('he-IL')
-                          : '—'}
+                          : '-'}
                       </TableCell>
                       <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
-                        {event.location || '—'}
+                        {event.location || '-'}
                       </TableCell>
                       <TableCell>
                         <Chip

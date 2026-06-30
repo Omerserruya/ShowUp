@@ -89,7 +89,7 @@ function toE164(countryCode: string, local: string): string {
 }
 
 function formatPhoneDisplay(phone: string): string {
-  if (!phone?.trim()) return '—';
+  if (!phone?.trim()) return '-';
   const p = parseE164(phone);
   return p.local ? `${p.code} ${p.local}` : phone;
 }
@@ -287,7 +287,7 @@ export default function Profile() {
         month: 'long',
         day: 'numeric',
       })
-    : '—';
+    : '-';
   const roleLabel = user.role ? ROLE_LABELS[user.role] || user.role : 'משתמש';
 
   return (
@@ -455,8 +455,8 @@ export default function Profile() {
                 </>
               ) : (
                 <>
-                  <DetailRow icon={<PersonIcon />} label="שם משתמש" value={user.username || '—'} />
-                  <DetailRow icon={<EmailIcon />} label="אימייל" value={user.email || '—'} />
+                  <DetailRow icon={<PersonIcon />} label="שם משתמש" value={user.username || '-'} />
+                  <DetailRow icon={<EmailIcon />} label="אימייל" value={user.email || '-'} />
                   <DetailRow icon={<PhoneIcon />} label="טלפון" value={formatPhoneDisplay(user.phone || '')} />
                 </>
               )}

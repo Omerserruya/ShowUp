@@ -4,7 +4,7 @@ This project had no migration history; the schema was previously created at
 runtime via Base.metadata.create_all(). This baseline freezes the V1 schema as
 explicit DDL so that all later V2 changes are proper, reviewable migrations.
 
-It must NOT be regenerated from live model metadata — the models evolve in later
+It must NOT be regenerated from live model metadata - the models evolve in later
 revisions, and a metadata-driven baseline would collide with those migrations.
 
 Revision ID: 0001_baseline

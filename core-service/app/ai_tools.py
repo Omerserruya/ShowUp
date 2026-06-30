@@ -1,6 +1,6 @@
 """AI tool layer (Phase 11): a fixed, RBAC-enforced, auditable tool registry.
 
-This is infrastructure only — no LLM. Each tool maps to the same typed service
+This is infrastructure only - no LLM. Each tool maps to the same typed service
 layer humans use (never raw SQL / dynamic queries). Every dispatch:
   1. resolves the caller's role on the target event (tenant isolation),
   2. checks the role grants the tool's required Action (default-deny),

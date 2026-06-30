@@ -1,4 +1,4 @@
-"""Phase 16 — plan entitlements (tier RBAC) + public web invitation / RSVP."""
+"""Phase 16 - plan entitlements (tier RBAC) + public web invitation / RSVP."""
 from __future__ import annotations
 
 import uuid

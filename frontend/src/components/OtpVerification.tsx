@@ -28,7 +28,7 @@ const SLOTS = [0, 1, 2, 3, 4, 5];
 
 /**
  * OTP entry, on the same premium split-screen as Login/Register. No card/modal
- * chrome — the marketing panel stays on the left, and the right side holds clear
+ * chrome - the marketing panel stays on the left, and the right side holds clear
  * hierarchy with six large digit inputs. Purely presentational: every handler
  * (autofill/paste/auto-submit/resend) is owned by the parent page and passed in.
  */

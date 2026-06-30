@@ -7,7 +7,7 @@
 // Templates are no longer hand-picked by the wizard. Each template carries
 // metadata; the wizard fetches templates and filters them by metadata (event
 // type, flow stage, visibility, language). This lets us add new PUBLIC templates
-// — available to everyone — without touching frontend code, and lets PRIVATE
+// - available to everyone - without touching frontend code, and lets PRIVATE
 // templates (created for one customer's event) flow through the same pipeline.
 
 export type TemplateFlowStage = 'invitation' | 'reminder' | 'final_reminder' | 'thank_you';
@@ -18,7 +18,7 @@ export type TemplateApprovalStatus = 'draft' | 'validated' | 'meta_pending' | 'a
 
 export interface MessageTemplate {
   id: string;
-  campaignLabel: string; // legacy lookup key — still used; maps 1:1 to a flow stage
+  campaignLabel: string; // legacy lookup key - still used; maps 1:1 to a flow stage
   name: string; // שם התבנית לתצוגה (לא קשור לתוכן)
   title: string; // כותרת ההודעה (מוצגת בתוך הבועה)
   body: string;
@@ -116,7 +116,7 @@ export const getVariableGroups = (eventType: string): TemplateVarGroup[] => {
   return groups;
 };
 
-// Ready-made content blocks — reusable sections users drop in with one click,
+// Ready-made content blocks - reusable sections users drop in with one click,
 // so they don't rewrite the same lines every time. The text uses {{...}} which
 // the live preview + send resolve like any other variable.
 export interface ContentBlock {
@@ -182,7 +182,7 @@ export const STAGE_BY_LABEL: Record<string, TemplateFlowStage> = {
 
 /**
  * שורת "סוד" לאירועי ברית/בריתה כשההורים בוחרים לשמור את שם הרך הנולד בסוד.
- * נשזרת בהזמנה (Save the date) בלבד, משפט אחד קליל ומכובד — בלי לחשוף שם.
+ * נשזרת בהזמנה (Save the date) בלבד, משפט אחד קליל ומכובד - בלי לחשוף שם.
  */
 export const BRIT_SECRET_INVITE_LINE = 'השם יישאר בסוד עד הרגע הגדול 🤫';
 
@@ -310,7 +310,7 @@ export interface TemplateQuery {
  * The metadata-driven selector. The wizard uses this (over a fetched template
  * set) instead of hardcoding which templates to show: it filters by event type,
  * flow stage, language and visibility, and keeps only usable (approved, active,
- * unexpired) templates — plus, when an eventId is given, that event's private
+ * unexpired) templates - plus, when an eventId is given, that event's private
  * templates.
  */
 export const selectTemplates = (
@@ -348,7 +348,7 @@ export const getTemplatesByCampaign = (campaignLabel: string, eventType?: string
 };
 
 /**
- * קבלת התבנית הדיפולטית לקמפיין — the marked default, else the first match.
+ * קבלת התבנית הדיפולטית לקמפיין - the marked default, else the first match.
  */
 export const getDefaultTemplateForCampaign = (campaignLabel: string, eventType?: string): MessageTemplate | undefined => {
   const matches = getTemplatesByCampaign(campaignLabel, eventType);

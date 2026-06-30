@@ -1,4 +1,4 @@
-"""Phase 10 — Usage metering + enforcement tests."""
+"""Phase 10 - Usage metering + enforcement tests."""
 from __future__ import annotations
 
 import uuid

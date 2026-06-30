@@ -131,7 +131,7 @@ def public_templates(
     language: str = "he",
     db: Session = Depends(get_db),
 ):
-    """Public, pre-approved templates available to everyone — the source of truth
+    """Public, pre-approved templates available to everyone - the source of truth
     the wizard fetches and filters by metadata (event type, flow stage, language).
     Unauthenticated by design: the wizard needs these before the user signs in.
     Adding a public template (a new seed row or via admin) surfaces here with no
@@ -220,7 +220,7 @@ def usable_templates(event_id: uuid.UUID, db: Session = Depends(get_db), user_id
 @router.post("/events/{event_id}/templates/{template_id}/clone", response_model=TemplateOut, status_code=201)
 def clone_template(event_id: uuid.UUID, template_id: uuid.UUID, db: Session = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
     """Clone a template (global, or from an event the user can read) into this event
-    as a fresh DRAFT — lets owners start from an approved base ("event templates")."""
+    as a fresh DRAFT - lets owners start from an approved base ("event templates")."""
     require_event_permission(db, event_crud.get_event(db, event_id), user_id, Action.EVENT_WRITE)
     src = _template_or_404(db, template_id)
     if src.event_id and src.event_id != event_id:

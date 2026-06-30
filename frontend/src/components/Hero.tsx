@@ -73,7 +73,7 @@ export default function Hero() {
 
   // Demo CTA: build a per-event-type invite template and open it in WhatsApp, so the
   // visitor literally receives the message a guest would get. The template links to a
-  // public demo RSVP page (the full guest experience — no signup needed).
+  // public demo RSVP page (the full guest experience - no signup needed).
   const handleSeeDemo = () => {
     const name = fullName.trim();
     const type = eventType === 'other' && customEventType ? 'other' : (eventType || 'wedding');
@@ -137,7 +137,7 @@ export default function Hero() {
         fontFamily: '"Noto Sans Hebrew", Arial, sans-serif',
       })}
     >
-      {/* Calm, premium background — a single soft brand wash, no decorative noise. */}
+      {/* Calm, premium background - a single soft brand wash, no decorative noise. */}
       <Box
         sx={{
           position: 'absolute',
@@ -415,7 +415,7 @@ export default function Hero() {
                 value={phone}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                   // Keep exactly what the user typed (e.g. 05XXXXXXXX). We normalize
-                  // to E.164 only when building the API payload — never rewrite the
+                  // to E.164 only when building the API payload - never rewrite the
                   // visible value, which used to strip the leading 0.
                   setPhone(e.target.value);
                 }}
@@ -445,7 +445,7 @@ export default function Hero() {
               />
             </Box>
 
-            {/* Primary action — start the wizard with the captured details. */}
+            {/* Primary action - start the wizard with the captured details. */}
             <Button
               fullWidth
               variant="contained"
@@ -470,7 +470,7 @@ export default function Hero() {
               יוצאים לדרך
             </Button>
 
-            {/* Secondary action — feel the guest experience over WhatsApp. */}
+            {/* Secondary action - feel the guest experience over WhatsApp. */}
             <Button
               fullWidth
               variant="outlined"

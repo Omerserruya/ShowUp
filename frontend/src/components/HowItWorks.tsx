@@ -10,13 +10,13 @@ import NotificationsActiveRoundedIcon from '@mui/icons-material/NotificationsAct
 import CelebrationRoundedIcon from '@mui/icons-material/CelebrationRounded';
 import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded';
 
-// Soft pastel brand — understated periwinkle, not a loud "AI" gradient.
+// Soft pastel brand - understated periwinkle, not a loud "AI" gradient.
 const BRAND = '#888cee';
 const PINK = '#aab0f4';
 const WA = '#25D366';
 
 /* ------------------------------------------------------------------ *
- * Scroll reveal — a small IntersectionObserver hook so each scene
+ * Scroll reveal - a small IntersectionObserver hook so each scene
  * fades + rises into view as the story scrolls. No external libs.
  * ------------------------------------------------------------------ */
 function useReveal<T extends HTMLElement>() {
@@ -45,7 +45,7 @@ function useReveal<T extends HTMLElement>() {
 }
 
 /* ------------------------------------------------------------------ *
- * Product infographics — clean, hand-built (not stock/AI art).
+ * Product infographics - clean, hand-built (not stock/AI art).
  * ------------------------------------------------------------------ */
 
 // 1. A WhatsApp invitation + one-tap reply.
@@ -109,7 +109,7 @@ function ChatVisual() {
   );
 }
 
-// 2. A live RSVP dashboard — donut + stat tiles.
+// 2. A live RSVP dashboard - donut + stat tiles.
 function DashboardVisual() {
   const pct = 84;
   const r = 42;
@@ -157,7 +157,7 @@ function DashboardVisual() {
   );
 }
 
-// 3. The adaptive communication timeline — a vertical rail.
+// 3. The adaptive communication timeline - a vertical rail.
 function TimelineVisual() {
   const items = [
     { icon: MailOutlineRoundedIcon, label: 'הזמנה', when: '30 יום לפני' },
@@ -228,7 +228,7 @@ function TimelineVisual() {
   );
 }
 
-// 4. You're in control — you command the assistant, it performs.
+// 4. You're in control - you command the assistant, it performs.
 function ControlVisual() {
   const commands = [
     { cmd: 'תשלח תזכורת למי שלא ענה', done: '48 תזכורות יצאו' },
@@ -349,7 +349,7 @@ function SceneRow({ scene, flip }: { scene: Scene; flip: boolean }) {
         transition: 'opacity 0.7s ease, transform 0.7s ease',
       }}
     >
-      {/* Visual panel — large, rounded, tinted, gently offset for an editorial feel. */}
+      {/* Visual panel - large, rounded, tinted, gently offset for an editorial feel. */}
       <Box sx={{ order: { xs: 2, md: flip ? 2 : 1 }, position: 'relative' }}>
         <Box
           sx={{

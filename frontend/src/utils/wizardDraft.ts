@@ -34,7 +34,7 @@ export interface WizardDraft {
 
 const KEY = 'showup_wizard_draft_v1';
 const VERSION = 1;
-// Drafts older than two weeks are stale — an event that long abandoned is unlikely
+// Drafts older than two weeks are stale - an event that long abandoned is unlikely
 // to be resumed and the data (e.g. a past date) is probably no longer relevant.
 const MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -43,7 +43,7 @@ export function saveWizardDraft(draft: Omit<WizardDraft, 'version' | 'savedAt'>)
     const payload: WizardDraft = { ...draft, version: VERSION, savedAt: new Date().toISOString() };
     localStorage.setItem(KEY, JSON.stringify(payload));
   } catch {
-    /* storage unavailable / quota — recovery is best-effort */
+    /* storage unavailable / quota - recovery is best-effort */
   }
 }
 

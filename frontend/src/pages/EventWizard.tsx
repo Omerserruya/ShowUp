@@ -119,7 +119,7 @@ const getTemplateVariables = (eventDetails: EventDetails, inviters: Inviter[], s
     'other': 'אירוע',
   };
 
-  // Every variable resolves to real, human-friendly text — never a raw {{placeholder}}.
+  // Every variable resolves to real, human-friendly text - never a raw {{placeholder}}.
   // Optional fields (date/time/location) fall back to gentle Hebrew copy so previews
   // and summaries stay clean even before everything is filled in.
   return {
@@ -326,7 +326,7 @@ const EVENT_TYPES: Array<{ id: string; emoji: string; title: string; subtitle: s
   { id: 'birthday', emoji: '🎂', title: 'יום הולדת', subtitle: 'דרך פשוטה לנהל את רשימת המוזמנים' },
 ];
 
-// A warm, celebratory opener per event type — used across the wizard so a wedding
+// A warm, celebratory opener per event type - used across the wizard so a wedding
 // feels different from a brit, and a brit from a business event.
 const EVENT_CONGRATS: Record<string, string> = {
   wedding: 'מזל טוב! 💍',
@@ -338,7 +338,7 @@ const EVENT_CONGRATS: Record<string, string> = {
   birthday: 'יום הולדת שמח! 🎂',
 };
 
-// The invitation campaign — the first message guests receive. We weave the
+// The invitation campaign - the first message guests receive. We weave the
 // brit/brita "secret name" flavor line into this one only.
 const INVITE_CAMPAIGN_LABEL = 'Save the date';
 
@@ -658,7 +658,7 @@ export default function EventWizard() {
     setSelectedPackageId(d.selectedPackageId || '');
     setEventDetails({
       ...(d.eventDetails as any),
-      // Only restore a valid date — never let an invalid Dayjs into state.
+      // Only restore a valid date - never let an invalid Dayjs into state.
       date: (() => {
         const restored = d.eventDetails?.date ? dayjs(d.eventDetails.date as string) : null;
         return restored && restored.isValid() ? restored : null;
@@ -685,7 +685,7 @@ export default function EventWizard() {
 
   // Arriving from the OTP "change phone number" action: silently restore the
   // saved draft (no resume banner) and drop the user back on the payment step
-  // with their details editable — it should feel like one step back.
+  // with their details editable - it should feel like one step back.
   useEffect(() => {
     if ((location.state as any)?.resumeDraft && pendingDraft) {
       restoreDraft();
@@ -709,7 +709,7 @@ export default function EventWizard() {
   // Adaptive Timeline Engine: resolve the recommended communication plan from the
   // event type, plan tier and (crucially) how much time is left before the event.
   // We only auto-apply while the user hasn't taken over the schedule via "Customize"
-  // — once they edit it, the schedule is theirs and we never clobber it.
+  // - once they edit it, the schedule is theirs and we never clobber it.
   useEffect(() => {
     if (scheduleCustomize) return;
     if (!selectedPackageId || !eventDetails.type) {
@@ -983,7 +983,7 @@ export default function EventWizard() {
         }),
       });
       if (regRes.status === 409) {
-        // Existing account — send a login OTP instead.
+        // Existing account - send a login OTP instead.
         const loginRes = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1032,7 +1032,7 @@ export default function EventWizard() {
     try {
       const eventId = await createEvent();
       if (eventId) {
-        clearWizardDraft(); // event created — the draft is no longer needed
+        clearWizardDraft(); // event created - the draft is no longer needed
         localStorage.removeItem('pending_order_id');
         navigate('/overview');
       }
@@ -1055,11 +1055,11 @@ export default function EventWizard() {
       case 3:
         return '';
       case 4:
-        return 'רגע לפני שמתחילים — הנה הכול במקום אחד. תמיד אפשר לחזור ולערוך.';
+        return 'רגע לפני שמתחילים - הנה הכול במקום אחד. תמיד אפשר לחזור ולערוך.';
       case 5:
         return user
-          ? 'עוד פרט אחרון ואתם מסודרים — נשמור את הכול בבטחה.'
-          : 'נשאיר לכם את האירוע מוכן ומחכה — רק נסיים את הפרטים והכול יוצא לדרך.';
+          ? 'עוד פרט אחרון ואתם מסודרים - נשמור את הכול בבטחה.'
+          : 'נשאיר לכם את האירוע מוכן ומחכה - רק נסיים את הפרטים והכול יוצא לדרך.';
       default:
         return '';
     }
@@ -1094,7 +1094,7 @@ export default function EventWizard() {
     );
   };
 
-  // A warm way to refer to the event in copy — the actual name once known
+  // A warm way to refer to the event in copy - the actual name once known
   // ("החתונה של דנה ועמית"), otherwise the type ("החתונה"), otherwise a soft fallback.
   const warmEventRef = (): string => {
     if (eventDetails.name?.trim()) return eventDetails.name.trim();
@@ -1370,7 +1370,7 @@ export default function EventWizard() {
                 (v) => updateSubjects({ honoree: v }),
                 'איך קוראים לרך הנולד?'
               )}
-              {/* Keeping the name a secret is a cherished tradition — never force it. */}
+              {/* Keeping the name a secret is a cherished tradition - never force it. */}
               <Paper
                 variant="outlined"
                 role="button"
@@ -1396,8 +1396,8 @@ export default function EventWizard() {
                   </Typography>
                   <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
                     {subjects.secretName
-                      ? 'מצוין — נשמור את ההפתעה לרגע הגדול וניצור שם אירוע בלי לחשוף את השם.'
-                      : 'אפשר להמשיך גם בלי לגלות — פשוט סמנו כאן ונדאג לשאר.'}
+                      ? 'מצוין - נשמור את ההפתעה לרגע הגדול וניצור שם אירוע בלי לחשוף את השם.'
+                      : 'אפשר להמשיך גם בלי לגלות - פשוט סמנו כאן ונדאג לשאר.'}
                   </Typography>
                 </Box>
                 <Switch
@@ -1501,7 +1501,7 @@ export default function EventWizard() {
               sx={{ borderRadius: 2, '& .MuiAlert-message': { direction: 'rtl', textAlign: 'right' } }}
             >
               <Typography variant="body2" sx={{ fontWeight: 700 }}>{EVENT_CONGRATS[t] || 'בחירה מצוינת! ✨'}</Typography>
-              כבר הכנו עבורכם את כל מהלך התקשורת ל{EVENT_TYPE_LABELS[t] || typeMeta?.title} — מההזמנה ועד התודה שאחרי. נשארו רק כמה פרטים שרק אתם יודעים.
+              כבר הכנו עבורכם את כל מהלך התקשורת ל{EVENT_TYPE_LABELS[t] || typeMeta?.title} - מההזמנה ועד התודה שאחרי. נשארו רק כמה פרטים שרק אתם יודעים.
             </Alert>
 
             {renderContextualFields()}
@@ -1530,7 +1530,7 @@ export default function EventWizard() {
                 sx={{ '& .MuiOutlinedInput-root': { direction: 'rtl' } }}
               />
               <Typography variant="caption" sx={{ color: 'text.secondary', mt: 0.5, display: 'block', textAlign: 'right' }}>
-                יצרנו שם אוטומטית מהפרטים שמילאתם — אפשר לערוך בכל רגע.
+                יצרנו שם אוטומטית מהפרטים שמילאתם - אפשר לערוך בכל רגע.
               </Typography>
             </Box>
 
@@ -1700,11 +1700,11 @@ export default function EventWizard() {
         <Box>
           {renderPreparedHeader(
             'מתי ניצור קשר עם האורחים?',
-            `סידרנו תזמון חכם ל${warmEventRef()} — מההזמנה הראשונה ועד התודה שאחרי. אפשר להשאיר כך, או להתאים בקליק.`
+            `סידרנו תזמון חכם ל${warmEventRef()} - מההזמנה הראשונה ועד התודה שאחרי. אפשר להשאיר כך, או להתאים בקליק.`
           )}
           {wasCompressed && (
             <Alert severity="info" icon={<AutoAwesomeIcon />} sx={{ mb: 2, borderRadius: 2, textAlign: 'right', direction: 'rtl' }}>
-              המועד קרוב, אז התאמנו את לוח הזמנים כך שכל הודעה עדיין תצא בזמן — בלי הודעות בעבר ובסדר הנכון.
+              המועד קרוב, אז התאמנו את לוח הזמנים כך שכל הודעה עדיין תצא בזמן - בלי הודעות בעבר ובסדר הנכון.
             </Alert>
           )}
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -1744,7 +1744,7 @@ export default function EventWizard() {
       <Box>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, direction: 'rtl', flexWrap: 'wrap', gap: 1 }}>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            התאמה אישית — הפעילו, כבו או שנו תזמון לכל הודעה.
+            התאמה אישית - הפעילו, כבו או שנו תזמון לכל הודעה.
           </Typography>
           <Button
             size="small"
@@ -2000,7 +2000,7 @@ export default function EventWizard() {
   };
 
   // True when this brit/brita keeps the baby's name a secret and the campaign is
-  // the guest invitation — the one place we add the playful "secret" flavor line.
+  // the guest invitation - the one place we add the playful "secret" flavor line.
   const isSecretInvite = (label: string): boolean =>
     label === INVITE_CAMPAIGN_LABEL &&
     subjects.secretName &&
@@ -2024,7 +2024,7 @@ export default function EventWizard() {
     return withSecretFlavor(base, label);
   };
 
-  // The message actually shown/used for a campaign — a custom override if present,
+  // The message actually shown/used for a campaign - a custom override if present,
   // otherwise the base template.
   const getChosenMessage = (label: string): MessageTemplate | null => {
     const base = getBaseTemplate(label);
@@ -2066,7 +2066,7 @@ export default function EventWizard() {
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
           {renderPreparedHeader(
             'איך תרצו להזמין את האורחים?',
-            'כתבנו עבורכם הודעות חמות ואישיות שמביאות יותר אישורי הגעה. אפשר לאשר — או לכתוב משלכם.'
+            'כתבנו עבורכם הודעות חמות ואישיות שמביאות יותר אישורי הגעה. אפשר לאשר - או לכתוב משלכם.'
           )}
           {activeCampaigns.map((campaign) => {
             const chosen = getChosenMessage(campaign.label);
@@ -2288,7 +2288,7 @@ export default function EventWizard() {
                     const tooSoon = sendAt ? sendAt.getTime() - Date.now() < APPROVAL_LEAD_MS : false;
                     return tooSoon ? (
                       <Alert severity="warning" sx={{ mt: 1.5, textAlign: 'right', direction: 'rtl' }}>
-                        ההודעה המותאמת שלכם דורשת אישור WhatsApp, שעשוי לקחת עד 24 שעות. מועד השליחה קרוב מדי — נשלח אותה ברגע שתאושר, או שאפשר להשתמש באחת ההודעות המוכנות שמאושרות מראש.
+                        ההודעה המותאמת שלכם דורשת אישור WhatsApp, שעשוי לקחת עד 24 שעות. מועד השליחה קרוב מדי - נשלח אותה ברגע שתאושר, או שאפשר להשתמש באחת ההודעות המוכנות שמאושרות מראש.
                       </Alert>
                     ) : (
                       <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: 'text.secondary', textAlign: 'right' }}>
@@ -2346,7 +2346,7 @@ export default function EventWizard() {
             </Box>
             {selectedPlan?.price
               ? <PriceTag price={selectedPlan.price} size="md" align="right" color={selectedPlan?.color || undefined} />
-              : <Typography variant="h4" fontWeight={800}>—</Typography>}
+              : <Typography variant="h4" fontWeight={800}>-</Typography>}
           </Box>
           <Divider sx={{ my: 2 }} />
           
@@ -2357,7 +2357,7 @@ export default function EventWizard() {
           <Box sx={{ display: 'grid', gap: 1, mb: 2 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', flexDirection: 'row' }}>
               <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'right' }}>שם האירוע:</Typography>
-              <Typography variant="body2" fontWeight={500} sx={{ textAlign: 'right' }}>{eventDetails.name || '—'}</Typography>
+              <Typography variant="body2" fontWeight={500} sx={{ textAlign: 'right' }}>{eventDetails.name || '-'}</Typography>
             </Box>
             {eventDetails.type && (
               <Box sx={{ display: 'flex', justifyContent: 'space-between', flexDirection: 'row' }}>
@@ -2369,7 +2369,7 @@ export default function EventWizard() {
               <Box sx={{ display: 'flex', justifyContent: 'space-between', flexDirection: 'row' }}>
                 <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'right' }}>תאריך ושעה:</Typography>
                 <Typography variant="body2" fontWeight={500} sx={{ textAlign: 'right' }}>
-                  {eventDetails.date ? eventDetails.date.format('DD/MM/YYYY') : '—'} {eventDetails.time || '—'}
+                  {eventDetails.date ? eventDetails.date.format('DD/MM/YYYY') : '-'} {eventDetails.time || '-'}
                 </Typography>
               </Box>
             )}
@@ -2403,7 +2403,7 @@ export default function EventWizard() {
           <Box sx={{ display: 'grid', gap: 1, mb: 2 }}>
             {campaigns.filter(c => c.enabled).map((c) => {
               // Use the message actually chosen (custom override or base template, incl.
-              // any secret-name flavor) and resolve its title — never show raw {{...}}.
+              // any secret-name flavor) and resolve its title - never show raw {{...}}.
               const chosen = getChosenMessage(c.label);
               const resolvedTitle = chosen
                 ? processTemplate({ ...chosen, body: chosen.title }, reviewVariables)
@@ -2489,7 +2489,7 @@ export default function EventWizard() {
             : (
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Typography variant="h6" fontWeight={700}>סה"כ לתשלום</Typography>
-                <Typography variant="h4" fontWeight={800}>—</Typography>
+                <Typography variant="h4" fontWeight={800}>-</Typography>
               </Box>
             )}
         </Paper>
@@ -2514,7 +2514,7 @@ export default function EventWizard() {
         : (
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="h6" fontWeight={700}>סה"כ לתשלום</Typography>
-            <Typography variant="h5" fontWeight={800}>—</Typography>
+            <Typography variant="h5" fontWeight={800}>-</Typography>
           </Box>
         )}
     </Paper>
@@ -2544,7 +2544,7 @@ export default function EventWizard() {
           <Box sx={{ textAlign: 'center', mb: 1 }}>
             <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>עוד רגע וזה אמיתי 🎉</Typography>
             <Typography variant="body2" color="text.secondary">
-              {user ? 'אלו הפרטים שלכם — נשאר רק לאשר.' : 'אלו הפרטים שלכם — נאמת אותם בקצרה ונמשיך.'}
+              {user ? 'אלו הפרטים שלכם - נשאר רק לאשר.' : 'אלו הפרטים שלכם - נאמת אותם בקצרה ונמשיך.'}
             </Typography>
           </Box>
 
@@ -2569,7 +2569,7 @@ export default function EventWizard() {
 
           {!user && (
             <Alert severity="info" sx={{ textAlign: 'right' }}>
-              נשלח לכם קוד אימות קצר בוואטסאפ — וכבר נחזיר אתכם לכאן להמשך.
+              נשלח לכם קוד אימות קצר בוואטסאפ - וכבר נחזיר אתכם לכאן להמשך.
             </Alert>
           )}
         </Box>
@@ -2584,7 +2584,7 @@ export default function EventWizard() {
           </Typography>
           <Typography variant="body2" color="text.secondary">
             {user
-              ? 'נשאר רק לאשר — והאירוע יוצא לדרך.'
+              ? 'נשאר רק לאשר - והאירוע יוצא לדרך.'
               : 'כמה פרטים אחרונים ונשמור לכם את האירוע מוכן ומחכה.'}
           </Typography>
         </Box>
@@ -2752,14 +2752,14 @@ export default function EventWizard() {
                 : (
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Typography variant="h6" fontWeight={700}>סה"כ לתשלום</Typography>
-                    <Typography variant="h5" fontWeight={800}>—</Typography>
+                    <Typography variant="h5" fontWeight={800}>-</Typography>
                   </Box>
                 )}
             </Paper>
 
             {!user && (
               <Alert severity="info" sx={{ mb: 2, textAlign: 'right' }}>
-                נשלח לכם קוד אימות קצר בוואטסאפ — וכבר נחזיר אתכם לכאן להמשך.
+                נשלח לכם קוד אימות קצר בוואטסאפ - וכבר נחזיר אתכם לכאן להמשך.
               </Alert>
             )}
           </Box>
@@ -2928,7 +2928,7 @@ export default function EventWizard() {
           >
             <Typography variant="body2" sx={{ fontWeight: 600 }}>
               שמרנו את האירוע שהתחלתם להכין
-              {(pendingDraft.eventDetails?.name as string) ? ` — ${pendingDraft.eventDetails?.name as string}` : ''}.
+              {(pendingDraft.eventDetails?.name as string) ? ` - ${pendingDraft.eventDetails?.name as string}` : ''}.
             </Typography>
             <Typography variant="caption" color="text.secondary">
               אפשר להמשיך בדיוק מהמקום שעצרתם.
@@ -2981,7 +2981,7 @@ export default function EventWizard() {
                   <Button
                     onClick={(e) => {
                       e.preventDefault();
-                      // The Free plan has no payment step — create the event directly.
+                      // The Free plan has no payment step - create the event directly.
                       if (selectedPackageId === 'free') {
                         handleCreateFree();
                       } else {
@@ -3027,7 +3027,7 @@ export default function EventWizard() {
                 </Box>
               ) : (
                 // On the package step keep the primary action fully hidden until a
-                // package is chosen — selecting a card is the action; an empty/disabled
+                // package is chosen - selecting a card is the action; an empty/disabled
                 // "next" is just noise.
                 (activeStep !== 0 || !!selectedPackageId) && (
                   <Button

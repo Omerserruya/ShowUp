@@ -76,7 +76,7 @@ class EventBase(BaseModel):
     # Stored as free-form text (often JSON string from places autocomplete)
     location: Optional[str] = None
     active: bool = True
-    # Event type (wedding, brit, ...) — drives adaptive timeline + template recommendations.
+    # Event type (wedding, brit, ...) - drives adaptive timeline + template recommendations.
     event_type: Optional[str] = Field(None, serialization_alias="eventType", validation_alias="eventType")
     # Payment dimension (paid | free | pending | unpaid), independent of `state`.
     payment_status: Optional[str] = Field(None, serialization_alias="paymentStatus", validation_alias="paymentStatus")

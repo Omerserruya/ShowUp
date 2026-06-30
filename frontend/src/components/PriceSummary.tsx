@@ -4,7 +4,7 @@ import { breakdownFromPrice, formatILS, PriceBreakdown } from '../utils/pricing'
 interface PriceSummaryProps {
   /** Price as a number or "₪99" string. Ignored if `breakdown` is given. */
   price?: string | number | null;
-  /** Pre-computed breakdown (e.g. from the order API) — avoids recomputing. */
+  /** Pre-computed breakdown (e.g. from the order API) - avoids recomputing. */
   breakdown?: PriceBreakdown;
   /** Label for the grand-total row. Default "סה״כ לתשלום". */
   totalLabel?: string;
@@ -12,7 +12,7 @@ interface PriceSummaryProps {
 
 /**
  * Checkout summary: shows the fixed price and, when a coupon is applied, the
- * discount and the final total. VAT is NOT broken out for the customer — it is a
+ * discount and the final total. VAT is NOT broken out for the customer - it is a
  * system calculation surfaced at the payment step and on the tax invoice.
  */
 export default function PriceSummary({ price, breakdown, totalLabel = 'סה״כ לתשלום' }: PriceSummaryProps) {

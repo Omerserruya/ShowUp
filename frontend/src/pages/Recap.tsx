@@ -114,7 +114,7 @@ export default function Recap() {
         </Typography>
         {!isPast && (
           <Chip
-            label="האירוע עדיין לא התקיים — זו תצוגה מקדימה"
+            label="האירוע עדיין לא התקיים - זו תצוגה מקדימה"
             size="small"
             sx={{ mt: 1.5, bgcolor: 'rgba(255,255,255,0.2)', color: '#fff' }}
           />

@@ -3608,8 +3608,8 @@ function Guests() {
                       }}
                     >
                       <Box sx={{ display: 'flex', gap: 2, minWidth: 0 }}>
-                        <Typography variant="body2" sx={{ fontWeight: 500 }} noWrap>{r.name || '—'}</Typography>
-                        <Typography variant="body2" color="text.secondary" noWrap>{r.phone || '—'}</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }} noWrap>{r.name || '-'}</Typography>
+                        <Typography variant="body2" color="text.secondary" noWrap>{r.phone || '-'}</Typography>
                       </Box>
                       {r.valid
                         ? <CheckCircleIcon color="success" fontSize="small" />

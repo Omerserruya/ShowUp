@@ -1,300 +1,116 @@
 import * as React from 'react';
-import MenuItem from '@mui/material/MenuItem';
-import ListItemText from '@mui/material/ListItemText';
-import ListItemIcon from '@mui/material/ListItemIcon';
-import EventIcon from '@mui/icons-material/Event';
-import Menu from '@mui/material/Menu';
-import Divider from '@mui/material/Divider';
-import { styled, useTheme, alpha } from '@mui/material/styles';
+import { Box, Menu, MenuItem, ListItemText, ListItemIcon, Divider, Typography, IconButton, CircularProgress, alpha, useTheme } from '@mui/material';
+import UnfoldMoreRoundedIcon from '@mui/icons-material/UnfoldMoreRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
-import Box from '@mui/material/Box';
-import CircularProgress from '@mui/material/CircularProgress';
-import Typography from '@mui/material/Typography';
-import IconButton from '@mui/material/IconButton';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import Paper from '@mui/material/Paper';
+import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import { useEvent } from '../../contexts/EventContext';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 
-const EventCard = styled(Paper)(({ theme }) => ({
-  background: theme.palette.mode === 'dark'
-    ? alpha(theme.palette.secondary.main, 0.1)
-    : 'linear-gradient(135deg, rgba(250, 245, 255, 1) 0%, rgba(239, 246, 255, 1) 100%)',
-  border: `1px solid ${theme.palette.mode === 'dark' ? 'rgba(193, 186, 222, 0.3)' : 'rgba(201, 192, 237, 0.5)'}`,
-  borderRadius: theme.shape.borderRadius * 3,
-  padding: theme.spacing(3),
-  cursor: 'pointer',
-  transition: 'all 0.2s ease',
-  width: '100%',
-  boxShadow: 'none',
-  '&:hover': {
-    boxShadow: 'none',
-  },
+const BRAND = '#888cee';
+const DEEP = '#6f74e0';
+const HE_MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
 
-}));
+function emojiFor(type?: string, name?: string): string {
+  const t = (type || '').toLowerCase();
+  if (t === 'wedding') return '💍';
+  if (t === 'birthday') return '🎂';
+  if (t === 'corporate') return '🎉';
+  const n = name || '';
+  if (n.includes('חתונה')) return '💍';
+  if (n.includes('ברית')) return '👶';
+  if (n.includes('מצווה')) return '✡️';
+  return '✨';
+}
+
+function formatDate(dateString?: string) {
+  if (!dateString) return '';
+  const d = dayjs(dateString);
+  if (!d.isValid()) return '';
+  return `${d.date()} ב${HE_MONTHS[d.month()]} ${d.year()}`;
+}
 
 export default function SelectContent() {
-  const { selectedEvent, setSelectedEvent, events, loading, fetchEvents } = useEvent();
+  const { selectedEvent, setSelectedEvent, events, loading } = useEvent();
   const navigate = useNavigate();
   const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
 
-  // Fetch events on component mount
-  React.useEffect(() => {
-    fetchEvents();
-  }, []);
-
-  const handleClick = (event: React.MouseEvent<HTMLElement>) => {
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleClose = () => {
+  const handleSelect = (id: string) => {
+    const evt = events.find((e) => e.id === id);
+    if (evt) setSelectedEvent(evt);
     setAnchorEl(null);
   };
 
-  const handleSelectEvent = (eventId: string) => {
-    const selectedEventObj = events.find(evt => evt.id === eventId);
-    if (selectedEventObj) {
-      setSelectedEvent(selectedEventObj);
-    }
-    handleClose();
-  };
-
-  const handleCreateNew = () => {
-    handleClose();
-    navigate('/wizard');
-  };
-
-  const formatEventDate = (dateString: string) => {
-    try {
-      const date = dayjs(dateString);
-      // Format in Hebrew: "15 ביוני 2024"
-      const months = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
-      const day = date.date();
-      const month = months[date.month()];
-      const year = date.year();
-      return `${day} ב${month} ${year}`;
-    } catch {
-      return dateString;
-    }
-  };
-
   return (
-    <Box 
-      width="100%" 
-      px={1}
-      sx={{ mb: { xs: 1.5, sm: 2 }, mt: { xs: 1, sm: 3 } }}
-    >
-      <EventCard 
-        onClick={handleClick} 
-        elevation={0}
+    <Box sx={{ px: 1.5, mb: 1.5 }}>
+      <Box
+        onClick={(e) => setAnchorEl(e.currentTarget)}
+        role="button"
         sx={{
-          padding: { xs: '12px 16px', sm: '24px' },
+          display: 'flex', alignItems: 'center', gap: 1.25,
+          p: 1.25, borderRadius: 3, cursor: 'pointer',
+          border: '1px solid', borderColor: isDark ? alpha('#fff', 0.08) : alpha(theme.palette.text.primary, 0.08),
+          bgcolor: isDark ? alpha('#fff', 0.03) : alpha(BRAND, 0.05),
+          transition: 'border-color .15s ease, background-color .15s ease',
+          '&:hover': { borderColor: alpha(BRAND, 0.45) },
         }}
       >
-        <Box 
-          display="flex" 
-          alignItems="center" 
-          justifyContent="space-between" 
-          mb={{ xs: 0.5, sm: 1.5 }}
-        >
-          <Typography 
-            variant="caption" 
-            sx={{ 
-              fontWeight: 500, 
-              color: 'text.secondary',
-              fontSize: { xs: '0.75rem', sm: '0.875rem' }
-            }}
-          >
-            אירוע נוכחי
-          </Typography>
-          <IconButton 
-            size="small" 
-            sx={{ 
-              color: 'text.secondary',
-              p: 0.5,
-              '&:hover': {
-                backgroundColor: 'transparent',
-              }
-            }}
-          >
-            <ExpandMoreIcon sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }} />
-          </IconButton>
+        <Box sx={{ width: 38, height: 38, borderRadius: '12px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', background: `linear-gradient(135deg, ${alpha(DEEP, 0.18)}, ${alpha(BRAND, 0.12)})` }}>
+          {selectedEvent ? emojiFor((selectedEvent as any)?.type, selectedEvent.name) : '✨'}
         </Box>
-        
-        {selectedEvent ? (
-          <>
-            <Typography 
-              variant="h6" 
-              sx={{ 
-                fontWeight: 700, 
-                color: 'text.primary',
-                mb: { xs: 0.5, sm: 1 },
-                fontSize: { xs: '0.875rem', sm: '1.25rem' },
-                lineHeight: 1.3
-              }}
-            >
-              {selectedEvent.name}
-            </Typography>
-            {selectedEvent.date && (
-              <Typography 
-                variant="caption" 
-                sx={{ 
-                  color: 'text.secondary',
-                  fontSize: { xs: '0.7rem', sm: '0.875rem' }
-                }}
-              >
-                {formatEventDate(selectedEvent.date)}
-              </Typography>
-            )}
-          </>
-        ) : (
-          <Typography 
-            variant="body2" 
-            sx={{ 
-              color: 'text.secondary',
-              fontStyle: 'italic',
-              fontSize: { xs: '0.875rem', sm: '1rem' }
-            }}
-          >
-            בחר אירוע
-          </Typography>
-        )}
-      </EventCard>
+        <Box sx={{ flex: 1, minWidth: 0, textAlign: 'right' }}>
+          <Typography sx={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.06em', color: 'text.disabled' }}>האירוע שלכם</Typography>
+          {selectedEvent ? (
+            <>
+              <Typography noWrap sx={{ fontSize: '0.95rem', fontWeight: 700, color: 'text.primary', lineHeight: 1.3 }}>{selectedEvent.name}</Typography>
+              {formatDate((selectedEvent as any)?.date) && (
+                <Typography noWrap sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>{formatDate((selectedEvent as any)?.date)}</Typography>
+              )}
+            </>
+          ) : (
+            <Typography sx={{ fontSize: '0.9rem', color: 'text.secondary' }}>בחרו אירוע</Typography>
+          )}
+        </Box>
+        <IconButton size="small" sx={{ color: 'text.secondary' }}><UnfoldMoreRoundedIcon sx={{ fontSize: 18 }} /></IconButton>
+      </Box>
 
       <Menu
         anchorEl={anchorEl}
         open={open}
-        onClose={handleClose}
-        anchorOrigin={{
-          vertical: 'bottom',
-          horizontal: 'right',
-        }}
-        transformOrigin={{
-          vertical: 'top',
-          horizontal: 'right',
-        }}
-        PaperProps={{
-          sx: {
-            mt: 1,
-            minWidth: 280,
-            maxHeight: 400,
-            direction: 'rtl',
-            borderRadius: 2,
-            boxShadow: theme.palette.mode === 'dark' 
-              ? '0 4px 20px rgba(0, 0, 0, 0.5)'
-              : '0 4px 20px rgba(0, 0, 0, 0.1)',
-            border: '1px solid',
-            borderColor: 'divider',
-            overflow: 'hidden',
-          }
-        }}
+        onClose={() => setAnchorEl(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        PaperProps={{ sx: { mt: 1, minWidth: 260, maxHeight: 420, direction: 'rtl', borderRadius: 3, border: '1px solid', borderColor: 'divider', boxShadow: '0 12px 32px rgba(16,24,40,0.14)', overflow: 'hidden' } }}
       >
-        <Box 
-          sx={{ 
-            px: 2, 
-            py: 1.5,
-            background: theme.palette.mode === 'dark'
-              ? alpha(theme.palette.secondary.main, 0.1)
-              : 'linear-gradient(135deg, rgba(250, 245, 255, 0.5) 0%, rgba(239, 246, 255, 0.5) 100%)',
-          }}
-        >
-          <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'text.secondary', fontSize: '0.875rem' }}>
-            אירועים
-          </Typography>
-        </Box>
-        <Divider />
-        
+        <Typography sx={{ px: 2, pt: 1.5, pb: 1, fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.06em', color: 'text.disabled' }}>האירועים שלכם</Typography>
         {loading ? (
-          <Box display="flex" alignItems="center" justifyContent="center" py={2}>
-            <CircularProgress size={24} />
-          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}><CircularProgress size={22} sx={{ color: BRAND }} /></Box>
         ) : events.length > 0 ? (
-          events.map((event) => (
-            <MenuItem 
-              key={event.id} 
-              onClick={() => handleSelectEvent(event.id)}
-              selected={selectedEvent?.id === event.id}
-              dir="rtl"
-              sx={{
-                py: 1.5,
-                '&.Mui-selected': {
-                  backgroundColor: theme.palette.mode === 'dark'
-                    ? alpha(theme.palette.secondary.main, 0.2)
-                    : 'rgba(196, 181, 253, 0.1)',
-                  '&:hover': {
-                    backgroundColor: theme.palette.mode === 'dark'
-                      ? alpha(theme.palette.secondary.main, 0.3)
-                      : 'rgba(196, 181, 253, 0.15)',
-                  },
-                },
-                '&:hover': {
-                  backgroundColor: theme.palette.mode === 'dark'
-                    ? alpha(theme.palette.action.hover, 0.1)
-                    : 'rgba(0, 0, 0, 0.04)',
-                },
-              }}
-            >
-              <ListItemIcon>
-                <EventIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText 
-                primary={event.name}
-                secondary={event.date ? formatEventDate(event.date) : ''}
-                sx={{ 
-                  textAlign: 'right',
-                  '& .MuiListItemText-primary': {
-                    fontSize: '0.9375rem',
-                    fontWeight: selectedEvent?.id === event.id ? 600 : 400,
-                  },
-                  '& .MuiListItemText-secondary': {
-                    fontSize: '0.8125rem',
-                  },
-                }}
-              />
-            </MenuItem>
-          ))
+          events.map((event) => {
+            const sel = selectedEvent?.id === event.id;
+            return (
+              <MenuItem key={event.id} dir="rtl" onClick={() => handleSelect(event.id)} sx={{ py: 1.25, borderRadius: 2, mx: 0.75, my: 0.25, '&:hover': { bgcolor: alpha(BRAND, 0.08) } }}>
+                <ListItemIcon sx={{ minWidth: 36, fontSize: '1.15rem' }}>{emojiFor((event as any)?.type, event.name)}</ListItemIcon>
+                <ListItemText
+                  primary={event.name}
+                  secondary={formatDate((event as any)?.date)}
+                  sx={{ textAlign: 'right', '& .MuiListItemText-primary': { fontSize: '0.92rem', fontWeight: sel ? 700 : 500 }, '& .MuiListItemText-secondary': { fontSize: '0.78rem' } }}
+                />
+                {sel && <CheckRoundedIcon sx={{ fontSize: 18, color: DEEP, ml: 1 }} />}
+              </MenuItem>
+            );
+          })
         ) : (
-          <MenuItem disabled dir="rtl">
-            <ListItemText 
-              primary="לא נמצאו אירועים" 
-              sx={{ textAlign: 'right' }} 
-            />
-          </MenuItem>
+          <MenuItem disabled dir="rtl"><ListItemText primary="עוד אין אירועים" sx={{ textAlign: 'right' }} /></MenuItem>
         )}
 
-        <Divider />
-        <MenuItem 
-          onClick={handleCreateNew} 
-          dir="rtl"
-          sx={{
-            py: 1.5,
-            '&:hover': {
-              backgroundColor: theme.palette.mode === 'dark'
-                ? alpha(theme.palette.secondary.main, 0.2)
-                : 'rgba(196, 181, 253, 0.1)',
-            },
-          }}
-        >
-          <ListItemIcon>
-            <AddRoundedIcon />
-          </ListItemIcon>
-          <ListItemText 
-            primary="צור אירוע חדש" 
-            secondary="אירוע חדש" 
-            sx={{ 
-              textAlign: 'right',
-              '& .MuiListItemText-primary': {
-                fontSize: '0.9375rem',
-                fontWeight: 500,
-              },
-              '& .MuiListItemText-secondary': {
-                fontSize: '0.8125rem',
-              },
-            }} 
-          />
+        <Divider sx={{ my: 0.5 }} />
+        <MenuItem dir="rtl" onClick={() => { setAnchorEl(null); navigate('/wizard'); }} sx={{ py: 1.25, mx: 0.75, my: 0.25, borderRadius: 2, color: DEEP, '&:hover': { bgcolor: alpha(BRAND, 0.08) } }}>
+          <ListItemIcon sx={{ minWidth: 36, color: DEEP }}><AddRoundedIcon /></ListItemIcon>
+          <ListItemText primary="אירוע חדש" sx={{ textAlign: 'right', '& .MuiListItemText-primary': { fontSize: '0.92rem', fontWeight: 700 } }} />
         </MenuItem>
       </Menu>
     </Box>

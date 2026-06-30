@@ -120,7 +120,7 @@ export default function Invitation() {
       setHero('imageUrl', upload_url.split('?')[0]);
       setToast('התמונה הועלתה');
     } catch {
-      setError('העלאת התמונה נכשלה — אפשר להדביק קישור לתמונה במקום');
+      setError('העלאת התמונה נכשלה - אפשר להדביק קישור לתמונה במקום');
     }
   };
 

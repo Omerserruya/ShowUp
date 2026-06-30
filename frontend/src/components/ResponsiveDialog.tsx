@@ -15,7 +15,7 @@ const SlideUp = React.forwardRef(function SlideUp(
 /**
  * MUI Dialog that renders as a centered modal on desktop and an anchored,
  * slide-up bottom sheet on mobile (audit item: "Modals → drawers on mobile").
- * Drop-in replacement for <Dialog> — forwards all props.
+ * Drop-in replacement for <Dialog> - forwards all props.
  */
 export default function ResponsiveDialog({
   PaperProps,

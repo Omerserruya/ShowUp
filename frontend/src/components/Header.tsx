@@ -25,14 +25,14 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, onMenuClick }) => {
         top: 0,
         zIndex: 1100,
         bgcolor: isDark
-          ? alpha(theme.palette.background.paper, 0.8)
-          : alpha('#ffffff', 0.85),
-        backdropFilter: 'blur(12px)',
+          ? alpha(theme.palette.background.paper, 0.7)
+          : alpha('#ffffff', 0.7),
+        backdropFilter: 'blur(14px)',
         borderBottom: '1px solid',
-        borderColor: 'divider',
+        borderColor: isDark ? alpha('#ffffff', 0.06) : alpha('#0f172a', 0.05),
         pl: { xs: 1.5, sm: 4 },
         pr: { xs: 1.5, sm: 2 },
-        py: 1.5,
+        py: 1.25,
         minHeight: { xs: 56, sm: 64 },
       }}
     >
@@ -59,7 +59,8 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle, onMenuClick }) => {
               sx={{
                 fontWeight: 700,
                 color: 'text.primary',
-                fontSize: { xs: '1.15rem', sm: '1.5rem' },
+                fontSize: { xs: '1.05rem', sm: '1.25rem' },
+                letterSpacing: '-0.01em',
                 lineHeight: 1.3,
               }}
             >

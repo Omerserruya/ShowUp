@@ -1,4 +1,4 @@
-"""Phase 12 — AI assistant infrastructure tests."""
+"""Phase 12 - AI assistant infrastructure tests."""
 from __future__ import annotations
 
 import uuid

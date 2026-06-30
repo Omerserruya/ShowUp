@@ -8,7 +8,7 @@ import { InvitationData, DEFAULT_INVITATION } from '../components/invitation/typ
 
 /**
  * Public, no-auth DEMO invitation. Lets a prospect experience exactly what a guest
- * receives — the envelope, the invite, and a working RSVP form. Nothing is persisted;
+ * receives - the envelope, the invite, and a working RSVP form. Nothing is persisted;
  * the RSVP "submit" is faked client-side. Reached from the landing-page demo CTA via a
  * WhatsApp link. Route: /demo/invite?type=wedding&name=...
  */
@@ -47,7 +47,7 @@ const PRESETS: Record<string, DemoPreset> = {
     title: 'הברית של',
     bigText: 'מזל טוב, נולד לנו בן! 👶',
     inviters: [{ fn: 'משפחת', ln: 'מזרחי' }],
-    personalText: 'בשעה טובה ומוצלחת — נשמח לראותכם בברית. נא לאשר הגעה.',
+    personalText: 'בשעה טובה ומוצלחת - נשמח לראותכם בברית. נא לאשר הגעה.',
     location: 'בית הכנסת הגדול, ירושלים',
   },
   corporate: {
@@ -60,7 +60,7 @@ const PRESETS: Record<string, DemoPreset> = {
 };
 
 function demoDateISO(): string {
-  // ~30 days from now at 19:30 — purely for display.
+  // ~30 days from now at 19:30 - purely for display.
   const d = new Date();
   d.setDate(d.getDate() + 30);
   d.setHours(19, 30, 0, 0);
@@ -102,14 +102,14 @@ export default function DemoInvite() {
           color: '#fff', fontSize: 13, fontWeight: 600,
         }}
       >
-        זוהי הזמנת דמו — כך בדיוק יחווה זאת האורח שלכם ✨
+        זוהי הזמנת דמו - כך בדיוק יחווה זאת האורח שלכם ✨
       </Box>
       <InvitationView data={data} rsvpSlot={<DemoRsvpForm />} />
     </Box>
   );
 }
 
-/** Local-only RSVP — mirrors the real public form but persists nothing. */
+/** Local-only RSVP - mirrors the real public form but persists nothing. */
 function DemoRsvpForm() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');

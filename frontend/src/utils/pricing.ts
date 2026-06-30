@@ -1,7 +1,7 @@
 /**
  * VAT-aware price helpers.
  *
- * Plan prices in config (e.g. "₪99") are VAT-INCLUSIVE — that is the amount
+ * Plan prices in config (e.g. "₪99") are VAT-INCLUSIVE - that is the amount
  * actually charged. For display we show the BEFORE-VAT (net) figure as the
  * headline plus the VAT component and the final total:
  *
@@ -21,7 +21,7 @@ export const TAX_RATE: number = (() => {
 export const TAX_RATE_PERCENT: number = Math.round(TAX_RATE * 100);
 
 export interface PriceBreakdown {
-  /** VAT-inclusive total actually charged — AFTER any coupon discount. */
+  /** VAT-inclusive total actually charged - AFTER any coupon discount. */
   gross: number;
   /** Before-VAT (net) price of the final (discounted) total. */
   net: number;

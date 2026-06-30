@@ -10,7 +10,7 @@ import Rating from '@mui/material/Rating';
 import FormatQuoteRoundedIcon from '@mui/icons-material/FormatQuoteRounded';
 
 /**
- * Social proof. Copy/avatars are representative samples — replace `userTestimonials`
+ * Social proof. Copy/avatars are representative samples - replace `userTestimonials`
  * and the aggregate rating with real, opt-in customer quotes before launch.
  */
 const userTestimonials = [

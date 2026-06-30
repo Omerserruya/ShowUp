@@ -737,7 +737,7 @@ def pay_with_icount(order_id: uuid.UUID = Path(...), request: Request = None) ->
 
   Persists the iCount sale id on the order so the async IPN can verify and
   provision. Requires buyer identity (set via PATCH /identity) and a positive amount.
-  The charge amount is loaded server-side from the plan config — never from the client.
+  The charge amount is loaded server-side from the plan config - never from the client.
   """
   if not payments_icount.is_configured():
     raise HTTPException(status_code=503, detail="iCount payments are not configured on the server")
@@ -750,7 +750,7 @@ def pay_with_icount(order_id: uuid.UUID = Path(...), request: Request = None) ->
     raise HTTPException(status_code=400, detail="Order is missing buyer identity (call /identity first)")
 
   # iCount adds VAT itself, so strip the VAT off the (discounted) price before
-  # sending — the customer ends up paying the displayed VAT-inclusive amount.
+  # sending - the customer ends up paying the displayed VAT-inclusive amount.
   bd = _order_breakdown(order)
   amount = price_before_vat(bd["gross"])
   if amount <= 0:
@@ -833,7 +833,7 @@ async def icount_callback(request: Request) -> JSONResponse:
   retry indefinitely; provisioning is idempotent on already-paid orders."""
   # Parse the IPN defensively from the RAW body + query string. iCount posts
   # form-urlencoded data (and sometimes echoes ids on the query string). We do NOT
-  # rely on request.form() — it raises when python-multipart is absent and a bare
+  # rely on request.form() - it raises when python-multipart is absent and a bare
   # except would silently leave payload={}, which is exactly what skipped
   # provisioning before. parse_qs handles urlencoded without any extra dependency.
   payload: Dict[str, Any] = {}
@@ -855,7 +855,7 @@ async def icount_callback(request: Request) -> JSONResponse:
     print(f"[ICOUNT IPN] body parse error: {e}")
   if not isinstance(payload, dict):
     payload = {}
-  # iCount may also pass identifiers on the query string — merge them in.
+  # iCount may also pass identifiers on the query string - merge them in.
   query_params = dict(request.query_params)
   payload = {**query_params, **payload}
 

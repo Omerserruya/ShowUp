@@ -11,7 +11,7 @@ import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import VerifiedRoundedIcon from '@mui/icons-material/VerifiedRounded';
 
 /**
- * Trust band. Numbers are placeholders — wire these to real aggregate metrics
+ * Trust band. Numbers are placeholders - wire these to real aggregate metrics
  * (events created, guests managed, average response rate) before launch.
  */
 const stats = [
@@ -34,7 +34,7 @@ export default function LogoCollection() {
           py: { xs: 4, sm: 5 },
         }}
       >
-        {/* Official-WhatsApp trust cue — anchors the numbers in credibility. */}
+        {/* Official-WhatsApp trust cue - anchors the numbers in credibility. */}
         <Box
           sx={{
             display: 'flex',

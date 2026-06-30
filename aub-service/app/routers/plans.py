@@ -1,7 +1,7 @@
 """
 Plans API endpoints
 
-Backed by the static JSON config (app/data/plans.json) via app.plans_data — no
+Backed by the static JSON config (app/data/plans.json) via app.plans_data - no
 database. Output shape is unchanged from the previous Mongo-backed version.
 """
 from fastapi import APIRouter, HTTPException

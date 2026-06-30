@@ -28,7 +28,7 @@ const PLACEHOLDER_RE = /\{\{\s*([^}]+?)\s*\}\}/;
 
 /**
  * Token-based message builder (Mailchimp/HubSpot-style), kept simple. Variables
- * render as removable inline BADGES inside the text — never raw {{ }}. You insert
+ * render as removable inline BADGES inside the text - never raw {{ }}. You insert
  * by click or by dragging onto the exact spot in the sentence, remove with the ×
  * (or Backspace), and typing/pasting a raw {{key}} auto-converts into a badge.
  * Internally it always serializes back to {{key}} so the preview + send pipeline
@@ -297,7 +297,7 @@ export default function CustomMessageEditor({
 
   return (
     <Box sx={{ direction: 'rtl' }}>
-      {/* Template title — editable, part of the template */}
+      {/* Template title - editable, part of the template */}
       <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'text.secondary', mb: 0.75 }}>
         כותרת ההודעה (לזיהוי שלכם)
       </Typography>
@@ -393,7 +393,7 @@ export default function CustomMessageEditor({
         </Box>
       </Box>
 
-      {/* The message body — a token editor + drop target */}
+      {/* The message body - a token editor + drop target */}
       <Box
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; if (!dragOver) setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
