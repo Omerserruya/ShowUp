@@ -14,10 +14,8 @@ import {
   Chip,
   CircularProgress,
   Alert,
+  Snackbar,
   Autocomplete,
-  FormControl,
-  Select,
-  MenuItem,
   Avatar,
   alpha,
 } from '@mui/material';
@@ -271,11 +269,8 @@ export function ImportedGuestsSection({ onRefresh, uniqueGroups, hasTableNumbers
               {allContacts.map((contact, index) => {
                 const isProcessing = processing.has(contact.id);
                 const isEditingName = editingContact === contact.id && editingField === 'name';
-                const isEditingEmail = editingContact === contact.id && editingField === 'email';
                 const isEditingGroup = editingContact === contact.id && editingField === 'group';
-                const isEditingStatus = editingContact === contact.id && editingField === 'status';
                 const isEditingExpectedCount = editingContact === contact.id && editingField === 'expectedCount';
-                const isEditingConfirmedCount = editingContact === contact.id && editingField === 'confirmedCount';
                 const isEditingTableNumber = editingContact === contact.id && editingField === 'tableNumber';
 
                 return (
@@ -331,18 +326,10 @@ export function ImportedGuestsSection({ onRefresh, uniqueGroups, hasTableNumbers
                       )}
                     </TableCell>
 
-                    {/* Phone */}
+                    {/* Phone - rendered LTR so E.164 numbers don't get reordered in RTL context */}
                     <TableCell align="center" sx={{ backgroundColor: 'white' }}>
-                      <Typography variant="body2">
-                        {(() => {
-                          // Format phone number: if it starts with +972, show it as 972+ (RTL)
-                          const phone = contact.phone || '';
-                          if (phone.startsWith('+972')) {
-                            const rest = phone.substring(4).trim();
-                            return `${rest} 972+`;
-                          }
-                          return phone || '-';
-                        })()}
+                      <Typography variant="body2" dir="ltr" sx={{ unicodeBidi: 'isolate' }}>
+                        {contact.phone || '-'}
                       </Typography>
                     </TableCell>
 
@@ -382,56 +369,33 @@ export function ImportedGuestsSection({ onRefresh, uniqueGroups, hasTableNumbers
                           )}
                         />
                       ) : (
-                        <Typography 
-                          variant="body2" 
+                        <Typography
+                          variant="body2"
                           sx={{ cursor: 'pointer' }}
-                          onDoubleClick={() => handleEdit(contact.id, 'group', '')}
+                          onDoubleClick={() => handleEdit(contact.id, 'group', editValues[`${contact.id}_group`] ?? '')}
                         >
-                          -
+                          {editValues[`${contact.id}_group`] || '-'}
                         </Typography>
                       )}
                     </TableCell>
 
-                    {/* Status */}
+                    {/* Status - imported contacts are always pending until approved (not editable here) */}
                     <TableCell align="center" sx={{ backgroundColor: 'white' }}>
-                      {isEditingStatus ? (
-                        <FormControl size="small" sx={{ minWidth: 120 }}>
-                          <Select
-                            value={editValues[`${contact.id}_status`] ?? 'pending'}
-                            onChange={(e) => {
-                              setEditValues({ ...editValues, [`${contact.id}_status`]: e.target.value });
-                              handleSaveEdit(contact.id, 'status');
-                            }}
-                            onBlur={() => {
-                              handleSaveEdit(contact.id, 'status');
-                            }}
-                            autoFocus
-                          >
-                            <MenuItem value="pending">ממתין</MenuItem>
-                            <MenuItem value="confirmed">מאשר הגעה</MenuItem>
-                            <MenuItem value="declined">דחה</MenuItem>
-                          </Select>
-                        </FormControl>
-                      ) : (
-                        <Box 
-                          sx={{ display: 'flex', justifyContent: 'center', cursor: 'pointer' }}
-                          onClick={() => handleEdit(contact.id, 'status', 'pending')}
-                        >
-                          <Chip
-                            icon={<AccessTimeIcon />}
-                            label={statusLabels.pending}
-                            size="small"
-                            sx={{
-                              backgroundColor: alpha(statusColors.pending, 0.1),
-                              color: statusColors.pending,
-                              fontWeight: 500,
-                              '& .MuiChip-icon': {
-                                color: statusColors.pending
-                              }
-                            }}
-                          />
-                        </Box>
-                      )}
+                      <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                        <Chip
+                          icon={<AccessTimeIcon />}
+                          label={statusLabels.pending}
+                          size="small"
+                          sx={{
+                            backgroundColor: alpha(statusColors.pending, 0.1),
+                            color: statusColors.pending,
+                            fontWeight: 500,
+                            '& .MuiChip-icon': {
+                              color: statusColors.pending
+                            }
+                          }}
+                        />
+                      </Box>
                     </TableCell>
 
                     {/* Expected Count */}
@@ -458,46 +422,20 @@ export function ImportedGuestsSection({ onRefresh, uniqueGroups, hasTableNumbers
                         />
                       ) : (
                         <Typography
-                          variant="body2" 
+                          variant="body2"
                           sx={{ fontWeight: 500, cursor: 'pointer' }}
-                          onDoubleClick={() => handleEdit(contact.id, 'expectedCount', 1)}
+                          onDoubleClick={() => handleEdit(contact.id, 'expectedCount', editValues[`${contact.id}_expectedCount`] ?? 1)}
                         >
-                          1
+                          {editValues[`${contact.id}_expectedCount`] ?? 1}
                         </Typography>
                       )}
                     </TableCell>
 
-                    {/* Confirmed Count */}
+                    {/* Confirmed Count - determined by the guest's RSVP after approval (not editable here) */}
                     <TableCell align="center" sx={{ backgroundColor: 'white' }}>
-                      {isEditingConfirmedCount ? (
-                        <TextField
-                          size="small"
-                          type="number"
-                          value={editValues[`${contact.id}_confirmedCount`] ?? ''}
-                          onChange={(e) => setEditValues({ ...editValues, [`${contact.id}_confirmedCount`]: parseInt(e.target.value) || 0 })}
-                          onBlur={() => {
-                            handleSaveEdit(contact.id, 'confirmedCount');
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              handleSaveEdit(contact.id, 'confirmedCount');
-                            } else if (e.key === 'Escape') {
-                              setEditingContact(null);
-                              setEditingField(null);
-                            }
-                          }}
-                          autoFocus
-                          sx={{ width: 80 }}
-                        />
-                      ) : (
-                        <Typography 
-                          variant="body2" 
-                          sx={{ fontWeight: 500, cursor: 'pointer' }}
-                          onDoubleClick={() => handleEdit(contact.id, 'confirmedCount', 0)}
-                        >
-                          -
-                        </Typography>
-                      )}
+                      <Typography variant="body2" sx={{ fontWeight: 500, color: 'text.secondary' }}>
+                        -
+                      </Typography>
                     </TableCell>
 
                     {/* Table Number */}
@@ -524,12 +462,12 @@ export function ImportedGuestsSection({ onRefresh, uniqueGroups, hasTableNumbers
                             sx={{ width: 80 }}
                           />
                         ) : (
-                          <Typography 
-                            variant="body2" 
+                          <Typography
+                            variant="body2"
                             sx={{ fontWeight: 500, cursor: 'pointer' }}
-                            onDoubleClick={() => handleEdit(contact.id, 'tableNumber', undefined)}
+                            onDoubleClick={() => handleEdit(contact.id, 'tableNumber', editValues[`${contact.id}_tableNumber`])}
                           >
-                            -
+                            {editValues[`${contact.id}_tableNumber`] ?? '-'}
                           </Typography>
                         )}
                       </TableCell>
@@ -571,15 +509,16 @@ export function ImportedGuestsSection({ onRefresh, uniqueGroups, hasTableNumbers
       </Paper>
 
       {/* Snackbar for notifications */}
-      {snackbar.open && (
-        <Alert 
-          severity={snackbar.severity} 
-          onClose={() => setSnackbar({ ...snackbar, open: false })}
-          sx={{ position: 'fixed', bottom: 16, right: 16, zIndex: 9999 }}
-        >
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert onClose={() => setSnackbar({ ...snackbar, open: false })} severity={snackbar.severity} sx={{ width: '100%' }}>
           {snackbar.message}
         </Alert>
-      )}
+      </Snackbar>
     </>
   );
 }

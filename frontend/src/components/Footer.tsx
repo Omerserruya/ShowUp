@@ -4,11 +4,16 @@ import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import Link from '@mui/material/Link';
 import IconButton from '@mui/material/IconButton';
-import LinkedInIcon from '@mui/icons-material/LinkedIn';
-import TwitterIcon from '@mui/icons-material/X';
+import FacebookIcon from '@mui/icons-material/Facebook';
+import InstagramIcon from '@mui/icons-material/Instagram';
 import { Link as RouterLink } from 'react-router-dom';
 import Logo from './Logo';
 import AccessibilityNewIcon from '@mui/icons-material/AccessibilityNew';
+
+// Support/contact WhatsApp number (from env) used across the footer contact links.
+const SUPPORT_WA = (process.env.REACT_APP_WHATSAPP_NUMBER || '+972-525401686').replace(/\D/g, '');
+const SUPPORT_WA_URL = `https://wa.me/${SUPPORT_WA}`;
+const SUPPORT_EMAIL = 'support@showup-rsvp.com';
 
 function Copyright() {
   return (
@@ -31,8 +36,8 @@ function Copyright() {
 }
 
 const socialItems = [
-  { icon: LinkedInIcon, label: 'LinkedIn', href: '#' },
-  { icon: TwitterIcon, label: 'X', href: '#' },
+  { icon: FacebookIcon, label: 'Facebook', href: 'https://www.facebook.com/showuprsvp' },
+  { icon: InstagramIcon, label: 'Instagram', href: 'https://www.instagram.com/showuprsvp' },
 ];
 
 export default function Footer() {
@@ -89,7 +94,17 @@ export default function Footer() {
               color="text.secondary"
               sx={{ textAlign: { xs: 'center', sm: 'left' }, mt: 0.5, lineHeight: 1.8 }}
             >
-              support@showup.co.il · תמיכה בוואטסאפ
+              <Link href={`mailto:${SUPPORT_EMAIL}`} color="inherit">
+                {SUPPORT_EMAIL}
+              </Link>
+              {' · '}
+              <Link href={SUPPORT_WA_URL} color="inherit" target="_blank" rel="noopener noreferrer">
+                תמיכה בוואטסאפ
+              </Link>
+              <br />
+              <Link href="https://showup-rsvp.com" color="inherit" target="_blank" rel="noopener noreferrer">
+                showup-rsvp.com
+              </Link>
               <br />
               פועלת על תשתית WhatsApp Business הרשמית
             </Typography>
@@ -149,11 +164,11 @@ export default function Footer() {
           <Link color="text.secondary" href="#faq">
             שאלות נפוצות
           </Link>
-          <Link color="text.secondary" href="mailto:support@showup.co.il">
-            צור קשר
+          <Link color="text.secondary" href={SUPPORT_WA_URL} target="_blank" rel="noopener noreferrer">
+            צרו קשר בוואטסאפ
           </Link>
-          <Link color="text.secondary" href="https://wa.me/972500000000" target="_blank" rel="noopener noreferrer">
-            תמיכה בוואטסאפ
+          <Link color="text.secondary" href={`mailto:${SUPPORT_EMAIL}`}>
+            {SUPPORT_EMAIL}
           </Link>
         </Box>
       </Box>
@@ -170,8 +185,20 @@ export default function Footer() {
           gap: { xs: 2, sm: 0 },
         }}
       >
-        <Copyright />
-        <Box 
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: { xs: 'center', sm: 'flex-start' },
+            gap: 0.5,
+          }}
+        >
+          <Copyright />
+          <Typography variant="caption" color="text.secondary">
+            Developed and operated by omer serruya | עומר צרויה
+          </Typography>
+        </Box>
+        <Box
           sx={{ 
             display: 'flex', 
             gap: 3,

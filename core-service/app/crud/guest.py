@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from typing import List, Optional, Tuple
 
 import httpx
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, text
 
 from app.models.models import Guest, Event
 from app.schemas.schemas import GuestCreate, GuestUpdate
 from app.utils import normalize_phone
 from shared.domain.enums import GuestStatus
+
+logger = logging.getLogger(__name__)
 
 
 def list_guests(
@@ -73,40 +76,64 @@ def _get_plan_count_limit(plan_id: Optional[str]) -> Optional[int]:
     aub_service_url = os.getenv("AUB_SERVICE_URL", "http://aub-service:8000")
     try:
         with httpx.Client(timeout=2.0) as client:
-            response = client.get(f"{aub_service_url}/api/plans/{plan_id}")
+            # aub exposes /plans/{id} (the /api prefix is an nginx-only rewrite and
+            # is NOT present on the service address, so /api/plans/... 404s here).
+            response = client.get(f"{aub_service_url}/plans/{plan_id}")
             if response.status_code == 200:
                 plan_data = response.json()
                 return plan_data.get("countLimit")
-    except Exception:
-        # If API call fails, return None (no limit enforced)
-        pass
+            logger.warning(
+                "plan count_limit lookup failed: aub returned %s for plan '%s'",
+                response.status_code, plan_id,
+            )
+    except Exception as exc:
+        # NOTE (fail-open): a lookup failure currently disables the limit. Hardening
+        # this to fail-closed/cache is a separate (Medium) item.
+        logger.warning("plan count_limit lookup errored for '%s': %s", plan_id, exc)
     return None
 
 
-def _check_capacity_limit(db: Session, event: Event, new_guests_count: int) -> None:
+def lock_event_capacity(db: Session, event_id) -> None:
+    """Serialize capacity-affecting writes for one event within the current
+    transaction (Postgres advisory xact lock, released on commit/rollback). This
+    makes the check-then-insert sequence atomic across concurrent requests, so two
+    simultaneous RSVPs can't both slip past the plan limit and a double-submit from
+    the same guest can't create two rows. No-op-safe on non-Postgres backends."""
+    try:
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": f"guest-cap:{event_id}"})
+    except Exception as exc:  # pragma: no cover - only if backend lacks advisory locks
+        logger.warning("advisory lock unavailable for event %s: %s", event_id, exc)
+
+
+def check_capacity_limit(db: Session, event: Event, new_guests_count: int) -> None:
     """
-    Check if adding new guests would exceed the plan's count_limit.
-    Raises ValueError if limit would be exceeded.
+    Check if adding `new_guests_count` (import_count) would exceed the plan's
+    count_limit. Raises ValueError if it would. Call INSIDE the advisory lock (see
+    `lock_event_capacity`) for the check to be race-free.
     """
     if not event.plan_id:
         # No plan set, no limit enforced
         return
-    
+
     count_limit = _get_plan_count_limit(event.plan_id)
     if count_limit is None:
         # No limit set for this plan, or couldn't fetch it
         return
-    
+
     # Count current total guests (sum of import_count)
     current_total = db.query(func.sum(Guest.import_count)).filter(
         Guest.event_id == str(event.id)
     ).scalar() or 0
-    
+
     if current_total + new_guests_count > count_limit:
         raise ValueError(
             f"Adding {new_guests_count} guests would exceed the plan limit of {count_limit}. "
             f"Current total: {current_total}, limit: {count_limit}"
         )
+
+
+# Backwards-compatible alias (kept for any external importers).
+_check_capacity_limit = check_capacity_limit
 
 
 def create_guest(db: Session, data: GuestCreate) -> Guest:
@@ -115,8 +142,9 @@ def create_guest(db: Session, data: GuestCreate) -> Guest:
     if not event:
         raise ValueError("event_id does not exist")
 
-    # Check capacity limit before creating
-    _check_capacity_limit(db, event, data.import_count or 1)
+    # Atomic capacity: lock the event, then check-then-insert in one transaction.
+    lock_event_capacity(db, data.event_id)
+    check_capacity_limit(db, event, data.import_count or 1)
 
     phone_norm = normalize_phone(data.phone)
     # ensure no duplicate phone within same event

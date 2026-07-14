@@ -20,6 +20,27 @@ WEEKDAY_HEBREW = {
 }
 
 
+def _location_name(loc: Any) -> str:
+    """Event.location may be a plain string OR a structured JSON object
+    ({name, address, coordinates}). Return the venue NAME (never the raw JSON,
+    which must not leak into a message)."""
+    if not loc:
+        return ""
+    data = loc
+    if isinstance(loc, str):
+        s = loc.strip()
+        if not s.startswith("{"):
+            return s
+        import json as _json
+        try:
+            data = _json.loads(s)
+        except (ValueError, TypeError):
+            return s
+    if isinstance(data, dict):
+        return str(data.get("name") or data.get("address") or "").strip()
+    return str(loc)
+
+
 def _format_event_date(event_date_str: str) -> str:
     """Format date string (ISO format) to 'יום שלישי, ה־3.12.25' style."""
     if not event_date_str:
@@ -58,6 +79,10 @@ def _format_inviters(inviters: List[Dict[str, str]]) -> str:
 class BaseState:
     id: str = "base"
     next_states: Dict[str, str] = {}
+    # Optional semantic routing: {RsvpAction -> next_state_id}. When the incoming
+    # message carries a resolved semantic action, this is consulted BEFORE the
+    # text map, so routing never depends on the displayed button label.
+    semantic_next: Dict[Any, str] = {}
 
     def __init__(self, flow: "FlowManager"):
         self.flow = flow
@@ -179,8 +204,15 @@ class BaseState:
             await session.rollback()
 
     def get_next_state(self, message: Dict[str, Any]) -> str:
+        # 1) Semantic action first (label-independent). Only maps recognized
+        #    actions; UNKNOWN/None is not in the map, so it falls through.
+        action = message.get("action")
+        if action is not None and self.semantic_next:
+            mapped = self.semantic_next.get(action)
+            if mapped:
+                return mapped
+        # 2) Legacy text matching (last-resort fallback).
         text = (message.get("text") or "").strip()
-        # exact
         if text in self.next_states:
             return self.next_states[text]
         # wildcard
@@ -258,7 +290,7 @@ class BaseState:
                     else:
                         replacements['event.time'] = 'השעה'
                     
-                    replacements['event.location'] = event_data.get('location', 'המיקום')
+                    replacements['event.location'] = _location_name(event_data.get('location')) or 'המיקום'
                     
                     # Format inviters like handlers.py
                     inviters = event_data.get('inviters', [])

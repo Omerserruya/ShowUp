@@ -73,6 +73,7 @@ async def init_db() -> None:
             # Ensure new columns exist
             await conn.execute(text("ALTER TABLE messages_log ADD COLUMN IF NOT EXISTS status VARCHAR(32)"))
             await conn.execute(text("ALTER TABLE messages_log ADD COLUMN IF NOT EXISTS guest_phone VARCHAR(64)"))
+            await conn.execute(text("ALTER TABLE messages_log ADD COLUMN IF NOT EXISTS campaign_id uuid"))
             
             # Create index on guest_phone + direction for efficient free-text resolution queries
             await conn.execute(text("""

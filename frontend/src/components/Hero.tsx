@@ -7,6 +7,9 @@ import Button from '@mui/material/Button';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import MenuItem from '@mui/material/MenuItem';
+import Snackbar from '@mui/material/Snackbar';
+import Alert from '@mui/material/Alert';
+import CircularProgress from '@mui/material/CircularProgress';
 import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import { keyframes } from '@mui/system';
 import { useNavigate } from 'react-router-dom';
@@ -45,6 +48,8 @@ export default function Hero() {
   const [fullName, setFullName] = React.useState('');
   const [eventType, setEventType] = React.useState('');
   const [customEventType, setCustomEventType] = React.useState('');
+  const [demoSending, setDemoSending] = React.useState(false);
+  const [toast, setToast] = React.useState<{ severity: 'success' | 'error' | 'warning'; message: string } | null>(null);
 
   const buildLeadPayload = (source: string) => {
     const normalizedPhone = phone ? normalizePhoneNumber(phone, countryCode) : '';
@@ -71,36 +76,42 @@ export default function Hero() {
     }
   };
 
-  // Demo CTA: build a per-event-type invite template and open it in WhatsApp, so the
-  // visitor literally receives the message a guest would get. The template links to a
-  // public demo RSVP page (the full guest experience - no signup needed).
-  const handleSeeDemo = () => {
+  // Demo CTA: verify the visitor filled in name + phone, then send the real ShowUp
+  // WhatsApp demo (the approved MARKETING template) to their number. The template's
+  // own buttons carry the next steps ("בואו נתחיל" → wizard, "דברו איתי" → sales
+  // WhatsApp), so here we just validate and fire the send.
+  const handleSeeDemo = async () => {
     const name = fullName.trim();
-    const type = eventType === 'other' && customEventType ? 'other' : (eventType || 'wedding');
-    const rsvpParams = new URLSearchParams();
-    rsvpParams.set('type', eventType || 'wedding');
-    if (name) rsvpParams.set('name', name);
-    const rsvpUrl = `${window.location.origin}/demo/invite?${rsvpParams.toString()}`;
+    if (!name) {
+      setToast({ severity: 'warning', message: 'רק צריך את השם המלא שלכם כדי לשלוח 🙂' });
+      return;
+    }
+    if (!phone.trim()) {
+      setToast({ severity: 'warning', message: 'הוסיפו מספר טלפון ונשלח את הדמו לוואטסאפ שלכם' });
+      return;
+    }
+    const normalizedPhone = normalizePhoneNumber(phone, countryCode);
+    if (!normalizedPhone || normalizedPhone.replace(/\D/g, '').length < 9) {
+      setToast({ severity: 'warning', message: 'מספר הטלפון לא נראה תקין, בדקו שוב' });
+      return;
+    }
 
-    const greeting = name ? `שלום ${name}! 👋` : 'שלום! 👋';
-    const templates: Record<string, string> = {
-      wedding: `${greeting}\nאתם מוזמנים לחתונה של דנה ❤ יוסי 💍\nיום שלישי, 19:30 · אולמי הגן הקסום, ראשון לציון\nלצפייה בהזמנה ואישור הגעה:\n${rsvpUrl}`,
-      'bar-mitzvah': `${greeting}\nאתם מוזמנים לחגוג את בר המצווה של איתי 🕎\nלצפייה בהזמנה ואישור הגעה:\n${rsvpUrl}`,
-      'bat-mitzvah': `${greeting}\nאתם מוזמנים לחגוג את בת המצווה של מאיה ✨\nלצפייה בהזמנה ואישור הגעה:\n${rsvpUrl}`,
-      brit: `${greeting}\nבשעה טובה ומוצלחת! אתם מוזמנים לברית 👶\nלצפייה בהזמנה ואישור הגעה:\n${rsvpUrl}`,
-      corporate: `${greeting}\nאתם מוזמנים לערב ההשקה של ShowUp 🚀\nלצפייה בהזמנה ואישור הגעה:\n${rsvpUrl}`,
-      other: `${greeting}\nאתם מוזמנים לאירוע שלנו 🎉\nלצפייה בהזמנה ואישור הגעה:\n${rsvpUrl}`,
-    };
-    const text = templates[type] || templates.other;
-
-    // Fire-and-forget lead, then open WhatsApp. With a phone we open a chat to that
-    // number (visitor can message themselves); otherwise WhatsApp lets them pick a chat.
-    sendLead('hero_see_demo', LEAD_ENDPOINT_CONTACT);
-    const digits = phone ? normalizePhoneNumber(phone, countryCode).replace(/\D/g, '') : '';
-    const waUrl = digits
-      ? `https://wa.me/${digits}?text=${encodeURIComponent(text)}`
-      : `https://wa.me/?text=${encodeURIComponent(text)}`;
-    window.open(waUrl, '_blank', 'noopener,noreferrer');
+    setDemoSending(true);
+    sendLead('hero_see_demo', LEAD_ENDPOINT_CONTACT); // fire-and-forget lead capture
+    try {
+      const res = await fetch('/api/auth/demo/whatsapp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, phone: normalizedPhone, countryCode, eventType }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setToast({ severity: 'success', message: 'הדמו בדרך אליכם לוואטסאפ 🎉 בדקו את ההודעה' });
+    } catch (err) {
+      console.error('Demo send failed', err);
+      setToast({ severity: 'error', message: 'לא הצלחנו לשלוח כרגע, נסו שוב בעוד רגע' });
+    } finally {
+      setDemoSending(false);
+    }
   };
 
   const handleStartNow = () => {
@@ -475,7 +486,8 @@ export default function Hero() {
               fullWidth
               variant="outlined"
               onClick={handleSeeDemo}
-              startIcon={<WhatsAppIcon />}
+              disabled={demoSending}
+              startIcon={demoSending ? <CircularProgress size={16} color="inherit" /> : <WhatsAppIcon />}
               sx={(theme) => ({
                 mt: 1.25,
                 mb: 1.5,
@@ -491,7 +503,7 @@ export default function Hero() {
                 '&:hover': { borderColor: '#25D366', bgcolor: 'rgba(37,211,102,0.08)' },
               })}
             >
-              שלחו לי דמו לוואטסאפ
+              {demoSending ? 'שולחים...' : 'שלחו לי דמו לוואטסאפ'}
             </Button>
 
             <Typography
@@ -678,6 +690,19 @@ export default function Hero() {
 
         </Box>
       </Container>
+
+      <Snackbar
+        open={!!toast}
+        autoHideDuration={5000}
+        onClose={() => setToast(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        {toast ? (
+          <Alert severity={toast.severity} variant="filled" onClose={() => setToast(null)} sx={{ width: '100%' }}>
+            {toast.message}
+          </Alert>
+        ) : undefined}
+      </Snackbar>
     </Box>
   );
 }

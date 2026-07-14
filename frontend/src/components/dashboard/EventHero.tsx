@@ -1,20 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Box, Typography, alpha, useTheme } from '@mui/material';
+import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import EventStatusBadge from '../EventStatusBadge';
 import { useCountUp } from './useCountUp';
 
 const BRAND = '#888cee';
 const DEEP = '#6f74e0';
-const SOFT = '#aab0f4';
-// Donut palette — soft, flat, pastel (per the reference).
-const CONFIRMED = '#5BC4A8'; // mint / teal — מגיעים
-const WAITING = '#C9A8E0';   // lavender — טרם ענו
-const DECLINED = '#2E4756';  // navy — לא מגיעים
-const REMAIN = '#D6DCDC';    // light gray — יתרה
-const NUM_DARK = '#2E4756';  // center number
 
-const HE_DAYS = ['יום ראשון', 'יום שני', 'יום שלישי', 'יום רביעי', 'יום חמישי', 'יום שישי', 'שבת'];
 const HE_MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
+const STAGES = ['יצאו הזמנות', 'אוספים אישורים', 'הכול מוכן'];
+
+const TONE_DOT: Record<'good' | 'attention' | 'start', string> = {
+  good: '#22c55e', attention: '#f59e0b', start: '#94a3b8',
+};
 
 function emojiForType(type?: string, name?: string): string {
   const t = (type || '').toLowerCase();
@@ -29,122 +27,129 @@ function emojiForType(type?: string, name?: string): string {
   return '✨';
 }
 
+/** A minimal lifecycle marker - three nodes on a thin rail, the current one lit. */
+function HeroLifecycle({ stage }: { stage: number }) {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+  const muted = isDark ? alpha('#fff', 0.2) : alpha('#2E3A4A', 0.18);
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.85 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center' }}>
+        {STAGES.map((_, i) => {
+          const on = i <= stage;
+          const active = i === stage;
+          return (
+            <React.Fragment key={i}>
+              {i > 0 && <Box sx={{ width: 26, height: 2, borderRadius: 2, bgcolor: on ? BRAND : muted, transition: 'background .5s ease' }} />}
+              <Box sx={{ width: active ? 11 : 9, height: active ? 11 : 9, borderRadius: '50%', bgcolor: on ? BRAND : 'transparent', border: on ? 'none' : `2px solid ${muted}`, boxShadow: active ? `0 0 0 4px ${alpha(BRAND, 0.16)}` : 'none', transition: 'all .4s ease' }} />
+            </React.Fragment>
+          );
+        })}
+      </Box>
+      <Typography sx={{ fontSize: '0.72rem', fontWeight: 800, letterSpacing: '0.01em', color: DEEP }}>
+        {STAGES[Math.max(0, Math.min(stage, STAGES.length - 1))]}
+      </Typography>
+    </Box>
+  );
+}
+
 export interface EventHeroProps {
   name: string;
   dateISO?: string;
-  totalInvited: number;
-  confirmed: number;
-  pending: number;
-  declined: number;
-  totalGuests: number;
+  daysUntil?: number | null;
   type?: string;
   state?: any;
   paymentStatus?: any;
-  daysUntil?: number | null;
+  statusTone: 'good' | 'attention' | 'start';
+  statusLabel: string;
+  nextEyebrow: string;
+  nextLabel: string;
+  onNext?: () => void;
+  lifecycleStage: number;
 }
 
-export default function EventHero({ name, dateISO, totalInvited, confirmed, pending, declined, totalGuests, type, state, paymentStatus, daysUntil }: EventHeroProps) {
-  const theme = useTheme();
-  const isDark = theme.palette.mode === 'dark';
+/**
+ * The hero communicates the STATE of the event - name, countdown, current status,
+ * and the next automatic action. No card background: it sits directly on the page.
+ */
+export default function EventHero({
+  name, dateISO, daysUntil, type, state, paymentStatus,
+  statusTone, statusLabel, nextEyebrow, nextLabel, onNext, lifecycleStage,
+}: EventHeroProps) {
   const emoji = emojiForType(type, name);
+  const shownDays = useCountUp(typeof daysUntil === 'number' && daysUntil > 0 ? daysUntil : 0);
 
-  // --- RSVP donut (inlined; the hero card is the only container) ---
-  const [ringMounted, setRingMounted] = useState(false);
-  useEffect(() => { const t = setTimeout(() => setRingMounted(true), 140); return () => clearTimeout(t); }, []);
-  const shownConfirmed = useCountUp(confirmed);
-
-  const size = 160, stroke = 14, r = (size - stroke) / 2, C = 2 * Math.PI * r, GAP = 8;
-  const remaining = Math.max(0, totalGuests - confirmed - pending - declined);
-  const gray = isDark ? alpha('#fff', 0.12) : REMAIN;
-  const segments = [
-    { key: 'c', value: confirmed, color: CONFIRMED },
-    { key: 'p', value: pending, color: WAITING },
-    { key: 'd', value: declined, color: DECLINED },
-    { key: 'r', value: remaining, color: gray },
-  ].filter((s) => s.value > 0);
-  const denom = confirmed + pending + declined + remaining;
-  const multi = segments.length > 1;
-  let acc = 0;
-  const arcs = segments.map((s) => {
-    const frac = denom > 0 ? s.value / denom : 0;
-    const startLen = acc * C;
-    acc += frac;
-    return { ...s, frac, startLen };
-  });
-
-  let dateLine = '';
+  let dateLabel = '';
   if (dateISO) {
     const d = new Date(dateISO);
-    if (!isNaN(d.getTime())) {
-      dateLine = `${HE_DAYS[d.getDay()]} · ${d.getDate()} ב${HE_MONTHS[d.getMonth()]}`;
-      if (typeof daysUntil === 'number' && daysUntil >= 0) dateLine += daysUntil === 0 ? ' · היום!' : ` · עוד ${daysUntil} ימים`;
-    }
+    if (!isNaN(d.getTime())) dateLabel = `${d.getDate()} ב${HE_MONTHS[d.getMonth()]}`;
   }
-
-  let status: string;
-  if (totalGuests === 0) status = 'עוד רגע מתחילים — שלא תדעו אקסלים 🎉';
-  else if (pending === 0) status = 'הכול מוכן. נשאר רק לספור את הימים 🎉';
-  else status = `${pending} עוד לא ענו — אנחנו על זה 😉`;
+  const showCountdown = typeof daysUntil === 'number' && daysUntil >= 0;
 
   return (
     <Box
       sx={{
-        position: 'relative', overflow: 'hidden', borderRadius: 5,
-        p: { xs: 2.5, sm: 3.5 }, mb: { xs: 2.5, sm: 3 },
-        background: isDark
-          ? `linear-gradient(120deg, ${alpha(DEEP, 0.3)} 0%, ${alpha(BRAND, 0.13)} 60%, ${alpha(SOFT, 0.06)} 100%)`
-          : `linear-gradient(120deg, ${alpha(BRAND, 0.12)} 0%, ${alpha(SOFT, 0.06)} 60%, ${alpha('#ffffff', 0)} 100%)`,
-        boxShadow: isDark ? 'none' : `0 12px 34px ${alpha(BRAND, 0.1)}`,
+        position: 'relative',
+        px: { xs: 0.5, sm: 1 }, py: { xs: 1, sm: 1.5 }, mb: { xs: 2, sm: 2.5 },
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: { xs: 2.5, sm: 4 }, flexWrap: 'wrap',
         opacity: 0, animation: 'heroIn .6s cubic-bezier(.2,.8,.2,1) forwards',
         '@keyframes heroIn': { from: { opacity: 0, transform: 'translateY(10px)' }, to: { opacity: 1, transform: 'none' } },
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: { xs: 2.5, sm: 4 }, flexWrap: 'wrap',
       }}
     >
-      {/* event info (right in RTL) */}
-      <Box sx={{ flex: 1, minWidth: 240 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: 'wrap', mb: 0.75 }}>
-          <Typography sx={{ fontSize: { xs: '1.5rem', sm: '1.8rem' }, lineHeight: 1, animation: 'heroFloat 5s ease-in-out infinite', '@keyframes heroFloat': { '0%,100%': { transform: 'translateY(0) rotate(0)' }, '50%': { transform: 'translateY(-3px) rotate(-4deg)' } } }}>{emoji}</Typography>
-          <Typography component="h1" sx={{ fontWeight: 800, letterSpacing: '-0.025em', fontSize: { xs: '1.5rem', sm: '2rem' }, lineHeight: 1.1, color: 'text.primary' }}>{name}</Typography>
+      {/* event state (start / right) */}
+      <Box sx={{ minWidth: 220 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 1 }}>
+          <Box component="span" sx={{ fontSize: '1.3rem', lineHeight: 1 }}>{emoji}</Box>
+          <Typography component="h1" sx={{ fontWeight: 800, letterSpacing: '-0.025em', fontSize: { xs: '1.9rem', sm: '2.5rem' }, lineHeight: 1.1, display: 'inline-block', color: 'text.primary' }}>
+            {name}
+          </Typography>
           <EventStatusBadge state={state} paymentStatus={paymentStatus} />
         </Box>
-        {(dateLine || totalInvited > 0) && (
-          <Typography sx={{ color: 'text.secondary', fontSize: { xs: '0.9rem', sm: '1rem' }, fontWeight: 600 }}>
-            {[dateLine, totalInvited > 0 ? `${totalInvited} מוזמנים` : ''].filter(Boolean).join('  •  ')}
-          </Typography>
-        )}
-        <Typography sx={{ mt: 1.5, fontSize: { xs: '1.05rem', sm: '1.25rem' }, fontWeight: 800, letterSpacing: '-0.01em', color: DEEP }}>{status}</Typography>
+
+        {/* current status - one short line */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.85 }}>
+          <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: TONE_DOT[statusTone], boxShadow: `0 0 0 3px ${alpha(TONE_DOT[statusTone], 0.16)}`, flexShrink: 0 }} />
+          <Typography sx={{ fontWeight: 700, fontSize: '1rem', color: 'text.primary' }}>{statusLabel}</Typography>
+        </Box>
+
+        {/* next automatic action - short, scannable */}
+        <Box
+          onClick={onNext}
+          role={onNext ? 'button' : undefined}
+          tabIndex={onNext ? 0 : undefined}
+          onKeyDown={onNext ? (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNext(); } } : undefined}
+          sx={{
+            display: 'inline-flex', alignItems: 'center', gap: 0.75,
+            cursor: onNext ? 'pointer' : 'default', color: 'text.secondary',
+            transition: 'color .15s ease', '&:hover': onNext ? { color: DEEP } : undefined,
+            '&:focus-visible': { outline: `2px solid ${BRAND}`, outlineOffset: 2, borderRadius: 1 },
+          }}
+        >
+          <Typography component="span" sx={{ fontSize: '0.85rem', fontWeight: 700, color: DEEP }}>{nextEyebrow}:</Typography>
+          <Typography component="span" sx={{ fontSize: '0.9rem', fontWeight: 600 }}>{nextLabel}</Typography>
+          {onNext && <ArrowBackRoundedIcon sx={{ fontSize: 15 }} />}
+        </Box>
       </Box>
 
-      {/* RSVP donut — sits directly on the left; no card, no wrapper */}
-      <Box sx={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
-        <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-          {denom === 0 && <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={gray} strokeWidth={stroke} />}
-          {arcs.map((a, i) => {
-            const segLen = a.frac * C;
-            const drawn = ringMounted ? Math.max(segLen - (multi ? GAP : 0), 0.001) : 0;
-            return (
-              <circle
-                key={a.key}
-                cx={size / 2} cy={size / 2} r={r} fill="none"
-                stroke={a.color} strokeWidth={stroke} strokeLinecap="round"
-                strokeDasharray={`${drawn} ${C}`}
-                strokeDashoffset={-a.startLen}
-                style={{ transition: 'stroke-dasharray 1.1s cubic-bezier(.2,.8,.2,1)', transitionDelay: `${i * 120}ms` }}
-              />
-            );
-          })}
-        </svg>
-        <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-          <Box sx={{ display: 'flex', alignItems: 'baseline', whiteSpace: 'nowrap' }}>
-            <Typography component="span" sx={{ fontWeight: 800, fontSize: '2rem', lineHeight: 1, letterSpacing: '-0.02em', color: isDark ? 'common.white' : NUM_DARK }}>
-              {shownConfirmed}
-            </Typography>
-            <Typography component="span" sx={{ fontWeight: 500, fontSize: '1.15rem', color: 'text.disabled', ml: 0.5 }}>
-              / {totalGuests}
-            </Typography>
+      {/* countdown + lifecycle marker - the hero's left side */}
+      <Box sx={{ textAlign: 'center', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: { xs: 1.5, sm: 2 } }}>
+        {typeof daysUntil === 'number' && daysUntil < 0 && (
+          <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.5rem', sm: '1.9rem' }, letterSpacing: '-0.02em', color: DEEP }}>היה בלתי נשכח 💜</Typography>
+        )}
+        {showCountdown && (daysUntil === 0 ? (
+          <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.8rem', sm: '2.3rem' }, letterSpacing: '-0.02em', color: DEEP }}>היום הגדול! 🎉</Typography>
+        ) : (
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 0.6 }}>
+              <Typography sx={{ fontSize: '0.95rem', fontWeight: 700, color: 'text.secondary' }}>עוד</Typography>
+              <Typography sx={{ fontWeight: 800, fontSize: { xs: '2.6rem', sm: '3.1rem' }, lineHeight: 0.85, letterSpacing: '-0.03em', color: DEEP }}>{shownDays}</Typography>
+              <Typography sx={{ fontSize: '0.95rem', fontWeight: 700, color: 'text.secondary' }}>{daysUntil === 1 ? 'יום' : 'ימים'}</Typography>
+            </Box>
+            {dateLabel && <Typography sx={{ mt: 0.75, fontSize: '0.88rem', fontWeight: 600, color: 'text.secondary' }}>{dateLabel}</Typography>}
           </Box>
-          <Typography sx={{ fontSize: '0.82rem', fontWeight: 600, color: 'text.secondary', mt: 0.6 }}>מגיעים לאירוע!</Typography>
-        </Box>
+        ))}
+        <HeroLifecycle stage={lifecycleStage} />
       </Box>
     </Box>
   );

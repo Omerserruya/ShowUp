@@ -118,7 +118,7 @@ export default function OtpVerification({
           </Box>
 
           {error && (
-            <Typography variant="body2" sx={{ color: 'error.main', mb: 2, fontWeight: 600 }}>
+            <Typography role="alert" variant="body2" sx={{ color: 'error.main', mb: 2, fontWeight: 600 }}>
               {error}
             </Typography>
           )}

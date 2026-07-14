@@ -107,33 +107,22 @@ export const inputsCustomizations: InputComponents = {
               color: 'primary',
               variant: 'contained',
             },
+            // Brand purple - the default contained button across the whole app
+            // (was a black/gray gradient). Checkout keeps its own dark CTA via
+            // an explicit sx where needed.
             style: {
               color: 'white',
-              backgroundColor: gray[900],
-              backgroundImage: `linear-gradient(to bottom, ${gray[700]}, ${gray[800]})`,
-              boxShadow: `inset 0 1px 0 ${gray[600]}, inset 0 -1px 0 1px hsl(220, 0%, 0%)`,
+              backgroundColor: brand[400],
+              backgroundImage: 'none',
+              boxShadow: 'none',
               '&:hover': {
                 backgroundImage: 'none',
-                backgroundColor: gray[700],
+                backgroundColor: brand[500],
                 boxShadow: 'none',
               },
               '&:active': {
-                backgroundColor: gray[800],
+                backgroundColor: brand[600],
               },
-              ...applyDarkStyles(theme, {
-                color: 'black',
-                backgroundColor: gray[50],
-                backgroundImage: `linear-gradient(to bottom, ${gray[100]}, ${gray[50]})`,
-                boxShadow: 'inset 0 -1px 0  hsl(220, 30%, 80%)',
-                '&:hover': {
-                  backgroundImage: 'none',
-                  backgroundColor: gray[300],
-                  boxShadow: 'none',
-                },
-                '&:active': {
-                  backgroundColor: gray[400],
-                },
-              }),
             },
           },
           {

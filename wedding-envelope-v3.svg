@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1200" width="100%" height="100%" shape-rendering="geometricPrecision">
+  <defs>
+    <!-- מרקם נייר מובלט ששומר על הצבע: תאורה כמכפיל (multiply) על הבורדו, חתוך אוטומטית לצורה -->
+    <filter id="paper-texture" filterUnits="userSpaceOnUse" x="0" y="0" width="800" height="1200">
+      <feTurbulence type="fractalNoise" baseFrequency="0.058" numOctaves="4" result="noise" />
+      <feDiffuseLighting in="noise" lighting-color="#ffffff" surfaceScale="1.15" diffuseConstant="0.76" result="light">
+        <feDistantLight azimuth="60" elevation="45" />
+      </feDiffuseLighting>
+      <feComposite in="SourceGraphic" in2="light" operator="arithmetic" k1="2" k2="0" k3="0" k4="0" />
+    </filter>
+
+    <!-- צל כיסוי: מטשטש ומזיז מטה משולש שחור שמצויר מאחורי הלשונית (בלי אפקט-על-אפקט) -->
+    <filter id="cast-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="12" />
+      <feOffset dy="9" />
+    </filter>
+
+    <!-- טשטוש רך לקווי הקיפול בין המשולשים -->
+    <filter id="fold-blur" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="5" />
+    </filter>
+
+    <!-- צל רך מתחת לחותמת -->
+    <filter id="seal-shadow" x="-70%" y="-70%" width="240%" height="240%">
+      <feDropShadow dx="0" dy="13" stdDeviation="18" flood-color="#000" flood-opacity="0.72" />
+    </filter>
+
+    <!-- ===== חותמת שעווה תלת-מימדית ===== -->
+    <!-- נפח קמור: מפת גובה מהצורה -> תאורה מפוזרת (צורה) + ברק ספקולרי -->
+    <filter id="wax3d" x="-40%" y="-40%" width="180%" height="180%">
+      <!-- מפת גובה כיפתית מהאלפא + מרקם מותך עדין -->
+      <feGaussianBlur in="SourceAlpha" stdDeviation="7" result="height" />
+      <feTurbulence type="fractalNoise" baseFrequency="0.09" numOctaves="2" seed="11" result="tex" />
+      <feDisplacementMap in="height" in2="tex" scale="7" result="bump" />
+
+      <!-- תאורה מפוזרת: הופכת את הכיפה לקמורה, מוכפלת בצבע השעווה -->
+      <feDiffuseLighting in="bump" surfaceScale="9" diffuseConstant="0.95" lighting-color="#fffdf8" result="diff">
+        <feDistantLight azimuth="230" elevation="52" />
+      </feDiffuseLighting>
+      <feComposite in="diff" in2="SourceGraphic" operator="arithmetic" k1="1.62" k2="0" k3="0" k4="0" result="lit" />
+
+      <!-- ברק ספקולרי חד וממוקד -->
+      <feSpecularLighting in="bump" surfaceScale="10" specularConstant="0.6" specularExponent="30" lighting-color="#fffaf0" result="spec">
+        <fePointLight x="-45" y="-55" z="85" />
+      </feSpecularLighting>
+      <feComposite in="spec" in2="SourceAlpha" operator="in" result="specClip" />
+
+      <!-- הצללת שוליים (מכהה את הקצה החיצוני לתחושת נפח) -->
+      <feComposite in="lit" in2="specClip" operator="arithmetic" k1="0" k2="1" k3="1" k4="0" />
+    </filter>
+
+    <!-- טבעת פנימית שקועה (חריטה) -->
+    <filter id="wax-inset" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3" result="hb" />
+      <feDiffuseLighting in="hb" surfaceScale="-4" diffuseConstant="1.1" lighting-color="#fff" result="d">
+        <feDistantLight azimuth="230" elevation="55" />
+      </feDiffuseLighting>
+      <feComposite in="d" in2="SourceGraphic" operator="arithmetic" k1="1.4" k2="0" k3="0" k4="0" />
+    </filter>
+
+    <radialGradient id="wax" cx="40%" cy="34%" r="78%">
+      <stop offset="0%" stop-color="#f5efe4"/><stop offset="50%" stop-color="#eae1d2"/>
+      <stop offset="82%" stop-color="#d8ccb8"/><stop offset="100%" stop-color="#bfb097"/>
+    </radialGradient>
+    <radialGradient id="waxInner" cx="46%" cy="40%" r="68%">
+      <stop offset="0%" stop-color="#f3ece0"/><stop offset="100%" stop-color="#e0d5c2"/>
+    </radialGradient>
+  </defs>
+
+  <style>
+    .paper { fill: #3e121a; }
+    .inside { fill: #2c0d12; }
+    .textured { filter: url(#paper-texture); }
+    .script { font-family: 'Brush Script MT','Snell Roundhand','Segoe Script',cursive; font-style: italic; fill: #e7d8c4; }
+  </style>
+
+  <!-- ====== נקודת המפגש המרכזית: C = (400,715) => קודקוד 90° לתחתון וללשונית ====== -->
+
+  <!-- פנים המעטפה (נחשף כשהלשונית תיפתח בעתיד) -->
+  <path d="M 0,0 L 800,0 L 400,715 Z" class="inside" />
+
+  <!-- ====== 3 משולשי גוף המעטפה: שמאל / ימין / תחתון (זהים לגמרי) ====== -->
+  <g id="envelope-body" class="textured">
+    <path id="tri-left"   d="M 0,0    L 0,1200   L 400,715 Z" class="paper" />
+    <path id="tri-right"  d="M 800,0  L 800,1200 L 400,715 Z" class="paper" />
+    <path id="tri-bottom" d="M 0,1200 L 800,1200 L 400,715 Z" class="paper" />
+  </g>
+
+  <!-- קווי קיפול עדינים בין משולשי הגוף (רק הקיפולים התחתונים) -->
+  <g filter="url(#fold-blur)" fill="none" stroke="#000" stroke-width="4" opacity="0.3">
+    <path d="M 400,715 L 0,1200" />
+    <path d="M 400,715 L 800,1200" />
+  </g>
+
+  <!-- צל הכיסוי של הלשונית: משולש שחור מטושטש, מצויר מאחורי הלשונית -->
+  <path d="M -400,0 L 1200,0 L 400,715 Z" fill="#000" opacity="0.5" filter="url(#cast-shadow)" />
+
+  <!-- ====== משולש הלשונית העליון: אותה טקסטורה כמו הגוף (בלי אפקט-על-אפקט), קודקוד 90° ====== -->
+  <g id="flap">
+    <path d="M -400,0 L 1200,0 L 400,715 Z" class="paper textured" />
+  </g>
+
+  <!-- ====== חותמת השעווה התלת-מימדית על קצה הלשונית ====== -->
+  <g transform="translate(400 715) scale(1.35)">
+    <!-- צל מוטל על הנייר -->
+    <path filter="url(#seal-shadow)" fill="#000" opacity="0.65" d="
+      M0,-90 C40,-90 92,-50 90,-24 C88,6 96,30 84,52
+      C70,74 40,90 -4,90 C-40,90 -78,68 -90,40
+      C-98,12 -92,-16 -84,-40 C-74,-62 -44,-90 0,-90 Z"/>
+
+    <!-- גוף השעווה הקמור (3D) -->
+    <path filter="url(#wax3d)" fill="url(#wax)" d="
+      M0,-92 C26,-93 41,-81 55,-72 C75,-60 93,-51 90,-25
+      C88,-4 97,9 87,31 C79,52 59,61 44,75 C27,89 14,93 -5,90
+      C-27,87 -43,81 -59,68 C-77,53 -93,43 -90,17
+      C-88,-3 -95,-19 -84,-39 C-73,-59 -55,-67 -39,-79
+      C-25,-89 -19,-93 0,-92 Z"/>
+
+    <!-- טבעת פנימית שקועה (רחבה, שפה דקה) -->
+    <circle r="66" fill="url(#waxInner)" filter="url(#wax-inset)" />
+    <!-- קו חריטה עדין בקצה הטבעת -->
+    <circle r="66" fill="none" stroke="#a8998a" stroke-width="1" opacity="0.4" />
+
+    <!-- טקסט חרוט (מובלט פנימה) -->
+    <text x="0" y="-6" text-anchor="middle" font-family="Georgia,'Times New Roman',serif"
+      font-size="18" letter-spacing="4" fill="#9a8a68" opacity="0.9">THE</text>
+    <text x="0" y="0" text-anchor="middle" font-family="Georgia,'Times New Roman',serif"
+      font-size="18" letter-spacing="4" fill="#fff" opacity="0.15">THE</text>
+    <text x="0" y="25" text-anchor="middle" font-family="'Brush Script MT','Snell Roundhand',cursive"
+      font-style="italic" font-size="33" fill="#9a8a68" opacity="0.9">wedding</text>
+    <text x="0" y="26.5" text-anchor="middle" font-family="'Brush Script MT','Snell Roundhand',cursive"
+      font-style="italic" font-size="33" fill="#fff" opacity="0.15">wedding</text>
+  </g>
+
+  <!-- ====== טקסט ההזמנה ====== -->
+  <g text-anchor="middle">
+    <text class="script" x="400" y="960"  font-size="30">A personal invitation for you to our</text>
+    <text class="script" x="400" y="1000" font-size="30">wedding.</text>
+    <text class="script" x="400" y="1050" font-size="30">can’t wait to celebrate with you!</text>
+    <text class="script" x="400" y="1130" font-size="40" fill="#efe2d2">Ido &amp; Matan</text>
+  </g>
+</svg>

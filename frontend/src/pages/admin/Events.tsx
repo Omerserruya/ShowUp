@@ -20,6 +20,12 @@ import {
   DialogActions,
   Button,
   Stack,
+  Switch,
+  FormControlLabel,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
   CircularProgress,
   Alert,
   Collapse,
@@ -34,12 +40,14 @@ import {
   Search as SearchIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
+  Add as AddIcon,
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
   People as PeopleIcon,
   Campaign as CampaignIcon,
 } from '@mui/icons-material';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
+import { parseLocation } from '../../config/messaging';
 
 interface EventRow {
   id: string;
@@ -102,6 +110,57 @@ function Events() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteEvent, setDeleteEvent] = useState<EventRow | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Create dialog
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState('');
+  const [createType, setCreateType] = useState('wedding');
+  const [createDate, setCreateDate] = useState('');
+  const [createLocation, setCreateLocation] = useState('');
+  const [createPaid, setCreatePaid] = useState(true);
+  const [createOwnerPhone, setCreateOwnerPhone] = useState('');
+  const [createOwnerFirst, setCreateOwnerFirst] = useState('');
+  const [createOwnerLast, setCreateOwnerLast] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  const handleOpenCreate = () => {
+    setCreateName('');
+    setCreateType('wedding');
+    setCreateDate('');
+    setCreateLocation('');
+    setCreatePaid(true);
+    setCreateOwnerPhone('');
+    setCreateOwnerFirst('');
+    setCreateOwnerLast('');
+    setCreateOpen(true);
+  };
+
+  const handleSaveCreate = async () => {
+    setCreating(true);
+    try {
+      const res = await fetchWithAuth('/api/admin/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: createName.trim(),
+          event_type: createType || null,
+          event_date: createDate ? new Date(createDate).toISOString() : null,
+          location: createLocation.trim() || null,
+          paid: createPaid,
+          owner_phone: createOwnerPhone.trim() || null,
+          owner_first_name: createOwnerFirst.trim() || null,
+          owner_last_name: createOwnerLast.trim() || null,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setCreateOpen(false);
+      fetchEvents();
+    } catch (e: any) {
+      setError(e?.message || 'שגיאה ביצירת אירוע');
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const fetchEvents = useCallback(async () => {
     setLoading(true);
@@ -239,6 +298,13 @@ function Events() {
 
   return (
     <Box sx={{ p: { xs: 2, sm: 3 }, direction: 'rtl', maxWidth: 1200, mx: 'auto' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, gap: 1, flexWrap: 'wrap' }}>
+        <Typography variant="h5" sx={{ fontWeight: 700 }}>אירועים</Typography>
+        <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate}>
+          אירוע חדש
+        </Button>
+      </Box>
+
       {error && (
         <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>
           {error}
@@ -308,7 +374,7 @@ function Events() {
                           : '-'}
                       </TableCell>
                       <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
-                        {event.location || '-'}
+                        {parseLocation(event.location).name || '-'}
                       </TableCell>
                       <TableCell>
                         <Chip
@@ -449,6 +515,94 @@ function Events() {
           </>
         )}
       </TableContainer>
+
+      {/* Create Dialog */}
+      <Dialog open={createOpen} onClose={() => !creating && setCreateOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>אירוע חדש</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              label="שם האירוע"
+              value={createName}
+              onChange={(e) => setCreateName(e.target.value)}
+              fullWidth
+              required
+              disabled={creating}
+            />
+            <FormControl fullWidth disabled={creating}>
+              <InputLabel>סוג אירוע</InputLabel>
+              <Select value={createType} label="סוג אירוע" onChange={(e) => setCreateType(e.target.value)}>
+                <MenuItem value="wedding">חתונה</MenuItem>
+                <MenuItem value="brit">ברית</MenuItem>
+                <MenuItem value="brita">בריתה</MenuItem>
+                <MenuItem value="bar">בר מצווה</MenuItem>
+                <MenuItem value="bat">בת מצווה</MenuItem>
+                <MenuItem value="birthday">יום הולדת</MenuItem>
+                <MenuItem value="corporate">אירוע חברה</MenuItem>
+                <MenuItem value="other">אחר</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              label="תאריך ושעה"
+              type="datetime-local"
+              value={createDate}
+              onChange={(e) => setCreateDate(e.target.value)}
+              fullWidth
+              disabled={creating}
+              InputLabelProps={{ shrink: true }}
+            />
+            <TextField
+              label="מיקום"
+              value={createLocation}
+              onChange={(e) => setCreateLocation(e.target.value)}
+              fullWidth
+              disabled={creating}
+            />
+            <FormControlLabel
+              control={<Switch checked={createPaid} onChange={(e) => setCreatePaid(e.target.checked)} disabled={creating} />}
+              label={createPaid ? 'משולם (paid)' : 'לא משולם (unpaid)'}
+            />
+
+            <Divider textAlign="right" sx={{ pt: 1 }}>
+              <Typography variant="caption" color="text.secondary">בעל/ת האירוע</Typography>
+            </Divider>
+            <TextField
+              label="טלפון בעל/ת האירוע"
+              placeholder="+9725..."
+              value={createOwnerPhone}
+              onChange={(e) => setCreateOwnerPhone(e.target.value)}
+              fullWidth
+              disabled={creating}
+              inputProps={{ dir: 'ltr' }}
+              helperText="ריק = האירוע ישויך אליך (המנהל). אחרת ייווצר משתמש חדש כבעלים."
+            />
+            <Stack direction="row" spacing={2}>
+              <TextField
+                label="שם פרטי"
+                value={createOwnerFirst}
+                onChange={(e) => setCreateOwnerFirst(e.target.value)}
+                fullWidth
+                disabled={creating || !createOwnerPhone.trim()}
+              />
+              <TextField
+                label="שם משפחה"
+                value={createOwnerLast}
+                onChange={(e) => setCreateOwnerLast(e.target.value)}
+                fullWidth
+                disabled={creating || !createOwnerPhone.trim()}
+              />
+            </Stack>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreateOpen(false)} disabled={creating}>
+            ביטול
+          </Button>
+          <Button variant="contained" onClick={handleSaveCreate} disabled={creating || !createName.trim()}>
+            {creating ? <CircularProgress size={20} /> : 'צור'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Edit Dialog */}
       <Dialog open={editOpen} onClose={() => !saving && setEditOpen(false)} maxWidth="sm" fullWidth>

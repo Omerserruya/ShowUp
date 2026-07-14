@@ -225,6 +225,42 @@ def find_active_event_by_owner_phone(conn: psycopg2.extensions.connection, owner
     return None
 
 
+def find_active_events_by_owner_phone(conn: psycopg2.extensions.connection, owner_phone: str) -> List[Dict[str, Any]]:
+    """
+    Find ALL active events owned by this phone number, most recent first.
+
+    Args:
+        conn: Database connection
+        owner_phone: Normalized phone number (digits only)
+
+    Returns:
+        List of event dicts (possibly empty)
+    """
+    normalized_phone = normalize_phone(owner_phone)
+    if not normalized_phone:
+        return []
+
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT id, name, description, event_date, location, active, created_at, updated_at, inviters, owners
+            FROM events
+            WHERE active = true
+            ORDER BY created_at DESC
+            """
+        )
+        events = cur.fetchall()
+
+    owned = []
+    for event in events:
+        owner_phones = get_owner_phones_for_event(conn, str(event["id"]))
+        if normalized_phone in owner_phones:
+            owned.append(dict(event))
+
+    logger.info(f"Found {len(owned)} active event(s) for owner phone: {normalized_phone}")
+    return owned
+
+
 def check_import_exists(conn: psycopg2.extensions.connection, message_id: str) -> bool:
     """Check if an import with this message_id already exists (idempotency check)."""
     if not message_id:

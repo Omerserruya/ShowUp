@@ -33,6 +33,7 @@ import {
   Search as SearchIcon,
   Edit as EditIcon,
   Delete as DeleteIcon,
+  Add as AddIcon,
 } from '@mui/icons-material';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 
@@ -73,6 +74,15 @@ function Users() {
   const [deleteUser, setDeleteUser] = useState<UserRow | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Create dialog
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createFirstName, setCreateFirstName] = useState('');
+  const [createLastName, setCreateLastName] = useState('');
+  const [createPhone, setCreatePhone] = useState('');
+  const [createEmail, setCreateEmail] = useState('');
+  const [createRole, setCreateRole] = useState('user');
+  const [creating, setCreating] = useState(false);
+
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -107,6 +117,39 @@ function Users() {
     }, 400);
     return () => clearTimeout(timer);
   }, [searchInput]);
+
+  const handleOpenCreate = () => {
+    setCreateFirstName('');
+    setCreateLastName('');
+    setCreatePhone('');
+    setCreateEmail('');
+    setCreateRole('user');
+    setCreateOpen(true);
+  };
+
+  const handleSaveCreate = async () => {
+    setCreating(true);
+    try {
+      const res = await fetchWithAuth('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          first_name: createFirstName.trim(),
+          last_name: createLastName.trim(),
+          phone: createPhone.trim(),
+          email: createEmail.trim(),
+          role: createRole,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setCreateOpen(false);
+      fetchUsers();
+    } catch (e: any) {
+      setError(e?.message || 'שגיאה ביצירת משתמש');
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const handleEdit = (user: UserRow) => {
     setEditUser(user);
@@ -167,6 +210,13 @@ function Users() {
 
   return (
     <Box sx={{ p: { xs: 2, sm: 3 }, direction: 'rtl', maxWidth: 1200, mx: 'auto' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, gap: 1, flexWrap: 'wrap' }}>
+        <Typography variant="h5" sx={{ fontWeight: 700 }}>משתמשים</Typography>
+        <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate}>
+          משתמש חדש
+        </Button>
+      </Box>
+
       {error && (
         <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>
           {error}
@@ -277,6 +327,67 @@ function Users() {
           </>
         )}
       </TableContainer>
+
+      {/* Create Dialog */}
+      <Dialog open={createOpen} onClose={() => !creating && setCreateOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>משתמש חדש</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <TextField
+              label="שם פרטי"
+              value={createFirstName}
+              onChange={(e) => setCreateFirstName(e.target.value)}
+              fullWidth
+              required
+              disabled={creating}
+            />
+            <TextField
+              label="שם משפחה"
+              value={createLastName}
+              onChange={(e) => setCreateLastName(e.target.value)}
+              fullWidth
+              disabled={creating}
+            />
+            <TextField
+              label="טלפון"
+              placeholder="+9725..."
+              value={createPhone}
+              onChange={(e) => setCreatePhone(e.target.value)}
+              fullWidth
+              required
+              disabled={creating}
+              inputProps={{ dir: 'ltr' }}
+            />
+            <TextField
+              label="אימייל"
+              value={createEmail}
+              onChange={(e) => setCreateEmail(e.target.value)}
+              fullWidth
+              disabled={creating}
+              inputProps={{ dir: 'ltr' }}
+            />
+            <FormControl fullWidth disabled={creating}>
+              <InputLabel>תפקיד</InputLabel>
+              <Select value={createRole} label="תפקיד" onChange={(e) => setCreateRole(e.target.value)}>
+                <MenuItem value="user">משתמש</MenuItem>
+                <MenuItem value="admin">מנהל</MenuItem>
+              </Select>
+            </FormControl>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreateOpen(false)} disabled={creating}>
+            ביטול
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleSaveCreate}
+            disabled={creating || !createFirstName.trim() || !createPhone.trim()}
+          >
+            {creating ? <CircularProgress size={20} /> : 'צור'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Edit Dialog */}
       <Dialog open={editOpen} onClose={() => !saving && setEditOpen(false)} maxWidth="sm" fullWidth>

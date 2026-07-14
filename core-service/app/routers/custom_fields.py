@@ -88,7 +88,8 @@ def list_fields(event_id: uuid.UUID, db: Session = Depends(get_db), user_id: uui
 
 @router.post("/events/{event_id}/fields", response_model=FieldDefOut, status_code=201)
 def create_field(event_id: uuid.UUID, payload: FieldDefIn, db: Session = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
-    require_event_permission(db, event_crud.get_event(db, event_id), user_id, Action.EVENT_WRITE)
+    event = event_crud.get_event(db, event_id)
+    require_event_permission(db, event, user_id, Action.EVENT_WRITE)
     if payload.data_type == FieldType.ENUM and not payload.options:
         raise HTTPException(status_code=422, detail="enum field requires non-empty options")
     if db.query(EventFieldDef).filter(EventFieldDef.event_id == event_id, EventFieldDef.key == payload.key).first():
@@ -139,7 +140,8 @@ def get_guest_custom(guest_id: uuid.UUID, db: Session = Depends(get_db), user_id
 @router.put("/guests/{guest_id}/custom", response_model=dict)
 def set_guest_custom(guest_id: uuid.UUID, payload: dict = Body(...), db: Session = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
     guest = _guest_or_404(db, guest_id)
-    require_event_permission(db, event_crud.get_event(db, guest.event_id), user_id, Action.GUEST_WRITE)
+    event = event_crud.get_event(db, guest.event_id)
+    require_event_permission(db, event, user_id, Action.GUEST_WRITE)
     defs = {f.key: f for f in db.query(EventFieldDef).filter(EventFieldDef.event_id == guest.event_id).all()}
     for key, value in payload.items():
         if key not in defs:

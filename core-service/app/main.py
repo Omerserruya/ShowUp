@@ -20,7 +20,11 @@ from app.routers.event_ops import router as event_ops_router
 from app.routers.members import router as members_router
 from app.routers.usage_router import router as usage_router
 from app.routers.entitlements import router as entitlements_router
+from app.routers.catalog import router as catalog_router
+from app.routers.messaging_admin import router as messaging_admin_router
 from app.routers.public_invite import router as public_invite_router
+from app.routers.venues import router as venues_router
+from app.routers.assistant import router as assistant_router
 
 
 def create_app() -> FastAPI:
@@ -87,7 +91,11 @@ def create_app() -> FastAPI:
     app.include_router(members_router)
     app.include_router(usage_router)
     app.include_router(entitlements_router)
+    app.include_router(catalog_router)
+    app.include_router(messaging_admin_router)
     app.include_router(public_invite_router)
+    app.include_router(venues_router)
+    app.include_router(assistant_router)
 
     @app.get("/healthz")
     def healthz():
@@ -97,8 +105,10 @@ def create_app() -> FastAPI:
     # plan→feature entitlements matrix, and the public web invitation + RSVP pages.
     app.add_middleware(
         AuthMiddleware,
-        allow_unauthenticated_paths=["/healthz", "/entitlements"],
-        allow_unauthenticated_prefixes=["/entitlements/", "/public/"],
+        allow_unauthenticated_paths=["/healthz", "/entitlements", "/catalog"],
+        # `/internal/` is service-to-service (aub→core); each handler enforces the
+        # shared X-Internal-Secret itself, so it bypasses the JWT middleware.
+        allow_unauthenticated_prefixes=["/entitlements/", "/public/", "/internal/"],
     )
 
     return app

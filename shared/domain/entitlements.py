@@ -1,19 +1,19 @@
-"""Plan-tier entitlements: the single source of truth for which FEATURES each
-billing plan unlocks (the "RBAC for tiers").
+"""Plan entitlements - RETIRED as a feature gate, kept as a compatibility shim.
 
-This is the tier/package analogue of `roles.py`. Where `roles.py` answers "may
-this *member* perform this action", this module answers "does this *plan* include
-this feature at all". Both gates apply: a request must pass the role check AND the
-plan-feature check.
+Business model (2026-07): plans differ ONLY by numeric limits -
+  1. guest capacity  (plan `count_limit`, enforced in core-service guest CRUD)
+  2. campaign rounds (`shared/domain/rounds.py`, enforced on round creation)
 
-Kept as pure code (not DB) for the same reasons as the role matrix: deterministic,
-testable, and importable by core-service with no runtime cross-service call. The
-Mongo `plans` collection still owns marketing copy, price, and numeric limits
-(e.g. guest `count_limit`); this module owns the feature gate.
+Every plan includes the FULL feature set: AI assistant, WhatsApp campaigns,
+contact import, guest management, dashboards, invitation builder, seating,
+tags, custom fields, analytics, templates, team members - everything. The
+product's differentiation is the complete experience, not feature gating.
 
-Plans with an unknown / None id (legacy pre-tiering events) are treated as fully
-entitled so the migration never breaks existing events - mirrors the legacy
-owner-bridge in `authz.py`.
+This module therefore no longer denies anything: `has_feature` is always True
+and `features_for` returns the full set for every plan. The Feature enum and
+function signatures are preserved so existing imports and the public
+/entitlements API keep working (frontends and older services may still call
+them). Role-based access control (`roles.py`) is unaffected and still applies.
 """
 from __future__ import annotations
 
@@ -21,77 +21,46 @@ from enum import Enum
 
 
 class Feature(str, Enum):
-    # Available on every plan, including Free
-    DASHBOARD = "dashboard"                  # view event dashboard / RSVP stats (read-only)
-    CSV_EXPORT = "csv_export"                # export the guest list to CSV
-    WEB_INVITATION = "web_invitation"        # public web invitation + open-form web RSVP + editor
-
-    # Paid tiers
-    INVITATION_CUSTOMIZATION = "invitation_customization"  # advanced invite styling (fonts/textures)
-    WHATSAPP_CAMPAIGNS = "whatsapp_campaigns"             # send WhatsApp rounds/reminders
-    TEMPLATES = "templates"                               # WhatsApp message templates
-    ADVANCED_SCHEDULING = "advanced_scheduling"          # multi-step / follow-up scheduling
+    DASHBOARD = "dashboard"
+    CSV_EXPORT = "csv_export"
+    WEB_INVITATION = "web_invitation"
+    INVITATION_CUSTOMIZATION = "invitation_customization"
+    WHATSAPP_CAMPAIGNS = "whatsapp_campaigns"
+    TEMPLATES = "templates"
+    ADVANCED_SCHEDULING = "advanced_scheduling"
     TAGS = "tags"
     CUSTOM_FIELDS = "custom_fields"
     SEATING = "seating"
-    TEAM_MEMBERS = "team_members"                         # invite producers / members
-    AI_ASSISTANT = "ai_assistant"                         # WhatsApp AI assistant
+    TEAM_MEMBERS = "team_members"
+    AI_ASSISTANT = "ai_assistant"
+    READ_ANALYTICS = "read_analytics"
+    SMS_CAMPAIGNS = "sms_campaigns"
+    CUSTOM_DOMAIN = "custom_domain"
 
 
-# Canonical plan tier ids (mirror the `id` field of the Mongo `plans` docs).
+# Canonical plan / edition ids (mirror the `id` field of aub's plans.json docs).
+# Editions still exist commercially (price, guest cap, included rounds) - they
+# just no longer gate features.
 PLAN_FREE = "free"
+PLAN_STARTER = "starter"
+PLAN_VENUE = "venue"
 PLAN_BASIC = "basic"
 PLAN_PLUS = "plus"
 PLAN_PRO = "pro"
 
-_ALL = set(Feature)
+ALL_PLAN_IDS = [PLAN_FREE, PLAN_STARTER, PLAN_VENUE, PLAN_BASIC, PLAN_PLUS, PLAN_PRO]
 
-# Explicit grants per plan. Anything not listed is denied (default-deny).
-_MATRIX: dict[str, set[Feature]] = {
-    PLAN_FREE: {
-        Feature.DASHBOARD,
-        Feature.CSV_EXPORT,
-        Feature.WEB_INVITATION,
-    },
-    PLAN_BASIC: {
-        Feature.DASHBOARD,
-        Feature.CSV_EXPORT,
-        Feature.WEB_INVITATION,
-        Feature.INVITATION_CUSTOMIZATION,
-        Feature.WHATSAPP_CAMPAIGNS,
-        Feature.TEMPLATES,
-    },
-    PLAN_PLUS: {
-        Feature.DASHBOARD,
-        Feature.CSV_EXPORT,
-        Feature.WEB_INVITATION,
-        Feature.INVITATION_CUSTOMIZATION,
-        Feature.WHATSAPP_CAMPAIGNS,
-        Feature.TEMPLATES,
-        Feature.ADVANCED_SCHEDULING,
-        Feature.TAGS,
-        Feature.CUSTOM_FIELDS,
-        Feature.SEATING,
-        Feature.TEAM_MEMBERS,
-    },
-    PLAN_PRO: set(_ALL),
-}
+_ALL = set(Feature)
 
 
 def features_for(plan_id: str | None) -> set[Feature]:
-    """The set of features unlocked by a plan.
-
-    None / unknown plan id => fully entitled (legacy bridge). Any plan id present
-    in the matrix => its explicit grant set (default-deny for the rest).
-    """
-    if plan_id is None:
-        return set(_ALL)
-    return _MATRIX.get(str(plan_id).strip().lower(), set(_ALL))
+    """Every plan (and legacy None/unknown ids) gets the full feature set."""
+    return set(_ALL)
 
 
 def has_feature(plan_id: str | None, feature: Feature) -> bool:
-    """True if the plan unlocks the feature."""
-    return feature in features_for(plan_id)
+    """Always True - features are not plan-gated anymore."""
+    return True
 
 
 def feature_keys_for(plan_id: str | None) -> list[str]:
@@ -100,5 +69,7 @@ def feature_keys_for(plan_id: str | None) -> list[str]:
 
 
 def entitlement_matrix() -> dict[str, list[str]]:
-    """Full {plan_id: [feature_key, ...]} matrix - for the public entitlements API."""
-    return {plan_id: sorted(f.value for f in feats) for plan_id, feats in _MATRIX.items()}
+    """Full {plan_id: [feature_key, ...]} matrix - for the public entitlements API.
+    Every plan reports the full set."""
+    all_keys = sorted(f.value for f in _ALL)
+    return {plan_id: list(all_keys) for plan_id in ALL_PLAN_IDS}

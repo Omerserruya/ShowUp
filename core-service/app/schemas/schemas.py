@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, EmailStr, field_validator
 
@@ -22,10 +22,13 @@ class Inviter(BaseModel):
 
 # ---- Public web invitation (Phase 16) ----
 class InvitationEnvelope(BaseModel):
-    color: str = "#f5efe6"
+    enabled: bool = False                # show the wax-sealed envelope intro
+    color: str = "#f5efe6"               # envelope paper colour
     texture: Optional[str] = None        # texture key (e.g. "linen") or image url
-    stampText: Optional[str] = None      # text rendered inside the stamp
-    envelopeText: Optional[str] = None   # text printed on the envelope face
+    waxColor: Optional[str] = None       # wax seal colour
+    stampText: Optional[str] = None      # text pressed into the wax seal
+    paperText: Optional[str] = None      # message written on the envelope paper
+    envelopeText: Optional[str] = None   # editorial overline (shown on the photo)
     font: Optional[str] = None
 
 
@@ -49,6 +52,14 @@ class InvitationConfig(BaseModel):
     details: InvitationDetails = Field(default_factory=InvitationDetails)
     fontFamily: Optional[str] = None
     rsvpEnabled: bool = True
+    # Section-based studio model (Framer-style composable invitation). Optional and
+    # free-form so the editor can evolve sections/theme without backend changes.
+    # Legacy fields above are kept in sync for backward compatibility.
+    theme: Optional[Dict[str, Any]] = None
+    sections: Optional[List[Dict[str, Any]]] = None
+    labels: Optional[Dict[str, str]] = None  # editable UI labels keyed by id
+    order: Optional[List[str]] = None        # order of the movable content blocks
+    hidden: Optional[List[str]] = None       # ids of content blocks hidden from guests
 
     class Config:
         populate_by_name = True
@@ -78,6 +89,8 @@ class EventBase(BaseModel):
     active: bool = True
     # Event type (wedding, brit, ...) - drives adaptive timeline + template recommendations.
     event_type: Optional[str] = Field(None, serialization_alias="eventType", validation_alias="eventType")
+    # Event-type-specific subjects (bride/groom/parents/baby/celebrant/company).
+    subjects: Optional[dict] = None
     # Payment dimension (paid | free | pending | unpaid), independent of `state`.
     payment_status: Optional[str] = Field(None, serialization_alias="paymentStatus", validation_alias="paymentStatus")
     plan_id: Optional[str] = Field(None, serialization_alias="planId")  # Plan ID from MongoDB (serialized as planId)
@@ -111,6 +124,12 @@ class EventOut(EventBase):
     state: Optional[str] = None
     created_at: dt.datetime
     updated_at: dt.datetime
+    # Venue Edition identity (derived, not a column): when the event belongs to a
+    # partner venue Account, surface its name so the UI can show "Provided by
+    # <Venue>" and detect the venue-sourced upgrade/partner-discount flow. Populated
+    # by event_crud.annotate_venue on the read paths; defaults keep other paths safe.
+    venue_name: Optional[str] = Field(None, serialization_alias="venueName", validation_alias="venueName")
+    is_venue: Optional[bool] = Field(None, serialization_alias="isVenue", validation_alias="isVenue")
 
     @field_validator('inviters', mode='before')
     @classmethod
@@ -185,6 +204,8 @@ class CampaignBase(BaseModel):
     status: str = Field("pending", max_length=20)
     # Number of recipients the campaign was actually sent to (messages enqueued)
     recipient_count: int = Field(0, ge=0)
+    # Optional header image (S3 object URL) for image-header templates.
+    header_image_url: Optional[str] = None
     # Phase 6: first-class audience + optional single follow-up.
     audience: CampaignAudience = CampaignAudience.EVERYONE
     audience_filter: Optional[dict] = None
@@ -206,6 +227,7 @@ class CampaignUpdate(BaseModel):
     audience_filter: Optional[dict] = None
     follow_up_after_hours: Optional[int] = Field(default=None, ge=1)
     follow_up_audience: Optional[CampaignAudience] = None
+    header_image_url: Optional[str] = None
 
 
 class CampaignOut(CampaignBase):

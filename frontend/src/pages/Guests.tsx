@@ -74,6 +74,7 @@ import GuestTimeline from '../components/GuestTimeline';
 import BulkActionsBar from '../components/BulkActionsBar';
 import TagPickerDialog, { Tag } from '../components/TagPickerDialog';
 import CopyGuestsDialog from '../components/CopyGuestsDialog';
+import GuestsSummary from '../components/GuestsSummary';
 // Types
 interface Guest {
   _id: string;
@@ -117,12 +118,12 @@ function mapGuestFromAPI(apiGuest: any): Guest {
   };
 }
 
-// Status colors
+// Status colors - brand-aligned, dark enough for chip text on a 10% tint.
 const statusColors = {
-  pending: '#f57c00',
-  confirmed: '#2e7d32',
-  declined: '#c62828',
-  maybe: '#1976d2'
+  pending: '#d97706',
+  confirmed: '#15803d',
+  declined: '#dc2626',
+  maybe: '#6f74e0'
 } as const;
 
 // Status labels
@@ -149,7 +150,7 @@ function Guests() {
     const searchParams = new URLSearchParams(location.search);
     // Support both "filter" and legacy/mistyped "filtering" params
     const filter = searchParams.get('filter') || searchParams.get('filtering');
-    if (filter && ['all', 'confirmed', 'declined', 'pending'].includes(filter)) {
+    if (filter && ['all', 'confirmed', 'declined', 'pending', 'maybe'].includes(filter)) {
       return filter;
     }
     return 'all';
@@ -169,7 +170,10 @@ function Guests() {
   const [guestNotes, setGuestNotes] = useState<Record<string, string>>({});
   const [refreshKey, setRefreshKey] = useState(0);
   const [statsRefreshKey, setStatsRefreshKey] = useState(0);
-  
+  // Once the page has shown real content once, never blank the whole page again -
+  // filtering/searching refetch in place, not via the full-page loader.
+  const [firstLoadDone, setFirstLoadDone] = useState(false);
+
   // Editing state
   const [editingGuest, setEditingGuest] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<string | null>(null);
@@ -212,6 +216,8 @@ function Guests() {
     total: number; validCount: number; invalidCount: number; duplicateCount: number;
   }>(null);
   const [importing, setImporting] = useState(false);
+  const [importTab, setImportTab] = useState<'whatsapp' | 'upload'>('whatsapp');
+  const [importDragOver, setImportDragOver] = useState(false);
   const [deleteConfirmGuestId, setDeleteConfirmGuestId] = useState<string | null>(null);
   const [changeCountGuestId, setChangeCountGuestId] = useState<string | null>(null);
   const [changeCountValues, setChangeCountValues] = useState<{ expectedCount: number | string; confirmedCount: number | string }>({ expectedCount: '', confirmedCount: '' });
@@ -236,7 +242,7 @@ function Guests() {
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
     const filter = searchParams.get('filter') || searchParams.get('filtering');
-    if (filter && ['all', 'confirmed', 'declined', 'pending'].includes(filter)) {
+    if (filter && ['all', 'confirmed', 'declined', 'pending', 'maybe'].includes(filter)) {
       // Apply filter from URL
       setStatusFilter(filter);
       setPage(0);
@@ -252,9 +258,13 @@ function Guests() {
     }
   }, [location.search, navigate, location.pathname]);
 
-  // Determine if we need to fetch all guests (when filtering by status)
-  // If filtering by status (not 'all'), fetch all matching guests without pagination
-  const shouldFetchAll = statusFilter !== 'all' && statusFilter !== 'withNotes';
+  // Determine if we need to fetch all guests.
+  // Status filters are served by the API with real pagination + totals, so they
+  // stay paginated. Group / "with notes" filters are applied client-side, so they
+  // must operate on the full list - filtering a single 25-row page would silently
+  // hide matching guests from other pages.
+  const clientSideFilterActive = statusFilter === 'withNotes' || groupFilter !== 'all';
+  const shouldFetchAll = clientSideFilterActive;
   const pageSizeForFetch = shouldFetchAll ? 200 : rowsPerPage; // Max allowed by API
   const pageForFetch = shouldFetchAll ? 1 : page + 1; // Always page 1 when fetching all
   
@@ -268,14 +278,30 @@ function Guests() {
     `${searchQueryForAPI}_refresh_${refreshKey}`, // Add refreshKey to trigger refetch
     'created_at',
     false, // Get all guests, not just with responses
-    shouldFetchAll ? statusFilter : undefined // Pass status filter when fetching filtered results (API expects 'confirmed', 'pending', 'declined')
+    // Only real statuses go to the API; 'withNotes'/group filtering happens client-side on the full list.
+    statusFilter !== 'all' && statusFilter !== 'withNotes' ? statusFilter : undefined
   );
 
   // Fetch stats from API - only refresh when explicitly needed (not on filter changes)
   const { stats, loading: statsLoading } = useOverviewStats(statsRefreshKey);
-  
-  // Use total from API when filtering, otherwise use stats.total_guests (number of invitations)
-  const totalForDisplay = shouldFetchAll && totalGuestsFromAPI > 0 ? totalGuestsFromAPI : (stats?.total_guests || 0);
+
+  // After the first load settles, never show the full-page loader again.
+  useEffect(() => {
+    if (!guestsLoading && !statsLoading && !firstLoadDone) setFirstLoadDone(true);
+  }, [guestsLoading, statsLoading, firstLoadDone]);
+
+  // Use the real filtered total from the API when a server-side filter (status/search)
+  // or a fetch-all is active; otherwise use stats.total_guests (number of invitations).
+  const serverFilterActive = Boolean(searchQueryForAPI) || (statusFilter !== 'all' && statusFilter !== 'withNotes');
+  const totalForDisplay = (shouldFetchAll || serverFilterActive) ? totalGuestsFromAPI : (stats?.total_guests || 0);
+
+  // Clamp pagination: if a refetch shrinks the result set below the current page
+  // (e.g. while typing a search), snap back to the first page.
+  useEffect(() => {
+    if (!guestsLoading && !shouldFetchAll && page > 0 && page * rowsPerPage >= totalForDisplay) {
+      setPage(0);
+    }
+  }, [guestsLoading, shouldFetchAll, page, rowsPerPage, totalForDisplay]);
 
   // Map API guests to component format
   const guests = apiGuests.map(mapGuestFromAPI);
@@ -308,12 +334,21 @@ function Guests() {
   // Check if any guest has a table number
   const hasTableNumbers = guests.some(guest => guest.tableNumber !== undefined);
 
+  // Any status/group filter active (used to distinguish "no guests yet" from "no matches")
+  const filtersActive = statusFilter !== 'all' || groupFilter !== 'all';
+  const clearFilters = () => {
+    setStatusFilter('all');
+    setGroupFilter('all');
+    setPage(0);
+  };
+
   // Update guest status
-  const updateGuestStatus = useCallback(async (guestId: string, newStatus: 'pending' | 'confirmed' | 'declined') => {
+  const updateGuestStatus = useCallback(async (guestId: string, newStatus: 'pending' | 'confirmed' | 'declined' | 'maybe') => {
     const statusMap: Record<string, string> = {
       'pending': 'invited',
       'confirmed': 'attending',
-      'declined': 'declined'
+      'declined': 'declined',
+      'maybe': 'maybe'
     };
 
     try {
@@ -372,6 +407,8 @@ function Guests() {
       }
 
       setSnackbar({ open: true, message: 'הערה עודכנה בהצלחה', severity: 'success' });
+      // Refresh so the saved note is reflected in the fetched guest data
+      setRefreshKey(prev => prev + 1);
     } catch (error) {
       console.error('Error updating guest note:', error);
       setSnackbar({ open: true, message: 'שגיאה בעדכון ההערה', severity: 'error' });
@@ -580,8 +617,7 @@ function Guests() {
     return { rows, total: rows.length, validCount, invalidCount, duplicateCount };
   };
 
-  const handleImportFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] || null;
+  const handleImportFile = useCallback((file: File | null) => {
     setImportFile(file);
     setImportPreview(null);
     if (!file) return;
@@ -597,6 +633,10 @@ function Guests() {
     };
     reader.readAsText(file);
   }, []);
+
+  const handleImportFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    handleImportFile(event.target.files?.[0] || null);
+  }, [handleImportFile]);
 
   const handleImportGuests = useCallback(async () => {
     if (!selectedEvent?.id) return;
@@ -861,9 +901,9 @@ function Guests() {
     }
   }, []);
 
-  // Show loading state only on initial load, not when filtering
-  const isInitialLoad = guestsLoading && apiGuests.length === 0;
-  if (isInitialLoad && statsLoading) {
+  // Full-page loader ONLY on the very first load (before any content has shown).
+  // After that, filtering/searching refetch in place inside the table.
+  if (!firstLoadDone && apiGuests.length === 0 && (guestsLoading || statsLoading)) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
         <CircularProgress />
@@ -894,560 +934,47 @@ function Guests() {
         </Alert>
       </Snackbar>
 
-      {/* Top Section - Gradient background on mobile */}
-      <Box
-        sx={{
-          backgroundColor: isMobile ? 'transparent' : 'white',
-          background: isMobile 
-            ? 'linear-gradient(135deg, #4f8ff5 0%, #8b5cf6 100%)' 
-            : 'white',
-          width: '100%',
-          pt: isMobile ? 4 : 3,
-          pb: isMobile ? 2 : 3,
-          px: { xs: 2, sm: 3, md: 4 },
-          borderRadius: isMobile ? { xs: '0 0 24px 24px', sm: 0 } : 0,
-          position: 'relative',
-          overflow: 'hidden',
-        }}
+      {/* Top Section: summary infographic - ring + breakdown + capacity + actions */}
+      <GuestsSummary
+        confirmed={confirmedGuests}
+        pending={pendingGuests}
+        declined={stats?.declined || 0}
+        totalInvited={totalInvitedPeople}
+        capacity={eventCapacity}
+        daysUntil={(() => {
+          const d = (selectedEvent as any)?.event_date || (selectedEvent as any)?.date;
+          if (!d || isNaN(new Date(d).getTime())) return null;
+          return Math.floor((new Date(d).getTime() - Date.now()) / 86400000);
+        })()}
+        onAdd={() => setGuestModalOpen(true)}
+        onImport={() => setImportModalOpen(true)}
+        onExport={(e) => setExportMenuAnchor(e.currentTarget)}
+        exportLoading={exportLoading}
+      />
+
+      {/* Export format menu */}
+      <Menu
+        anchorEl={exportMenuAnchor}
+        open={Boolean(exportMenuAnchor)}
+        onClose={() => setExportMenuAnchor(null)}
+        disableAutoFocusItem
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
-        {/* Summary Statistics */}
-        {isMobile ? (
-          <Paper
-            sx={{
-              p: 3,
-              mb: 3,
-              borderRadius: 3,
-              backgroundColor: 'rgba(255, 255, 255, 0.95)',
-              backdropFilter: 'blur(10px)',
-              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-              border: 'none',
-            }}
-          >
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'stretch',
-                width: '100%',
-              }}
-            >
-              {/* LEFT SIDE – Breakdown */}
-              <Box
-                sx={{
-                  flex: 1,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'center',
-                  gap: 1.5,
-                  pl: 2,
-                }}
-              >
-                {/* Coming */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Box
-                    sx={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: '50%',
-                      backgroundColor: '#2e7d32',
-                    }}
-                  />
-                  <Typography sx={{ fontSize: '0.9rem', color: '#111827', fontWeight: 500 }}>
-                    {confirmedGuests} מגיעים
-      </Typography>
-                </Box>
-
-                {/* Not coming */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Box
-                    sx={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: '50%',
-                      backgroundColor: '#c62828',
-                    }}
-                  />
-                  <Typography sx={{ fontSize: '0.9rem', color: '#111827', fontWeight: 500 }}>
-                    {stats?.declined || 0} לא מגיעים
-                  </Typography>
-                </Box>
-
-                {/* No response */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Box
-                    sx={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: '50%',
-                      backgroundColor: '#f57c00',
-                    }}
-                  />
-                  <Typography sx={{ fontSize: '0.9rem', color: '#111827', fontWeight: 500 }}>
-                    {pendingGuests} ללא מענה
-                  </Typography>
-                </Box>
-              </Box>
-
-              {/* RIGHT SIDE – Total */}
-              <Box
-                sx={{
-                  flex: 1,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'center',
-                  alignItems: 'flex-end',
-                  pr: 2,
-                }}
-              >
-                <Typography
-                  sx={{
-                    fontSize: '0.9rem',
-                    color: '#6b7280',
-                    mb: 0.5,
-                    fontWeight: 500,
-                  }}
-                >
-                  סה״כ מוזמנים
-                </Typography>
-
-                <Typography
-                  sx={{
-                    fontWeight: 'bold',
-                    fontSize: '3rem',
-                    lineHeight: 1,
-                    color: '#111827',
-                  }}
-                >
-                  {totalInvitedPeople}
-                </Typography>
-              </Box>
-            </Box>
-          </Paper>
-
-        ) : (
-          /* Desktop: Three separate cards */
-          <Grid container spacing={2} sx={{ mb: 3 }}>
-            <Grid item xs={4}>
-              <Paper
-                sx={{
-                  p: { xs: 1.5, sm: 2.5 },
-                  backgroundColor: alpha('#90caf9', 0.2),
-                  borderRadius: 3,
-                  boxShadow: 'none',
-                  border: '1px solid',
-                  borderColor: alpha('#1976d2', 0.2),
-                  position: 'relative',
-                  minHeight: { xs: 80, sm: 100 }
-                }}
-              >                <Box
-                  sx={{
-                    position: 'absolute',
-                    bottom: { xs: 8, sm: 16 },
-                    right: { xs: 8, sm: 16 },
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: { xs: 0.5, sm: 1 },
-                    flexDirection: 'row-reverse'
-                  }}
-                >
-                  <Box
-                    sx={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: '50%',
-                      backgroundColor: '#1565c0',
-                      flexShrink: 0
-                    }}
-                  />
-                  <Typography 
-                    variant="body2" 
-                    sx={{ 
-                      color: '#1565c0',
-                      fontWeight: 500,
-                      fontSize: { xs: '0.65rem', sm: '0.875rem' },
-                      lineHeight: 1.2
-                    }}
-                  >
-                    סך הכל
-                  </Typography>
-                </Box>
-                <Typography 
-                  variant="h3"
-                  sx={{ 
-                    fontWeight: 'bold', 
-                    color: '#1565c0',
-                    position: 'absolute',
-                    top: { xs: 12, sm: 16 },
-                    left: { xs: 12, sm: 16 },
-                    fontSize: { xs: '1.5rem', sm: '2.5rem' }
-                  }}
-                >
-                  {totalInvitedPeople}
-                </Typography>
-
-              </Paper>
-            </Grid>
-            <Grid item xs={4}>
-              <Paper
-                sx={{
-                  p: { xs: 1.5, sm: 2.5 },
-                  backgroundColor: alpha('#fff59d', 0.3),
-                  borderRadius: 3,
-                  boxShadow: 'none',
-                  border: '1px solid',
-                  borderColor: alpha('#f57c00', 0.2),
-                  position: 'relative',
-                  minHeight: { xs: 80, sm: 100 }
-                }}
-              >
-                <Typography 
-                  variant="h3"
-                  sx={{ 
-                    fontWeight: 'bold', 
-                    color: '#e65100',
-                    position: 'absolute',
-                    top: { xs: 12, sm: 16 },
-                    left: { xs: 12, sm: 16 },
-                    fontSize: { xs: '1.5rem', sm: '2.5rem' }
-                  }}
-                >
-                  {pendingGuests}
-                </Typography>
-                <Box
-                  sx={{
-                    position: 'absolute',
-                    bottom: { xs: 8, sm: 16 },
-                    right: { xs: 8, sm: 16 },
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: { xs: 0.5, sm: 1 },
-                    flexDirection: 'row-reverse'
-                  }}
-                >
-                  <Box
-                    sx={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: '50%',
-                      backgroundColor: '#e65100',
-                      flexShrink: 0
-                    }}
-                  />
-                  <Typography 
-                    variant="body2" 
-                    sx={{ 
-                      color: '#e65100',
-                      fontWeight: 500,
-                      fontSize: { xs: '0.65rem', sm: '0.875rem' },
-                      lineHeight: 1.2
-                    }}
-                  >
-                    ממתינים
-                  </Typography>
-                </Box>
-              </Paper>
-            </Grid>
-            <Grid item xs={4}>
-              <Paper
-                sx={{
-                  p: { xs: 1.5, sm: 2.5 },
-                  backgroundColor: alpha('#a5d6a7', 0.3),
-                  borderRadius: 3,
-                  boxShadow: 'none',
-                  border: '1px solid',
-                  borderColor: alpha('#2e7d32', 0.2),
-                  position: 'relative',
-                  minHeight: { xs: 80, sm: 100 }
-                }}
-              >
-                <Typography 
-                  variant="h3"
-                  sx={{ 
-                    fontWeight: 'bold', 
-                    color: '#2e7d32',
-                    position: 'absolute',
-                    top: { xs: 12, sm: 16 },
-                    left: { xs: 12, sm: 16 },
-                    fontSize: { xs: '1.5rem', sm: '2.5rem' }
-                  }}
-                >
-                  {confirmedPeople}
-                </Typography>
-                <Box
-                  sx={{
-                    position: 'absolute',
-                    bottom: { xs: 8, sm: 16 },
-                    right: { xs: 8, sm: 16 },
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: { xs: 0.5, sm: 1 },
-                    flexDirection: 'row-reverse'
-                  }}
-                >
-                  <Box
-                    sx={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: '50%',
-                      backgroundColor: '#2e7d32',
-                      flexShrink: 0
-                    }}
-                  />
-                  <Typography 
-                    variant="body2" 
-                    sx={{ 
-                      color: '#2e7d32',
-                      fontWeight: 500,
-                      fontSize: { xs: '0.65rem', sm: '0.875rem' },
-                      lineHeight: 1.2
-                    }}
-                  >
-                    מאשרים הגעה
-                  </Typography>
-                </Box>
-              </Paper>
-            </Grid>
-          </Grid>
-        )}
-
-        {/* Capacity Section */}
-        <Box
-          sx={{
-            p: { xs: 2, sm: 2.5 },
-            mb: 3,
-            borderRadius: isMobile ? 3 : 2,
-            backgroundColor: isMobile 
-              ? 'rgba(218, 207, 243, 0.25)' 
-              : alpha(theme.palette.grey[100], 0.5),
-            backdropFilter: isMobile ? 'blur(10px)' : 'none',
-            boxShadow: isMobile ? 'none' : 'none',
-          }}
-        >
-          <Box sx={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'center', 
-            mb: 1.5,
-            flexDirection: 'row',
-            gap: 2
-          }}>
-            <Typography 
-              variant="body1" 
-              sx={{ 
-                fontWeight: 600, 
-                fontSize: { xs: '1rem', sm: '1.25rem' },
-                color: isMobile ? '#111827' : 'text.primary'
-              }}
-            >
-              {totalInvitedPeople}{eventCapacity !== null ? ` / ${eventCapacity}` : ''}
-            </Typography>
-            <Typography 
-              variant="body2" 
-              sx={{ 
-                fontSize: { xs: '0.8rem', sm: '0.875rem' },
-                color: isMobile ? ' #ffffff' : 'text.secondary'
-              }}
-            >
-              {eventCapacity !== null ? `קיבולת: ${eventCapacity} הזמנות` : 'קיבולת: ללא הגבלה'}
-      </Typography>
+        <MenuItem onClick={() => handleExport('csv')} disabled={exportLoading}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+            <FileDownloadIcon sx={{ fontSize: 20 }} />
+            <Typography>ייצוא ל-CSV</Typography>
           </Box>
-          <LinearProgress
-            variant="determinate"
-            value={eventCapacity !== null && eventCapacity > 0 ? (totalInvitedPeople / eventCapacity) * 100 : 0}
-            sx={{
-              height: 8,
-              borderRadius: 4,
-              backgroundColor: alpha(theme.palette.grey[300], 0.3),
-              '& .MuiLinearProgress-bar': {
-                borderRadius: 4,
-                background: 'linear-gradient(to right, #9333ea, #ec4899)',
-              }
-            }}
-          />
-        </Box>
+        </MenuItem>
+        <MenuItem onClick={() => handleExport('xlsx')} disabled={exportLoading}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+            <TableChartIcon sx={{ fontSize: 20 }} />
+            <Typography>ייצוא ל-Excel</Typography>
+          </Box>
+        </MenuItem>
+      </Menu>
 
-        {/* Action Buttons */}
-        <Grid container spacing={{ xs: 1, sm: 2 }} sx={{ mb: 0 }}>
-          <Grid item xs={4}>
-          <Button
-              variant="outlined"
-            onClick={() => setGuestModalOpen(true)}
-              fullWidth
-              sx={{ 
-                borderRadius: 3,
-                backgroundColor: isMobile ? 'rgba(255, 255, 255, 0.95)' : 'white',
-                backdropFilter: isMobile ? 'blur(10px)' : 'none',
-                color: '#000000',
-                fontWeight: 500,
-                py: { xs: 1, sm: 1.5 },
-                px: { xs: 0.5, sm: 1 },
-                border: isMobile ? '1px solid rgba(255, 255, 255, 0.3)' : '1px solid #e0e0e0',
-                boxShadow: isMobile ? '0 2px 4px rgba(0, 0, 0, 0.1)' : 'none',
-                textTransform: 'none',
-                display: 'flex',
-                justifyContent: 'flex-start',
-                flexDirection: 'row',
-                fontSize: { xs: '0.7rem', sm: '1rem' },
-                '&:hover': {
-                  backgroundColor: isMobile ? 'rgba(255, 255, 255, 1)' : '#fafafa',
-                  border: isMobile ? '1px solid rgba(255, 255, 255, 0.5)' : '1px solid #d0d0d0'
-                }
-              }}
-            >
-              <Box
-                sx={{
-                  backgroundColor: alpha('#1976d2', 0.2),
-                  borderRadius: 1.5,
-                  p: { xs: 0.5, sm: 0.75 },
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  minWidth: { xs: 28, sm: 36 },
-                  height: { xs: 28, sm: 36 },
-                  mr: { xs: 1, sm: 1.5 }
-                }}
-              >
-                <AddIcon sx={{ color: '#1976d2', fontSize: { xs: 16, sm: 20 } }} />
-              </Box>
-              <Box sx={{ flex: 1, textAlign: 'right', mr: {xs:1, md:2}}}>
-                הוסף
-              </Box>
-          </Button>
-          </Grid>
-          <Grid item xs={4}>
-          <Button
-            variant="outlined"
-            onClick={() => setImportModalOpen(true)}
-              fullWidth
-              sx={{ 
-                borderRadius: 3,
-                backgroundColor: isMobile ? 'rgba(255, 255, 255, 0.95)' : 'white',
-                backdropFilter: isMobile ? 'blur(10px)' : 'none',
-                color: '#000000',
-                fontWeight: 500,
-                py: { xs: 1, sm: 1.5 },
-                px: { xs: 0.5, sm: 1 },
-                border: isMobile ? '1px solid rgba(255, 255, 255, 0.3)' : '1px solid #e0e0e0',
-                boxShadow: isMobile ? '0 2px 4px rgba(0, 0, 0, 0.1)' : 'none',
-                textTransform: 'none',
-                display: 'flex',
-                justifyContent: 'flex-start',
-                flexDirection: 'row',
-                fontSize: { xs: '0.7rem', sm: '1rem' },
-                '&:hover': {
-                  backgroundColor: isMobile ? 'rgba(255, 255, 255, 1)' : '#fafafa',
-                  border: isMobile ? '1px solid rgba(255, 255, 255, 0.5)' : '1px solid #d0d0d0'
-                }
-              }}
-            >
-              <Box
-                sx={{
-                  backgroundColor: '#f5f5dc',
-                  borderRadius: 1.5,
-                  p: { xs: 0.5, sm: 0.75 },
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  minWidth: { xs: 28, sm: 36 },
-                  height: { xs: 28, sm: 36 },
-                  mr: { xs: 1, sm: 1.5 }
-                }}
-              >
-                <Box sx={{ position: 'relative', display: 'inline-flex' }}>
-                  <TableChartIcon sx={{ color: '#ff9800', fontSize: { xs: 16, sm: 20 } }} />
-                  <UploadIcon 
-                    sx={{ 
-                      color: '#ff9800', 
-                      fontSize: { xs: 9, sm: 12 },
-                      position: 'absolute',
-                      bottom: -1,
-                      right: -1
-                    }} 
-                  />
-                </Box>
-              </Box>
-              <Box sx={{ flex: 1, textAlign: 'right', mr: {xs:1, md:2}}}>
-                ייבא
-              </Box>
-          </Button>
-          </Grid>
-          <Grid item xs={4}>
-          <Button
-            variant="outlined"
-              fullWidth
-              disabled={exportLoading}
-              onClick={(e) => setExportMenuAnchor(e.currentTarget)}
-              sx={{ 
-                borderRadius: 3,
-                backgroundColor: isMobile ? 'rgba(255, 255, 255, 0.95)' : 'white',
-                backdropFilter: isMobile ? 'blur(10px)' : 'none',
-                color: '#000000',
-                fontWeight: 500,
-                py: { xs: 1, sm: 1.5 },
-                px: { xs: 0.5, sm: 1 },
-                border: isMobile ? '1px solid rgba(255, 255, 255, 0.3)' : '1px solid #e0e0e0',
-                boxShadow: isMobile ? '0 2px 4px rgba(0, 0, 0, 0.1)' : 'none',
-                textTransform: 'none',
-                display: 'flex',
-                justifyContent: 'flex-start',
-                flexDirection: 'row',
-                fontSize: { xs: '0.7rem', sm: '1rem' },
-                '&:hover': {
-                  backgroundColor: isMobile ? 'rgba(255, 255, 255, 1)' : '#fafafa',
-                  border: isMobile ? '1px solid rgba(255, 255, 255, 0.5)' : '1px solid #d0d0d0'
-                }
-              }}
-            >
-              <Box
-                sx={{
-                  backgroundColor: '#e1bee7',
-                  borderRadius: 1.5,
-                  p: { xs: 0.5, sm: 0.75 },
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  minWidth: { xs: 28, sm: 36 },
-                  height: { xs: 28, sm: 36 },
-                  mr: { xs: 1, sm: 1.5 }
-                }}
-              >
-                <TableChartIcon sx={{ color: '#9c27b0', fontSize: { xs: 16, sm: 20 } }} />
-              </Box>
-              <Box sx={{ flex: 1, textAlign: 'right', mr: {xs:1, md:2}}}>
-                {exportLoading ? 'מייצא...' : 'ייצוא'}
-              </Box>
-          </Button>
-            <Menu
-              anchorEl={exportMenuAnchor}
-              open={Boolean(exportMenuAnchor)}
-              onClose={() => setExportMenuAnchor(null)}
-              disableAutoFocusItem
-              anchorOrigin={{
-                vertical: 'bottom',
-                horizontal: 'right',
-              }}
-              transformOrigin={{
-                vertical: 'top',
-                horizontal: 'right',
-              }}
-            >
-              <MenuItem onClick={() => handleExport('csv')} disabled={exportLoading}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-                  <FileDownloadIcon sx={{ fontSize: 20 }} />
-                  <Typography>ייצוא ל-CSV</Typography>
-                </Box>
-              </MenuItem>
-              <MenuItem onClick={() => handleExport('xlsx')} disabled={exportLoading}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-                  <TableChartIcon sx={{ fontSize: 20 }} />
-                  <Typography>ייצוא ל-Excel</Typography>
-                </Box>
-              </MenuItem>
-            </Menu>
-          </Grid>
-        </Grid>
-
-
-      </Box>
 
       {/* Delete confirmation dialog */}
       <ResponsiveDialog
@@ -1590,12 +1117,12 @@ function Guests() {
                 px: 2,
                 py: 1,
                 textTransform: 'none',
-                backgroundColor: statusFilter === 'all' ? '#5236F7' : '#F2F3F5',
+                backgroundColor: statusFilter === 'all' ? '#6f74e0' : '#F2F3F5',
                 color: statusFilter === 'all' ? 'white' : '#363B4D',
                 fontWeight: 500,
                 boxShadow: 'none',
                 '&:hover': {
-                  backgroundColor: statusFilter === 'all' ? '#5236F7' : '#E5E7EB',
+                  backgroundColor: statusFilter === 'all' ? '#6f74e0' : '#E5E7EB',
                   boxShadow: 'none'
                 }
               }}
@@ -1613,12 +1140,12 @@ function Guests() {
                 px: 2,
                 py: 1,
                 textTransform: 'none',
-                backgroundColor: statusFilter === 'confirmed' ? '#5236F7' : '#F2F3F5',
+                backgroundColor: statusFilter === 'confirmed' ? '#6f74e0' : '#F2F3F5',
                 color: statusFilter === 'confirmed' ? 'white' : '#363B4D',
                 fontWeight: 500,
                 boxShadow: 'none',
                 '&:hover': {
-                  backgroundColor: statusFilter === 'confirmed' ? '#5236F7' : '#E5E7EB',
+                  backgroundColor: statusFilter === 'confirmed' ? '#6f74e0' : '#E5E7EB',
                   boxShadow: 'none'
                 }
               }}
@@ -1636,12 +1163,12 @@ function Guests() {
                 px: 2,
                 py: 1,
                 textTransform: 'none',
-                backgroundColor: statusFilter === 'pending' ? '#5236F7' : '#F2F3F5',
+                backgroundColor: statusFilter === 'pending' ? '#6f74e0' : '#F2F3F5',
                 color: statusFilter === 'pending' ? 'white' : '#363B4D',
                 fontWeight: 500,
                 boxShadow: 'none',
                 '&:hover': {
-                  backgroundColor: statusFilter === 'pending' ? '#5236F7' : '#E5E7EB',
+                  backgroundColor: statusFilter === 'pending' ? '#6f74e0' : '#E5E7EB',
                   boxShadow: 'none'
                 }
               }}
@@ -1659,17 +1186,40 @@ function Guests() {
                 px: 2,
                 py: 1,
                 textTransform: 'none',
-                backgroundColor: statusFilter === 'declined' ? '#5236F7' : '#F2F3F5',
+                backgroundColor: statusFilter === 'declined' ? '#6f74e0' : '#F2F3F5',
                 color: statusFilter === 'declined' ? 'white' : '#363B4D',
                 fontWeight: 500,
                 boxShadow: 'none',
                 '&:hover': {
-                  backgroundColor: statusFilter === 'declined' ? '#5236F7' : '#E5E7EB',
+                  backgroundColor: statusFilter === 'declined' ? '#6f74e0' : '#E5E7EB',
                   boxShadow: 'none'
                 }
               }}
             >
               דחו
+            </Button>
+            <Button
+              onClick={() => {
+                setStatusFilter('maybe');
+                setPage(0);
+              }}
+              sx={{
+                borderRadius: 3,
+                minWidth: 80,
+                px: 2,
+                py: 1,
+                textTransform: 'none',
+                backgroundColor: statusFilter === 'maybe' ? '#6f74e0' : '#F2F3F5',
+                color: statusFilter === 'maybe' ? 'white' : '#363B4D',
+                fontWeight: 500,
+                boxShadow: 'none',
+                '&:hover': {
+                  backgroundColor: statusFilter === 'maybe' ? '#6f74e0' : '#E5E7EB',
+                  boxShadow: 'none'
+                }
+              }}
+            >
+              אולי
             </Button>
             <Button
               onClick={() => {
@@ -1682,12 +1232,12 @@ function Guests() {
                 px: 2,
                 py: 1,
                 textTransform: 'none',
-                backgroundColor: statusFilter === 'withNotes' ? '#5236F7' : '#F2F3F5',
+                backgroundColor: statusFilter === 'withNotes' ? '#6f74e0' : '#F2F3F5',
                 color: statusFilter === 'withNotes' ? 'white' : '#363B4D',
                 fontWeight: 500,
                 boxShadow: 'none',
                 '&:hover': {
-                  backgroundColor: statusFilter === 'withNotes' ? '#5236F7' : '#E5E7EB',
+                  backgroundColor: statusFilter === 'withNotes' ? '#6f74e0' : '#E5E7EB',
                   boxShadow: 'none'
                 }
               }}
@@ -1765,13 +1315,18 @@ function Guests() {
           <TableContainer
           ref={tableRef}
             sx={{
+              position: 'relative',
               border: '1px solid',
               borderColor: 'divider',
               borderRadius: 2,
               overflow: 'hidden'
             }}
           >
-            <Table 
+            {/* In-place loader: refetch keeps the rows visible, just shows a bar */}
+            {guestsLoading && filteredGuests.length > 0 && (
+              <LinearProgress sx={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 2, height: 3, bgcolor: 'transparent', '& .MuiLinearProgress-bar': { backgroundColor: '#6f74e0' } }} />
+            )}
+            <Table
               sx={{ 
                 borderCollapse: 'separate', 
                 borderSpacing: 0
@@ -1800,8 +1355,8 @@ function Guests() {
                   <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>פעולות</TableCell>
                 </TableRow>
               </TableHead>
-          <TableBody>
-            {guestsLoading ? (
+          <TableBody sx={{ opacity: guestsLoading && filteredGuests.length > 0 ? 0.5 : 1, transition: 'opacity .2s ease' }}>
+            {guestsLoading && filteredGuests.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={hasTableNumbers ? 10 : 9} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
                   <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
@@ -1812,9 +1367,27 @@ function Guests() {
             ) : filteredGuests.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={hasTableNumbers ? 10 : 9} align="center" sx={{ backgroundColor: 'white', borderBottom: 'none' }}>
-                  <Typography variant="body1" color="text.secondary" sx={{ py: 4 }}>
-                    {searchQuery ? 'לא נמצאו תוצאות' : 'אין מוזמנים'}
-                  </Typography>
+                  <Box sx={{ py: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                    <Box sx={{ fontSize: '2.6rem', mb: 0.5 }}>{searchQuery || filtersActive ? '🔍' : '📋'}</Box>
+                    <Typography sx={{ fontWeight: 800, fontSize: '1.1rem', color: 'text.primary' }}>
+                      {searchQuery ? 'לא נמצאו תוצאות' : filtersActive ? 'אין אורחים שתואמים לסינון' : 'עוד אין מוזמנים'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 340, lineHeight: 1.6 }}>
+                      {searchQuery ? 'נסו שם אחר, או נקו את החיפוש.' : filtersActive ? 'נסו סינון אחר, או נקו את הסינון.' : 'מוסיפים את רשימת המוזמנים - ומכאן אנחנו שולחים את ההזמנות ורודפים אחרי האישורים.'}
+                    </Typography>
+                    {!searchQuery && filtersActive && (
+                      <Button onClick={clearFilters} variant="outlined"
+                        sx={{ mt: 1.5, borderRadius: 2.5, px: 3, py: 1, fontWeight: 700, textTransform: 'none', color: '#6f74e0', borderColor: '#6f74e0', '&:hover': { borderColor: '#5f64d6', bgcolor: alpha('#6f74e0', 0.04) } }}>
+                        ניקוי סינון
+                      </Button>
+                    )}
+                    {!searchQuery && !filtersActive && (
+                      <Button onClick={() => setGuestModalOpen(true)} startIcon={<AddIcon />} variant="contained" disableElevation
+                        sx={{ mt: 1.5, borderRadius: 2.5, px: 3, py: 1, fontWeight: 700, textTransform: 'none', bgcolor: '#6f74e0', '&:hover': { bgcolor: '#5f64d6' } }}>
+                        הוספת אורחים
+                      </Button>
+                    )}
+                  </Box>
                 </TableCell>
               </TableRow>
             ) : (
@@ -1926,9 +1499,10 @@ function Guests() {
                             sx={{ width: '100%' }}
                           />
                         ) : (
-                          <Typography 
-                            variant="body2" 
-                            sx={{ cursor: 'pointer' }}
+                          <Typography
+                            variant="body2"
+                            dir="ltr"
+                            sx={{ cursor: 'pointer', unicodeBidi: 'isolate' }}
                             onDoubleClick={() => {
                               setEditingGuest(guest._id);
                               setEditingField('phone');
@@ -2005,7 +1579,7 @@ function Guests() {
                             <Select
                               value={editValues[`${guest._id}_status`] ?? guest.status}
                               onChange={(e) => {
-                                const newValue = e.target.value as 'pending' | 'confirmed' | 'declined';
+                                const newValue = e.target.value as 'pending' | 'confirmed' | 'declined' | 'maybe';
                                 updateGuestStatus(guest._id, newValue);
                                 setEditingGuest(null);
                                 setEditingField(null);
@@ -2019,6 +1593,7 @@ function Guests() {
                               <MenuItem value="pending">ממתין</MenuItem>
                               <MenuItem value="confirmed">מאשר הגעה</MenuItem>
                               <MenuItem value="declined">דחה</MenuItem>
+                              <MenuItem value="maybe">אולי</MenuItem>
                             </Select>
                           </FormControl>
                         ) : (
@@ -2246,7 +1821,7 @@ function Guests() {
             <Typography variant="body2" color="text.secondary">
               {shouldFetchAll 
                 ? `מציג ${filteredGuests.length} מתוך ${totalForDisplay}`
-                : `מציג ${page * rowsPerPage + 1}-${Math.min((page + 1) * rowsPerPage, totalForDisplay)} מתוך ${totalForDisplay}`
+                : `מציג ${Math.min(page * rowsPerPage + 1, totalForDisplay)}-${Math.min((page + 1) * rowsPerPage, totalForDisplay)} מתוך ${totalForDisplay}`
               }
             </Typography>
             {!shouldFetchAll && (
@@ -2365,13 +1940,13 @@ function Guests() {
                     px: 2,
                     py: 1,
                     textTransform: 'none',
-                    backgroundColor: statusFilter === 'all' ? '#5236F7' : '#F2F3F5',
+                    backgroundColor: statusFilter === 'all' ? '#6f74e0' : '#F2F3F5',
                     color: statusFilter === 'all' ? 'white' : '#363B4D',
                     fontWeight: 500,
                     boxShadow: 'none',
                     flexShrink: 0,
                     '&:hover': {
-                      backgroundColor: statusFilter === 'all' ? '#5236F7' : '#E5E7EB',
+                      backgroundColor: statusFilter === 'all' ? '#6f74e0' : '#E5E7EB',
                       boxShadow: 'none'
                     }
                   }}
@@ -2389,13 +1964,13 @@ function Guests() {
                     px: 2,
                     py: 1,
                     textTransform: 'none',
-                    backgroundColor: statusFilter === 'confirmed' ? '#5236F7' : '#F2F3F5',
+                    backgroundColor: statusFilter === 'confirmed' ? '#6f74e0' : '#F2F3F5',
                     color: statusFilter === 'confirmed' ? 'white' : '#363B4D',
                     fontWeight: 500,
                     boxShadow: 'none',
                     flexShrink: 0,
                     '&:hover': {
-                      backgroundColor: statusFilter === 'confirmed' ? '#5236F7' : '#E5E7EB',
+                      backgroundColor: statusFilter === 'confirmed' ? '#6f74e0' : '#E5E7EB',
                       boxShadow: 'none'
                     }
                   }}
@@ -2413,13 +1988,13 @@ function Guests() {
                     px: 2,
                     py: 1,
                     textTransform: 'none',
-                    backgroundColor: statusFilter === 'pending' ? '#5236F7' : '#F2F3F5',
+                    backgroundColor: statusFilter === 'pending' ? '#6f74e0' : '#F2F3F5',
                     color: statusFilter === 'pending' ? 'white' : '#363B4D',
                     fontWeight: 500,
                     boxShadow: 'none',
                     flexShrink: 0,
                     '&:hover': {
-                      backgroundColor: statusFilter === 'pending' ? '#5236F7' : '#E5E7EB',
+                      backgroundColor: statusFilter === 'pending' ? '#6f74e0' : '#E5E7EB',
                       boxShadow: 'none'
                     }
                   }}
@@ -2437,18 +2012,42 @@ function Guests() {
                     px: 2,
                     py: 1,
                     textTransform: 'none',
-                    backgroundColor: statusFilter === 'declined' ? '#5236F7' : '#F2F3F5',
+                    backgroundColor: statusFilter === 'declined' ? '#6f74e0' : '#F2F3F5',
                     color: statusFilter === 'declined' ? 'white' : '#363B4D',
                     fontWeight: 500,
                     boxShadow: 'none',
                     flexShrink: 0,
                     '&:hover': {
-                      backgroundColor: statusFilter === 'declined' ? '#5236F7' : '#E5E7EB',
+                      backgroundColor: statusFilter === 'declined' ? '#6f74e0' : '#E5E7EB',
                       boxShadow: 'none'
                     }
                   }}
                 >
                   דחו
+                </Button>
+                <Button
+                  onClick={() => {
+                    setStatusFilter('maybe');
+                    setPage(0);
+                  }}
+                  sx={{
+                    borderRadius: 3,
+                    minWidth: 80,
+                    px: 2,
+                    py: 1,
+                    textTransform: 'none',
+                    backgroundColor: statusFilter === 'maybe' ? '#6f74e0' : '#F2F3F5',
+                    color: statusFilter === 'maybe' ? 'white' : '#363B4D',
+                    fontWeight: 500,
+                    boxShadow: 'none',
+                    flexShrink: 0,
+                    '&:hover': {
+                      backgroundColor: statusFilter === 'maybe' ? '#6f74e0' : '#E5E7EB',
+                      boxShadow: 'none'
+                    }
+                  }}
+                >
+                  אולי
                 </Button>
                 <Button
                   onClick={() => {
@@ -2461,13 +2060,13 @@ function Guests() {
                     px: 2,
                     py: 1,
                     textTransform: 'none',
-                    backgroundColor: statusFilter === 'withNotes' ? '#5236F7' : '#F2F3F5',
+                    backgroundColor: statusFilter === 'withNotes' ? '#6f74e0' : '#F2F3F5',
                     color: statusFilter === 'withNotes' ? 'white' : '#363B4D',
                     fontWeight: 500,
                     boxShadow: 'none',
                     flexShrink: 0,
                     '&:hover': {
-                      backgroundColor: statusFilter === 'withNotes' ? '#5236F7' : '#E5E7EB',
+                      backgroundColor: statusFilter === 'withNotes' ? '#6f74e0' : '#E5E7EB',
                       boxShadow: 'none'
                     }
                   }}
@@ -2504,8 +2103,11 @@ function Guests() {
           </Paper>
 
           {/* Guest Cards without widget */}
-          <Grid container spacing={2} ref={tableRef}>
-            {guestsLoading ? (
+          {guestsLoading && filteredGuests.length > 0 && (
+            <LinearProgress sx={{ mb: 2, height: 3, borderRadius: 2, bgcolor: 'transparent', '& .MuiLinearProgress-bar': { backgroundColor: '#6f74e0' } }} />
+          )}
+          <Grid container spacing={2} ref={tableRef} sx={{ opacity: guestsLoading && filteredGuests.length > 0 ? 0.5 : 1, transition: 'opacity .2s ease' }}>
+            {guestsLoading && filteredGuests.length === 0 ? (
               <Grid item xs={12}>
                 <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 8 }}>
                   <CircularProgress size={40} />
@@ -2513,10 +2115,26 @@ function Guests() {
               </Grid>
             ) : filteredGuests.length === 0 ? (
               <Grid item xs={12}>
-                <Box sx={{ p: 4, textAlign: 'center' }}>
-                  <Typography variant="body1" color="text.secondary">
-                    {searchQuery ? 'לא נמצאו תוצאות' : 'אין מוזמנים'}
+                <Box sx={{ p: 5, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                  <Box sx={{ fontSize: '2.6rem', mb: 0.5 }}>{searchQuery || filtersActive ? '🔍' : '📋'}</Box>
+                  <Typography sx={{ fontWeight: 800, fontSize: '1.1rem', color: 'text.primary' }}>
+                    {searchQuery ? 'לא נמצאו תוצאות' : filtersActive ? 'אין אורחים שתואמים לסינון' : 'עוד אין מוזמנים'}
                   </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 300, lineHeight: 1.6 }}>
+                    {searchQuery ? 'נסו שם אחר, או נקו את החיפוש.' : filtersActive ? 'נסו סינון אחר, או נקו את הסינון.' : 'מוסיפים את רשימת המוזמנים ומכאן אנחנו דואגים לשאר.'}
+                  </Typography>
+                  {!searchQuery && filtersActive && (
+                    <Button onClick={clearFilters} variant="outlined"
+                      sx={{ mt: 1.5, borderRadius: 2.5, px: 3, py: 1, fontWeight: 700, textTransform: 'none', color: '#6f74e0', borderColor: '#6f74e0', '&:hover': { borderColor: '#5f64d6', bgcolor: alpha('#6f74e0', 0.04) } }}>
+                      ניקוי סינון
+                    </Button>
+                  )}
+                  {!searchQuery && !filtersActive && (
+                    <Button onClick={() => setGuestModalOpen(true)} startIcon={<AddIcon />} variant="contained" disableElevation
+                      sx={{ mt: 1.5, borderRadius: 2.5, px: 3, py: 1, fontWeight: 700, textTransform: 'none', bgcolor: '#6f74e0', '&:hover': { bgcolor: '#5f64d6' } }}>
+                      הוספת אורחים
+                    </Button>
+                  )}
                 </Box>
               </Grid>
             ) : (
@@ -2647,7 +2265,7 @@ function Guests() {
                                 <Select
                                   value={editValues[`${guest._id}_mobile_status`] ?? guest.status}
                                   onChange={(e) => {
-                                    const newStatus = e.target.value as 'pending' | 'confirmed' | 'declined';
+                                    const newStatus = e.target.value as 'pending' | 'confirmed' | 'declined' | 'maybe';
                                     setEditValues({ ...editValues, [`${guest._id}_mobile_status`]: newStatus });
                                     updateGuestStatus(guest._id, newStatus);
                                   }}
@@ -2657,6 +2275,7 @@ function Guests() {
                                   <MenuItem value="pending">ממתין</MenuItem>
                                   <MenuItem value="confirmed">מאשר הגעה</MenuItem>
                                   <MenuItem value="declined">דחה</MenuItem>
+                                  <MenuItem value="maybe">אולי</MenuItem>
                                 </Select>
                               </FormControl>
                               <Box sx={{ display: 'flex', gap: 1 }}>
@@ -2851,7 +2470,7 @@ function Guests() {
                                 </Typography>
                                 
                                 {/* Phone */}
-                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1, textAlign: 'right', width: '100%' }}>
+                                <Typography variant="body2" color="text.secondary" dir="ltr" sx={{ mb: 1, textAlign: 'right', width: '100%', unicodeBidi: 'isolate' }}>
                                   {guest.phone}
                                 </Typography>
                                 
@@ -2889,12 +2508,14 @@ function Guests() {
                                   />
                                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexDirection: 'row-reverse' }}>
                                     {!hasResponded && (
-                                      <WarningIcon sx={{ fontSize: 16, color: '#f57c00' }} />
+                                      <WarningIcon sx={{ fontSize: 16, color: '#d97706' }} />
                                     )}
                                     <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'right' }}>
-                                      {hasResponded 
-                                        ? `הגיב${guest.status === 'confirmed' ? 'ה' : ''} לפני ${guest.status === 'confirmed' ? 'יומיים' : guest.status === 'declined' ? '3 ימים' : 'שבוע'}`
-                                        : `הודעה נשלחה לפני ${guest.status === 'pending' ? '5 ימים' : 'יומיים'}`}
+                                      {hasResponded
+                                        ? (guest.lastResponse
+                                            ? `ענו ב-${guest.lastResponse.toLocaleDateString('he-IL')}`
+                                            : statusLabels[guest.status])
+                                        : 'ממתין לתשובה'}
                                     </Typography>
                                   </Box>
                                 </Box>
@@ -2911,7 +2532,7 @@ function Guests() {
                             p: 1.5,
                             backgroundColor: alpha('#F5F5F9', 0.5)
                           }}>
-                            {/* Response History */}
+                            {/* Response History - real activity timeline */}
                             <Box sx={{ mb: 2 }}>
                               <Typography variant="body2" color="text.secondary" sx={{ mb: 1, fontWeight: 600 }}>
                                 היסטוריית תגובות
@@ -2923,25 +2544,7 @@ function Guests() {
                                   backgroundColor: 'white'
                                 }}
                               >
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexDirection: 'row-reverse' }}>
-                                  <Box sx={{ flex: 1 }}>
-                                    <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5, textAlign: 'right' }}>
-                                      {guest.status === 'confirmed' ? 'אישרה הגעה' : 
-                                       guest.status === 'declined' ? 'דיווח שלא מגיע' : 
-                                       'הזמנה נשלחה'}
-                                    </Typography>
-                                    {guest.status === 'pending' && (
-                                      <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'right', display: 'block' }}>
-                                        נקרא ב-WhatsApp, לא הגיב
-                                      </Typography>
-                                    )}
-                                  </Box>
-                                  <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
-                                    {guest.status === 'confirmed' ? '20/12/2024' : 
-                                     guest.status === 'declined' ? '17/12/2024' : 
-                                     '15/12/2024'}
-                                  </Typography>
-                                </Box>
+                                <GuestTimeline guestId={guest._id} />
                               </Box>
                             </Box>
 
@@ -3118,13 +2721,14 @@ function Guests() {
                                 rows={3}
                                 placeholder="הוסף הערה פנימית (רק בשבילך)"
                                 variant="outlined"
-                                value={guestNotes[guest._id] || guest.note || ''}
+                                value={guestNotes[guest._id] ?? guest.note ?? ''}
                                 onChange={(e) => {
                                   setGuestNotes({ ...guestNotes, [guest._id]: e.target.value });
                                 }}
                                 onBlur={() => {
-                                  const note = guestNotes[guest._id] || '';
-                                  if (note !== (guest.note || '')) {
+                                  const note = guestNotes[guest._id];
+                                  // Only save if the field was actually edited (including clearing it)
+                                  if (note !== undefined && note !== (guest.note || '')) {
                                     updateGuestNote(guest._id, note);
                                   }
                                 }}
@@ -3174,7 +2778,7 @@ function Guests() {
           <Typography variant="body2" color="text.secondary">
             {shouldFetchAll 
               ? `מציג ${filteredGuests.length} מתוך ${totalForDisplay}`
-              : `מציג ${page * rowsPerPage + 1}-${Math.min((page + 1) * rowsPerPage, totalForDisplay)} מתוך ${totalForDisplay}`
+              : `מציג ${Math.min(page * rowsPerPage + 1, totalForDisplay)}-${Math.min((page + 1) * rowsPerPage, totalForDisplay)} מתוך ${totalForDisplay}`
             }
           </Typography>
           {!shouldFetchAll && (
@@ -3245,7 +2849,7 @@ function Guests() {
                           borderColor: '#d1d5db',
                         },
                         '&.Mui-focused fieldset': {
-                          borderColor: '#3b82f6',
+                          borderColor: '#6f74e0',
                           boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
                         },
                         '& .MuiSelect-select': {
@@ -3290,7 +2894,7 @@ function Guests() {
                           borderColor: '#d1d5db',
                         },
                         '&.Mui-focused fieldset': {
-                          borderColor: '#3b82f6',
+                          borderColor: '#6f74e0',
                           boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
                         },
                       },
@@ -3408,238 +3012,145 @@ function Guests() {
       <ResponsiveDialog
         open={importModalOpen}
         onClose={() => setImportModalOpen(false)}
-        maxWidth="md"
+        maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>ייבוא אורחים</DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, py: 2 }}>
-            {/* Copy from a previous event */}
-            {events.filter((e) => e.id !== selectedEvent?.id).length > 0 && (
-              <Button
-                variant="outlined"
-                fullWidth
-                startIcon={<ContentCopyIcon />}
-                onClick={() => setCopyGuestsOpen(true)}
-                sx={{ justifyContent: 'flex-start', py: 1.5, borderRadius: 2 }}
-              >
-                העתק אורחים מאירוע קודם
-              </Button>
-            )}
-            {/* WhatsApp Option - First */}
-            <Box
-              sx={{
-                p: 3,
-                borderRadius: 2,
-                backgroundColor: alpha('#25D366', 0.05),
-                border: `1px solid ${alpha('#25D366', 0.2)}`,
-              }}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                <Box
-                  sx={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: '50%',
-                    backgroundColor: '#25D366',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                  }}
-                >
-                  <WhatsAppIcon sx={{ fontSize: 28, color: 'white' }} />
+        <DialogTitle sx={{ px: 3, pt: 3, pb: 0 }}>
+          <Typography component="div" sx={{ fontWeight: 800, fontSize: '1.5rem', letterSpacing: '-0.02em', lineHeight: 1.2 }}>
+            איפה האורחים שלכם?
+          </Typography>
+          <Typography sx={{ mt: 0.5, fontSize: '0.9rem', color: 'text.secondary' }}>
+            בחרו כיצד תרצו לייבא את רשימת האורחים.
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, pt: 3, pb: 1 }}>
+          {/* segmented control */}
+          <Box sx={{ display: 'flex', gap: 0.5, p: '4px', bgcolor: alpha('#6f74e0', 0.07), borderRadius: 2.5, mb: 3 }}>
+            {([
+              { key: 'whatsapp' as const, label: 'וואטסאפ' },
+              { key: 'upload' as const, label: 'קובץ' },
+            ]).map((t) => {
+              const active = importTab === t.key;
+              return (
+                <Box key={t.key} onClick={() => setImportTab(t.key)}
+                  sx={{ flex: 1, textAlign: 'center', py: 0.85, borderRadius: 2, cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem',
+                    color: active ? '#5f64d6' : 'text.secondary', bgcolor: active ? '#fff' : 'transparent',
+                    boxShadow: active ? '0 1px 3px rgba(16,24,40,0.12)' : 'none', transition: 'all .15s ease' }}>
+                  {t.label}
                 </Box>
-                <Box sx={{ flex: 1 }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 0.5 }}>
-                    ייבוא דרך וואטסאפ
-                  </Typography>
-                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                    שלחו את אנשי הקשר שלכם למספר:
-                  </Typography>
-                </Box>
-              </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                <Typography variant="h6" sx={{ color: '#25D366', fontWeight: 600, fontFamily: 'monospace' }}>
-                  {whatsappNumber}
-                </Typography>
-                <IconButton
-                  size="small"
-                  onClick={handleCopyPhone}
-                  sx={{ 
-                    color: '#25D366',
-                    '&:hover': {
-                      backgroundColor: alpha('#25D366', 0.1)
-                    }
-                  }}
-                >
-                  <ContentCopyIcon fontSize="small" />
-                </IconButton>
-              </Box>
-              <Button
-                variant="contained"
-                fullWidth
-                size="large"
-                startIcon={<WhatsAppIcon sx={{ fontSize: 24 }} />}
-                href={`https://wa.me/${whatsappNumber.replace(/[^0-9]/g, '')}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                sx={{
-                  backgroundColor: '#25D366',
-                  color: 'white',
-                  textTransform: 'none',
-                  fontSize: '1rem',
-                  fontWeight: 600,
-                  py: 1.5,
-                  mb: 1.5,
-                  boxShadow: '0 4px 12px rgba(37, 211, 102, 0.3)',
-                  '&:hover': {
-                    backgroundColor: '#128C7E',
-                    boxShadow: '0 6px 16px rgba(37, 211, 102, 0.4)',
-                    transform: 'translateY(-2px)',
-                  },
-                  transition: 'all 0.2s ease-in-out',
-                }}
-              >
-                פתח ב-WhatsApp
-              </Button>
-              <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
-                ומיד תראה ותוכלו לערוך בטבלה
-              </Typography>
-            </Box>
-
-            {/* Divider with "או" */}
-            <Divider 
-              sx={{ 
-                my: 2,
-                '&::before, &::after': {
-                  borderColor: '#3b82f6',
-                }
-              }}
-            >
-              <Typography variant="body2" sx={{ color: '#3b82f6', fontWeight: 600, px: 2 }}>
-                או
-              </Typography>
-            </Divider>
-
-            {/* Step 1: Download Template */}
-            <Box>
-              <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 600 }}>
-                1. מורידים את התבנית
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                <Button
-                  variant="outlined"
-                  startIcon={<FileDownloadIcon />}
-                  onClick={() => handleDownloadTemplate('csv')}
-                  sx={{ textTransform: 'none' }}
-                >
-                  הורד תבנית CSV
-                </Button>
-                <Button
-                  variant="outlined"
-                  startIcon={<FileDownloadIcon />}
-                  onClick={() => handleDownloadTemplate('xlsx')}
-                  sx={{ textTransform: 'none' }}
-                >
-                  הורד תבנית Excel
-                </Button>
-              </Box>
-            </Box>
-
-            {/* Step 2: Fill or Match */}
-            <Box>
-              <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 600 }}>
-                2. ממלאים בהתאם או מתאימים
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                מלאו את התבנית או התאימו את הקובץ הקיים שלכם לכותרות. שדות חובה: שם מלא, טלפון.
-              </Typography>
-            </Box>
-
-            {/* Step 3: Upload */}
-            <Box>
-              <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 600 }}>
-                3. מעלים לכאן
-              </Typography>
-              <input
-                accept=".xlsx,.xls,.csv"
-                style={{ display: 'none' }}
-                id="excel-upload"
-                type="file"
-                onChange={handleImportFileChange}
-              />
-              <label htmlFor="excel-upload">
-                <Button
-                  variant="contained"
-                  component="span"
-                  startIcon={<UploadIcon />}
-                  fullWidth
-                  sx={{ textTransform: 'none' }}
-                >
-                  {importFile ? importFile.name : 'בחר קובץ להעלאה'}
-                </Button>
-              </label>
-            </Box>
-
-            {/* Preview & validation (CSV) */}
-            {importPreview && (
-              <Box>
-                <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 600 }}>
-                  בדיקה לפני ייבוא
-                </Typography>
-                <Stack direction="row" spacing={1} sx={{ mb: 1.5, flexWrap: 'wrap', gap: 1 }}>
-                  <Chip color="success" label={`${importPreview.validCount} תקינים`} />
-                  {importPreview.duplicateCount > 0 && (
-                    <Chip color="warning" label={`${importPreview.duplicateCount} כפילויות`} />
-                  )}
-                  {importPreview.invalidCount > 0 && (
-                    <Chip color="error" label={`${importPreview.invalidCount} שגויים`} />
-                  )}
-                </Stack>
-                <Box sx={{ maxHeight: 220, overflowY: 'auto', border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
-                  {importPreview.rows.slice(0, 50).map((r, i) => (
-                    <Box
-                      key={i}
-                      sx={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        px: 1.5, py: 0.75, borderBottom: '1px solid', borderColor: 'divider',
-                        bgcolor: r.valid ? 'transparent' : alpha(theme.palette.error.main, 0.05),
-                      }}
-                    >
-                      <Box sx={{ display: 'flex', gap: 2, minWidth: 0 }}>
-                        <Typography variant="body2" sx={{ fontWeight: 500 }} noWrap>{r.name || '-'}</Typography>
-                        <Typography variant="body2" color="text.secondary" noWrap>{r.phone || '-'}</Typography>
-                      </Box>
-                      {r.valid
-                        ? <CheckCircleIcon color="success" fontSize="small" />
-                        : <Chip size="small" color={r.issue === 'כפילות' ? 'warning' : 'error'} label={r.issue} />}
-                    </Box>
-                  ))}
-                </Box>
-                {importPreview.total > 50 && (
-                  <Typography variant="caption" color="text.secondary">
-                    מוצגות 50 השורות הראשונות מתוך {importPreview.total}
-                  </Typography>
-                )}
-                {importPreview.validCount === 0 && (
-                  <Alert severity="error" sx={{ mt: 1 }}>
-                    לא נמצאו שורות תקינות. ודאו שהקובץ כולל עמודות "שם" ו"טלפון".
-                  </Alert>
-                )}
-              </Box>
-            )}
+              );
+            })}
           </Box>
+
+          {importTab === 'whatsapp' ? (
+            <Stack spacing={2.5} sx={{ pb: 1 }}>
+              <Card elevation={0} sx={{ borderRadius: 3, bgcolor: alpha('#25D366', 0.05), p: 2.5 }}>
+                <Stack spacing={1.5} alignItems="center">
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <WhatsAppIcon sx={{ color: '#25D366', fontSize: 22 }} />
+                    <Typography sx={{ fontWeight: 700, fontSize: '0.95rem' }}>סרקו את הקוד</Typography>
+                  </Stack>
+                  <Box sx={{ width: 148, height: 148, borderRadius: 2.5, bgcolor: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
+                    <Box sx={{ position: 'absolute', textAlign: 'center', color: alpha('#0b3d2e', 0.35) }}>
+                      <WhatsAppIcon sx={{ fontSize: 34, color: alpha('#25D366', 0.5) }} />
+                      <Typography variant="caption" sx={{ display: 'block' }}>QR</Typography>
+                    </Box>
+                    <img src="/import-whatsapp-qr.png" alt="QR" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} style={{ position: 'relative', width: '100%', height: '100%', objectFit: 'contain' }} />
+                  </Box>
+                </Stack>
+              </Card>
+
+              <Divider sx={{ color: 'text.disabled', fontSize: '0.8rem', '&::before, &::after': { borderColor: 'divider' } }}>או</Divider>
+
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                <Button fullWidth variant="outlined" startIcon={<ContentCopyIcon sx={{ fontSize: 18 }} />} onClick={handleCopyPhone}
+                  sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600, color: 'text.primary', borderColor: 'divider', '&:hover': { borderColor: '#6f74e0', bgcolor: alpha('#6f74e0', 0.04) } }}>
+                  {copiedPhone ? 'הועתק ✓' : whatsappNumber}
+                </Button>
+                <Button fullWidth variant="contained" disableElevation startIcon={<WhatsAppIcon sx={{ fontSize: 20 }} />}
+                  href={`https://wa.me/${whatsappNumber.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer"
+                  sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700, bgcolor: '#25D366', '&:hover': { bgcolor: '#128C7E' } }}>
+                  פתיחת וואטסאפ
+                </Button>
+              </Stack>
+
+              <Typography sx={{ textAlign: 'center', fontSize: '0.82rem', color: 'text.secondary' }}>
+                שלחו, והאורחים יופיעו מיד תחת ״אורחים שיובאו״.
+              </Typography>
+
+              {events.filter((e) => e.id !== selectedEvent?.id).length > 0 && (
+                <Box sx={{ textAlign: 'center' }}>
+                  <Button variant="text" startIcon={<ContentCopyIcon sx={{ fontSize: 16 }} />} onClick={() => setCopyGuestsOpen(true)}
+                    sx={{ textTransform: 'none', color: '#6f74e0', fontWeight: 600, fontSize: '0.85rem' }}>
+                    או העתקה מאירוע קודם
+                  </Button>
+                </Box>
+              )}
+            </Stack>
+          ) : (
+            <Stack spacing={2.5} sx={{ pb: 1 }}>
+              <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" flexWrap="wrap" useFlexGap>
+                <Typography sx={{ fontSize: '0.9rem', fontWeight: 600 }}>הורדת תבנית</Typography>
+                <Stack direction="row" spacing={1}>
+                  <Button size="small" variant="outlined" startIcon={<FileDownloadIcon sx={{ fontSize: 16 }} />} onClick={() => handleDownloadTemplate('csv')}
+                    sx={{ borderRadius: 2, textTransform: 'none', borderColor: 'divider', color: 'text.primary' }}>CSV</Button>
+                  <Button size="small" variant="outlined" startIcon={<FileDownloadIcon sx={{ fontSize: 16 }} />} onClick={() => handleDownloadTemplate('xlsx')}
+                    sx={{ borderRadius: 2, textTransform: 'none', borderColor: 'divider', color: 'text.primary' }}>Excel</Button>
+                </Stack>
+              </Stack>
+
+              <Box
+                onDragOver={(e) => { e.preventDefault(); setImportDragOver(true); }}
+                onDragLeave={() => setImportDragOver(false)}
+                onDrop={(e) => { e.preventDefault(); setImportDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) handleImportFile(f); }}
+                onClick={() => document.getElementById('excel-upload')?.click()}
+                sx={{ cursor: 'pointer', borderRadius: 3, py: 5, px: 3, textAlign: 'center', border: '1.5px dashed', borderColor: importDragOver ? '#6f74e0' : alpha('#6f74e0', 0.28), bgcolor: importDragOver ? alpha('#6f74e0', 0.06) : alpha('#6f74e0', 0.02), transition: 'all .15s ease' }}>
+                <UploadIcon sx={{ fontSize: 36, color: '#6f74e0', mb: 1 }} />
+                <Typography sx={{ fontWeight: 700, fontSize: '1rem' }}>{importFile ? importFile.name : 'גררו קובץ לכאן'}</Typography>
+                {!importFile && <Typography sx={{ fontSize: '0.85rem', color: 'text.secondary', mt: 0.25 }}>או לחצו לבחירת קובץ</Typography>}
+                <input accept=".xlsx,.xls,.csv" style={{ display: 'none' }} id="excel-upload" type="file" onChange={handleImportFileChange} />
+              </Box>
+
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 0.5, sm: 3 }} sx={{ color: 'text.secondary' }}>
+                <Typography sx={{ fontSize: '0.82rem' }}>פורמטים נתמכים: CSV, Excel</Typography>
+                <Typography sx={{ fontSize: '0.82rem' }}>שדות חובה: שם מלא, טלפון</Typography>
+              </Stack>
+
+              {importPreview && (
+                <Box>
+                  <Stack direction="row" spacing={1} sx={{ mb: 1.5, flexWrap: 'wrap', gap: 1 }}>
+                    <Chip size="small" color="success" label={`${importPreview.validCount} תקינים`} />
+                    {importPreview.duplicateCount > 0 && <Chip size="small" color="warning" label={`${importPreview.duplicateCount} כפילויות`} />}
+                    {importPreview.invalidCount > 0 && <Chip size="small" color="error" label={`${importPreview.invalidCount} שגויים`} />}
+                  </Stack>
+                  <Box sx={{ maxHeight: 180, overflowY: 'auto', borderRadius: 2, bgcolor: alpha('#6f74e0', 0.03) }}>
+                    {importPreview.rows.slice(0, 50).map((r, i) => (
+                      <Box key={i} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1.5, py: 0.75 }}>
+                        <Box sx={{ display: 'flex', gap: 2, minWidth: 0 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 500 }} noWrap>{r.name || '-'}</Typography>
+                          <Typography variant="body2" color="text.secondary" noWrap>{r.phone || '-'}</Typography>
+                        </Box>
+                        {r.valid ? <CheckCircleIcon color="success" fontSize="small" /> : <Chip size="small" color={r.issue === 'כפילות' ? 'warning' : 'error'} label={r.issue} />}
+                      </Box>
+                    ))}
+                  </Box>
+                  {importPreview.validCount === 0 && (
+                    <Alert severity="error" sx={{ mt: 1.5, borderRadius: 2 }}>לא נמצאו שורות תקינות. ודאו שהקובץ כולל עמודות ״שם״ ו״טלפון״.</Alert>
+                  )}
+                </Box>
+              )}
+            </Stack>
+          )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setImportModalOpen(false)}>ביטול</Button>
-          <Button
-            variant="contained"
-            onClick={handleImportGuests}
-            disabled={importing || !importFile || (importPreview !== null && importPreview.validCount === 0)}
-          >
-            {importing ? 'מייבא...' : importPreview ? `ייבא ${importPreview.validCount} אורחים` : 'ייבוא'}
-          </Button>
+        <DialogActions sx={{ px: 3, pb: 3, pt: 1.5, justifyContent: 'space-between' }}>
+          {importTab === 'upload' ? (
+            <Button variant="contained" disableElevation onClick={handleImportGuests}
+              disabled={importing || !importFile || (importPreview !== null && importPreview.validCount === 0)}
+              sx={{ borderRadius: 2, px: 3, fontWeight: 700, textTransform: 'none', bgcolor: '#6f74e0', '&:hover': { bgcolor: '#5f64d6' } }}>
+              {importing ? 'מייבא...' : importPreview ? `ייבוא ${importPreview.validCount} אורחים` : 'ייבוא'}
+            </Button>
+          ) : <Box />}
+          <Button variant="text" onClick={() => setImportModalOpen(false)} sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'none' }}>ביטול</Button>
         </DialogActions>
       </ResponsiveDialog>
 
@@ -3727,6 +3238,7 @@ function Guests() {
                   <MenuItem value="pending">ממתין</MenuItem>
                   <MenuItem value="confirmed">מאשר הגעה</MenuItem>
                   <MenuItem value="declined">דחה</MenuItem>
+                  <MenuItem value="maybe">אולי</MenuItem>
                 </Select>
               </FormControl>
 
@@ -3763,7 +3275,7 @@ function Guests() {
                 };
                 const newStatus = editValues[`${editingGuestData._id}_modal_status`] ?? editingGuestData.status;
                 if (newStatus !== editingGuestData.status) {
-                  updateGuestStatus(editingGuestData._id, newStatus as 'pending' | 'confirmed' | 'declined');
+                  updateGuestStatus(editingGuestData._id, newStatus as 'pending' | 'confirmed' | 'declined' | 'maybe');
                 }
                 updateGuest(editingGuestData._id, updatedData);
               }

@@ -50,9 +50,16 @@ class Event(Base):
     # Legacy events keep ownership via the `owners` JSON array until backfilled.
     account_id = Column(PG_UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=True, index=True)
     plan_id = Column(String(50), nullable=True)  # Plan ID from MongoDB (e.g., "basic", "plus", "pro")
+    # Paid extra message-round credits beyond the plan's included rounds. Granted
+    # by a paid extra-round order (aub provision); consumed by round creation.
+    extra_rounds_allowance = Column(Integer, nullable=False, default=0, server_default="0")
     # Event type (wedding, brit, brita, bar, bat, corporate, birthday, other). Drives
     # the adaptive timeline + which templates are recommended. Loosely typed string.
     event_type = Column(String(50), nullable=True)
+    # Event-type-specific subjects (bride/groom/parents/baby/celebrant/company),
+    # captured in the wizard. Persisted so the SAME subject variables the designer
+    # previews also resolve during WhatsApp delivery (preview == delivery).
+    subjects = Column(JSON, nullable=True)
     # Seating map: { "tables": [ { "id", "name", "seats", "style", "side", "position", "size", "seatsBride?", "seatsGroom?" }, ... ] }
     seating_layout = Column(JSON, nullable=True)
 
@@ -116,7 +123,16 @@ class Campaign(Base):
         event_id = Column(String(36), ForeignKey("events.id", ondelete="CASCADE"), nullable=False)
 
     name = Column(String(100), nullable=False)
+    # Legacy free-text template reference (UUID / label / Meta name) - kept for
+    # rollback. `template_key` is the canonical catalog id (messaging SSOT) that
+    # every layer resolves against; nullable while old rows backfill.
     template = Column(Text, nullable=False)
+    template_key = Column(String(80), nullable=True)
+    # Stage-execution coordinates (messaging refinement): a campaign is "run Stage
+    # X, variant Y". Both resolve to the same channel template as `template_key`, so
+    # delivery is unchanged; nullable while old rows backfill.
+    stage_id = Column(String(40), nullable=True)
+    variant_id = Column(String(60), nullable=True)
     # Optional user-written body that overrides the template at send time (once an
     # approved WhatsApp template backs it). Captured in the wizard; persisted here
     # so the custom copy is never lost between order provisioning and sending.
@@ -126,6 +142,9 @@ class Campaign(Base):
     status = Column(String(20), nullable=False, default="pending")
     # Number of recipients the campaign was actually sent to (messages enqueued)
     recipient_count = Column(Integer, nullable=False, default=0, server_default="0")
+    # Optional header image (S3 object URL) for templates whose header is an image.
+    # Overrides the default header_image_url at send time when present.
+    header_image_url = Column(Text, nullable=True)
 
     # V2 (Phase 6): audience is first-class and decoupled from the template.
     audience = Column(String(20), nullable=False, server_default="everyone")  # see CampaignAudience
@@ -188,12 +207,33 @@ class GuestImportContact(Base):
 
 
 class Account(Base):
-    """V2 tenant root. An account owns events and has members (memberships)."""
+    """V2 tenant root. An account owns events and has members (memberships).
+
+    Two kinds today (see `type`):
+      - 'personal' - a single owner's account (auto-created on first use).
+      - 'venue'    - a B2B2C partner venue that owns many events, each for a
+                     different event owner. Carries the capacity + partner-coupon
+                     configuration for the Venue Edition flow.
+    """
     __tablename__ = "accounts"
 
     id = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(200), nullable=True)
     billing_email = Column(String(100), nullable=True)
+    # 'personal' | 'venue'
+    type = Column(String(20), nullable=False, server_default="personal")
+    # Venue only: max concurrent events the venue's subscription allows. NULL =
+    # unlimited. Enforced as a hard quota when a venue creates an event.
+    event_capacity = Column(Integer, nullable=True)
+    # Venue only: the partner discount coupon auto-applied when an event owner
+    # who came in through this venue upgrades. Must exist in aub COUPONS_JSON.
+    partner_coupon_code = Column(String(50), nullable=True)
+    # Operational status: 'active' | 'suspended'. A suspended venue is blocked from
+    # venue-admin actions (see authz._require_venue_admin). Set from the admin console.
+    status = Column(String(20), nullable=False, server_default="active")
+    # Future-ready venue branding (logo url, colors, ...). Free-form JSON so the
+    # branding surface can evolve without a schema change.
+    branding = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
@@ -330,6 +370,21 @@ class UsageEvent(Base):
     occurred_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
+class FeatureFlag(Base):
+    """Global operational flag toggled from the System Admin console (Phase 2).
+
+    Distinct from plan entitlements (`shared/domain/entitlements.py`, static per
+    tier): flags are runtime kill-switches / rollout gates operators flip in prod.
+    """
+    __tablename__ = "feature_flags"
+
+    key = Column(String(80), primary_key=True)
+    enabled = Column(Boolean, nullable=False, server_default="false")
+    description = Column(String, nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    updated_by = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+
+
 class GuestActivity(Base):
     """Append-only guest timeline entry (Phase 9). One extensible activity model."""
     __tablename__ = "guest_events"
@@ -375,6 +430,39 @@ class WaTemplate(Base):
     event_type = Column(String(50), nullable=True)
     expires_at = Column(DateTime(timezone=True), nullable=True)
     created_by = Column(PG_UUID(as_uuid=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class MessagingTemplateState(Base):
+    """MUTABLE Meta runtime state for a BUILT-IN catalog template (keyed by its
+    catalog `template_key`). The catalog YAML stays pure authored content; every
+    field the Admin publishing API mutates lives here instead:
+
+      * internal_status  - the internal workflow status (draft → ready_for_review
+                           → approved_internal → published → deprecated). SEPARATE
+                           from Meta's review status below.
+      * meta_*           - Meta's own state: template id, review status, category
+                           it was created under, and the rejection reason.
+      * uploaded_at/last_sync - when we last pushed / last synced from Meta.
+      * published_checksum/published_version - the content snapshot last published,
+                           for change detection ("publish only changed").
+
+    A key with NO row is treated as its catalog default (live anchors = published/
+    approved; drafts = draft/none) - so the six deployed templates need no seed.
+    """
+    __tablename__ = "messaging_template_state"
+
+    template_key = Column(String(80), primary_key=True)
+    internal_status = Column(String(30), nullable=False, server_default="draft")
+    meta_id = Column(String(128), nullable=True)
+    meta_status = Column(String(20), nullable=False, server_default="none")
+    meta_category = Column(String(30), nullable=True)
+    uploaded_at = Column(DateTime(timezone=True), nullable=True)
+    last_sync = Column(DateTime(timezone=True), nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+    published_checksum = Column(String(64), nullable=True)
+    published_version = Column(Integer, nullable=False, server_default="0")
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 

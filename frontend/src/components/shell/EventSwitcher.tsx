@@ -4,6 +4,7 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import { useEvent } from '../../contexts/EventContext';
 import { useNavigate } from 'react-router-dom';
+import { daysUntilEvent } from '../../utils/dates';
 
 const BRAND = '#888cee';
 const DEEP = '#6f74e0';
@@ -22,9 +23,8 @@ function emojiFor(type?: string, name?: string): string {
 
 function countdownLabel(dateISO?: string): string {
   if (!dateISO) return '';
-  const d = new Date(dateISO);
-  if (isNaN(d.getTime())) return '';
-  const days = Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  const days = daysUntilEvent(dateISO);
+  if (days === null) return '';
   if (days > 1) return `עוד ${days} ימים`;
   if (days === 1) return 'מחר!';
   if (days === 0) return 'היום! 🎉';
@@ -45,15 +45,20 @@ export default function EventSwitcher({ expanded }: { expanded: boolean }) {
   return (
     <>
       <Box
-        role="button"
-        onClick={(e) => setAnchorEl(e.currentTarget)}
+        component="button"
+        aria-label={selectedEvent ? `החלפת אירוע - ${selectedEvent.name}` : 'בחירת אירוע'}
+        aria-haspopup="menu"
+        aria-expanded={Boolean(anchorEl)}
+        onClick={(e: React.MouseEvent<HTMLElement>) => setAnchorEl(e.currentTarget)}
         sx={{
-          display: 'flex', alignItems: 'center', gap: 1.25,
+          display: 'flex', alignItems: 'center', gap: 1.25, width: '100%',
+          font: 'inherit', textAlign: 'inherit',
           p: 1, borderRadius: 3, cursor: 'pointer',
           bgcolor: isDark ? alpha('#fff', 0.04) : alpha(BRAND, 0.06),
           border: '1px solid', borderColor: isDark ? alpha('#fff', 0.06) : alpha(BRAND, 0.12),
           transition: 'border-color .2s ease, background-color .2s ease',
           '&:hover': { borderColor: alpha(BRAND, 0.5) },
+          '&:focus-visible': { outline: `2px solid ${BRAND}`, outlineOffset: 2 },
         }}
       >
         <Box sx={{ position: 'relative', flexShrink: 0 }}>

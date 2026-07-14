@@ -23,7 +23,7 @@ import { israelTimeToISOUTC } from '../utils/israelTime';
 
 export interface CampaignSpec {
   stage: FlowStage;
-  label: string; // template campaignLabel (lookup key into config/templates)
+  label: string; // legacy display label; template selection is by `stage`
   title: string; // user-facing name
   preferredOffsetDays: number; // ideal days before the event (negative = after)
   minOffsetDays: number; // closest-to-event offset we'll still accept (negative = after)
@@ -52,7 +52,7 @@ export function planTierOf(planId: string | null | undefined): number {
   return PLAN_TIER[planId] ?? 0;
 }
 
-// Canonical campaign labels - these are the template lookup keys in config/templates.
+// Campaign display labels (the canonical stage drives template selection now).
 const L = {
   invite: 'Save the date',
   reminderWeek: 'תזכורת שבוע לפני',
@@ -87,8 +87,11 @@ const SCHEDULES: Record<string, CampaignSpec[]> = {
     { stage: 'thank_you', label: L.thankYou, title: T.thankYou, preferredOffsetDays: -1, minOffsetDays: -1, priority: 3, optional: true, time: '11:00', minTier: 1 },
   ],
   // Brit/brita timelines are short by nature - guests are often invited just days ahead.
+  // Reminder is SUPPORTED (not hardcoded-out) but optional: it only appears when the
+  // event is far enough out to fit one, so the default short-notice flow is unchanged.
   brit: [
     { stage: 'invitation', label: L.invite, title: T.invite, preferredOffsetDays: 5, minOffsetDays: 0, priority: 1, optional: false, time: '10:00', minTier: 0 },
+    { stage: 'reminder', label: L.reminderWeek, title: T.reminder, preferredOffsetDays: 3, minOffsetDays: 1, priority: 4, optional: true, time: '10:00', minTier: 0 },
     { stage: 'final_reminder', label: L.reminderDay, title: T.reminder, preferredOffsetDays: 1, minOffsetDays: 0, priority: 2, optional: false, time: '09:00', minTier: 0 },
     { stage: 'thank_you', label: L.thankYou, title: T.thankYou, preferredOffsetDays: -1, minOffsetDays: -1, priority: 3, optional: true, time: '11:00', minTier: 1 },
   ],

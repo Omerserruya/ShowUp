@@ -10,7 +10,7 @@ import {
   Checkbox,
   FormControlLabel,
 } from '@mui/material';
-import { useNavigate, Link as RouterLink } from 'react-router-dom';
+import { useNavigate, useLocation, Link as RouterLink } from 'react-router-dom';
 import { useUser } from '../contexts/UserContext';
 import { countryOptions, normalizePhoneNumber } from '../utils/countryOptions';
 import OtpVerification from '../components/OtpVerification';
@@ -33,6 +33,9 @@ interface FormErrors {
 
 const Register = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  // Where to go after a successful OTP verification (e.g. continue to payment).
+  const nextPath = (location.state as any)?.next || '/overview';
   const { setUser } = useUser();
   const [formData, setFormData] = useState<RegisterFormData>({
     phone: '',
@@ -80,6 +83,8 @@ const Register = () => {
         setOtpSentMessage('שלחנו קוד חדש ל-WhatsApp שלך');
         setResendCooldown(60);
         setOtp(['', '', '', '', '', '']);
+        // Put the cursor back where typing starts - autoFocus only fires on mount.
+        setTimeout(() => document.getElementById('otp-input-0')?.focus(), 50);
       } else {
         setOtpError(data.error || 'שליחת הקוד נכשלה. נסו שוב');
       }
@@ -228,14 +233,16 @@ const Register = () => {
         }
 
         setOtpError('');
-        navigate('/overview');
+        navigate(nextPath);
       } else {
         if (data.error === 'too_many_attempts') {
           setOtpError('יותר מדי ניסיונות. אנא נסה שוב מאוחר יותר');
         } else if (data.error === 'otp_expired_or_missing') {
           setOtpError('קוד OTP פג תוקף. אנא בקש קוד חדש');
         } else if (data.error === 'invalid_code') {
-          setOtpError(`קוד שגוי. נותרו ${5 - (data.attempts || 0)} ניסיונות`);
+          // Only quote remaining attempts when the server actually reported them.
+          const remaining = typeof data.attempts === 'number' ? Math.max(0, 5 - data.attempts) : null;
+          setOtpError(remaining !== null ? `קוד שגוי. נותרו ${remaining} ניסיונות` : 'קוד שגוי, נסו שוב');
         } else {
           setOtpError(data.error || 'קוד OTP שגוי');
         }
@@ -354,7 +361,7 @@ const Register = () => {
         </Typography>
 
         {formError && (
-          <Typography variant="body2" sx={{ color: 'error.main', mb: 2.5, fontWeight: 600 }}>
+          <Typography role="alert" variant="body2" sx={{ color: 'error.main', mb: 2.5, fontWeight: 600 }}>
             {formError}
           </Typography>
         )}
@@ -386,10 +393,12 @@ const Register = () => {
               setFormError('');
             }}
             inputProps={{
-              style: { direction: 'rtl', textAlign: 'right' },
+              // The value is an LTR phone number - rtl direction bidi-scrambles it.
+              style: { direction: 'ltr', textAlign: 'right' },
               inputMode: 'numeric',
               pattern: '[0-9]*',
               autoComplete: 'tel',
+              'aria-label': 'מספר טלפון',
             }}
             error={!!errors.phone}
             helperText={errors.phone}
@@ -406,7 +415,7 @@ const Register = () => {
               setFormData({ ...formData, firstName: e.target.value });
               setFormError('');
             }}
-            inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
+            inputProps={{ style: { direction: 'rtl', textAlign: 'right' }, 'aria-label': 'שם פרטי', autoComplete: 'given-name' }}
             error={!!errors.firstName}
             helperText={errors.firstName}
             sx={nameFieldSx}
@@ -418,7 +427,7 @@ const Register = () => {
               setFormData({ ...formData, lastName: e.target.value });
               setFormError('');
             }}
-            inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
+            inputProps={{ style: { direction: 'rtl', textAlign: 'right' }, 'aria-label': 'שם משפחה', autoComplete: 'family-name' }}
             error={!!errors.lastName}
             helperText={errors.lastName}
             sx={nameFieldSx}
@@ -435,7 +444,7 @@ const Register = () => {
             setFormData({ ...formData, email: e.target.value });
             setFormError('');
           }}
-          inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
+          inputProps={{ style: { direction: 'rtl', textAlign: 'right' }, 'aria-label': 'אימייל (לא חובה)', autoComplete: 'email' }}
           error={!!errors.email}
           helperText={errors.email}
           sx={[authFieldSx, { mb: 2 }]}

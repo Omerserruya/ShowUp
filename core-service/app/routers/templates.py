@@ -96,7 +96,8 @@ def _authorize_template(db: Session, t: WaTemplate, user_id: uuid.UUID, action: 
 
 @router.post("/events/{event_id}/templates", response_model=TemplateOut, status_code=201)
 def create_template(event_id: uuid.UUID, payload: TemplateIn, db: Session = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
-    require_event_permission(db, event_crud.get_event(db, event_id), user_id, Action.EVENT_WRITE)
+    event = event_crud.get_event(db, event_id)
+    require_event_permission(db, event, user_id, Action.EVENT_WRITE)
     t = WaTemplate(
         event_id=event_id,
         name=payload.name,
@@ -221,7 +222,8 @@ def usable_templates(event_id: uuid.UUID, db: Session = Depends(get_db), user_id
 def clone_template(event_id: uuid.UUID, template_id: uuid.UUID, db: Session = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
     """Clone a template (global, or from an event the user can read) into this event
     as a fresh DRAFT - lets owners start from an approved base ("event templates")."""
-    require_event_permission(db, event_crud.get_event(db, event_id), user_id, Action.EVENT_WRITE)
+    dest_event = event_crud.get_event(db, event_id)
+    require_event_permission(db, dest_event, user_id, Action.EVENT_WRITE)
     src = _template_or_404(db, template_id)
     if src.event_id and src.event_id != event_id:
         require_event_permission(db, event_crud.get_event(db, src.event_id), user_id, Action.EVENT_READ)

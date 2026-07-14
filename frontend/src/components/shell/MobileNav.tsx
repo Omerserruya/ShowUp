@@ -9,7 +9,6 @@ import UserAvatar from '../UserAvatar';
 import OptionsMenu from '../OptionsMenu';
 import { useUser } from '../../contexts/UserContext';
 import { useEvent } from '../../contexts/EventContext';
-import { hasFeature } from '../../config/entitlements';
 
 const BRAND = '#888cee';
 const DEEP = '#6f74e0';
@@ -24,7 +23,8 @@ export default function MobileNav() {
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const go = (path: string) => { navigate(path); setSheetOpen(false); };
-  const allItems = [...primaryNav, ...accountNav].filter((i) => !i.feature || hasFeature(selectedEvent?.planId, i.feature));
+  // Show premium items with a lock marker rather than hiding them.
+  const allItems = [...primaryNav, ...accountNav];
 
   const dockBg = isDark ? alpha('#16161c', 0.82) : alpha('#ffffff', 0.82);
 
@@ -33,15 +33,15 @@ export default function MobileNav() {
       {/* Floating dock */}
       <Box sx={{ position: 'fixed', bottom: 14, left: '50%', transform: 'translateX(-50%)', zIndex: 1250, width: 'calc(100% - 28px)', maxWidth: 440, display: 'flex', alignItems: 'center', justifyContent: 'space-around', px: 1, py: 0.75, borderRadius: 99, bgcolor: dockBg, backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid', borderColor: isDark ? alpha('#fff', 0.08) : alpha('#0f172a', 0.06), boxShadow: `0 12px 34px ${alpha('#0f172a', isDark ? 0.5 : 0.14)}` }}>
         {mobileNav.map((item) => {
-          const selected = location.pathname === item.path;
+          const selected = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
           return (
-            <Box key={item.path} role="button" onClick={() => go(item.path)} sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.25, py: 0.75, borderRadius: 4, color: selected ? DEEP : 'text.secondary', bgcolor: selected ? alpha(BRAND, 0.12) : 'transparent', transition: 'all .18s ease', '& svg': { fontSize: 23 } }}>
+            <Box key={item.path} component="button" aria-current={selected ? 'page' : undefined} aria-label={item.label} onClick={() => go(item.path)} sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.25, py: 0.75, border: 'none', font: 'inherit', cursor: 'pointer', borderRadius: 4, color: selected ? DEEP : 'text.secondary', bgcolor: selected ? alpha(BRAND, 0.12) : 'transparent', transition: 'all .18s ease', '&:focus-visible': { outline: `2px solid ${BRAND}`, outlineOffset: 2 }, '& svg': { fontSize: 23 } }}>
               {item.icon}
               <Typography sx={{ fontSize: '0.62rem', fontWeight: selected ? 800 : 600 }}>{item.label}</Typography>
             </Box>
           );
         })}
-        <Box role="button" onClick={() => setSheetOpen(true)} sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.25, py: 0.75, borderRadius: 4, color: 'text.secondary', '& svg': { fontSize: 23 } }}>
+        <Box component="button" aria-label="עוד" aria-haspopup="true" aria-expanded={sheetOpen} onClick={() => setSheetOpen(true)} sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.25, py: 0.75, border: 'none', font: 'inherit', cursor: 'pointer', bgcolor: 'transparent', borderRadius: 4, color: 'text.secondary', '&:focus-visible': { outline: `2px solid ${BRAND}`, outlineOffset: 2 }, '& svg': { fontSize: 23 } }}>
           <MenuRoundedIcon />
           <Typography sx={{ fontSize: '0.62rem', fontWeight: 600 }}>עוד</Typography>
         </Box>
@@ -60,11 +60,11 @@ export default function MobileNav() {
 
           <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, mt: 2.5 }}>
             {allItems.map((item: NavItem) => {
-              const selected = location.pathname === item.path;
+              const selected = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
               return (
-                <Box key={item.path} role="button" onClick={() => go(item.path)} sx={{ display: 'flex', alignItems: 'center', gap: 1.25, p: 1.5, borderRadius: 3, color: selected ? DEEP : 'text.primary', bgcolor: selected ? alpha(BRAND, 0.12) : alpha(theme.palette.text.primary, 0.035), '& svg': { fontSize: 22, color: selected ? DEEP : 'text.secondary' } }}>
+                <Box key={item.path} component="button" aria-current={selected ? 'page' : undefined} onClick={() => go(item.path)} sx={{ display: 'flex', alignItems: 'center', gap: 1.25, p: 1.5, border: 'none', font: 'inherit', cursor: 'pointer', textAlign: 'start', borderRadius: 3, color: selected ? DEEP : 'text.primary', bgcolor: selected ? alpha(BRAND, 0.12) : alpha(theme.palette.text.primary, 0.035), '&:focus-visible': { outline: `2px solid ${BRAND}`, outlineOffset: 2 }, '& svg': { fontSize: 22, color: selected ? DEEP : 'text.secondary' } }}>
                   {item.icon}
-                  <Typography sx={{ fontSize: '0.9rem', fontWeight: selected ? 800 : 600 }}>{item.label}</Typography>
+                  <Typography sx={{ flex: 1, fontSize: '0.9rem', fontWeight: selected ? 800 : 600 }}>{item.label}</Typography>
                 </Box>
               );
             })}

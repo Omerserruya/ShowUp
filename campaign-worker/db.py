@@ -47,8 +47,10 @@ def fetch_campaign_by_id(conn: psycopg2.extensions.connection, campaign_id: str)
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
-            SELECT id, event_id, name, template, channel, schedule_time, status, recipient_count,
-                   audience, audience_filter, follow_up_after_hours, follow_up_audience
+            SELECT id, event_id, name, template, template_key, stage_id, variant_id,
+                   custom_message, header_image_url, channel, schedule_time, status,
+                   recipient_count, audience, audience_filter, follow_up_after_hours,
+                   follow_up_audience, campaign_type
             FROM campaigns
             WHERE id = %s
             """,
@@ -62,13 +64,33 @@ def fetch_event_by_id(conn: psycopg2.extensions.connection, event_id: str) -> Op
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
-            SELECT id, name, description, event_date, location, active, created_at, updated_at, inviters, owners, account_id
+            SELECT id, name, description, event_date, location, active, event_type,
+                   subjects, public_slug, created_at, updated_at, inviters, owners, account_id
             FROM events
             WHERE id = %s
             """,
             (event_id,),
         )
         return cur.fetchone()
+
+
+def fetch_wa_template(conn: psycopg2.extensions.connection, template_id: str) -> Optional[dict]:
+    """Look up an event-scoped/custom template row so the catalog resolver can
+    resolve a legacy UUID reference. Best-effort: None if the table/row is absent."""
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT id, name, body, flow_stage, language, components,
+                       event_type, visibility, lifecycle
+                FROM wa_templates WHERE id = %s
+                """,
+                (template_id,),
+            )
+            return cur.fetchone()
+    except Exception:
+        conn.rollback()
+        return None
 
 
 def fetch_guests_for_event(conn: psycopg2.extensions.connection, event_id: str) -> Sequence[dict]:
@@ -182,6 +204,43 @@ def create_follow_up_campaign(conn, parent: dict, hours: int, audience: str) -> 
             (new_id, parent["event_id"], follow_name, parent["template"], parent["channel"], sched, audience),
         )
         return new_id
+
+
+# --- Planner batch releases -------------------------------------------------
+# The planner-service releases a campaign in per-day batches (`campaign_releases`).
+# When a message carries a `release_id`, the worker sends only that batch's `count`
+# and reports back here. The campaign is completed only when no batches remain.
+
+def mark_release_sent(conn, release_id: str, sent_count: int) -> None:
+    """Mark a single planner release row as sent (best-effort - the table only
+    exists once the planner-service has run)."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE campaign_releases SET status='sent', count=%s, updated_at=NOW() WHERE id=%s",
+                (sent_count, release_id),
+            )
+    except Exception:
+        conn.rollback()
+
+
+def campaign_has_open_releases(conn, campaign_id: str) -> bool:
+    """True if the campaign still has un-sent planner batches (pending/queued)."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM campaign_releases WHERE campaign_id=%s AND status <> 'sent' LIMIT 1",
+                (campaign_id,),
+            )
+            return cur.fetchone() is not None
+    except Exception:
+        conn.rollback()
+        return False
+
+
+def mark_campaign_status(conn, campaign_id: str, status: str) -> None:
+    with conn.cursor() as cur:
+        cur.execute("UPDATE campaigns SET status=%s WHERE id=%s", (status, campaign_id))
 
 
 

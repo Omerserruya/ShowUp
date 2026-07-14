@@ -94,6 +94,7 @@ def clone_event(event_id: uuid.UUID, payload: CloneEventIn, db: Session = Depend
 
     db.commit()
     db.refresh(new)
+    event_crud.annotate_venue(db, [new])
     return new
 
 

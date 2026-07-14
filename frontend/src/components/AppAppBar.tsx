@@ -153,7 +153,7 @@ export default function AppAppBar() {
             </IconButton>
           </Box>
           <Box sx={{ display: { xs: 'flex', md: 'none' }, alignItems: 'center' }}>
-            <Logo height={44} />
+            <Logo height={50} />
           </Box>
             <Drawer
               anchor="top"

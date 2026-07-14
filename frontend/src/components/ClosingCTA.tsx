@@ -60,7 +60,7 @@ export default function ClosingCTA() {
           </Button>
           <Stack direction="row" spacing={0.75} alignItems="center" sx={{ opacity: 0.9 }}>
             <LockRoundedIcon sx={{ fontSize: 18 }} />
-            <Typography variant="body2">תשלום מאובטח · החזר כספי תוך 14 יום</Typography>
+            <Typography variant="body2">מתחילים בחינם · בלי כרטיס אשראי</Typography>
           </Stack>
         </Stack>
       </Box>

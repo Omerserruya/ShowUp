@@ -4,7 +4,10 @@ import {
   Box, Button, MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material';
 import InvitationView from '../components/invitation/InvitationView';
+import EnvelopeIntro from '../components/invitation/EnvelopeIntro';
 import { InvitationData, DEFAULT_INVITATION } from '../components/invitation/types';
+import { formStyles } from '../components/invitation/rsvpStyle';
+import { resolveTheme } from '../components/invitation/theme';
 
 /**
  * Public, no-auth DEMO invitation. Lets a prospect experience exactly what a guest
@@ -85,32 +88,38 @@ export default function DemoInvite() {
     invitation: {
       ...DEFAULT_INVITATION,
       hero: { ...DEFAULT_INVITATION.hero, bigText: preset.bigText },
-      envelope: { ...DEFAULT_INVITATION.envelope, envelopeText: preset.title },
+      envelope: { ...DEFAULT_INVITATION.envelope, enabled: true, envelopeText: preset.title, paperText: preset.title, stampText: '' },
       personalText: preset.personalText,
       rsvpEnabled: true,
     },
   }), [guestName, preset]);
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#faf7f2' }}>
+    <Box sx={{ minHeight: '100vh', bgcolor: '#f5efe6' }}>
       {/* Subtle demo ribbon so it's clear this is a sample */}
       <Box
         sx={{
           position: 'sticky', top: 0, zIndex: 10,
-          textAlign: 'center', py: 0.75, px: 2,
-          background: 'linear-gradient(90deg,#3b82f6,#a855f7)',
-          color: '#fff', fontSize: 13, fontWeight: 600,
+          textAlign: 'center', py: 1, px: 2,
+          bgcolor: 'rgba(43,38,34,0.92)', backdropFilter: 'blur(6px)',
+          color: 'rgba(245,239,230,0.92)', fontSize: 12.5, letterSpacing: 1,
+          fontFamily: '"Noto Sans Hebrew", sans-serif',
         }}
       >
-        זוהי הזמנת דמו - כך בדיוק יחווה זאת האורח שלכם ✨
+        זוהי הזמנת דמו · כך בדיוק יחווה זאת האורח שלכם
       </Box>
       <InvitationView data={data} rsvpSlot={<DemoRsvpForm />} />
+      {data.invitation?.envelope?.enabled && (
+        <EnvelopeIntro config={data.invitation}
+          names={data.invitation.hero?.bigText || data.inviters?.map((i) => `${i.fn} ${i.ln}`).join(' & ') || data.name} />
+      )}
     </Box>
   );
 }
 
 /** Local-only RSVP - mirrors the real public form but persists nothing. */
 function DemoRsvpForm() {
+  const EDITORIAL = formStyles(resolveTheme(DEFAULT_INVITATION.theme));
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [partySize, setPartySize] = useState(1);
@@ -129,9 +138,9 @@ function DemoRsvpForm() {
 
   if (done) {
     return (
-      <Box sx={{ p: 3, borderRadius: 3, bgcolor: 'rgba(124,58,237,0.06)', textAlign: 'center' }}>
-        <Typography variant="h6" sx={{ mb: 1 }}>תודה רבה! 🎉</Typography>
-        <Typography color="text.secondary">
+      <Box sx={{ textAlign: 'center', py: 2 }}>
+        <Typography sx={{ ...EDITORIAL.serif, fontSize: 28, mb: 1.5 }}>תודה רבה</Typography>
+        <Typography sx={{ ...EDITORIAL.sans, color: EDITORIAL.muted }}>
           {status === 'confirmed' ? 'אישור ההגעה נקלט (בדמו זה לא נשמר).' : 'תגובתך נקלטה. נתראה בפעם אחרת!'}
         </Typography>
       </Box>
@@ -139,33 +148,32 @@ function DemoRsvpForm() {
   }
 
   return (
-    <Box sx={{ p: { xs: 2.5, md: 3 }, borderRadius: 3, bgcolor: 'rgba(255,255,255,0.85)', boxShadow: '0 8px 24px rgba(0,0,0,0.08)', textAlign: 'right' }}>
-      <Typography variant="h6" sx={{ mb: 2, textAlign: 'center' }}>אישור הגעה</Typography>
-      <Stack spacing={2}>
+    <Box sx={{ textAlign: 'right' }}>
+      <Stack spacing={3}>
         <ToggleButtonGroup
           exclusive fullWidth value={status}
           onChange={(_, v) => v && setStatus(v)}
-          color="primary" size="small"
+          size="small" sx={EDITORIAL.toggle}
         >
           <ToggleButton value="confirmed">מגיע/ה</ToggleButton>
           <ToggleButton value="maybe">אולי</ToggleButton>
           <ToggleButton value="declined">לא מגיע/ה</ToggleButton>
         </ToggleButtonGroup>
 
-        <TextField label="שם מלא" value={name} onChange={(e) => setName(e.target.value)} fullWidth size="small" />
-        <TextField label="טלפון" value={phone} onChange={(e) => setPhone(e.target.value)} fullWidth size="small" inputMode="tel" />
+        <TextField variant="standard" label="שם מלא" value={name} onChange={(e) => setName(e.target.value)} fullWidth sx={EDITORIAL.field} />
+        <TextField variant="standard" label="טלפון" value={phone} onChange={(e) => setPhone(e.target.value)} fullWidth inputMode="tel" sx={EDITORIAL.field} />
         {status === 'confirmed' && (
           <TextField
-            select label="מספר אורחים" value={partySize}
-            onChange={(e) => setPartySize(Number(e.target.value))} fullWidth size="small"
+            select variant="standard" label="מספר אורחים" value={partySize}
+            onChange={(e) => setPartySize(Number(e.target.value))} fullWidth sx={EDITORIAL.field}
           >
             {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
               <MenuItem key={n} value={n}>{n}</MenuItem>
             ))}
           </TextField>
         )}
-        {error && <Typography color="error" sx={{ fontSize: 14 }}>{error}</Typography>}
-        <Button variant="contained" size="large" onClick={submit}>שליחת אישור</Button>
+        {error && <Typography sx={{ ...EDITORIAL.sans, color: '#a5462f', fontSize: 14 }}>{error}</Typography>}
+        <Button variant="outlined" size="large" onClick={submit} sx={EDITORIAL.button}>שליחת אישור</Button>
       </Stack>
     </Box>
   );

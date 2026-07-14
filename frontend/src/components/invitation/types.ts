@@ -1,11 +1,14 @@
 // Mirrors core-service schemas.InvitationConfig
 export interface InvitationConfig {
   envelope?: {
-    color?: string;
+    enabled?: boolean;         // show the wax-sealed envelope intro on open
+    color?: string;            // envelope paper colour
     texture?: string | null;   // texture key (e.g. "linen") or image url
-    stampText?: string | null;
-    envelopeText?: string | null;
-    font?: string | null;
+    waxColor?: string | null;  // wax seal colour
+    stampText?: string | null; // text pressed into the wax seal
+    paperText?: string | null; // message written on the envelope paper
+    envelopeText?: string | null; // editorial overline (shown on the photo)
+    font?: string | null;      // font for the envelope / seal text
   };
   hero?: {
     imageUrl?: string | null;
@@ -20,6 +23,25 @@ export interface InvitationConfig {
   };
   fontFamily?: string | null;
   rsvpEnabled?: boolean;
+  theme?: InvitationTheme | null;
+  /** Editable UI labels (section overlines, detail labels, footer note, …),
+   *  keyed by a stable id. Missing keys fall back to built-in defaults. */
+  labels?: Record<string, string> | null;
+  /** Order of the movable content blocks in the left column. */
+  order?: string[] | null;
+  /** Ids of content blocks hidden from guests. */
+  hidden?: string[] | null;
+}
+
+/** Visual theme tokens for the editorial invitation. All optional; the
+ *  renderer fills in sensible defaults (see engine `resolveTheme`). */
+export interface InvitationTheme {
+  preset?: string | null;
+  bg?: string | null;         // page background
+  ink?: string | null;        // primary text
+  accent?: string | null;     // overlines, dividers, buttons
+  titleFont?: string | null;  // serif display
+  bodyFont?: string | null;   // sans body
 }
 
 export interface InvitationData {
@@ -27,12 +49,13 @@ export interface InvitationData {
   name: string;
   event_date?: string | null;
   location?: string | null;
+  event_type?: string | null;
   inviters?: Array<{ fn: string; ln: string }>;
   invitation: InvitationConfig;
 }
 
 export const DEFAULT_INVITATION: InvitationConfig = {
-  envelope: { color: '#f5efe6', texture: 'linen', stampText: '', envelopeText: 'הזמנה', font: 'serif' },
+  envelope: { enabled: false, color: '#3e121a', texture: 'linen', waxColor: '#d8ccb8', stampText: '', paperText: '', envelopeText: 'הזמנה', font: '"Frank Ruhl Libre", serif' },
   hero: { imageUrl: '', bigText: '', font: 'serif' },
   personalText: '',
   details: { showDate: true, showTime: true, showLocation: true },

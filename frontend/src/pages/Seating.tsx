@@ -34,13 +34,13 @@ import {
   Alert,
   CircularProgress,
   Drawer,
+  Snackbar,
   alpha,
 } from '@mui/material';
 import {
   Add as AddIcon,
   Save as SaveIcon,
   Cancel as CancelIcon,
-  PictureAsPdf as PictureAsPdfIcon,
   Search as SearchIcon,
   FilterList as FilterListIcon,
   Edit as EditIcon,
@@ -197,6 +197,9 @@ const TableNode = ({ data }: { data: { table: Table; guests: Guest[]; onSeatClic
   const guestSeatCount = (g: Guest) => g.confirmedCount ?? g.expectedCount ?? 1;
 
   function renderSeat(index: number, x: number, y: number) {
+    // ceil(seats/4)*4 (ריבוע) או ceil(seats/2)*2 (שורה) יוצרים מושבי-רפאים מעבר
+    // לקיבולת - לא מציירים מושב שמעבר ל-table.seats (הגיאומטריה נשארת כפי שהיא).
+    if (index >= table.seats) return;
     const guestId = table.seatAssignments[index.toString()];
     const assignedGuest = guestId ? guests.find((g: Guest) => g._id === guestId) : null;
     const positionInBlock = assignedGuest && guestId
@@ -334,7 +337,12 @@ const TableNode = ({ data }: { data: { table: Table; guests: Guest[]; onSeatClic
           transition: 'background-color 0.2s',
         }}
       >
-        <Typography variant="h6">{table.name}</Typography>
+        <Box sx={{ textAlign: 'center' }}>
+          <Typography variant="h6">{table.name}</Typography>
+          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+            {Object.keys(table.seatAssignments || {}).length}/{table.seats}
+          </Typography>
+        </Box>
         {seats}
         <Handle type="target" position={Position.Top} />
         <Handle type="source" position={Position.Bottom} />
@@ -399,6 +407,12 @@ export default function Seating() {
   const [savingGuestId, setSavingGuestId] = useState<string | null>(null);
   const [savingLayout, setSavingLayout] = useState(false);
   const [layoutSaveError, setLayoutSaveError] = useState<string | null>(null);
+  const [seatToast, setSeatToast] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ tableIds: string[]; guestCount: number } | null>(null);
+  // שינויי מפה (הוספה/שם/מיקום/גודל) חיים רק ב-state עד "שמור" - בלי דגל dirty הם נעלמים בשקט.
+  const [layoutDirty, setLayoutDirty] = useState(false);
+  // "החלף אורח": מכריח את מסך החיפוש גם כשיש אורח מושב במושב הנבחר.
+  const [replaceMode, setReplaceMode] = useState(false);
   const skipSyncRef = useRef(false);
   const nodesRef = useRef<Node[]>([]);
 
@@ -490,7 +504,8 @@ export default function Seating() {
     
     setSelectedTable(table);
     setSelectedSeat({ tableId, seatIndex });
-    
+    setReplaceMode(false);
+
     if (seatedGuest) {
       // If there's a seated guest, show their details
       setGuestSearchValue(seatedGuest.name);
@@ -529,10 +544,19 @@ export default function Seating() {
     const n = guestSeatCount(guest);
     const atTable = guests.filter(g => g.assignedSeat?.startsWith(`${tableId}-`) && g._id !== guest._id);
     const currentTaken = atTable.reduce((s, g) => s + guestSeatCount(g), 0);
-    if (currentTaken + n > table.seats) return;
+    if (currentTaken + n > table.seats) {
+      const free = table.seats - currentTaken;
+      setSeatToast(free > 0
+        ? `אין מספיק מקום ב${table.name} - נותרו ${free} מושבים פנויים ו${guest.name} צריכים ${n}`
+        : `${table.name} מלא - אין מושבים פנויים`);
+      return;
+    }
 
     const start = findConsecutiveSeats(table, n);
-    if (start === null) return;
+    if (start === null) {
+      setSeatToast(`אין ${n} מושבים צמודים פנויים ב${table.name} - נסו לפנות מקום או שולחן אחר`);
+      return;
+    }
 
     const newAssignments: Record<string, string> = { ...table.seatAssignments };
     const prevGuestIds = new Set<string>();
@@ -558,14 +582,25 @@ export default function Seating() {
 
     const tableNum = parseInt(tableId, 10);
     if (!Number.isNaN(tableNum)) {
+      // Snapshot pre-drop state so a failed write doesn't leave the UI lying.
+      const prevGuests = guests;
+      const prevTables = tables;
       setSavingGuestId(guest._id);
       fetchWithAuth(`/api/guests/${guest._id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ table_number: tableNum }),
       })
-        .then(() => setSavingGuestId(null))
-        .catch(() => setSavingGuestId(null));
+        .then((res) => {
+          if (res && 'ok' in res && !res.ok) throw new Error('save failed');
+          setSavingGuestId(null);
+        })
+        .catch(() => {
+          setSavingGuestId(null);
+          setGuests(prevGuests);
+          setTables(prevTables);
+          setSeatToast(`ההושבה של ${guest.name} לא נשמרה - בדקו את החיבור ונסו שוב`);
+        });
     }
   }, [tables, guests]);
 
@@ -597,6 +632,7 @@ export default function Seating() {
           body: JSON.stringify(payload),
         });
         if (!res.ok) throw new Error(await res.text());
+        setLayoutDirty(false);
         await fetchEvents();
         // רענון אורחים כדי שה-sync יציג מיד את מיקומי האורחים בלי ריענון דף
         if (refetchGuests) await refetchGuests();
@@ -619,53 +655,13 @@ export default function Seating() {
     try {
       await fetchEvents();
       if (refetchGuests) await refetchGuests();
+      setLayoutDirty(false);
     } catch (e: any) {
       setLayoutSaveError(e?.message || 'ביטול שינויים נכשל');
     }
   }, [fetchEvents, refetchGuests]);
 
-  // מחיקת שולחן: שחרור אורחים ב-API, דילוג על sync כדי שלא יחזיר את השולחן, עדכון state, שמירת מפה
-  const handleDeleteTable = useCallback(
-    async (tableId: string) => {
-      const guestIdsAtTable = guests
-        .filter((g) => g.tableNumber != null && String(g.tableNumber) === tableId)
-        .map((g) => g._id);
-      try {
-        await Promise.all(
-          guestIdsAtTable.map(async (id) => {
-            const res = await fetchWithAuth(`/api/guests/${id}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ table_number: null }),
-            });
-            if (!res.ok) throw new Error(await res.text());
-          })
-        );
-      } catch (e: any) {
-        setLayoutSaveError(e?.message || 'שחרור אורחים נכשל');
-        return;
-      }
-      skipSyncRef.current = true;
-      try {
-        if (refetchGuests) await refetchGuests();
-        const newTables = tables.filter((t) => t.id !== tableId);
-        setTables(newTables);
-        setGuests((prev) =>
-          prev.map((g) =>
-            guestIdsAtTable.includes(g._id)
-              ? { ...g, assignedSeat: undefined, tableNumber: undefined }
-              : g
-          )
-        );
-        await saveLayoutTables(newTables);
-      } finally {
-        skipSyncRef.current = false;
-      }
-    },
-    [guests, tables, saveLayoutTables, refetchGuests]
-  );
-
-  // מחיקת כמה שולחנות (משמש מקש Delete/Backspace)
+  // מחיקת שולחנות (מגיע רק דרך requestDeleteTables + דיאלוג אישור)
   const handleDeleteTables = useCallback(
     async (tableIds: string[]) => {
       if (tableIds.length === 0) return;
@@ -708,6 +704,18 @@ export default function Seating() {
     [guests, tables, saveLayoutTables, refetchGuests]
   );
 
+  // מחיקת שולחן משחררת את כל היושבים בו - פעולה הרסנית שדורשת אישור, גם ממקלדת
+  const requestDeleteTables = useCallback(
+    (tableIds: string[]) => {
+      if (tableIds.length === 0) return;
+      const guestCount = guests.filter(
+        (g) => g.tableNumber != null && tableIds.includes(String(g.tableNumber))
+      ).length;
+      setDeleteConfirm({ tableIds, guestCount });
+    },
+    [guests]
+  );
+
   // Update the useEffect for nodes – שומר selected מ־nodes הקודמים
   useEffect(() => {
     setNodes((prevNodes) =>
@@ -727,13 +735,13 @@ export default function Seating() {
               setSelectedTable(t);
               setEditTableModalOpen(true);
             },
-            onTableDelete: handleDeleteTable,
+            onTableDelete: (id: string) => requestDeleteTables([id]),
             onGuestDrop: handleGuestDrop,
           },
         };
       })
     );
-  }, [tables, guests, handleSeatClick, handleGuestDrop, handleDeleteTable]);
+  }, [tables, guests, handleSeatClick, handleGuestDrop, requestDeleteTables]);
 
   // עדכון ref ל-nodes (למקשי קיצור)
   nodesRef.current = nodes;
@@ -752,13 +760,21 @@ export default function Seating() {
         const selectedIds = nodesRef.current.filter((n) => n.selected).map((n) => n.id);
         if (selectedIds.length > 0) {
           e.preventDefault();
-          handleDeleteTables(selectedIds);
+          requestDeleteTables(selectedIds);
         }
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleDeleteTables]);
+  }, [requestDeleteTables]);
+
+  // מפה שלא נשמרה לא תאבד לרענון/סגירת טאב אקראיים.
+  useEffect(() => {
+    if (!layoutDirty) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [layoutDirty]);
 
   // Filtered guests
   const filteredGuests = guests.filter(guest => {
@@ -773,11 +789,12 @@ export default function Seating() {
 
   // Handle node position changes
   const onNodeDragStop = useCallback((event: React.MouseEvent, node: Node) => {
-    setTables(prev => prev.map(t => 
-      t.id === node.id 
+    setTables(prev => prev.map(t =>
+      t.id === node.id
         ? { ...t, position: { x: node.position.x, y: node.position.y } }
         : t
     ));
+    setLayoutDirty(true);
   }, []);
 
   // במובייל: לחיצה על שולחן פותחת את עריכת השולחן (הוספת אורחים וכו')
@@ -831,14 +848,15 @@ export default function Seating() {
 
     if (tables.some(t => t.id === selectedTable.id)) {
       // Update existing table
-      setTables(prev => prev.map(t => 
+      setTables(prev => prev.map(t =>
         t.id === selectedTable.id ? updatedTable : t
       ));
     } else {
       // Add new table
       setTables(prev => [...prev, updatedTable]);
     }
-    
+
+    setLayoutDirty(true);
     setTableModalOpen(false);
     setSelectedTable(null);
   };
@@ -849,10 +867,19 @@ export default function Seating() {
     const n = guestSeatCount(guest);
     const atTable = guests.filter(g => g.assignedSeat?.startsWith(`${selectedTable.id}-`) && g._id !== guest._id);
     const currentTaken = atTable.reduce((s, g) => s + guestSeatCount(g), 0);
-    if (currentTaken + n > selectedTable.seats) return;
+    if (currentTaken + n > selectedTable.seats) {
+      const free = selectedTable.seats - currentTaken;
+      setSeatToast(free > 0
+        ? `אין מספיק מקום ב${selectedTable.name} - נותרו ${free} מושבים פנויים ו${guest.name} צריכים ${n}`
+        : `${selectedTable.name} מלא - אין מושבים פנויים`);
+      return;
+    }
 
     const start = seatIndex != null ? seatIndex : findConsecutiveSeats(selectedTable, n);
-    if (start === null || (seatIndex != null && seatIndex + n > selectedTable.seats)) return;
+    if (start === null || (seatIndex != null && seatIndex + n > selectedTable.seats)) {
+      setSeatToast(`אין ${n} מושבים צמודים פנויים ב${selectedTable.name} - נסו לפנות מקום או שולחן אחר`);
+      return;
+    }
 
     const newAssignments: Record<string, string> = {
       ...Object.fromEntries(Object.entries(selectedTable.seatAssignments).filter(([_, id]) => id !== guest._id)),
@@ -866,6 +893,11 @@ export default function Seating() {
     const toUnassign = Array.from(prevGuestIds).filter((pid) => !Object.values(newAssignments).includes(pid));
 
     const updatedTable = { ...selectedTable, seatAssignments: newAssignments };
+
+    // Snapshot pre-assignment state so a failed write doesn't leave the UI lying.
+    const prevGuests = guests;
+    const prevTables = tables;
+    const prevSelectedTable = selectedTable;
 
     setGuests((prev) =>
       prev.map((g) => {
@@ -889,12 +921,26 @@ export default function Seating() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ table_number: tableNum }),
       })
-        .then(() => setSavingGuestId(null))
-        .catch(() => setSavingGuestId(null));
+        .then((res) => {
+          if (res && 'ok' in res && !res.ok) throw new Error('save failed');
+          setSavingGuestId(null);
+        })
+        .catch(() => {
+          setSavingGuestId(null);
+          setGuests(prevGuests);
+          setTables(prevTables);
+          setSelectedTable(prevSelectedTable);
+          setSeatToast(`ההושבה של ${guest.name} לא נשמרה - בדקו את החיבור ונסו שוב`);
+        });
     }
   };
 
   const handleRemoveGuestFromSeat = (guestId: string, tableId: string, _seatIndex: string) => {
+    // Snapshot pre-removal state so a failed write doesn't leave the UI lying.
+    const prevGuests = guests;
+    const prevTables = tables;
+    const prevSelectedTable = selectedTable;
+    const guestName = guests.find(g => g._id === guestId)?.name || 'האורח';
     setGuests(prev => prev.map(g =>
       g._id === guestId ? { ...g, assignedSeat: undefined, tableNumber: undefined } : g
     ));
@@ -912,8 +958,17 @@ export default function Seating() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ table_number: null }),
     })
-      .then(() => setSavingGuestId(null))
-      .catch(() => setSavingGuestId(null));
+      .then((res) => {
+        if (res && 'ok' in res && !res.ok) throw new Error('save failed');
+        setSavingGuestId(null);
+      })
+      .catch(() => {
+        setSavingGuestId(null);
+        setGuests(prevGuests);
+        setTables(prevTables);
+        setSelectedTable(prevSelectedTable);
+        setSeatToast(`ההסרה של ${guestName} לא נשמרה - בדקו את החיבור ונסו שוב`);
+      });
   };
 
   // Handle guest search
@@ -930,11 +985,6 @@ export default function Seating() {
     }
   };
 
-  const handleExportPDF = () => {
-    // TODO: Implement PDF export
-    console.log('Exporting to PDF...');
-  };
-
   if (!selectedEvent) {
     return (
       <Box sx={{ p: 2, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
@@ -944,15 +994,19 @@ export default function Seating() {
   }
 
   return (
-    <Box sx={{ 
+    <Box sx={{
       position: 'relative',
       width: '100%',
-      height: '100%',
+      // The app shell's content area is content-height (no fixed height), so a
+      // `height: 100%` here collapses to 0 and ReactFlow renders blank. Anchor to
+      // the viewport instead so the canvas always has real height.
+      height: { xs: 'calc(100dvh - 250px)', md: 'calc(100dvh - 200px)' },
+      minHeight: 420,
       display: 'flex',
       flexDirection: 'column'
     }}>
       {/* Canvas Area - Fill Available Space */}
-      <Box sx={{ 
+      <Box sx={{
         flex: 1,
         position: 'relative',
         backgroundColor: 'background.default',
@@ -977,6 +1031,30 @@ export default function Seating() {
           <Background />
           <Controls />
         </ReactFlow>
+        {/* מפה ריקה: בלי זה מקבלים קנבס מנוקד עם אפס הכוונה */}
+        {tables.length === 0 && !guestsLoading && (
+          <Box
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textAlign: 'center',
+              px: 3,
+              pointerEvents: 'none',
+              zIndex: 5,
+            }}
+          >
+            <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.01em', mb: 0.75 }}>
+              עדיין אין שולחנות במפה
+            </Typography>
+            <Typography variant="body2" sx={{ color: 'text.secondary', maxWidth: 320 }}>
+              לחצו על ״הוסף״ כדי להתחיל לסדר את האולם
+            </Typography>
+          </Box>
+        )}
       </Box>
 
       {/* Overlay Controls – ריווח ו־nowrap אחידים במובייל */}
@@ -1026,6 +1104,7 @@ export default function Seating() {
           </Button>
           <Button
             variant="contained"
+            color={layoutDirty ? 'warning' : 'primary'}
             startIcon={savingLayout ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />}
             onClick={handleSaveLayout}
             disabled={savingLayout}
@@ -1041,14 +1120,12 @@ export default function Seating() {
           >
             בטל
           </Button>
-          <Button
-            variant="outlined"
-            startIcon={<PictureAsPdfIcon />}
-            onClick={handleExportPDF}
-            size="small"
-          >
-            ייצוא ל-PDF
-          </Button>
+          {layoutDirty && (
+            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, px: 1.25, py: 0.4, borderRadius: 99, bgcolor: alpha('#f59e0b', 0.12), color: '#b45309', fontSize: '0.75rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
+              <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#f59e0b' }} />
+              שינויים לא נשמרו
+            </Box>
+          )}
         </Stack>
       </Box>
 
@@ -1126,17 +1203,26 @@ export default function Seating() {
               <Typography variant="body2" color="text.secondary">טוען אורחים...</Typography>
             </Box>
           )}
-          <Typography variant="subtitle2">אורחים ללא מקום ישיבה</Typography>
-          
-          <Box sx={{ 
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <Typography variant="subtitle2">אורחים ללא מקום ישיבה</Typography>
+            <Chip size="small" label={unseatedGuests.length} sx={{ height: 20, fontWeight: 700 }} color={unseatedGuests.length === 0 ? 'success' : 'default'} />
+          </Stack>
+
+          <Box sx={{
             maxHeight: 320,
             overflowY: 'auto',
             overflowX: 'hidden',
             minHeight: 0
           }}>
-            {unseatedGuests.map((guest) => (
-              <DraggableGuest key={guest._id} guest={guest} />
-            ))}
+            {unseatedGuests.length === 0 && !guestsLoading ? (
+              <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 600, py: 1 }}>
+                כולם מושבים! 🎉
+              </Typography>
+            ) : (
+              unseatedGuests.map((guest) => (
+                <DraggableGuest key={guest._id} guest={guest} />
+              ))
+            )}
           </Box>
         </Stack>
       </Paper>
@@ -1153,7 +1239,8 @@ export default function Seating() {
         fullWidth
       >
         <DialogTitle>
-          {selectedTable?.id ? 'עריכת שולחן' : 'הוספת שולחן חדש'}
+          {/* שולחן חדש מקבל id עוד לפני השמירה - "עריכה" רק אם הוא כבר קיים ברשימה */}
+          {selectedTable && tables.some((t) => t.id === selectedTable.id) ? 'עריכת שולחן' : 'הוספת שולחן חדש'}
         </DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 2 }}>
@@ -1414,9 +1501,10 @@ export default function Seating() {
             variant="contained"
             onClick={() => {
               if (selectedTable) {
-                setTables(prev => prev.map(t => 
+                setTables(prev => prev.map(t =>
                   t.id === selectedTable.id ? selectedTable : t
                 ));
+                setLayoutDirty(true);
               }
               setEditTableModalOpen(false);
               setSelectedTable(null);
@@ -1433,7 +1521,7 @@ export default function Seating() {
           anchor="bottom"
           open={guestSearchModalOpen}
           onClose={() => {
-            setGuestSearchModalOpen(false);
+            setGuestSearchModalOpen(false); setReplaceMode(false);
             setSelectedSeat(null);
           }}
           PaperProps={{
@@ -1447,7 +1535,7 @@ export default function Seating() {
           <Box sx={{ pt: 1.5, pb: 2, px: 2 }}>
             <Box sx={{ width: 40, height: 4, borderRadius: 2, bgcolor: 'grey.300', mx: 'auto', mb: 2 }} />
             <Typography variant="h6" gutterBottom>בחר אורח</Typography>
-            {selectedSeat && tables.find(t => t.id === selectedSeat.tableId)?.seatAssignments[selectedSeat.seatIndex.toString()] ? (
+            {selectedSeat && !replaceMode && tables.find(t => t.id === selectedSeat.tableId)?.seatAssignments[selectedSeat.seatIndex.toString()] ? (
               <Box sx={{ mt: 2 }}>
                 <Typography variant="subtitle1" gutterBottom>אורח ממושב זה:</Typography>
                 <Paper sx={{ p: 2, mb: 2 }}>
@@ -1474,10 +1562,10 @@ export default function Seating() {
                       const guestId = tables.find(t => t.id === selectedSeat.tableId)?.seatAssignments[selectedSeat.seatIndex.toString()];
                       if (guestId) handleRemoveGuestFromSeat(guestId, selectedSeat.tableId, selectedSeat.seatIndex.toString());
                     }
-                    setGuestSearchModalOpen(false);
+                    setGuestSearchModalOpen(false); setReplaceMode(false);
                     setSelectedSeat(null);
                   }}>הסר אורח</Button>
-                  <Button variant="outlined" onClick={() => { setGuestSearchValue(''); setGuestSearchResults([]); }}>החלף אורח</Button>
+                  <Button variant="outlined" onClick={() => { setReplaceMode(true); setGuestSearchValue(''); setGuestSearchResults([]); }}>החלף אורח</Button>
                 </Stack>
               </Box>
             ) : (
@@ -1485,7 +1573,7 @@ export default function Seating() {
                 <TextField fullWidth placeholder="חיפוש אורחים..." value={guestSearchValue} onChange={(e) => handleGuestSearch(e.target.value)} onKeyDown={(e) => {
                   if (e.key === 'Enter' && guestSearchResults.length > 0) {
                     handleAssignGuestToSeat(guestSearchResults[0], selectedSeat?.seatIndex);
-                    setGuestSearchModalOpen(false);
+                    setGuestSearchModalOpen(false); setReplaceMode(false);
                     setSelectedSeat(null);
                   }
                 }} sx={{ mt: 2 }} />
@@ -1493,7 +1581,7 @@ export default function Seating() {
                   {guestSearchResults.map(guest => (
                     <ListItem key={guest._id} button onClick={() => {
                       if (selectedSeat) handleAssignGuestToSeat(guest, selectedSeat.seatIndex);
-                      setGuestSearchModalOpen(false);
+                      setGuestSearchModalOpen(false); setReplaceMode(false);
                       setSelectedSeat(null);
                     }}>
                       <ListItemText primary={guest.name} secondary={guest.group} />
@@ -1503,14 +1591,14 @@ export default function Seating() {
                 </List>
               </>
             )}
-            <Button fullWidth variant="outlined" onClick={() => { setGuestSearchModalOpen(false); setSelectedSeat(null); }} sx={{ mt: 2 }}>ביטול</Button>
+            <Button fullWidth variant="outlined" onClick={() => { setGuestSearchModalOpen(false); setReplaceMode(false); setSelectedSeat(null); }} sx={{ mt: 2 }}>ביטול</Button>
           </Box>
         </Drawer>
       ) : (
-        <Dialog open={guestSearchModalOpen} onClose={() => { setGuestSearchModalOpen(false); setSelectedSeat(null); }} maxWidth="sm" fullWidth>
+        <Dialog open={guestSearchModalOpen} onClose={() => { setGuestSearchModalOpen(false); setReplaceMode(false); setSelectedSeat(null); }} maxWidth="sm" fullWidth>
           <DialogTitle>בחר אורח</DialogTitle>
           <DialogContent>
-            {selectedSeat && tables.find(t => t.id === selectedSeat.tableId)?.seatAssignments[selectedSeat.seatIndex.toString()] ? (
+            {selectedSeat && !replaceMode && tables.find(t => t.id === selectedSeat.tableId)?.seatAssignments[selectedSeat.seatIndex.toString()] ? (
               <Box sx={{ mt: 2 }}>
                 <Typography variant="subtitle1" gutterBottom>אורח ממושב זה:</Typography>
                 <Paper sx={{ p: 2, mb: 2 }}>
@@ -1530,10 +1618,10 @@ export default function Seating() {
                       const guestId = tables.find(t => t.id === selectedSeat.tableId)?.seatAssignments[selectedSeat.seatIndex.toString()];
                       if (guestId) handleRemoveGuestFromSeat(guestId, selectedSeat.tableId, selectedSeat.seatIndex.toString());
                     }
-                    setGuestSearchModalOpen(false);
+                    setGuestSearchModalOpen(false); setReplaceMode(false);
                     setSelectedSeat(null);
                   }}>הסר אורח</Button>
-                  <Button variant="outlined" onClick={() => { setGuestSearchValue(''); setGuestSearchResults([]); }}>החלף אורח</Button>
+                  <Button variant="outlined" onClick={() => { setReplaceMode(true); setGuestSearchValue(''); setGuestSearchResults([]); }}>החלף אורח</Button>
                 </Stack>
               </Box>
             ) : (
@@ -1541,7 +1629,7 @@ export default function Seating() {
                 <TextField fullWidth placeholder="חיפוש אורחים..." value={guestSearchValue} onChange={(e) => handleGuestSearch(e.target.value)} onKeyDown={(e) => {
                   if (e.key === 'Enter' && guestSearchResults.length > 0) {
                     handleAssignGuestToSeat(guestSearchResults[0], selectedSeat?.seatIndex);
-                    setGuestSearchModalOpen(false);
+                    setGuestSearchModalOpen(false); setReplaceMode(false);
                     setSelectedSeat(null);
                   }
                 }} sx={{ mt: 2 }} />
@@ -1549,7 +1637,7 @@ export default function Seating() {
                   {guestSearchResults.map(guest => (
                     <ListItem key={guest._id} button onClick={() => {
                       if (selectedSeat) handleAssignGuestToSeat(guest, selectedSeat.seatIndex);
-                      setGuestSearchModalOpen(false);
+                      setGuestSearchModalOpen(false); setReplaceMode(false);
                       setSelectedSeat(null);
                     }}>
                       <ListItemText primary={guest.name} secondary={guest.group} />
@@ -1561,10 +1649,49 @@ export default function Seating() {
             )}
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => { setGuestSearchModalOpen(false); setSelectedSeat(null); }}>ביטול</Button>
+            <Button onClick={() => { setGuestSearchModalOpen(false); setReplaceMode(false); setSelectedSeat(null); }}>ביטול</Button>
           </DialogActions>
         </Dialog>
       )}
+
+      {/* אישור מחיקת שולחנות */}
+      <Dialog open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)} dir="rtl">
+        <DialogTitle>
+          {deleteConfirm && deleteConfirm.tableIds.length > 1
+            ? `למחוק ${deleteConfirm.tableIds.length} שולחנות?`
+            : `למחוק את ${tables.find((t) => t.id === deleteConfirm?.tableIds[0])?.name || 'השולחן'}?`}
+        </DialogTitle>
+        <DialogContent>
+          <Typography color="text.secondary">
+            {deleteConfirm && deleteConfirm.guestCount > 0
+              ? `${deleteConfirm.guestCount} אורחים ישוחררו מהמושבים שלהם ויחזרו לרשימת הממתינים.`
+              : 'אין אורחים שמושבים בשולחנות אלה.'}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirm(null)}>ביטול</Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={() => {
+              const ids = deleteConfirm?.tableIds || [];
+              setDeleteConfirm(null);
+              handleDeleteTables(ids);
+            }}
+          >
+            מחיקה
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* משוב על גרירה שנכשלה / שמירה שנכשלה */}
+      <Snackbar
+        open={!!seatToast}
+        autoHideDuration={4000}
+        onClose={() => setSeatToast(null)}
+        message={seatToast || ''}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
     </Box>
   );
 }

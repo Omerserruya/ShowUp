@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.session import get_session
 from db.models import Conversation, MessageLog
+from shared.domain.rsvp import resolve_rsvp_action
 from states.base_state import BaseState
 from utils.phone import normalize_phone
 from states.rsvp_invite import RsvpInviteState
@@ -483,11 +484,18 @@ class FlowManager:
         text: str,
         raw: Dict[str, Any],
         context_id: Optional[str],
+        button_id: Optional[str] = None,
+        button_payload: Optional[str] = None,
         template_parameters: Optional[Dict[str, Any]] = None,
     ) -> None:
         if not guest_phone:
             logger.warning("Missing guest_phone; skipping")
             return
+
+        # Resolve the SEMANTIC action once, centrally, with the required priority:
+        # Meta payload -> button id -> legacy display text. States consume this
+        # action and never the label. UNKNOWN => states fall back to text matching.
+        action = resolve_rsvp_action(button_id=button_id, button_payload=button_payload, text=text)
 
         async for session in get_session():
             logger.info(
@@ -589,8 +597,15 @@ class FlowManager:
                 state=effective_state,  # Log with effective_state (from original message)
             )
 
-            await handler.process_incoming(session, {"text": text, "raw": raw}, conv)
-            next_state_id = handler.get_next_state({"text": text, "raw": raw})
+            state_message = {
+                "text": text,
+                "raw": raw,
+                "action": action,                 # semantic RsvpAction (label-independent)
+                "button_id": button_id,
+                "button_payload": button_payload,
+            }
+            await handler.process_incoming(session, state_message, conv)
+            next_state_id = handler.get_next_state(state_message)
 
             logger.info(
                 "State transition",

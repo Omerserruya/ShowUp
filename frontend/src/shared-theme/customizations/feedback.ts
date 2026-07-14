@@ -31,15 +31,44 @@ const applyDarkStyles = (theme: ExtendedTheme, styles: Record<string, unknown>):
 export const feedbackCustomizations: FeedbackComponents = {
   MuiAlert: {
     styleOverrides: {
+      // The rounded, softly-bordered look applies to every severity, but the
+      // COLOR must stay semantic: painting success/info/error in warning-orange
+      // (the old root override) made feedback unreadable product-wide.
       root: ({ theme }: StyleProps<AlertProps>) => ({
         borderRadius: 10,
-        backgroundColor: orange[100],
         color: theme.palette.text.primary,
         border: '1px solid',
+      }),
+      standardWarning: ({ theme }: StyleProps<AlertProps>) => ({
+        backgroundColor: orange[100],
         borderColor: orange[200],
         ...applyDarkStyles(theme, {
           backgroundColor: alpha(orange[900], 0.2),
           borderColor: orange[900],
+        }),
+      }),
+      standardSuccess: ({ theme }: StyleProps<AlertProps>) => ({
+        backgroundColor: alpha(theme.palette.success.main, 0.12),
+        borderColor: alpha(theme.palette.success.main, 0.35),
+        ...applyDarkStyles(theme, {
+          backgroundColor: alpha(theme.palette.success.dark, 0.25),
+          borderColor: theme.palette.success.dark,
+        }),
+      }),
+      standardError: ({ theme }: StyleProps<AlertProps>) => ({
+        backgroundColor: alpha(theme.palette.error.main, 0.1),
+        borderColor: alpha(theme.palette.error.main, 0.35),
+        ...applyDarkStyles(theme, {
+          backgroundColor: alpha(theme.palette.error.dark, 0.25),
+          borderColor: theme.palette.error.dark,
+        }),
+      }),
+      standardInfo: ({ theme }: StyleProps<AlertProps>) => ({
+        backgroundColor: alpha(theme.palette.info.main, 0.1),
+        borderColor: alpha(theme.palette.info.main, 0.35),
+        ...applyDarkStyles(theme, {
+          backgroundColor: alpha(theme.palette.info.dark, 0.25),
+          borderColor: theme.palette.info.dark,
         }),
       }),
     },

@@ -1,103 +1,66 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, Typography, Grid, CircularProgress, Alert, Button, alpha, useTheme } from '@mui/material';
-import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
-import HourglassTopRoundedIcon from '@mui/icons-material/HourglassTopRounded';
-import CancelRoundedIcon from '@mui/icons-material/CancelRounded';
-import FavoriteRoundedIcon from '@mui/icons-material/FavoriteRounded';
-import PersonAddRoundedIcon from '@mui/icons-material/PersonAddRounded';
-import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
+import { Box, Typography, Grid, Skeleton, Button } from '@mui/material';
 
-import RSVPTable from '../components/RSVPTable';
 import EventHero from '../components/dashboard/EventHero';
-import AssistantInsight from '../components/dashboard/AssistantInsight';
-import KpiCard from '../components/dashboard/KpiCard';
-import LifecycleTimeline, { LifecycleItem } from '../components/dashboard/LifecycleTimeline';
+import LoadErrorState from '../components/dashboard/LoadErrorState';
+import SectionHeader from '../components/dashboard/SectionHeader';
+import RsvpRingCard from '../components/dashboard/RsvpRingCard';
+import KpiCards from '../components/dashboard/KpiCards';
+import AttentionPanel, { AttentionItem } from '../components/dashboard/AttentionPanel';
+import Timeline, { TimelineEntry } from '../components/dashboard/Timeline';
 
-import { useOverviewStats, useCampaigns, useGuests, useDailyResponses } from '../hooks/useOverviewData';
+import { useOverviewStats, useCampaigns, useGuests } from '../hooks/useOverviewData';
 import { useEvent } from '../contexts/EventContext';
 import { fireConfettiOnce } from '../utils/confetti';
+import { daysUntilEvent } from '../utils/dates';
 
-const BRAND = '#888cee';
-const BLUE = '#3b82f6';
+const HE_DAYS = ['יום ראשון', 'יום שני', 'יום שלישי', 'יום רביעי', 'יום חמישי', 'יום שישי', 'שבת'];
 
-function mapGuestFromAPI(apiGuest: any): any {
-  const statusMap: Record<string, 'pending' | 'confirmed' | 'declined' | 'maybe'> = {
-    invited: 'pending', pending: 'pending', attending: 'confirmed',
-    confirmed: 'confirmed', declined: 'declined', maybe: 'maybe',
-  };
-  return {
-    _id: apiGuest.id,
-    eventId: apiGuest.event_id,
-    name: apiGuest.name,
-    phone: apiGuest.phone,
-    email: apiGuest.email,
-    group: apiGuest.group,
-    status: statusMap[apiGuest.status] || 'pending',
-    source: 'manual' as const,
-    note: apiGuest.notes,
-    confirmedCount: apiGuest.guest_count || (apiGuest.status === 'confirmed' || apiGuest.status === 'attending' ? 1 : undefined),
-    lastResponse: apiGuest.last_response ? new Date(apiGuest.last_response) : undefined,
-  };
-}
-
-/** Premium surface used for the dashboard's content cards. */
-function SectionCard({ title, action, tint, children }: { title: string; action?: React.ReactNode; tint?: string; children: React.ReactNode }) {
-  const theme = useTheme();
-  const isDark = theme.palette.mode === 'dark';
-  return (
-    <Box
-      sx={{
-        height: '100%',
-        p: { xs: 2.5, sm: 3.5 },
-        borderRadius: 4,
-        bgcolor: tint ? tint : (isDark ? alpha('#fff', 0.03) : '#fff'),
-        border: '1px solid',
-        borderColor: isDark ? alpha('#fff', 0.06) : alpha(theme.palette.text.primary, 0.05),
-        boxShadow: isDark ? 'none' : '0 4px 22px rgba(16,24,40,0.05)',
-        opacity: 0,
-        animation: 'cardIn .55s cubic-bezier(.2,.8,.2,1) forwards',
-        animationDelay: '120ms',
-        '@keyframes cardIn': { from: { opacity: 0, transform: 'translateY(12px)' }, to: { opacity: 1, transform: 'none' } },
-      }}
-    >
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2.5 }}>
-        <Typography sx={{ fontWeight: 800, fontSize: '1.15rem', letterSpacing: '-0.01em', color: 'text.primary' }}>{title}</Typography>
-        {action}
-      </Box>
-      {children}
-    </Box>
-  );
-}
-
-function daysBetween(future: Date, now: Date) {
-  return Math.floor((future.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-}
-
-function roundDateLabel(iso: string, now: Date) {
+function whenLabel(iso: string) {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '';
-  const diff = Math.abs(daysBetween(d, now));
-  const future = d > now;
-  if (diff === 0) return 'היום';
-  return future ? `בעוד ${diff} ימים` : `לפני ${diff} ימים`;
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${HE_DAYS[d.getDay()]} · ${hh}:${mm}`;
 }
+function futureChip(d: Date, now: Date) {
+  // Calendar-day distance - elapsed-ms math would label tomorrow-morning "היום".
+  const diff = daysUntilEvent(d, now);
+  if (diff === null || diff <= 0) return 'היום';
+  if (diff === 1) return 'מחר';
+  // Beyond a week a bare weekday name is ambiguous - anchor it to a date.
+  if (diff > 6) return `${HE_DAYS[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}`;
+  return HE_DAYS[d.getDay()];
+}
+function pastChip(d: Date, now: Date) {
+  if (d.toDateString() === now.toDateString()) return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const days = Math.floor((now.getTime() - d.getTime()) / 86400000);
+  if (days <= 1) return 'אתמול';
+  if (days < 7) return `לפני ${days} ימים`;
+  return `${d.getDate()}.${d.getMonth() + 1}`;
+}
+const VERB: Record<string, string> = { confirmed: 'אישרו הגעה', attending: 'אישרו הגעה', declined: 'לא יגיעו', maybe: 'אולי יגיעו' };
 
 function Overview() {
   const navigate = useNavigate();
-  const theme = useTheme();
-  const isDark = theme.palette.mode === 'dark';
   const { selectedEvent } = useEvent();
-  const { stats, loading: statsLoading, error: statsError } = useOverviewStats();
-  const { campaigns, loading: campaignsLoading } = useCampaigns();
-  const { guests, loading: guestsLoading } = useGuests(1, 8, '');
-  const { data: daily } = useDailyResponses('week');
+  const [statsRetry, setStatsRetry] = React.useState(0);
+  const { stats, loading: statsLoading, error: statsError } = useOverviewStats(statsRetry);
+  const { campaigns, loading: campaignsLoading, error: campaignsError } = useCampaigns(statsRetry);
+  // The `_refresh_` suffix is stripped by useGuests before hitting the API - it
+  // only exists to re-run the fetch when the user retries after a failure.
+  const { guests, loading: guestsLoading, error: guestsError } = useGuests(1, 6, statsRetry ? `_refresh_${statsRetry}` : '');
 
   React.useEffect(() => {
-    if (selectedEvent?.id && (stats?.approved || 0) >= 1) {
-      fireConfettiOnce(`first_guest_confirmed_${selectedEvent.id}`);
-    }
-  }, [selectedEvent?.id, stats?.approved]);
+    if (!selectedEvent?.id || (stats?.approved || 0) < 1) return;
+    // Celebrate only while the event is still ahead - a retroactive burst on a
+    // long-finished event reads as a glitch, not a moment.
+    const iso = (selectedEvent as any)?.event_date || (selectedEvent as any)?.date;
+    const d = iso ? daysUntilEvent(iso) : null;
+    if (d !== null && d < 0) return;
+    fireConfettiOnce(`first_guest_confirmed_${selectedEvent.id}`);
+  }, [selectedEvent?.id, stats?.approved]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!selectedEvent) {
     return (
@@ -106,182 +69,177 @@ function Overview() {
       </Box>
     );
   }
-
   if (statsLoading || campaignsLoading || guestsLoading) {
+    // A layout-shaped skeleton previews the control center instead of a blank
+    // page + spinner - the dashboard should feel instant and composed.
     return (
-      <Box sx={{ p: 4, direction: 'rtl', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
-        <CircularProgress sx={{ color: BRAND }} />
+      <Box sx={{ direction: 'rtl' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 3, px: 1, py: 1.5, mb: 2.5 }}>
+          <Box>
+            <Skeleton variant="text" width={260} height={52} />
+            <Skeleton variant="text" width={180} height={24} />
+            <Skeleton variant="text" width={210} height={20} />
+          </Box>
+          <Skeleton variant="text" width={140} height={64} />
+        </Box>
+        <Skeleton variant="text" width={280} height={32} sx={{ mb: 2 }} />
+        <Grid container spacing={{ xs: 2.5, sm: 3 }} sx={{ mb: 3.5 }}>
+          <Grid item xs={12} md={4} sx={{ order: { xs: 0, md: 2 }, display: 'flex', justifyContent: 'center' }}>
+            <Skeleton variant="circular" width={200} height={200} />
+          </Grid>
+          <Grid item xs={12} md={8} sx={{ order: { xs: 1, md: 1 } }}>
+            <Grid container spacing={2}>
+              {[0, 1, 2, 3].map((i) => (
+                <Grid item xs={6} key={i}><Skeleton variant="rounded" height={104} sx={{ borderRadius: 3 }} /></Grid>
+              ))}
+            </Grid>
+          </Grid>
+        </Grid>
+        <Skeleton variant="text" width={280} height={32} sx={{ mb: 2 }} />
+        <Grid container spacing={{ xs: 2.5, sm: 3 }}>
+          <Grid item xs={12} md={5}><Skeleton variant="rounded" height={180} sx={{ borderRadius: 3 }} /></Grid>
+          <Grid item xs={12} md={7}><Skeleton variant="rounded" height={180} sx={{ borderRadius: 3 }} /></Grid>
+        </Grid>
       </Box>
     );
+  }
+
+  // A failed load must not render as a confident all-zeros dashboard - a swallowed
+  // campaigns/guests failure would also fabricate warnings like "אין תזכורת מתוזמנת".
+  if (statsError || campaignsError || guestsError) {
+    return <LoadErrorState onRetry={() => setStatsRetry((k) => k + 1)} />;
   }
 
   const now = new Date();
   const approved = stats?.approved || 0;
   const declined = stats?.declined || 0;
   const pending = stats?.pending || 0;
-  const totalInvited = stats?.total || 0;
   const totalGuests = stats?.total_guests || 0;
-  const answered = approved + declined;
-  const responseRate = totalGuests > 0 ? Math.round((answered / totalGuests) * 100) : 0;
 
   const eventDate = (selectedEvent as any)?.event_date || (selectedEvent as any)?.date;
-  const daysUntil = eventDate && !isNaN(new Date(eventDate).getTime()) ? daysBetween(new Date(eventDate), now) : null;
+  const daysUntil = eventDate ? daysUntilEvent(eventDate, now) : null;
+  const eventOver = daysUntil !== null && daysUntil < 0;
 
-  // Today's fresh confirmations (for the "+X today" note).
-  const todayKey = now.toISOString().slice(0, 10);
-  const todayConfirmed = (daily?.data || []).find((d) => (d.date || '').slice(0, 10) === todayKey)?.confirmed || 0;
-
-  // Upcoming / next reminder round.
   const upcoming = campaigns
     .filter((c: any) => c.schedule_time && new Date(c.schedule_time) > now && c.status !== 'sent' && c.status !== 'paused')
     .sort((a: any, b: any) => new Date(a.schedule_time).getTime() - new Date(b.schedule_time).getTime());
   const nextRound: any = upcoming[0];
+  const nextReminderShort = nextRound ? futureChip(new Date(nextRound.schedule_time), now) : undefined;
 
-  // Guest list (recent responders).
-  const mappedGuests = guests.map(mapGuestFromAPI);
+  let statusTone: 'good' | 'attention' | 'start';
+  let statusLabel: string;
+  if (eventOver) { statusTone = 'good'; statusLabel = 'האירוע מאחוריכם 💜'; }
+  else if (totalGuests === 0) { statusTone = 'start'; statusLabel = 'מתחילים'; }
+  else if (pending === 0) { statusTone = 'good'; statusLabel = 'הכול מוכן'; }
+  else if (nextRound) { statusTone = 'good'; statusLabel = 'הכול בשליטה'; }
+  else { statusTone = 'attention'; statusLabel = 'דורש תשומת לב'; }
 
-  // ---- Lifecycle timeline ----
-  const lifecycle: LifecycleItem[] = [];
-  if (totalGuests > 0) {
-    lifecycle.push({ id: 'invited', title: 'ההזמנות יצאו לדרך', dateLabel: `${totalGuests} הזמנות`, status: 'done', icon: '📨' });
+  // After the event, "what's next" is no longer logistics - it's the recap.
+  const next = eventOver
+    ? { eyebrow: 'הצעד הבא', label: 'סיכום החגיגה', onAction: () => navigate('/recap') }
+    : nextRound
+    ? { eyebrow: 'התזכורת הבאה', label: whenLabel(nextRound.schedule_time), onAction: () => navigate('/messages') }
+    : totalGuests === 0
+    ? { eyebrow: 'הצעד הבא', label: 'שליחת ההזמנות', onAction: () => navigate('/guests') }
+    : pending > 0
+    ? { eyebrow: 'הצעד הבא', label: 'תזמון תזכורת', onAction: () => navigate('/messages') }
+    : { eyebrow: 'הצעד הבא', label: 'סידור מושבים', onAction: () => navigate('/seating') };
+
+  const attention: AttentionItem[] = [];
+  if (eventOver) {
+    attention.push({ icon: '💌', text: 'שווה לשלוח תודה לאורחים ולראות את הסיכום', actionLabel: 'לסיכום', onAction: () => navigate('/recap') });
+  } else if (totalGuests === 0) {
+    attention.push({ icon: '📋', text: 'רשימת המוזמנים עדיין ריקה', actionLabel: 'הוספה', onAction: () => navigate('/guests') });
+  } else if (pending > 0 && !nextRound) {
+    attention.push({ icon: '🔔', text: `${pending} לא ענו ואין תזכורת מתוזמנת`, actionLabel: 'תזמון', onAction: () => navigate('/messages') });
   }
-  const scheduled = campaigns
-    .filter((c: any) => c.schedule_time)
-    .sort((a: any, b: any) => new Date(a.schedule_time).getTime() - new Date(b.schedule_time).getTime());
-  const nextId = nextRound?.id;
-  scheduled.forEach((c: any) => {
-    const past = new Date(c.schedule_time) <= now;
-    const status: LifecycleItem['status'] = c.id === nextId ? 'next' : (c.status === 'sent' || past) ? 'done' : 'upcoming';
-    const icon = /תודה/.test(c.name || '') ? '❤️' : /תזכורת/.test(c.name || '') ? '🔔' : '📣';
-    lifecycle.push({ id: c.id, title: c.name, dateLabel: roundDateLabel(c.schedule_time, now), status, icon });
+  if (selectedEvent.paymentStatus && selectedEvent.paymentStatus !== 'paid' && selectedEvent.state !== 'active') {
+    attention.push({ icon: '💳', text: 'התשלום עדיין לא הושלם', actionLabel: 'השלמה', onAction: () => navigate('/billing') });
+  }
+
+  const raw: { ts: number; entry: TimelineEntry }[] = [];
+  const sentCampaign = campaigns
+    .filter((c: any) => c.schedule_time && (c.status === 'sent' || new Date(c.schedule_time) <= now))
+    .sort((a: any, b: any) => new Date(a.schedule_time).getTime() - new Date(b.schedule_time).getTime())[0];
+  if (sentCampaign) {
+    const d = new Date(sentCampaign.schedule_time);
+    raw.push({ ts: d.getTime(), entry: { id: 'sent', tone: 'system', icon: '📨', text: 'ההזמנות נשלחו', timeLabel: pastChip(d, now) } });
+  }
+  guests.forEach((g: any) => {
+    if (!g.last_response || (g.status !== 'confirmed' && g.status !== 'attending' && g.status !== 'declined' && g.status !== 'maybe')) return;
+    const d = new Date(g.last_response);
+    if (isNaN(d.getTime())) return;
+    const tone = (g.status === 'declined' ? 'declined' : g.status === 'maybe' ? 'system' : 'confirmed') as TimelineEntry['tone'];
+    raw.push({ ts: d.getTime(), entry: { id: g.id, name: g.name, tone, text: `${g.name} ${VERB[g.status] || 'השיבו'}`, timeLabel: pastChip(d, now) } });
   });
-  if (eventDate && !isNaN(new Date(eventDate).getTime())) {
-    lifecycle.push({
-      id: 'event-day',
-      title: selectedEvent.name,
-      dateLabel: roundDateLabel(eventDate, now),
-      status: !nextRound && (daysUntil ?? 1) >= 0 ? 'next' : 'upcoming',
-      icon: '🎉',
-    });
+  raw.sort((a, b) => a.ts - b.ts);
+  const entries: TimelineEntry[] = raw.slice(-4).map((r) => r.entry);
+  if (eventOver) {
+    entries.push({ id: 'recap', tone: 'recommend', icon: '🎉', text: 'האירוע חגג! כל המספרים והרגעים מחכים בסיכום', timeLabel: 'סיכום', onClick: () => navigate('/recap') });
+  } else if (nextRound) {
+    entries.push({ id: 'next', tone: 'recommend', icon: '🔔', text: `תזכורת תישלח אוטומטית ${nextReminderShort}`, timeLabel: nextReminderShort || '', onClick: () => navigate('/messages') });
+  } else if (totalGuests > 0 && pending > 0) {
+    entries.push({ id: 'rec', tone: 'recommend', icon: '💡', text: 'ממליצים לתזמן תזכורת למי שטרם ענה', timeLabel: 'הצעד הבא', onClick: () => navigate('/messages') });
+  } else if (totalGuests > 0 && pending === 0) {
+    entries.push({ id: 'seat', tone: 'recommend', icon: '🪑', text: 'כולם ענו - אפשר להתחיל לסדר מושבים', timeLabel: 'הצעד הבא', onClick: () => navigate('/seating') });
   }
-
-  // ---- Assistant insight ----
-  let insight: { eyebrow?: string; text: string; meta?: string; actionLabel?: string; onAction?: () => void };
-  if (totalGuests === 0) {
-    insight = {
-      eyebrow: 'בואו נתחיל',
-      text: 'עוד רגע מתחילים - מוסיפים את רשימת המוזמנים, ומכאן אנחנו דואגים לשליחה, למעקב ולתזכורות.',
-      meta: '⏱ שתי דקות ואתם בפנים',
-      actionLabel: 'הוספת אורחים',
-      onAction: () => navigate('/guests'),
-    };
-  } else if (pending > 0 && nextRound) {
-    insight = {
-      eyebrow: 'אנחנו על זה',
-      text: `נשארו ${pending} אנשים שעוד לא ענו. אל דאגה - נזכיר להם בעצמנו, אתם לא צריכים לעשות כלום.`,
-      meta: `📨 תזכורת ${roundDateLabel(nextRound.schedule_time, now)}`,
-      actionLabel: 'צפייה בתזכורת',
-      onAction: () => navigate('/messages'),
-    };
-  } else if (pending > 0) {
-    insight = {
-      text: `${pending} עדיין לא ענו, ואין תזכורת מתוזמנת. הדודה עוד לא ענתה 😉 - שווה לתזמן תזכורת.`,
-      meta: 'מומלץ: מחר בערב',
-      actionLabel: 'תזמון תזכורת',
-      onAction: () => navigate('/messages'),
-    };
-  } else {
-    insight = {
-      eyebrow: 'הכול בשליטה',
-      text: `כולם ענו - ${approved} מגיעים לחגוג 🎉 אנחנו נדאג לשאר. אפשר להתחיל לסדר מי יושב ליד מי.`,
-      actionLabel: 'סידור מושבים',
-      onAction: () => navigate('/seating'),
-    };
-  }
+  const timelineHint = 'ברגע שתעלו את רשימת המוזמנים, כל הזמנה, אישור ותגובה יופיעו כאן - כמו יומן חי של האירוע.';
 
   return (
     <Box sx={{ direction: 'rtl' }}>
+      {/* 1. When is my event? - state only */}
       <EventHero
         name={selectedEvent.name}
         dateISO={eventDate}
-        totalInvited={totalInvited}
-        confirmed={approved}
-        pending={pending}
-        declined={declined}
-        totalGuests={totalGuests}
+        daysUntil={daysUntil}
         type={(selectedEvent as any)?.type}
         state={selectedEvent.state}
         paymentStatus={selectedEvent.paymentStatus}
-        daysUntil={daysUntil}
+        statusTone={statusTone}
+        statusLabel={statusLabel}
+        nextEyebrow={next.eyebrow}
+        nextLabel={next.label}
+        onNext={next.onAction}
+        lifecycleStage={totalGuests === 0 ? 0 : pending > 0 ? 1 : 2}
       />
 
-      {statsError && <Alert severity="error" sx={{ mb: 3, borderRadius: 3 }}>{statsError}</Alert>}
+      {/* 2. How many confirmed? - ring (left) + 2×2 KPI cards (right).
+          With zero guests there is nothing to count - a 0/0 ring and four zero
+          tiles read as a broken dashboard, so we onboard instead. */}
+      {totalGuests === 0 && !eventOver ? (
+        <Box sx={{ textAlign: 'center', py: { xs: 4, sm: 6 }, px: 2, mb: { xs: 2.5, sm: 3.5 } }}>
+          <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.35rem', sm: '1.6rem' }, letterSpacing: '-0.02em', mb: 1 }}>
+            הכול מתחיל ברשימת המוזמנים
+          </Typography>
+          <Typography sx={{ color: 'text.secondary', maxWidth: 420, mx: 'auto', lineHeight: 1.6, mb: 3 }}>
+            מעלים את הרשימה - ואנחנו כבר נדאג להזמנות, לתזכורות ולספירת האישורים.
+          </Typography>
+          <Button variant="contained" disableElevation onClick={() => navigate('/guests')} sx={{ borderRadius: 99, px: 3.5, py: 1, fontWeight: 700 }}>
+            הוספת מוזמנים
+          </Button>
+        </Box>
+      ) : (
+        <>
+          <SectionHeader emoji="💌" title="מצב האישורים" subtitle="כמה כבר אמרו 'באים', וכמה עוד מותחים אותנו" />
+          <Grid container spacing={{ xs: 2.5, sm: 3 }} alignItems="stretch" sx={{ mb: { xs: 2.5, sm: 3.5 } }}>
+            <Grid item xs={12} md={4} sx={{ order: { xs: 0, md: 2 } }}>
+              <RsvpRingCard confirmed={approved} total={totalGuests} />
+            </Grid>
+            <Grid item xs={12} md={8} sx={{ order: { xs: 1, md: 1 } }}>
+              <KpiCards confirmed={approved} waiting={pending} declined={declined} total={totalGuests} onFilter={(status) => navigate(`/guests?filter=${status}`)} />
+            </Grid>
+          </Grid>
+        </>
+      )}
 
-      <Box sx={{ mb: { xs: 2.5, sm: 3.5 } }}>
-        <AssistantInsight {...insight} />
-      </Box>
-
-      {/* KPI cards - response rate is the primary KPI (featured, first) */}
-      <Grid container spacing={{ xs: 2, sm: 2.5 }} sx={{ mb: { xs: 2.5, sm: 3.5 } }}>
-        <Grid item xs={6} md={3}>
-          <KpiCard index={0} featured label="שיעור תגובה" value={responseRate} suffix="%" color={BRAND} icon={<FavoriteRoundedIcon />}
-            note={responseRate >= 70 ? 'מעל הממוצע 🔥' : 'בדרך הנכונה'} />
-        </Grid>
-        <Grid item xs={6} md={3}>
-          <KpiCard index={1} label="אישרו הגעה" value={approved} color="#22c55e" icon={<CheckCircleRoundedIcon />}
-            note={todayConfirmed > 0 ? `+${todayConfirmed} היום` : 'מגיעים לחגוג'} onClick={() => navigate('/guests?filter=confirmed')} />
-        </Grid>
-        <Grid item xs={6} md={3}>
-          <KpiCard index={2} label="טרם ענו" value={pending} color="#f59e0b" icon={<HourglassTopRoundedIcon />}
-            note={nextRound ? `תזכורת ${roundDateLabel(nextRound.schedule_time, now)}` : 'ממתינים לתשובה'} onClick={() => navigate('/guests?filter=pending')} />
-        </Grid>
-        <Grid item xs={6} md={3}>
-          <KpiCard index={3} label="לא יגיעו" value={declined} color="#ef4444" icon={<CancelRoundedIcon />}
-            note={declined > 0 ? 'נתראה בפעם הבאה' : 'אף ביטול 🤞'} onClick={() => navigate('/guests?filter=declined')} />
-        </Grid>
-      </Grid>
-
-      {/* Timeline (right) + guests (left) */}
-      <Grid container spacing={{ xs: 2.5, sm: 3 }}>
+      {/* 3. What should we do next?  ·  4. What's happening? (asymmetric) */}
+      <SectionHeader emoji="💓" title="הדופק של האירוע" subtitle="מה דורש אתכם - ומה כבר קורה מאחורי הקלעים" />
+      <Grid container spacing={{ xs: 2.5, sm: 3 }} alignItems="stretch">
         <Grid item xs={12} md={5}>
-          <SectionCard title="מה קורה באירוע" tint={isDark ? alpha(BLUE, 0.1) : alpha(BLUE, 0.04)}>
-            <LifecycleTimeline items={lifecycle} />
-          </SectionCard>
+          <AttentionPanel items={attention} />
         </Grid>
-
         <Grid item xs={12} md={7}>
-          <SectionCard
-            title="מי כבר ענה"
-            action={
-              <Button onClick={() => navigate('/guests')} endIcon={<ArrowBackRoundedIcon sx={{ fontSize: 18 }} />}
-                sx={{ color: BRAND, fontWeight: 700, textTransform: 'none', '&:hover': { bgcolor: alpha(BRAND, 0.08) } }}>
-                כל האורחים
-              </Button>
-            }
-          >
-            {mappedGuests.length > 0 ? (
-              <RSVPTable guests={mappedGuests} loading={guestsLoading} />
-            ) : (
-              <Box sx={{ py: 5, textAlign: 'center' }}>
-                <Typography sx={{ fontSize: '2.6rem', mb: 1 }}>{totalGuests === 0 ? '🎉' : '📨'}</Typography>
-                <Typography sx={{ fontWeight: 800, fontSize: '1.15rem', mb: 0.75, color: 'text.primary' }}>
-                  {totalGuests === 0 ? 'עוד רגע מתחילים' : 'הדודה עוד לא ענתה 😉'}
-                </Typography>
-                <Typography sx={{ color: 'text.secondary', maxWidth: 360, mx: 'auto', mb: 2.5, lineHeight: 1.6 }}>
-                  {totalGuests === 0
-                    ? 'נוסיף את רשימת האורחים - ומכאן אנחנו שולחים את ההזמנות ורודפים אחרי האישורים. שלא תדעו אקסלים.'
-                    : 'שלחנו את ההזמנות. ברגע שמישהו עונה בוואטסאפ, רואים אותו כאן מיד.'}
-                </Typography>
-                {totalGuests === 0 && (
-                  <Button onClick={() => navigate('/guests')} startIcon={<PersonAddRoundedIcon />} variant="contained" disableElevation
-                    sx={{ borderRadius: 2.5, px: 3, py: 1, fontWeight: 700, textTransform: 'none', background: `linear-gradient(90deg, #6f74e0, ${BRAND})`,
-                      '&:hover': { background: `linear-gradient(90deg, #6f74e0, #6f74e0)` } }}>
-                    הוספת אורחים
-                  </Button>
-                )}
-              </Box>
-            )}
-          </SectionCard>
+          <Timeline entries={entries} onSeeAll={() => navigate('/guests')} emptyHint={timelineHint} />
         </Grid>
       </Grid>
     </Box>

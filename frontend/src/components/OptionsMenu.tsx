@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { styled } from '@mui/material/styles';
 import Divider, { dividerClasses } from '@mui/material/Divider';
 import Menu from '@mui/material/Menu';
@@ -8,6 +9,9 @@ import { listClasses } from '@mui/material/List';
 import ListItemText from '@mui/material/ListItemText';
 import ListItemIcon, { listItemIconClasses } from '@mui/material/ListItemIcon';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
+import PersonRoundedIcon from '@mui/icons-material/PersonRounded';
+import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
+import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSettingsRounded';
 import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded';
 import MenuButton from './MenuButton';
 import { useUser } from '../contexts/UserContext';
@@ -25,8 +29,14 @@ export default function OptionsMenu() {
   const handleClose = () => {
     setAnchorEl(null);
   };
-  const { setUser } = useUser();
-  
+  const { setUser, isAdmin } = useUser();
+  const navigate = useNavigate();
+
+  const go = (path: string) => {
+    handleClose();
+    navigate(path);
+  };
+
   const handleLogout = async () => {
     try {
       // Use fetch with proper credentials to ensure cookies are sent
@@ -58,14 +68,10 @@ export default function OptionsMenu() {
     }
   };
   
-  const handleProfile = () => {
-    window.location.href = '/profile';
-  };
-
   return (
     <React.Fragment>
       <MenuButton
-        aria-label="Open menu"
+        aria-label="תפריט משתמש"
         onClick={handleClick}
         sx={{ borderColor: 'transparent '}}
       >
@@ -78,6 +84,7 @@ export default function OptionsMenu() {
         onClose={handleClose}
         transformOrigin={{ horizontal: 'right', vertical: 'top' }}
         anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+        slotProps={{ paper: { sx: { direction: 'rtl' } } }}
         sx={{
           [`& .${listClasses.root}`]: {
             padding: '4px',
@@ -88,26 +95,31 @@ export default function OptionsMenu() {
           [`& .${dividerClasses.root}`]: {
             margin: '4px -4px',
           },
+          [`& .${listItemIconClasses.root}`]: {
+            minWidth: 0,
+            marginInlineEnd: 1,
+          },
         }}
       >
-        <MenuItem onClick={handleProfile}>Profile</MenuItem>
-        <MenuItem onClick={handleClose}>My account</MenuItem>
+        <MenuItem onClick={() => go('/settings?tab=profile')}>
+          <ListItemIcon><PersonRoundedIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>הפרופיל שלי</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={() => go('/settings')}>
+          <ListItemIcon><SettingsRoundedIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>הגדרות</ListItemText>
+        </MenuItem>
+        {isAdmin && <Divider />}
+        {isAdmin && (
+          <MenuItem onClick={() => go('/admin/users')}>
+            <ListItemIcon><AdminPanelSettingsRoundedIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>ניהול מערכת</ListItemText>
+          </MenuItem>
+        )}
         <Divider />
-        <MenuItem onClick={handleClose}>Settings</MenuItem>
-        <Divider />
-        <MenuItem
-          onClick={handleLogout}
-          sx={{
-            [`& .${listItemIconClasses.root}`]: {
-              ml: 'auto',
-              minWidth: 0,
-            },
-          }}
-        >
-          <ListItemText>Logout</ListItemText>
-          <ListItemIcon>
-            <LogoutRoundedIcon fontSize="small" />
-          </ListItemIcon>
+        <MenuItem onClick={handleLogout}>
+          <ListItemIcon><LogoutRoundedIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>התנתקות</ListItemText>
         </MenuItem>
       </Menu>
     </React.Fragment>

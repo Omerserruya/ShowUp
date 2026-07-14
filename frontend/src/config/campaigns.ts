@@ -2,7 +2,7 @@ export type FlowStage = 'invitation' | 'reminder' | 'final_reminder' | 'thank_yo
 
 export interface CampaignSchedule {
   enabled: boolean;
-  label: string; // template campaignLabel - the lookup key into config/templates
+  label: string; // canonical flow stage / legacy campaign label
   offsetDays: number; // effective offset: >0 days before, <0 days after, 0 day-of
   time: string;
   // --- Adaptive-timeline metadata (set by the scheduling engine) ---

@@ -22,13 +22,26 @@ class WhatsAppSender:
         # Clean the API token to ensure it's ASCII-safe
         raw_token = os.getenv("WA_API_B")
         self.api_token = raw_token.encode('utf-8').decode('ascii', errors='ignore') if raw_token else None
-        self.phone_id = os.getenv("WA_PHONE_ID")
-        self.base_url = f"https://graph.facebook.com/v22.0/{self.phone_id}/messages"
-        
+        # Per-handler phone numbers (mission: OTP / AI assistant / campaigns & RSVP
+        # each on its own number). Every message carries an optional "sender" key
+        # ("campaign" is the default, "assistant" for owner-facing messages); each
+        # falls back to the shared WA_PHONE_ID when no dedicated number is set.
+        default_phone_id = os.getenv("WA_PHONE_ID")
+        self.phone_ids = {
+            "campaign": os.getenv("CAMPAIGN_WA_PHONE_ID") or default_phone_id,
+            "assistant": os.getenv("ASSISTANT_WA_PHONE_ID") or default_phone_id,
+        }
+        self.phone_id = self.phone_ids["campaign"]
+        self.base_url = self._url_for(None)
+
         if not self.api_token or not self.phone_id:
             raise ValueError("WA_API_B and WA_PHONE_ID environment variables are required")
-    
-    def _build_template_payload(self, recipient: str, template_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+
+    def _url_for(self, sender: str = None) -> str:
+        phone_id = self.phone_ids.get(sender or "campaign") or self.phone_id
+        return f"https://graph.facebook.com/v22.0/{phone_id}/messages"
+
+    def _build_template_payload(self, recipient: str, template_name: str, parameters: Dict[str, Any], language: str = None) -> Dict[str, Any]:
         """Build WhatsApp template message payload.
 
         Supports two styles:
@@ -153,7 +166,10 @@ class WhatsAppSender:
             components.append({"type": "body", "parameters": body_params})
         
         # Set language code: "reminder" template uses English, all others use Hebrew
-        language_code = "en" if template_name == "reminder" else "he"
+        # Language is data-driven: use the value the catalog resolved (passed in the
+        # message). Fall back to the legacy per-name rule only for old messages that
+        # carry no language, so nothing regresses during rollout.
+        language_code = language or ("en" if template_name == "reminder" else "he")
         
         payload = {
             "messaging_product": "whatsapp",
@@ -199,30 +215,31 @@ class WhatsAppSender:
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError))
     )
-    async def send_template_message(self, recipient: str, template_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    async def send_template_message(self, recipient: str, template_name: str, parameters: Dict[str, Any], language: str = None, sender: str = None) -> Dict[str, Any]:
         """
         Send a WhatsApp template message.
-        
+
         Args:
             recipient: Phone number in international format
             template_name: WhatsApp template name
             parameters: Template parameters as key-value pairs
-            
+            sender: Which handler's phone number to send from ("campaign"/"assistant")
+
         Returns:
             Response from WhatsApp API
-            
+
         Raises:
             httpx.HTTPStatusError: If API request fails
             httpx.RequestError: If network error occurs
         """
-        
-        payload = self._build_template_payload(recipient, template_name, parameters)
-        
+
+        payload = self._build_template_payload(recipient, template_name, parameters, language)
+
         headers = {
             "Authorization": f"Bearer {self.api_token}",
             "Content-Type": "application/json"
         }
-        
+
         # SECURITY: do not log full parameters/payload at INFO (guest PII).
         self.logger.info(
             "Sending WhatsApp message",
@@ -230,12 +247,13 @@ class WhatsAppSender:
                 "recipient": recipient,
                 "template": template_name,
                 "parameter_count": len(parameters),
+                "sender": sender or "campaign",
             }
         )
-        
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
-                self.base_url,
+                self._url_for(sender),
                 json=payload,
                 headers=headers
             )
@@ -334,40 +352,42 @@ class WhatsAppSender:
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError))
     )
-    async def send_text_message(self, recipient: str, text: str) -> Dict[str, Any]:
+    async def send_text_message(self, recipient: str, text: str, sender: str = None) -> Dict[str, Any]:
         """
         Send a WhatsApp text message.
-        
+
         Args:
             recipient: Phone number in international format
             text: Text message content
-            
+            sender: Which handler's phone number to send from ("campaign"/"assistant")
+
         Returns:
             Response from WhatsApp API
-            
+
         Raises:
             httpx.HTTPStatusError: If API request fails
             httpx.RequestError: If network error occurs
         """
-        
+
         payload = self._build_text_payload(recipient, text)
-        
+
         headers = {
             "Authorization": f"Bearer {self.api_token}",
             "Content-Type": "application/json"
         }
-        
+
         self.logger.info(
             "Sending WhatsApp text message",
             extra={
                 "recipient": recipient,
-                "text_length": len(text)
+                "text_length": len(text),
+                "sender": sender or "campaign"
             }
         )
-        
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
-                self.base_url,
+                self._url_for(sender),
                 json=payload,
                 headers=headers
             )
@@ -442,22 +462,23 @@ class WhatsAppSender:
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError))
     )
-    async def send_interactive_message(self, recipient: str, interactive: Dict[str, Any]) -> Dict[str, Any]:
+    async def send_interactive_message(self, recipient: str, interactive: Dict[str, Any], sender: str = None) -> Dict[str, Any]:
         """
         Send a WhatsApp interactive message.
-        
+
         Args:
             recipient: Phone number in international format
             interactive: Interactive message structure with type, body, and action
-            
+            sender: Which handler's phone number to send from ("campaign"/"assistant")
+
         Returns:
             Response from WhatsApp API
-            
+
         Raises:
             httpx.HTTPStatusError: If API request fails
             httpx.RequestError: If network error occurs
         """
-        
+
         payload = self._build_interactive_payload(recipient, interactive)
         
         headers = {
@@ -476,11 +497,11 @@ class WhatsAppSender:
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
-                self.base_url,
+                self._url_for(sender),
                 json=payload,
                 headers=headers
             )
-            
+
             # Log the response for debugging - ALWAYS log errors
             if response.status_code >= 400:
                 self.logger.error(
@@ -502,7 +523,7 @@ class WhatsAppSender:
                         "response_text": response.text[:500]  # Limit log size
                     }
                 )
-            
+
             # Handle specific error cases
             if response.status_code == 404:
                 self.logger.error(

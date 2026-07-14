@@ -151,7 +151,9 @@ class RabbitMQConsumer:
                         wa_resp = await self.whatsapp_sender.send_template_message(
                             recipient=message_data["recipient"],
                             template_name=message_data["template"],
-                            parameters=message_data["parameters"]
+                            parameters=message_data["parameters"],
+                            language=message_data.get("language"),
+                            sender=message_data.get("sender"),
                         )
                         # Log full WhatsApp API response (truncated)
                         try:
@@ -295,7 +297,8 @@ class RabbitMQConsumer:
                     try:
                         wa_resp = await self.whatsapp_sender.send_text_message(
                             recipient=message_data["recipient"],
-                            text=message_data["text"]
+                            text=message_data["text"],
+                            sender=message_data.get("sender"),
                         )
                         # Log full WhatsApp API response (truncated)
                         try:
@@ -406,7 +409,8 @@ class RabbitMQConsumer:
                     try:
                         wa_resp = await self.whatsapp_sender.send_interactive_message(
                             recipient=message_data["recipient"],
-                            interactive=message_data["interactive"]
+                            interactive=message_data["interactive"],
+                            sender=message_data.get("sender"),
                         )
                         # Log full WhatsApp API response (truncated)
                         try:

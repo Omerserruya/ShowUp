@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Box, Alert, IconButton, Typography, Button, Portal } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import PaymentIcon from '@mui/icons-material/Payment';
@@ -8,6 +9,7 @@ import { useBanner } from '../contexts/BannerContext';
 const InactiveEventBanner: React.FC = () => {
   const { selectedEvent } = useEvent();
   const { isBannerVisible } = useBanner();
+  const navigate = useNavigate();
 
   const handleDismiss = () => {
     if (selectedEvent) {
@@ -19,9 +21,14 @@ const InactiveEventBanner: React.FC = () => {
   };
 
   const handlePaymentClick = () => {
-    // Navigate to payment page or open payment dialog
-    // You can customize this based on your payment flow
-    window.location.href = '/profile';
+    // "הסדר תשלום" must land on an actual payment surface: resume an open
+    // checkout if one exists, otherwise the billing tab.
+    const pendingOrderId = localStorage.getItem('pending_order_id');
+    if (pendingOrderId) {
+      navigate(`/payment?orderId=${encodeURIComponent(pendingOrderId)}`);
+    } else {
+      navigate('/settings?tab=billing');
+    }
   };
 
   if (!isBannerVisible) {

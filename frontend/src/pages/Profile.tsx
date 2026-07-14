@@ -11,8 +11,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Card,
-  CardContent,
+
   Stack,
   InputAdornment,
   useTheme,
@@ -121,7 +120,7 @@ const ROLE_LABELS: Record<string, string> = {
   Admin: 'מנהל',
 };
 
-export default function Profile() {
+export default function Profile({ embedded = false }: { embedded?: boolean } = {}) {
   const theme = useTheme();
   const navigate = useNavigate();
   const { user: contextUser, refreshUserDetails } = useUser();
@@ -294,23 +293,25 @@ export default function Profile() {
     <Box
       sx={{
         width: '100%',
-        maxWidth: 560,
+        maxWidth: embedded ? 'none' : 560,
         mx: 'auto',
-        px: 2,
-        py: { xs: 2, sm: 3 },
-        pb: 4,
+        px: embedded ? 0 : 2,
+        py: embedded ? 0 : { xs: 2, sm: 3 },
+        pb: embedded ? 0 : 4,
       }}
     >
       {/* Page title */}
-      <Typography
-        variant="h4"
-        component="h1"
-        fontWeight={700}
-        gutterBottom
-        sx={{ color: 'text.primary', letterSpacing: '-0.02em' }}
-      >
-        הפרופיל שלי
-      </Typography>
+      {!embedded && (
+        <Typography
+          variant="h4"
+          component="h1"
+          fontWeight={700}
+          gutterBottom
+          sx={{ color: 'text.primary', letterSpacing: '-0.02em' }}
+        >
+          הפרופיל שלי
+        </Typography>
+      )}
       <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
         נהל את פרטי החשבון והאבטחה
       </Typography>
@@ -326,19 +327,10 @@ export default function Profile() {
         </Alert>
       )}
 
-      {/* Profile header card */}
-      <Card
-        variant="outlined"
-        sx={{
-          mb: 3,
-          borderRadius: 2,
-          overflow: 'hidden',
-          bgcolor: alpha(theme.palette.primary.main, 0.04),
-          borderColor: alpha(theme.palette.primary.main, 0.12),
-        }}
-      >
-        <CardContent sx={{ pt: 3, pb: 3, px: 3 }}>
-          <Stack direction="row" spacing={3} alignItems="center" flexWrap="wrap">
+      {/* Profile header - flat */}
+      <Box sx={{ mb: 3 }}>
+        <Box>
+          <Stack useFlexGap direction="row" spacing={3} alignItems="center" flexWrap="wrap">
             <UserAvatar
               username={user.username}
               avatarUrl={user.avatarUrl}
@@ -360,13 +352,13 @@ export default function Profile() {
               )}
             </Box>
           </Stack>
-        </CardContent>
-      </Card>
+        </Box>
+      </Box>
 
-      {/* Details card */}
-      <Card variant="outlined" sx={{ borderRadius: 2, mb: 3, bgcolor: '#fff' }}>
-        <CardContent sx={{ p: 3 }}>
-          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+      {/* Details - flat section */}
+      <Box sx={{ pt: 3, mb: 3, borderTop: '1px solid', borderColor: 'divider' }}>
+        <Box>
+          <Stack useFlexGap direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
             <Typography variant="h6" fontWeight={600}>
               פרטי חשבון
             </Typography>
@@ -420,7 +412,7 @@ export default function Profile() {
                       ),
                     }}
                   />
-                  <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                  <Stack useFlexGap direction="row" spacing={1.5} alignItems="flex-start">
                     <FormControl sx={{ minWidth: 120 }} size="medium">
                       <InputLabel>קוד אזור</InputLabel>
                       <Select
@@ -466,7 +458,7 @@ export default function Profile() {
             </Stack>
 
             {isEditing && (
-              <Stack direction="row" spacing={1.5} justifyContent="flex-end" sx={{ mt: 3 }}>
+              <Stack useFlexGap direction="row" spacing={1.5} justifyContent="flex-end" sx={{ mt: 3 }}>
                 <Button variant="outlined" onClick={handleCancelEdit} disabled={saving}>
                   ביטול
                 </Button>
@@ -481,13 +473,13 @@ export default function Profile() {
               </Stack>
             )}
           </form>
-        </CardContent>
-      </Card>
+        </Box>
+      </Box>
 
-      {/* Security card */}
+      {/* Security - flat section */}
       {user.authProvider === 'local' && (
-        <Card variant="outlined" sx={{ borderRadius: 2, mb: 3 }}>
-          <CardContent sx={{ p: 3 }}>
+        <Box sx={{ pt: 3, mb: 3, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Box>
             <Typography variant="h6" fontWeight={600} gutterBottom>
               אבטחה
             </Typography>
@@ -501,14 +493,14 @@ export default function Profile() {
             >
               שינוי סיסמה
             </Button>
-          </CardContent>
-        </Card>
+          </Box>
+        </Box>
       )}
 
-      {/* Events I own */}
-      <Card variant="outlined" sx={{ borderRadius: 2, mb: 3, bgcolor: '#fff' }}>
-        <CardContent sx={{ p: 3 }}>
-          <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
+      {/* Events I own - flat section */}
+      <Box sx={{ pt: 3, mb: 3, borderTop: '1px solid', borderColor: 'divider' }}>
+        <Box>
+          <Stack useFlexGap direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
             <EventIcon color="primary" />
             <Typography variant="h6" fontWeight={600}>
               אירועים בבעלותי
@@ -540,19 +532,16 @@ export default function Profile() {
               </Typography>
             </Box>
           ) : (
-            <Stack spacing={1.5}>
-              {events.map((event) => (
-                <Card
+            <Stack spacing={0}>
+              {events.map((event, ei) => (
+                <Box
                   key={event.id}
-                  variant="outlined"
                   sx={{
-                    borderRadius: 1.5,
-                    overflow: 'hidden',
-                    transition: 'box-shadow 0.2s, border-color 0.2s',
-                    '&:hover': {
-                      boxShadow: 1,
-                      borderColor: alpha(theme.palette.primary.main, 0.3),
-                    },
+                    borderRadius: 2,
+                    borderTop: ei ? '1px solid' : 'none',
+                    borderColor: 'divider',
+                    transition: 'background-color 0.15s',
+                    '&:hover': { bgcolor: 'action.hover' },
                   }}
                 >
                   <Box
@@ -569,7 +558,7 @@ export default function Profile() {
                     }}
                   >
                     {/* כפתורים בשמאל (ב־RTL: האלמנט השני) */}
-                    <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
+                    <Stack useFlexGap direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
                       <Button
                         variant="contained"
                         size="small"
@@ -597,7 +586,7 @@ export default function Profile() {
                         {event.name}
                       </Typography>
                       {event.date && (
-                        <Stack direction="row" alignItems="center" spacing={0.5} justifyContent="flex-end" sx={{ mt: 0.5 }}>
+                        <Stack useFlexGap direction="row" alignItems="center" spacing={0.5} justifyContent="flex-end" sx={{ mt: 0.5 }}>
                           <CalendarIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
                           <Typography variant="body2" color="text.secondary">
                             {new Date(event.date).toLocaleDateString('he-IL', {
@@ -611,12 +600,12 @@ export default function Profile() {
                       )}
                     </Box>
                   </Box>
-                </Card>
+                </Box>
               ))}
             </Stack>
           )}
-        </CardContent>
-      </Card>
+        </Box>
+      </Box>
 
       {/* Delete event confirm dialog */}
       <Dialog
@@ -741,7 +730,7 @@ function DetailRow({
   value: string;
 }) {
   return (
-    <Stack direction="row" spacing={2} alignItems="flex-start" sx={{ py: 0.5 }}>
+    <Stack useFlexGap direction="row" spacing={2} alignItems="flex-start" sx={{ py: 0.5 }}>
       <Box sx={{ color: 'text.secondary', mt: 0.5 }}>{icon}</Box>
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography variant="caption" color="text.secondary" display="block">

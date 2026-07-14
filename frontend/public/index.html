@@ -16,7 +16,10 @@
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Hebrew:wght@100;200;300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <!-- Only the app font + the invitation's default pair ship statically.
+         All other studio font families load on demand via src/utils/fonts.ts,
+         so guests never download ~20 families their invitation doesn't use. -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Hebrew:wght@300;400;500;600;700;800;900&family=Frank+Ruhl+Libre:wght@300;400;500;700&family=Assistant:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Google Places API will be loaded dynamically via JavaScript -->
     <!--
       Notice the use of %PUBLIC_URL% in the tags above.

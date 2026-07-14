@@ -13,6 +13,10 @@ export interface Event {
   rsvpDeadline?: string;
   active?: boolean;
   planId?: string | null; // Plan ID from MongoDB
+  /** True when this event's access was granted by a partner venue (Venue Edition). */
+  isVenue?: boolean;
+  /** The partner venue's name (for "Provided by <Venue>"), when isVenue. */
+  venueName?: string | null;
   /** Persistent lifecycle state of the event (from backend) */
   state?: 'draft' | 'active' | 'completed' | 'archived' | 'cancelled';
   /** Persistent payment status of the event (from backend) */
@@ -106,6 +110,8 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
         planId: event.planId || event.plan_id || null,
         paymentStatus: event.paymentStatus ?? event.payment_status ?? undefined,
         state: event.state ?? undefined,
+        isVenue: event.isVenue ?? event.is_venue ?? undefined,
+        venueName: event.venueName ?? event.venue_name ?? null,
       }));
       setEvents(mappedData);
     } catch (err) {

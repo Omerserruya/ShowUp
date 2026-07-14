@@ -5,8 +5,34 @@ from typing import List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
-from app.models.models import Event
+from app.models.models import Event, Account
 from app.schemas.schemas import EventCreate, EventUpdate
+
+
+def annotate_venue(db: Session, events: List[Event]) -> List[Event]:
+    """Attach the derived `is_venue` / `venue_name` attributes read by EventOut.
+
+    An event bound to a partner-venue Account is "Venue Edition": we surface the
+    venue's name so the UI can show "Provided by <Venue>". These are transient
+    attributes on the ORM instance (not columns), always set so EventOut never
+    serializes stale/missing values. Non-venue events get is_venue=False.
+    """
+    if not events:
+        return events
+    account_ids = {e.account_id for e in events if getattr(e, "account_id", None)}
+    venues: dict = {}
+    if account_ids:
+        rows = (
+            db.query(Account)
+            .filter(Account.id.in_(account_ids), Account.type == "venue")
+            .all()
+        )
+        venues = {a.id: a for a in rows}
+    for e in events:
+        venue = venues.get(getattr(e, "account_id", None))
+        e.is_venue = bool(venue)
+        e.venue_name = venue.name if venue else None
+    return events
 
 
 def is_owner(event: Event, user_id: uuid.UUID) -> bool:
@@ -66,8 +92,12 @@ def create_event(db: Session, data: EventCreate) -> Event:
         description=data.description,
         event_date=data.event_date,
         location=data.location,
-        plan_id=data.plan_id,
+        # B2B2C default: an event with no explicit plan is a couple's included
+        # "starter" plan. A paid plan (basic/plus/pro) is set by the payment
+        # provisioning path or by an explicit plan change.
+        plan_id=data.plan_id or "starter",
         event_type=getattr(data, "event_type", None),
+        subjects=getattr(data, "subjects", None),
         # Default to 'unpaid' when the client doesn't specify; the free-plan
         # path sends 'free' and the payment provisioning path sends 'paid'.
         payment_status=getattr(data, "payment_status", None) or "unpaid",

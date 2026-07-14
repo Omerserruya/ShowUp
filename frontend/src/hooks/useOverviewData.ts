@@ -133,7 +133,7 @@ export function useDailyResponses(period: 'week' | 'month' | 'year' = 'week') {
   return { data, loading, error };
 }
 
-export function useCampaigns() {
+export function useCampaigns(refreshKey?: number) {
   const { selectedEvent } = useEvent();
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -165,7 +165,7 @@ export function useCampaigns() {
         setLoading(false);
         setCampaigns([]);
       });
-  }, [selectedEvent?.id]);
+  }, [selectedEvent?.id, refreshKey]);
 
   return { campaigns, loading, error };
 }
@@ -199,8 +199,8 @@ export function useGuests(
     const orderByParam = orderBy ? `&order_by=${orderBy}` : '';
     const onlyWithResponsesParam = onlyWithResponses ? `&only_with_responses=true` : '';
     const statusParam = statusFilter && statusFilter !== 'all' ? `&status=${encodeURIComponent(statusFilter)}` : '';
-    // Request total count when filtering by status or when pageSize is large (fetching all)
-    const returnTotalParam = (statusFilter && statusFilter !== 'all') || pageSize >= 200 ? `&return_total=true` : '';
+    // Request total count when filtering by status, searching, or when pageSize is large (fetching all)
+    const returnTotalParam = (statusFilter && statusFilter !== 'all') || cleanSearchTerm || pageSize >= 200 ? `&return_total=true` : '';
     
     const url = `/api/guests?event_id=${selectedEvent.id}&page=${page}&page_size=${pageSize}${searchParam}${orderByParam}${onlyWithResponsesParam}${statusParam}${returnTotalParam}`;
     console.log('Fetching guests with URL:', url);

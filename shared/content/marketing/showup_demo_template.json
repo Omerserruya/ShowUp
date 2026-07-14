@@ -1,0 +1,29 @@
+{
+  "name": "showup_whatsapp_demo",
+  "language": "he",
+  "category": "MARKETING",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "היי {{1}} 👋\n\nזו דוגמה אמיתית להודעה שנשלחת דרך ShowUp.\n\nכך בדיוק האורחים שלך יקבלו הזמנות, יאשרו הגעה, יקבלו תזכורות ועדכונים - הכל אוטומטית דרך WhatsApp.\n\nאם אהבת את החוויה, נשמח לעזור גם באירוע שלך.",
+      "example": {
+        "body_text": [["דנה"]]
+      }
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "URL",
+          "text": "בואו נתחיל",
+          "url": "https://dev.28042000.xyz/wizard"
+        },
+        {
+          "type": "URL",
+          "text": "דברו איתי",
+          "url": "https://dev.28042000.xyz/go/whatsapp"
+        }
+      ]
+    }
+  ]
+}

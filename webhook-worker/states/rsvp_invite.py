@@ -6,11 +6,20 @@ from sqlalchemy import text
 
 from states.base_state import BaseState
 from utils.phone import normalize_phone
+from shared.domain.enums import RsvpAction
 
 
 class RsvpInviteState(BaseState):
     id = "rsvp_invite"
-    # These should reflect conversation_flow.yaml next map for rsvp_invite
+    # SEMANTIC routing (label-independent) - consulted before the text map. The
+    # engine understands the action; the catalog owns the button wording.
+    semantic_next = {
+        RsvpAction.CONFIRMED: "rsvp_count",
+        RsvpAction.DECLINED: "rsvp_decline",
+        RsvpAction.MAYBE: "rsvp_decline",
+    }
+    # Legacy text fallback (kept so live templates that still send only a title
+    # keep working). Remove once every template carries semantic payloads.
     next_states = {
         "ברור שאני בא!": "rsvp_count",
         "ברור שנגיע !": "rsvp_count",
@@ -27,9 +36,8 @@ class RsvpInviteState(BaseState):
         # Call parent to update last_response
         await super().process_incoming(session, message, conversation)
         
-        # Check if the response is a decline or maybe
         text_content = (message.get("text") or "").strip()
-        
+
         # Get conversation values
         try:
             guest_id_value = conversation.guest_id
@@ -39,15 +47,24 @@ class RsvpInviteState(BaseState):
             logger = __import__('logging').getLogger(__name__)
             logger.warning(f"Failed to get conversation values: {e}")
             return
-        
-        # Determine status based on response
-        if text_content == "ברור שאני בא!":
-            status_value = "attending"
-        elif text_content == "לצערי לא אוכל להגיע ):":
-            status_value = "declined"
-        elif text_content == "עוד מתלבט, תחזרו אלי?":
-            status_value = "maybe"
-        else:
+
+        # Determine status from the SEMANTIC action (label-independent). The DB
+        # values are the existing ones ("attending"/"declined"/"maybe") so behavior
+        # is unchanged. Fall back to legacy text only when there is no action.
+        _ACTION_STATUS = {
+            RsvpAction.CONFIRMED: "attending",
+            RsvpAction.DECLINED: "declined",
+            RsvpAction.MAYBE: "maybe",
+        }
+        status_value = _ACTION_STATUS.get(message.get("action"))
+        if status_value is None:
+            _LEGACY_TEXT_STATUS = {
+                "ברור שאני בא!": "attending",
+                "לצערי לא אוכל להגיע ):": "declined",
+                "עוד מתלבט, תחזרו אלי?": "maybe",
+            }
+            status_value = _LEGACY_TEXT_STATUS.get(text_content)
+        if status_value is None:
             # Not a status-changing response
             return
         
@@ -125,19 +142,18 @@ class RsvpInviteState(BaseState):
             await session.rollback()
 
     async def send(self, session: AsyncSession, conversation: Any) -> Optional[Dict[str, Any]]:
-        # Template per original spec: event_no_pic with 6 params
+        # event_no_pic has exactly 4 body params, in this order:
+        #   {{1}} event_date  {{2}} event_time  {{3}} venue_name  {{4}} host_name
         return await self.build_template(
             session,
             conversation,
             template_name="event_no_pic",
             language="he",
             params=[
-                "{{event.name}}",
-                "{{event.inviters}}",
                 "{{event.date}}",
-                "{{event.date}}",
+                "{{event.time}}",
                 "{{event.location}}",
-                "{{guest.name}}",
+                "{{event.inviters}}",
             ],
         )
 

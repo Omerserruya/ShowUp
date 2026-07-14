@@ -8,3 +8,6 @@ asyncpg==0.29.0
 # Structured logging
 python-json-logger==2.0.7
 
+# Messaging catalog (shared/domain/messaging) - quick-reply label resolution
+PyYAML==6.0.2
+

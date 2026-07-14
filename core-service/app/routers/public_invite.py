@@ -10,9 +10,9 @@ prefix) that power the shareable web invitation:
                                        name + phone + party size; we upsert a guest
                                        by phone within the event.
 
-Both require the event's invitation to be *published* and the plan tier to include
-WEB_INVITATION. Writes are intentionally minimal-trust: deduped by phone, capacity
--checked against the plan limit, and bounded by schema validation. (Rate limiting
+Both require the event's invitation to be *published* (the web invitation is
+included in every plan). Writes are intentionally minimal-trust: deduped by phone,
+capacity-checked against the plan's guest limit, and bounded by schema validation. (Rate limiting
 at the edge is a tracked follow-up, consistent with the rest of the service.)
 """
 from __future__ import annotations
@@ -20,6 +20,7 @@ from __future__ import annotations
 import datetime as dt
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -28,17 +29,18 @@ from app.schemas.schemas import GuestCreate, PublicRsvpIn
 from app.utils import normalize_phone
 from app.models.models import Guest
 from shared.domain.enums import GuestStatus
-from shared.domain.entitlements import Feature, has_feature
 
 router = APIRouter(prefix="/public/invite", tags=["public-invite"])
+
+
+class RsvpLookupIn(BaseModel):
+    phone: str = Field(..., min_length=4, max_length=32)
 
 
 def _require_published_event(db: Session, slug: str):
     event = event_crud.get_event_by_slug(db, slug)
     # 404 (not 403) for unpublished/missing so we never leak which slugs exist.
     if event is None or not getattr(event, "invitation_published", False):
-        raise HTTPException(status_code=404, detail="Invitation not found")
-    if not has_feature(getattr(event, "plan_id", None), Feature.WEB_INVITATION):
         raise HTTPException(status_code=404, detail="Invitation not found")
     return event
 
@@ -61,6 +63,29 @@ def get_public_invitation(slug: str, db: Session = Depends(get_db)):
     return _public_event_view(event)
 
 
+@router.post("/{slug}/rsvp/lookup")
+def lookup_public_rsvp(slug: str, payload: RsvpLookupIn, db: Session = Depends(get_db)):
+    """Return a returning guest's existing RSVP (by phone) so the invitation page
+    can pre-fill and let them UPDATE instead of creating a duplicate. Scoped to the
+    event; returns only that guest's own fields (no other guests are exposed)."""
+    event = _require_published_event(db, slug)
+    phone_norm = normalize_phone(payload.phone)
+    g = (
+        db.query(Guest)
+        .filter(Guest.event_id == str(event.id), Guest.phone == phone_norm)
+        .first()
+    )
+    if not g:
+        return {"found": False}
+    return {
+        "found": True,
+        "name": g.name,
+        "status": g.status,
+        "party_size": g.import_count,
+        "notes": g.notes,
+    }
+
+
 @router.post("/{slug}/rsvp", status_code=201)
 def submit_public_rsvp(slug: str, payload: PublicRsvpIn, db: Session = Depends(get_db)):
     event = _require_published_event(db, slug)
@@ -73,7 +98,13 @@ def submit_public_rsvp(slug: str, payload: PublicRsvpIn, db: Session = Depends(g
     status = GuestStatus.normalize(payload.status).value
     phone_norm = normalize_phone(payload.phone)
     now = dt.datetime.now(dt.timezone.utc)
+    party = payload.party_size
 
+    # Atomic critical section: serialize every capacity-affecting write for this
+    # event. This makes the check-then-write race-free - two guests confirming at
+    # once can't both exceed the limit, and a double-submit from the same phone
+    # updates one row instead of creating a duplicate.
+    guest_crud.lock_event_capacity(db, event.id)
     existing = (
         db.query(Guest)
         .filter(Guest.event_id == str(event.id), Guest.phone == phone_norm)
@@ -81,19 +112,27 @@ def submit_public_rsvp(slug: str, payload: PublicRsvpIn, db: Session = Depends(g
     )
 
     if existing:
-        # Returning guest updating their own response - no new capacity consumed.
+        # Returning guest: only an INCREASE in party size consumes new capacity.
+        old = existing.import_count or 0
+        delta = max(0, party - old)
+        if delta:
+            try:
+                guest_crud.check_capacity_limit(db, event, delta)
+            except ValueError as e:
+                raise HTTPException(status_code=409, detail=str(e))
         existing.name = payload.name or existing.name
         existing.status = status
-        if status in GuestStatus.confirmed_values():
-            existing.guest_count = payload.party_size
+        existing.import_count = party
+        existing.guest_count = party if status in GuestStatus.confirmed_values() else None
         existing.last_response = now
         if payload.notes:
             existing.notes = payload.notes
         db.add(existing)
         db.commit()
-        return {"ok": True, "status": status, "updated": True}
+        return {"ok": True, "status": status, "updated": True, "party_size": party}
 
-    # New guest via the open form. create_guest enforces the plan capacity limit.
+    # New guest via the open form. create_guest re-checks capacity under the same
+    # advisory lock (re-entrant) before inserting.
     try:
         guest = guest_crud.create_guest(
             db,
@@ -102,8 +141,8 @@ def submit_public_rsvp(slug: str, payload: PublicRsvpIn, db: Session = Depends(g
                 name=payload.name,
                 phone=phone_norm,
                 status=status,
-                import_count=payload.party_size,
-                guest_count=payload.party_size if status in GuestStatus.confirmed_values() else None,
+                import_count=party,
+                guest_count=party if status in GuestStatus.confirmed_values() else None,
                 notes=payload.notes,
                 last_response=now,
             ),
@@ -112,4 +151,4 @@ def submit_public_rsvp(slug: str, payload: PublicRsvpIn, db: Session = Depends(g
         # Capacity exceeded or duplicate -> 409 so the page can show a friendly msg.
         raise HTTPException(status_code=409, detail=str(e))
 
-    return {"ok": True, "status": status, "updated": False, "guest_id": str(guest.id)}
+    return {"ok": True, "status": status, "updated": False, "guest_id": str(guest.id), "party_size": party}

@@ -20,6 +20,32 @@ def _aud(value):
     return value.value if hasattr(value, "value") else value
 
 
+def _canonical_key(template_ref) -> Optional[str]:
+    """Canonical catalog key for a template reference (SSOT), or None. Stored on
+    the campaign so every layer shares one identifier. UUID refs (event-scoped
+    custom templates) resolve at send time with a DB lookup, so they stay None
+    here - the worker still resolves them correctly."""
+    try:
+        from shared.domain.messaging import resolve_template
+        t = resolve_template(template_ref)
+        return t.key if t else None
+    except Exception:
+        return None
+
+
+def _stage_variant(template_ref) -> Tuple[Optional[str], Optional[str]]:
+    """(stage_id, variant_id) for a campaign's template - the stage-execution
+    coordinates. Both resolve back to the same channel template, so this is a
+    label on top of delivery, not a behavior change."""
+    try:
+        from shared.domain.messaging import resolve_template, stage_variant_for_template
+        t = resolve_template(template_ref)
+        sv = stage_variant_for_template(t.key) if t else None
+        return sv if sv else (None, None)
+    except Exception:
+        return (None, None)
+
+
 def list_campaigns(
     db: Session,
     event_id: uuid.UUID,
@@ -79,11 +105,17 @@ def create_campaign(db: Session, data: CampaignCreate) -> Campaign:
         if conflict:
             raise ValueError(f"campaign schedule conflicts with another campaign (min {CAMPAIGN_MIN_GAP_MINUTES} minutes apart)")
 
+    _tkey = _canonical_key(data.template)
+    _sid, _vid = _stage_variant(data.template)
     campaign = Campaign(
         event_id=str(data.event_id),
         name=data.name,
         template=data.template,
+        template_key=_tkey,
+        stage_id=_sid,
+        variant_id=_vid,
         custom_message=getattr(data, "custom_message", None),
+        header_image_url=getattr(data, "header_image_url", None),
         channel=data.channel,
         schedule_time=data.schedule_time,
         status=data.status,
@@ -133,6 +165,8 @@ def update_campaign(db: Session, campaign: Campaign, data: CampaignUpdate) -> Ca
         campaign.follow_up_after_hours = data.follow_up_after_hours
     if data.follow_up_audience is not None:
         campaign.follow_up_audience = _aud(data.follow_up_audience)
+    if data.header_image_url is not None:
+        campaign.header_image_url = data.header_image_url or None
     db.add(campaign)
     db.commit()
     db.refresh(campaign)
@@ -158,7 +192,11 @@ def create_campaigns_bulk(db: Session, event_id: uuid.UUID, items: List[Campaign
         if key in seen_keys:
             continue
         seen_keys.add(key)
-        c = Campaign(
+        _b_sid, _b_vid = _stage_variant(data.template)
+        c = Campaign(  # noqa: E128
+            template_key=_canonical_key(data.template),
+            stage_id=_b_sid,
+            variant_id=_b_vid,
             event_id=str(event_id),
             name=data.name,
             template=data.template,
@@ -240,17 +278,20 @@ def get_campaign_stats(db: Session, campaign_id: uuid.UUID) -> dict:
     # Count read recipients from messages_log table
     # A message is considered "read" if there's a status update with status='read' 
     # for an outgoing message with this campaign_id
+    # Outgoing rows often have no guest_phone (the webhook's 'status' rows carry
+    # it) - count via whichever side has the phone, else the message id itself.
     read_result = db.execute(
         text("""
-            SELECT COUNT(DISTINCT ml_outgoing.guest_phone)
+            SELECT COUNT(DISTINCT COALESCE(ml_status.guest_phone,
+                                           ml_outgoing.guest_phone,
+                                           ml_outgoing.wa_message_id))
             FROM messages_log ml_outgoing
-            INNER JOIN messages_log ml_status 
+            INNER JOIN messages_log ml_status
                 ON ml_status.wa_message_id = ml_outgoing.wa_message_id
                 AND ml_status.direction = 'status'
                 AND ml_status.status = 'read'
             WHERE ml_outgoing.campaign_id = :campaign_id
                 AND ml_outgoing.direction = 'outgoing'
-                AND ml_outgoing.guest_phone IS NOT NULL
         """),
         {"campaign_id": campaign_id_str}
     )

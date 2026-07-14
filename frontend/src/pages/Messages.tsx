@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Toast from '../components/Toast';
 import ResponsiveDialog from '../components/ResponsiveDialog';
 import { fireConfetti, fireConfettiOnce } from '../utils/confetti';
@@ -14,6 +14,7 @@ import {
   Chip,
   Stack,
   IconButton,
+  Tooltip,
   Alert,
   useTheme,
   useMediaQuery,
@@ -25,7 +26,6 @@ import {
   InputLabel,
   Skeleton,
   LinearProgress,
-  Grid,
   Divider,
 } from '@mui/material';
 import {
@@ -44,21 +44,61 @@ import {
   AutoAwesome as SparklesIcon,
   Add as PlusIcon,
   ChevronRight as ChevronRightIcon,
+  ChevronLeft as ChevronLeftIcon,
   Create as PencilIcon,
   Edit as EditTemplateIcon,
   Delete as DeleteIcon,
   ExpandMore as ExpandMoreIcon,
+  MailOutline as EmailIcon,
+  ImageOutlined as ImageIcon,
 } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 import { useEvent } from '../contexts/EventContext';
+import { useUser } from '../contexts/UserContext';
+import { saveOrderToken, orderAuthHeaders } from '../utils/orderToken';
 import { useCampaigns, useOverviewStats } from '../hooks/useOverviewData';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
-import { templates, processTemplate, MessageTemplate } from '../config/templates';
+import { useCatalog } from '../hooks/useCatalog';
+import type { MessagingCatalog, CatalogTemplate } from '../hooks/useCatalog';
+import { renderBody, buildPreviewValues, buildEventValues, parseLocation } from '../config/messaging';
+import type { PreviewCtx } from '../config/messaging';
 
-// WhatsApp message bubble component (same as in EventWizard)
-const WhatsAppBubble = ({ template, variables }: { template: MessageTemplate; variables: Record<string, string> }) => {
-  const processedBody = processTemplate(template, variables);
+// datetime-local inputs expect LOCAL wall-clock components - never a UTC ISO
+// slice, which shifts the shown time by the timezone offset.
+const toLocalInputValue = (d: Date): string => {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+// Proper Hebrew for "in N days" (avoids "בעוד 1 ימים").
+const inDaysLabel = (n: number): string => {
+  if (n <= 0) return 'היום';
+  if (n === 1) return 'מחר';
+  if (n === 2) return 'בעוד יומיים';
+  return `בעוד ${n} ימים`;
+};
+
+// Hebrew fallback titles per canonical flow stage (the catalog stage title wins).
+const STAGE_LABELS: Record<string, string> = {
+  save_the_date: 'שמרו את התאריך',
+  invitation: 'הזמנה',
+  reminder: 'תזכורת',
+  final_reminder: 'תזכורת אחרונה',
+  table_assignment: 'שיבוץ שולחנות',
+  thank_you: 'תודה',
+};
+
+// Lifecycle order for the new-round stage picker (mirrors the backend FlowStage).
+const STAGE_ORDER = ['save_the_date', 'invitation', 'reminder', 'final_reminder', 'table_assignment', 'thank_you'];
+
+
+// WhatsApp message bubble - renders the catalog template body (same definition the
+// worker delivers).
+const WhatsAppBubble = ({ template, variables, imageUrl }: { template: { title?: string; body: string; preview?: { header?: string } }; variables: Record<string, string>; imageUrl?: string }) => {
+  const processedBody = renderBody(template.body, variables);
   const lines = processedBody.split('\n');
-  
+  const needsImage = template.preview?.header === 'image';
+
   return (
     <Box
       sx={{
@@ -87,6 +127,28 @@ const WhatsAppBubble = ({ template, variables }: { template: MessageTemplate; va
         },
       }}
     >
+      {needsImage && (
+        imageUrl ? (
+          <Box
+            component="img"
+            src={imageUrl}
+            alt=""
+            sx={{ display: 'block', width: '100%', maxHeight: 180, objectFit: 'cover', borderRadius: '6px', mb: 0.75 }}
+          />
+        ) : (
+          <Box
+            sx={{
+              width: '100%', height: 120, borderRadius: '6px', mb: 0.75,
+              bgcolor: 'rgba(0,0,0,0.05)', border: '1px dashed rgba(0,0,0,0.18)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5,
+              color: 'rgba(0,0,0,0.4)',
+            }}
+          >
+            <ImageIcon sx={{ fontSize: 20 }} />
+            <Typography variant="caption" sx={{ color: 'inherit' }}>תמונה תופיע כאן</Typography>
+          </Box>
+        )
+      )}
       {template.title && (
         <Typography 
           variant="subtitle2" 
@@ -101,7 +163,7 @@ const WhatsAppBubble = ({ template, variables }: { template: MessageTemplate; va
             display: 'block',
           }}
         >
-          {processTemplate({ ...template, body: template.title }, variables)}
+          {renderBody(template.title, variables)}
         </Typography>
       )}
       {lines.map((line, idx) => (
@@ -122,114 +184,38 @@ const WhatsAppBubble = ({ template, variables }: { template: MessageTemplate; va
           {line || '\u00A0'}
         </Typography>
       ))}
-      {template.cta && (
-        <Box sx={{ mt: 0.75, pt: 0.75, borderTop: '1px solid rgba(0,0,0,0.1)' }}>
-          <Typography
-            variant="body2"
-            sx={{
-              color: '#0084ff',
-              fontWeight: 500,
-              fontSize: '0.8125rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 0.5,
-              justifyContent: 'flex-end',
-            }}
-          >
-            {template.cta.text}
-            {template.cta.link && <span>↗</span>}
-          </Typography>
-        </Box>
-      )}
-      {template.buttons && template.buttons.length > 0 && (
-        <>
-          <Typography
-            variant="caption"
-            sx={{
-              color: 'rgba(0,0,0,0.45)',
-              fontSize: '10px',
-              display: 'flex',
-              justifyContent: 'flex-end',
-              mt: 0.25,
-              mb: 0.25,
-              direction: 'ltr',
-            }}
-          >
-            {new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
-          </Typography>
-          <Box sx={{ mt: 0.75, pt: 0.75, borderTop: '1px solid rgba(0,0,0,0.1)', mx: -1, px: 1 }}>
-            {template.buttons.map((button, idx) => (
-              <Box key={button.id}>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: '#0084ff',
-                    fontWeight: 400,
-                    fontSize: '0.8125rem',
-                    textAlign: 'center',
-                    py: 0.5,
-                  }}
-                >
-                  {button.text}
-                </Typography>
-                {idx < template.buttons!.length - 1 && (
-                  <Divider 
-                    sx={{ 
-                      borderColor: 'rgba(0,0,0,0.1)',
-                      mx: -1,
-                      width: 'calc(100% + 16px)',
-                    }} 
-                  />
-                )}
-              </Box>
-            ))}
-          </Box>
-        </>
-      )}
-      {!template.buttons && (
-        <Typography
-          variant="caption"
-          sx={{
-            color: 'rgba(0,0,0,0.45)',
-            fontSize: '10px',
-            display: 'flex',
-            justifyContent: 'flex-end',
-            mt: 0.25,
-            direction: 'ltr',
-          }}
-        >
-          {new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
-        </Typography>
-      )}
+      <Typography
+        variant="caption"
+        sx={{
+          color: 'rgba(0,0,0,0.45)',
+          fontSize: '10px',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          mt: 0.25,
+          direction: 'ltr',
+        }}
+      >
+        {new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+      </Typography>
     </Box>
   );
 };
 
 // Campaign message preview component - finds template by ID or campaignLabel
-const CampaignMessagePreview = ({ 
+const CampaignMessagePreview = ({
+  catalog,
   campaignName,
   campaignTemplate,
-  variables 
-}: { 
+  variables
+}: {
+  catalog: MessagingCatalog;
   campaignName: string;
   campaignTemplate?: string;
-  variables: Record<string, string> 
+  variables: Record<string, string>
 }) => {
-  // Try to find template by ID first (campaign.template or campaign.name might be the template ID like "save_date_1")
-  let template = templates.find(t => t.id === campaignTemplate || t.id === campaignName);
-  
-  // If not found by ID, try to find by campaignLabel (campaign name might match campaignLabel like "Save the date")
-  if (!template) {
-    template = templates.find(t => t.campaignLabel === campaignName && t.isDefault === true);
-  }
-  
-  // If still not found, try to find any template with matching campaignLabel
-  if (!template) {
-    const matchingTemplates = templates.filter(t => t.campaignLabel === campaignName);
-    template = matchingTemplates[0];
-  }
-  
+  // Resolve the catalog template by its canonical id (campaign.template / name).
+  const template = catalog.templates.find(t => t.id === campaignTemplate || t.id === campaignName);
+
   // If no template found, fallback to simple text display
   if (!template) {
     return (
@@ -243,7 +229,7 @@ const CampaignMessagePreview = ({
           textAlign: 'right',
         }}
       >
-        {campaignTemplate || campaignName}
+        {renderBody(campaignTemplate || campaignName, variables)}
       </Typography>
     );
   }
@@ -284,10 +270,67 @@ interface Campaign {
   readCount?: number; // Number of recipients who read the message (from messages_log)
 }
 
+// Resolve the catalog template backing a campaign (by canonical id).
+function commTemplate(catalog: MessagingCatalog, campaign: Campaign): CatalogTemplate | undefined {
+  return catalog.templates.find((t) => t.id === campaign.template || t.id === campaign.name);
+}
+
+// A realistic miniature of a guest communication - headline, message, button,
+// status and micro-info. The left-column "queue" is built from these.
+// Small uppercase label used in the summary strip.
+function StripLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.4, color: 'text.secondary', mb: 0.5 }}>
+      {children}
+    </Typography>
+  );
+}
+
+// Lightweight icon + text stat used in the sent-campaign analytics row.
+function Stat({ icon, text }: { icon: React.ReactNode; text: string }) {
+  return (
+    <Stack direction="row" spacing={0.5} alignItems="center">
+      {icon}
+      <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>{text}</Typography>
+    </Stack>
+  );
+}
+
+function MsgPreview({ catalog, campaign, variables }: { catalog: MessagingCatalog; campaign: Campaign; variables: Record<string, string> }) {
+  const tpl = commTemplate(catalog, campaign);
+  const title = tpl?.title ? renderBody(tpl.title, variables) : '';
+  // Custom (free-text) messages keep their {{tokens}} in storage; render them
+  // here with preview values so the display stays human-readable.
+  const body = renderBody(tpl ? tpl.body : (campaign.template || ''), variables);
+  const btnText = '';
+  return (
+    <Box sx={{ position: 'relative', maxWidth: 340 }}>
+      {/* faint layers behind → "stacked" hint */}
+      <Box sx={{ position: 'absolute', inset: 0, borderRadius: 2.5, bgcolor: '#ece5dd', transform: 'translate(7px, 7px)', opacity: 0.35, zIndex: 0 }} />
+      <Box sx={{ position: 'absolute', inset: 0, borderRadius: 2.5, bgcolor: '#ece5dd', transform: 'translate(3.5px, 3.5px)', opacity: 0.6, zIndex: 0 }} />
+      {/* front preview - real message, cropped + faded */}
+      <Box sx={{ position: 'relative', zIndex: 1, borderRadius: 2.5, bgcolor: '#ece5dd', p: 1, maxHeight: 120, overflow: 'hidden', direction: 'rtl', textAlign: 'right', boxShadow: '0 1px 2px rgba(0,0,0,0.06)', maskImage: 'linear-gradient(180deg,#000 66%,transparent)', WebkitMaskImage: 'linear-gradient(180deg,#000 66%,transparent)' }}>
+        <Box sx={{ bgcolor: '#fff', borderRadius: '7.5px', p: 1, boxShadow: '0 1px 0.5px rgba(0,0,0,0.13)' }}>
+          {title && <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#111', mb: 0.25 }}>{title}</Typography>}
+          <Typography sx={{ fontSize: 12, lineHeight: 1.5, color: '#333', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{body}</Typography>
+          {btnText && (
+            <Box sx={{ mt: 0.75, pt: 0.75, borderTop: '1px solid rgba(0,0,0,0.08)', textAlign: 'center' }}>
+              <Typography sx={{ fontSize: 12, fontWeight: 500, color: '#0084ff' }}>{btnText}</Typography>
+            </Box>
+          )}
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
 function Messages() {
+  const { catalog } = useCatalog();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { selectedEvent } = useEvent();
+  const { user } = useUser();
+  const navigate = useNavigate();
   const { campaigns: apiCampaigns, loading: campaignsLoading, error: campaignsError } = useCampaigns();
   const { stats } = useOverviewStats();
   
@@ -296,18 +339,123 @@ function Messages() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [editType, setEditType] = useState<'time' | 'message' | null>(null);
   const [sendNowDialogOpen, setSendNowDialogOpen] = useState(false);
   const [sendNowCampaign, setSendNowCampaign] = useState<Campaign | null>(null);
   const [editedTime, setEditedTime] = useState<string>('');
-  const [editedMessage, setEditedMessage] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [updating, setUpdating] = useState<string | null>(null);
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(null);
   const [selectingTemplateFor, setSelectingTemplateFor] = useState<string | null>(null);
+  // Which communication is selected (shows actions) and which is hovered - shared
+  // between the left card stack and the right timeline for cross-highlighting.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [customFor, setCustomFor] = useState<string | null>(null);
+  const [customText, setCustomText] = useState('');
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({ open: false, message: '', severity: 'info' });
   const [deleteTarget, setDeleteTarget] = useState<Campaign | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createStage, setCreateStage] = useState('');
+  const [createName, setCreateName] = useState('');
+  const [createTemplateId, setCreateTemplateId] = useState('');
+  const [createTime, setCreateTime] = useState('');
+  const [createImageUrl, setCreateImageUrl] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const createImageInputRef = useRef<HTMLInputElement>(null);
+  // Paid extra-round purchase (shown when the round is beyond the plan's included set).
+  const [purchase, setPurchase] = useState<{ price: number; band: string; recipients: number } | null>(null);
+  const [buying, setBuying] = useState(false);
+  const [creating, setCreating] = useState(false);
   const showToast = (message: string, severity: 'success' | 'error' | 'info' = 'info') => setToast({ open: true, message, severity });
+
+  // THE one API→UI campaign mapper - every list refresh must go through it so
+  // status normalization (pending+time → scheduled, processing → sent) and the
+  // recipient-count fallbacks stay consistent.
+  const mapApiCampaign = (apiCampaign: CampaignFromAPI): Campaign => {
+    // Treat "processing" from backend as "sent" in the UI once sending has been triggered
+    let status: CampaignStatus = 'pending';
+    if (apiCampaign.status === 'sent' || apiCampaign.status === 'processing') {
+      status = 'sent';
+    } else if (apiCampaign.status === 'paused') {
+      status = 'paused';
+    } else if (apiCampaign.schedule_time) {
+      status = 'scheduled';
+    }
+
+    // Derive per-campaign recipient count:
+    // - Prefer explicit recipient_count from API
+    // - Then fall back to length of recipients list if available
+    // - Finally, fall back to the general recipientCount estimate
+    const specificRecipientCount =
+      typeof apiCampaign.recipient_count === 'number'
+        ? apiCampaign.recipient_count
+        : Array.isArray(apiCampaign.recipients)
+        ? apiCampaign.recipients.length
+        : (stats?.total_guests || 0);
+
+    return {
+      id: apiCampaign.id,
+      name: apiCampaign.name,
+      template: apiCampaign.template,
+      status,
+      scheduleTime: apiCampaign.schedule_time ? new Date(apiCampaign.schedule_time) : null,
+      channel: apiCampaign.channel as 'whatsapp' | 'email',
+      recipientCount: specificRecipientCount,
+      sentCount: undefined, // Will be loaded separately
+      readCount: undefined, // Will be loaded separately
+    };
+  };
+
+  // Fetch delivery stats for sent campaigns.
+  // Only fetch if we know the endpoint exists (check once and cache result)
+  const fetchCampaignStats = async (list: Campaign[]) => {
+    const sentCampaigns = list.filter(c => c.status === 'sent');
+    if (sentCampaigns.length === 0) return;
+
+    // Try to fetch stats for the first campaign to check if endpoint exists
+    // If it returns 404, we'll skip all subsequent requests to avoid console noise
+    let endpointExists: boolean | null = null;
+
+    for (const campaign of sentCampaigns) {
+      try {
+        const statsRes = await fetchWithAuth(`/api/campaigns/${campaign.id}/stats`);
+
+        if (statsRes.status === 404) {
+          // First 404 means endpoint doesn't exist yet - skip all remaining requests
+          if (endpointExists === null) {
+            endpointExists = false;
+            // Silently skip - endpoint not implemented yet
+            break;
+          }
+          continue;
+        }
+
+        // If we got here, endpoint exists
+        if (endpointExists === null) {
+          endpointExists = true;
+        }
+
+        if (statsRes.ok) {
+          const stats = await statsRes.json();
+          setCampaigns(prev => prev.map(c =>
+            c.id === campaign.id
+              ? { ...c, sentCount: stats.sent_count || 0, readCount: stats.read_count || 0 }
+              : c
+          ));
+        }
+      } catch (error) {
+        // Network errors or other issues - log only if endpoint was confirmed to exist
+        if (endpointExists === true) {
+          console.warn(`Failed to fetch stats for campaign ${campaign.id}:`, error);
+        }
+        // If endpoint doesn't exist, silently skip
+        if (endpointExists === null) {
+          endpointExists = false;
+          break;
+        }
+      }
+    }
+  };
 
   // Map API campaigns to local format and fetch stats
   useEffect(() => {
@@ -316,96 +464,10 @@ function Messages() {
       return;
     }
 
-    const mapped = apiCampaigns.map((apiCampaign: CampaignFromAPI) => {
-      // Map status from API to local status
-      // Treat "processing" from backend as "sent" in the UI once sending has been triggered
-      let status: CampaignStatus = 'pending';
-      if (apiCampaign.status === 'sent' || apiCampaign.status === 'processing') {
-        status = 'sent';
-      } else if (apiCampaign.status === 'paused') {
-        status = 'paused';
-      } else if (apiCampaign.schedule_time) {
-        status = 'scheduled';
-      }
-
-      // Derive per-campaign recipient count:
-      // - Prefer explicit recipient_count from API
-      // - Then fall back to length of recipients list if available
-      // - Finally, fall back to the general recipientCount estimate
-      const specificRecipientCount =
-        typeof apiCampaign.recipient_count === 'number'
-          ? apiCampaign.recipient_count
-          : Array.isArray(apiCampaign.recipients)
-          ? apiCampaign.recipients.length
-          : (stats?.total_guests || 0);
-
-      return {
-        id: apiCampaign.id,
-        name: apiCampaign.name,
-        template: apiCampaign.template,
-        status,
-        scheduleTime: apiCampaign.schedule_time ? new Date(apiCampaign.schedule_time) : null,
-        channel: apiCampaign.channel as 'whatsapp' | 'email',
-        recipientCount: specificRecipientCount,
-        sentCount: undefined, // Will be loaded separately
-        readCount: undefined, // Will be loaded separately
-      };
-    });
-
+    const mapped = apiCampaigns.map(mapApiCampaign);
     setCampaigns(mapped);
-
-    // Fetch stats for sent campaigns
-    // Only fetch if we know the endpoint exists (check once and cache result)
-    const fetchStats = async () => {
-      const sentCampaigns = mapped.filter(c => c.status === 'sent');
-      if (sentCampaigns.length === 0) return;
-      
-      // Try to fetch stats for the first campaign to check if endpoint exists
-      // If it returns 404, we'll skip all subsequent requests to avoid console noise
-      let endpointExists: boolean | null = null;
-      
-      for (const campaign of sentCampaigns) {
-        try {
-          const statsRes = await fetchWithAuth(`/api/campaigns/${campaign.id}/stats`);
-          
-          if (statsRes.status === 404) {
-            // First 404 means endpoint doesn't exist yet - skip all remaining requests
-            if (endpointExists === null) {
-              endpointExists = false;
-              // Silently skip - endpoint not implemented yet
-              break;
-            }
-            continue;
-          }
-          
-          // If we got here, endpoint exists
-          if (endpointExists === null) {
-            endpointExists = true;
-          }
-          
-          if (statsRes.ok) {
-            const stats = await statsRes.json();
-            setCampaigns(prev => prev.map(c => 
-              c.id === campaign.id 
-                ? { ...c, sentCount: stats.sent_count || 0, readCount: stats.read_count || 0 }
-                : c
-            ));
-          }
-        } catch (error) {
-          // Network errors or other issues - log only if endpoint was confirmed to exist
-          if (endpointExists === true) {
-            console.warn(`Failed to fetch stats for campaign ${campaign.id}:`, error);
-          }
-          // If endpoint doesn't exist, silently skip
-          if (endpointExists === null) {
-            endpointExists = false;
-            break;
-          }
-        }
-      }
-    };
-
-    fetchStats();
+    fetchCampaignStats(mapped);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiCampaigns, stats?.total_guests]);
 
   // Helper functions
@@ -420,8 +482,10 @@ function Messages() {
     if (campaign.status === 'sent') {
       const sentDiffMs = now.getTime() - scheduleDate.getTime();
       const sentDiffDays = Math.floor(sentDiffMs / (1000 * 60 * 60 * 24));
-      if (sentDiffDays < 0) return 'היום';
-      return sentDiffDays === 0 ? 'היום' : `לפני ${sentDiffDays} ימים`;
+      if (sentDiffDays <= 0) return 'היום';
+      if (sentDiffDays === 1) return 'אתמול';
+      if (sentDiffDays === 2) return 'לפני יומיים';
+      return `לפני ${sentDiffDays} ימים`;
     }
     
     if (campaign.status === 'paused') {
@@ -429,8 +493,7 @@ function Messages() {
     }
     
     if (diffDays < 0) return 'עבר הזמן';
-    if (diffDays === 0) return 'היום';
-    return `בעוד ${diffDays} ימים`;
+    return inDaysLabel(diffDays);
   };
 
   const getStatusLabel = (campaign: Campaign): string => {
@@ -463,10 +526,6 @@ function Messages() {
     }
   };
 
-  const isPast = (campaign: Campaign): boolean => {
-    if (!campaign.scheduleTime) return false;
-    return new Date(campaign.scheduleTime) < new Date() && campaign.status === 'sent';
-  };
 
   const isNext = (campaign: Campaign, allCampaigns: Campaign[]): boolean => {
     if (campaign.status !== 'scheduled') return false;
@@ -476,76 +535,37 @@ function Messages() {
     return scheduled.length > 0 && scheduled[0].id === campaign.id;
   };
 
-  // Get template variables from event
-  const getTemplateVariables = (): Record<string, string> => {
-    if (!selectedEvent) {
-      return {
-        'guest.name': 'דוד כהן',
-        'event.name': 'האירוע שלי',
-        'event.date': '15/06/2024',
-        'event.location': 'גן אירועים רויאל',
-        'name': 'דוד כהן',
-        'eventName': 'האירוע שלי',
-        'eventDate': '15/06/2024',
-        'location': 'גן אירועים רויאל',
-        'שם': 'דוד כהן',
-        'שם_אירוע': 'האירוע שלי',
-        'תאריך': '15/06/2024',
-        'מיקום': 'גן אירועים רויאל',
-        'שם_מזמין': 'דוד ושרה',
-        'שעה': '18:00',
-      };
-    }
-
-    const eventDate = selectedEvent.date 
-      ? new Date(selectedEvent.date).toLocaleDateString('he-IL', { 
-          day: '2-digit', 
-          month: '2-digit', 
-          year: 'numeric' 
-        })
-      : '{{תאריך}}';
-
-    const eventTime = selectedEvent.date
-      ? new Date(selectedEvent.date).toLocaleTimeString('he-IL', {
-          hour: '2-digit',
-          minute: '2-digit',
-        })
-      : '18:00';
-
-    // Extract inviter names from event
+  // The real details of the selected event, as messaging preview context.
+  const eventCtx = (): PreviewCtx => {
+    if (!selectedEvent) return {};
     const inviters = (selectedEvent as any)?.inviters || [];
-    const inviterNames = Array.isArray(inviters) && inviters.length > 0
+    const host = Array.isArray(inviters) && inviters.length > 0
       ? inviters.map((inv: any) => `${inv.fn || ''} ${inv.ln || ''}`.trim()).filter(Boolean).join(' ו-')
-      : 'דוד ושרה';
-
-    const eventTypeMap: Record<string, string> = {
-      'wedding': 'חתונה',
-      'birthday': 'יום הולדת',
-      'corporate': 'אירוע חברה',
-      'custom': 'אירוע',
-    };
-
+      : undefined;
     return {
-      // English format with dots
-      'guest.name': 'דוד כהן',
-      'event.name': selectedEvent.name || '{{שם_אירוע}}',
-      'event.date': eventDate,
-      'event.location': selectedEvent.location || '{{מיקום}}',
-      // English format without dots
-      'name': 'דוד כהן',
-      'eventName': selectedEvent.name || '{{שם_אירוע}}',
-      'eventDate': eventDate,
-      'location': selectedEvent.location || '{{מיקום}}',
-      // Hebrew format
-      'שם': 'דוד כהן',
-      'שם_אירוע': selectedEvent.name || '{{שם_אירוע}}',
-      'תאריך': eventDate,
-      'מיקום': selectedEvent.location || '{{מיקום}}',
-      'סוג_אירוע': eventTypeMap[selectedEvent.type || 'custom'] || 'אירוע',
-      'שם_מזמין': inviterNames,
-      'שעה': eventTime,
+      eventName: selectedEvent.name || undefined,
+      eventDate: selectedEvent.date
+        ? new Date(selectedEvent.date).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        : undefined,
+      eventTime: selectedEvent.date
+        ? new Date(selectedEvent.date).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })
+        : undefined,
+      venue: parseLocation(selectedEvent.location).name || undefined,
+      venueAddress: parseLocation(selectedEvent.location).address || undefined,
+      host,
     };
   };
+
+  // Get template variables from event
+  // Preview values from the ONE catalog (samples overridden by the selected event),
+  // keyed by canonical names + legacy Hebrew tokens. DISPLAY ONLY - never persist
+  // a body rendered with these (the guest-scope samples are fake).
+  const getTemplateVariables = (): Record<string, string> => buildPreviewValues(catalog, eventCtx());
+
+  // Real event values ONLY (no samples) - safe to bake into a stored custom
+  // message: guest-scope tokens ({{guest_name}}, {{rsvp_link}}…) stay intact and
+  // are resolved per guest by the worker at send time.
+  const getEventOnlyVariables = (): Record<string, string> => buildEventValues(catalog, eventCtx());
 
   // Filter campaigns
   const filteredCampaigns = campaigns.filter(campaign => {
@@ -559,15 +579,7 @@ function Messages() {
   // Handlers
   const handleEditTime = (campaign: Campaign) => {
     setEditingCampaign(campaign);
-    setEditType('time');
-    setEditedTime(campaign.scheduleTime ? new Date(campaign.scheduleTime).toISOString().slice(0, 16) : '');
-    setEditDialogOpen(true);
-  };
-
-  const handleEditMessage = (campaign: Campaign) => {
-    setEditingCampaign(campaign);
-    setEditType('message');
-    setEditedMessage(campaign.template);
+    setEditedTime(campaign.scheduleTime ? toLocalInputValue(new Date(campaign.scheduleTime)) : '');
     setEditDialogOpen(true);
   };
 
@@ -621,12 +633,16 @@ function Messages() {
     if (!sendNowCampaign) return;
     // Set schedule_time to ~30 seconds from now so the scheduler/worker will send it soon
     const sendAt = new Date(Date.now() + 30 * 1000);
+    // The scheduler only claims status='pending' rows - a paused campaign must be
+    // resumed in the same PUT or "send now" would silently never send.
+    const payload: { schedule_time: string; status?: string } = { schedule_time: sendAt.toISOString() };
+    if (sendNowCampaign.status === 'paused') payload.status = 'pending';
     setUpdating(sendNowCampaign.id);
     try {
       const response = await fetchWithAuth(`/api/campaigns/${sendNowCampaign.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ schedule_time: sendAt.toISOString() }),
+        body: JSON.stringify(payload),
       });
       if (!response.ok) throw new Error('Failed to schedule campaign for send');
       setCampaigns(prev => prev.map(c =>
@@ -650,17 +666,13 @@ function Messages() {
   };
 
   const saveEdit = async () => {
-    if (!editingCampaign || !editType) return;
+    if (!editingCampaign) return;
 
     setSaving(true);
     try {
-      const updateData: any = {};
-      
-      if (editType === 'time') {
-        updateData.schedule_time = editedTime ? new Date(editedTime).toISOString() : null;
-      } else if (editType === 'message') {
-        updateData.template = editedMessage;
-      }
+      const updateData: any = {
+        schedule_time: editedTime ? new Date(editedTime).toISOString() : null,
+      };
 
       const response = await fetchWithAuth(`/api/campaigns/${editingCampaign.id}`, {
         method: 'PUT',
@@ -672,47 +684,209 @@ function Messages() {
         console.error('Update campaign error:', errorText);
         throw new Error(`Failed to update campaign: ${response.status} ${errorText}`);
       }
-      
-      const updated = await response.json();
-      console.log('Updated campaign:', updated);
-      
-      // Refresh campaigns list to get updated data
+
+      await response.json();
+
+      // Refresh campaigns list to get updated data - through the shared mapper,
+      // so statuses stay normalized and stats reload.
       const campaignsResponse = await fetchWithAuth(`/api/campaigns?event_id=${selectedEvent?.id}`);
       if (campaignsResponse.ok) {
-        const campaignsData = await campaignsResponse.json();
-        const mapped = campaignsData.map((apiCampaign: CampaignFromAPI) => ({
-          id: apiCampaign.id,
-          name: apiCampaign.name,
-          template: apiCampaign.template,
-          channel: apiCampaign.channel,
-          scheduleTime: apiCampaign.schedule_time ? new Date(apiCampaign.schedule_time) : null,
-          status: apiCampaign.status as CampaignStatus,
-          recipientCount: apiCampaign.recipient_count || 0,
-          sentCount: undefined, // Will be fetched separately if needed
-        }));
+        const campaignsData: CampaignFromAPI[] = await campaignsResponse.json();
+        const mapped = campaignsData.map(mapApiCampaign);
         setCampaigns(mapped);
+        fetchCampaignStats(mapped);
       } else {
         // Fallback: update local state
-        setCampaigns(prev => prev.map(c => 
-          c.id === editingCampaign.id 
-            ? {
-                ...c,
-                scheduleTime: editType === 'time' && editedTime ? new Date(editedTime) : c.scheduleTime,
-                template: editType === 'message' ? editedMessage : c.template,
-                status: updated.schedule_time ? 'scheduled' as CampaignStatus : c.status,
-              }
+        setCampaigns(prev => prev.map(c =>
+          c.id === editingCampaign.id
+            ? { ...c, scheduleTime: editedTime ? new Date(editedTime) : c.scheduleTime }
             : c
         ));
       }
 
       setEditDialogOpen(false);
       setEditingCampaign(null);
-      setEditType(null);
     } catch (error) {
       console.error('Error updating campaign:', error);
       showToast('שגיאה בעדכון הקמפיין', 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Templates the UI may offer for sending - never suggest one that can't be
+  // delivered (draft lifecycle / no approved Meta mapping); the backend rejects
+  // those with a 400 anyway.
+  const sendableTemplates = catalog.templates.filter((t) => t.sendable);
+
+  // Hebrew display name for a template's stage (used as the default round name).
+  const stageTitle = (flowStage: string): string =>
+    catalog.stages.find((s) => s.id === flowStage)?.title || STAGE_LABELS[flowStage] || 'סבב חדש';
+
+  const eventType = (selectedEvent?.type as string) || 'wedding';
+
+  // Stages that actually have a deliverable template for this event, ordered by
+  // the lifecycle (STAGE_ORDER). A new round starts by choosing one of these.
+  const stagesForCreate = STAGE_ORDER.filter((sid) =>
+    sendableTemplates.some((t) => t.flow_stage === sid),
+  );
+
+  // Deliverable templates belonging to the chosen stage.
+  const templatesForCreateStage = (stageId: string): CatalogTemplate[] =>
+    sendableTemplates.filter((t) => t.flow_stage === stageId);
+
+  const createTemplateObj = catalog.templates.find((t) => t.id === createTemplateId);
+  const createNeedsImage = createTemplateObj?.preview?.header === 'image';
+
+  const applyCreateStage = (stageId: string) => {
+    setCreateStage(stageId);
+    const tpls = templatesForCreateStage(stageId);
+    const tpl = tpls.find((t) => t.is_default) || tpls[0];
+    setCreateTemplateId(tpl?.id || '');
+    setCreateName(stageTitle(stageId));
+    setCreateImageUrl('');
+  };
+
+  // New-round creation ("סבב חדש")
+  const openCreate = () => {
+    setCreateTime('');
+    setCreateImageUrl('');
+    const firstStage = stagesForCreate[0] || '';
+    if (firstStage) applyCreateStage(firstStage);
+    else { setCreateStage(''); setCreateTemplateId(''); setCreateName('סבב חדש'); }
+    setCreateOpen(true);
+  };
+
+  const handleCreateTemplateChange = (templateId: string) => {
+    setCreateTemplateId(templateId);
+    setCreateImageUrl('');
+    const tpl = catalog.templates.find((t) => t.id === templateId);
+    if (tpl) setCreateName(stageTitle(tpl.flow_stage));
+  };
+
+  // Upload a header image for an image-header round. Reuses the invitation
+  // presigned-upload flow (S3), returns the public object URL.
+  const uploadCreateImage = async (file?: File | null) => {
+    if (!file || !selectedEvent?.id) return;
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
+      showToast('סוג קובץ לא נתמך - ניתן להעלות תמונות בלבד', 'error');
+      return;
+    }
+    setUploadingImage(true);
+    try {
+      const presign = await fetchWithAuth('/api/uploads/generate-upload-url', {
+        method: 'POST',
+        body: JSON.stringify({ event_id: selectedEvent.id, filename: file.name, content_type: file.type, folder: 'campaigns' }),
+      });
+      if (!presign.ok) throw new Error('presign');
+      const { url, fields, object_url, max_bytes } = await presign.json();
+      if (max_bytes && file.size > max_bytes) {
+        showToast(`הקובץ גדול מדי - מקסימום ${Math.round(max_bytes / 1024 / 1024)}MB`, 'error');
+        return;
+      }
+      const form = new FormData();
+      Object.entries(fields).forEach(([k, v]) => form.append(k, v as string));
+      form.append('file', file);
+      const up = await fetch(url, { method: 'POST', body: form });
+      if (!up.ok) throw new Error('upload');
+      setCreateImageUrl(object_url);
+    } catch {
+      showToast('העלאת התמונה נכשלה. נסו שוב.', 'error');
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const confirmCreate = async () => {
+    if (!selectedEvent?.id || !createTemplateId || !createName.trim()) return;
+    // An image-header template must have an image before it can go out.
+    if (createNeedsImage && !createImageUrl) {
+      showToast('התבנית הזו כוללת תמונה - נא להעלות תמונה לפני יצירת הסבב.', 'error');
+      return;
+    }
+    setCreating(true);
+    try {
+      const body: any = {
+        event_id: selectedEvent.id,
+        name: createName.trim(),
+        template: createTemplateId,
+        channel: 'whatsapp',
+        status: 'pending',
+      };
+      if (createNeedsImage && createImageUrl) body.header_image_url = createImageUrl;
+      if (createTime) body.schedule_time = new Date(createTime).toISOString();
+      const res = await fetchWithAuth(`/api/campaigns?event_id=${selectedEvent.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      // Extra round beyond the plan's included set - the round must be paid for
+      // first. Surface the price and route to checkout instead of erroring.
+      if (res.status === 402) {
+        const err = await res.json().catch(() => ({} as any));
+        const d = err?.detail || {};
+        if (d.code === 'extra_round_required') {
+          setPurchase({ price: d.price_gross, band: d.band_label, recipients: d.recipients });
+          return;
+        }
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({} as any));
+        throw new Error(typeof err.detail === 'string' ? err.detail : 'Failed to create campaign');
+      }
+      // Refresh the list so the new round appears with server-computed audience size.
+      const listRes = await fetchWithAuth(`/api/campaigns?event_id=${selectedEvent.id}&order_by=schedule_time&page_size=100`);
+      if (listRes.ok) {
+        const data: CampaignFromAPI[] = await listRes.json();
+        const mapped = data.map(mapApiCampaign);
+        setCampaigns(mapped);
+        fetchCampaignStats(mapped);
+      }
+      setCreateOpen(false);
+      showToast(createTime ? 'הסבב נוצר ותוזמן 🎉' : 'הסבב נוצר - אפשר לתזמן אותו מתי שתרצו', 'success');
+    } catch (error) {
+      console.error('Error creating campaign:', error);
+      showToast('שגיאה ביצירת הסבב. נסו שוב.', 'error');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // Buy the extra round: create a paid order, attach the owner's identity, and go
+  // to checkout. On payment the event gets one round credit and the round can be
+  // created (now within the included + paid allowance).
+  const startExtraRoundPurchase = async () => {
+    if (!selectedEvent?.id) return;
+    const nameParts = (user?.username || '').trim().split(/\s+/).filter(Boolean);
+    const firstName = user?.firstName || nameParts[0] || '';
+    const lastName = user?.lastName || nameParts.slice(1).join(' ') || firstName;
+    const phone = user?.phone || '';
+    if (!phone || !firstName) {
+      showToast('כדי לרכוש סבב יש להשלים שם וטלפון בפרופיל.', 'error');
+      return;
+    }
+    setBuying(true);
+    try {
+      const res = await fetchWithAuth('/api/orders/extra-round', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event_id: selectedEvent.id, audience: 'everyone' }),
+      });
+      if (!res.ok) throw new Error('order');
+      const data = await res.json();
+      const oid = data.order_id;
+      saveOrderToken(oid, data.access_token);
+      const idRes = await fetchWithAuth(`/api/orders/${encodeURIComponent(oid)}/identity`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...orderAuthHeaders(oid) },
+        body: JSON.stringify({ first_name: firstName, last_name: lastName, phone, email: user?.email || '' }),
+      });
+      if (!idRes.ok) throw new Error('identity');
+      localStorage.setItem('pending_order_id', String(oid));
+      navigate(`/payment?orderId=${encodeURIComponent(oid)}`);
+    } catch {
+      showToast('שגיאה בפתיחת התשלום. נסו שוב.', 'error');
+      setBuying(false);
     }
   };
 
@@ -749,13 +923,31 @@ function Messages() {
     }
   };
 
-  const handleChangeTemplate = (campaign: Campaign) => {
-    // Open the campaign if it's not expanded
-    if (expandedCampaignId !== campaign.id) {
-      setExpandedCampaignId(campaign.id);
+  // Inline custom message editing (no popup) - "create custom like in the wizard".
+  const openCustom = (campaign: Campaign) => {
+    const tpl = commTemplate(catalog, campaign);
+    const isCustom = campaign.template && !catalog.templates.find(t => t.id === campaign.template);
+    // Pre-fill with REAL event values only: guest-scope tokens ({{guest_name}},
+    // {{rsvp_link}}…) must stay as placeholders in the saved text, otherwise every
+    // guest would receive the literal sample name and a dead link. The worker
+    // substitutes them per guest at send time.
+    setCustomText(isCustom ? campaign.template : (tpl ? renderBody(tpl.body, getEventOnlyVariables()) : ''));
+    setCustomFor(campaign.id);
+  };
+  const saveCustom = async () => {
+    if (!customFor) return;
+    const id = customFor;
+    setUpdating(id);
+    try {
+      const r = await fetchWithAuth(`/api/campaigns/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ template: customText }) });
+      if (!r.ok) throw new Error('failed');
+      setCampaigns(prev => prev.map(c => (c.id === id ? { ...c, template: customText } : c)));
+      setCustomFor(null);
+    } catch {
+      showToast('שגיאה בשמירת ההודעה', 'error');
+    } finally {
+      setUpdating(null);
     }
-    // Toggle template selection
-    setSelectingTemplateFor(selectingTemplateFor === campaign.id ? null : campaign.id);
   };
 
   const handleTemplateSelect = async (campaign: Campaign, templateId: string) => {
@@ -787,13 +979,32 @@ function Messages() {
     }
   };
 
-  // Group campaigns
-  const pastCampaigns = filteredCampaigns.filter(c => isPast(c));
-  const upcomingCampaigns = filteredCampaigns.filter(c => !isPast(c));
+  // Single chronological timeline (earliest → latest; undated last).
+  const timelineCampaigns = [...filteredCampaigns].sort((a, b) => {
+    const ta = a.scheduleTime ? new Date(a.scheduleTime).getTime() : Number.POSITIVE_INFINITY;
+    const tb = b.scheduleTime ? new Date(b.scheduleTime).getTime() : Number.POSITIVE_INFINITY;
+    return ta - tb;
+  });
+
+  // Shared timeline action-button styles.
+  // gap + RTL-correct icon spacing so the startIcon never overlaps the label.
+  const tlBtnBase = { borderRadius: 1.5, px: 1.75, py: 0.6, fontSize: '0.8125rem', fontWeight: 600, textTransform: 'none' as const, gap: 0.5, '& .MuiButton-startIcon': { marginRight: 0, marginLeft: 0 } };
+  const tlBtn = {
+    primary: { ...tlBtnBase, bgcolor: 'primary.main', color: 'white', '&:hover': { bgcolor: 'primary.dark' }, '&:disabled': { bgcolor: 'action.disabled', color: 'white' } },
+    neutral: { ...tlBtnBase, bgcolor: 'action.hover', color: 'text.primary', '&:hover': { bgcolor: 'action.selected' }, '&:disabled': { bgcolor: 'action.disabledBackground', color: 'text.disabled' } },
+    warn: { ...tlBtnBase, border: '1px solid', borderColor: 'warning.main', color: 'warning.dark', bgcolor: 'transparent', '&:hover': { bgcolor: alpha(theme.palette.warning.main, 0.1), borderColor: 'warning.dark' } },
+    danger: { ...tlBtnBase, border: '1px solid', borderColor: 'error.main', color: 'error.main', bgcolor: 'transparent', '&:hover': { bgcolor: alpha(theme.palette.error.main, 0.08), borderColor: 'error.dark' } },
+  };
   
   // Calculate statistics
   const totalCampaigns = campaigns.length;
   const totalSent = campaigns.filter(c => c.status === 'sent').length; // number of campaigns that were sent
+  const scheduledCount = campaigns.filter(c => c.status === 'scheduled').length;
+  // Days until the next future communication (for the info strip).
+  const nextUpcoming = campaigns
+    .filter(c => c.scheduleTime && new Date(c.scheduleTime).getTime() > Date.now())
+    .sort((a, b) => new Date(a.scheduleTime!).getTime() - new Date(b.scheduleTime!).getTime())[0];
+  const nextInDays = nextUpcoming ? Math.max(0, Math.ceil((new Date(nextUpcoming.scheduleTime!).getTime() - Date.now()) / 86400000)) : null;
   // אחוז מענה = אורחים שאישרו או דחו (בשני המקרים הגיבו) מתוך סה"כ מוזמנים
   const responseRate = stats && stats.total > 0 
     ? Math.round(((stats.approved + stats.declined) / stats.total) * 100)
@@ -807,12 +1018,39 @@ function Messages() {
     return Math.round(((campaign.readCount ?? 0) / sentCount) * 100);
   };
 
+  // Summary-strip metrics.
+  const sentList = campaigns.filter(c => c.status === 'sent');
+  const completed = sentList.length;
+  const journeyPct = totalCampaigns > 0 ? Math.round((completed / totalCampaigns) * 100) : 0;
+  const avgReadRate = sentList.length ? Math.round(sentList.reduce((a, c) => a + getCampaignReadRate(c), 0) / sentList.length) : 0;
+  const totalGuests = (stats?.total && stats.total > 0) ? stats.total : Math.max(0, ...campaigns.map(c => c.recipientCount || 0));
+  // Count only confirmed deliveries; planned recipients are not "reached".
+  const guestsReached = Math.max(0, ...sentList.map(c => c.sentCount ?? 0));
+  // Only claim measured analytics when at least one sent campaign has real
+  // delivery stats - otherwise the strip must show "-", not a fake 0.
+  const hasAnyDeliveryStats = sentList.some(c => c.sentCount != null);
+
+  const primary = theme.palette.primary.main;
+
   if (campaignsLoading) {
     return (
-      <Box sx={{ p: { xs: 2, sm: 4 }, direction: 'rtl' }}>
-        <Skeleton variant="text" width="40%" height={60} sx={{ mb: 2 }} />
-        <Skeleton variant="rectangular" height={200} sx={{ mb: 2, borderRadius: 2 }} />
-        <Skeleton variant="rectangular" height={200} sx={{ mb: 2, borderRadius: 2 }} />
+      <Box sx={{ maxWidth: '72rem', mx: 'auto', px: { xs: 2, sm: 4 }, py: { xs: 3, sm: 6 }, direction: 'rtl' }}>
+        <Skeleton variant="text" width={140} height={20} sx={{ mb: 2 }} />
+        <Skeleton variant="text" width="45%" height={72} sx={{ mb: 2, borderRadius: 1 }} />
+        <Skeleton variant="text" width="70%" height={24} />
+        <Skeleton variant="text" width="60%" height={24} sx={{ mb: 4 }} />
+        <Stack direction="row" spacing={5} sx={{ mb: 6 }}>
+          {[0, 1, 2].map((i) => <Skeleton key={i} variant="text" width={64} height={48} />)}
+        </Stack>
+        {[0, 1, 2].map((i) => (
+          <Stack key={i} direction="row" spacing={1.5} sx={{ mb: 3 }}>
+            <Skeleton variant="circular" width={40} height={40} />
+            <Box sx={{ flex: 1 }}>
+              <Skeleton variant="text" width="30%" height={18} />
+              <Skeleton variant="text" width="55%" height={28} />
+            </Box>
+          </Stack>
+        ))}
       </Box>
     );
   }
@@ -826,1065 +1064,301 @@ function Messages() {
   }
 
   return (
-    <Box 
-      sx={{ 
-        maxWidth: '64rem',
-        mx: 'auto',
-        px: { xs: 2, sm: 4 },
-        py: { xs: 3, sm: 6 },
-        pb: { xs: 24, sm: 6 },
-        direction: 'rtl',
-      }}
-    >
-      {/* Header Card with Description */}
-      <Paper
-        elevation={0}
-        sx={{
-          background: `linear-gradient(to bottom right, ${alpha(theme.palette.primary.main, 0.1)}, ${alpha(theme.palette.secondary.main, 0.1)})`,
-          border: '1px solid',
-          borderColor: alpha(theme.palette.primary.main, 0.2),
-          borderRadius: 3,
-          p: 3,
-          mb: 3,
-        }}
-      >
-        <Stack direction="row" spacing={2} alignItems="flex-start">
-          <Box
-            sx={{
-              bgcolor: alpha(theme.palette.background.paper, 0.8),
-              backdropFilter: 'blur(10px)',
-              borderRadius: '50%',
-              p: 1.5,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <SendIcon sx={{ fontSize: 24, color: 'primary.main' }} />
+    <Box sx={{ direction: 'rtl', pb: { xs: 20, sm: 0 } }}>
+      {/* Compact action row (no large page title) */}
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+        <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'text.primary' }}>קמפיינים</Typography>
+        <Button
+          startIcon={<PlusIcon sx={{ fontSize: 18 }} />}
+          variant="contained"
+          disableElevation
+          onClick={openCreate}
+          sx={{ borderRadius: 1.5, px: 2, py: 0.65, fontWeight: 600, fontSize: '0.85rem', textTransform: 'none', boxShadow: 'none', bgcolor: 'primary.main', gap: 0.5, '& .MuiButton-startIcon': { marginRight: 0, marginLeft: 0 }, '&:hover': { bgcolor: 'primary.dark', boxShadow: 'none' } }}
+        >
+          סבב חדש
+        </Button>
+      </Stack>
+
+      {/* Summary strip - one surface, meaningful sections, Stripe-style */}
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'stretch', border: '1px solid', borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper', mb: 3 }}>
+        {([
+          (
+            <>
+              <StripLabel>סבבים</StripLabel>
+              <Typography sx={{ fontSize: 22, fontWeight: 700, lineHeight: 1.1, color: 'text.primary' }}>{totalCampaigns}</Typography>
+            </>
+          ),
+          (
+            <>
+              <StripLabel>הבא בתור</StripLabel>
+              {nextUpcoming ? (<>
+                <Typography sx={{ fontSize: 15, fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }} noWrap>{nextUpcoming.name}</Typography>
+                <Typography variant="caption" sx={{ color: 'primary.main', fontWeight: 600 }}>{inDaysLabel(nextInDays ?? 0)}</Typography>
+              </>) : (<Typography sx={{ fontSize: 15, fontWeight: 700, color: 'text.secondary' }}>אין</Typography>)}
+            </>
+          ),
+          (
+            <>
+              <StripLabel>התקדמות</StripLabel>
+              <Typography sx={{ fontSize: 15, fontWeight: 700, color: 'text.primary', mb: 0.5 }}>{completed} / {totalCampaigns} הושלמו</Typography>
+              <LinearProgress variant="determinate" value={journeyPct} sx={{ height: 5, borderRadius: 99, bgcolor: alpha(primary, 0.12), '& .MuiLinearProgress-bar': { bgcolor: primary, borderRadius: 99 } }} />
+            </>
+          ),
+          (
+            <>
+              <StripLabel>שיעור קריאה ממוצע</StripLabel>
+              <Typography sx={{ fontSize: 22, fontWeight: 700, lineHeight: 1.1, color: 'text.primary' }}>{hasAnyDeliveryStats ? `${avgReadRate}%` : '-'}</Typography>
+            </>
+          ),
+          (
+            <>
+              <StripLabel>אורחים שנחשפו</StripLabel>
+              <Typography sx={{ fontSize: 22, fontWeight: 700, lineHeight: 1.1, color: 'text.primary' }}>
+                {hasAnyDeliveryStats ? (
+                  <>{guestsReached}<Typography component="span" sx={{ fontSize: 15, fontWeight: 500, color: 'text.secondary' }}> / {totalGuests}</Typography></>
+                ) : '-'}
+              </Typography>
+            </>
+          ),
+        ]).map((content, i) => (
+          <Box key={i} sx={{ flex: { xs: '1 1 45%', md: '1 1 0' }, minWidth: 0, px: { xs: 2, sm: 2.5 }, py: 1.75, borderInlineStart: i === 0 ? 'none' : '1px solid', borderColor: 'divider' }}>
+            {content}
           </Box>
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="h5" sx={{ fontWeight: 700, color: 'text.primary', mb: 1 }}>
-              עמוד קמפיינים
-            </Typography>
-            <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.7 }}>
-              עמוד הקמפיינים מאפשר לך לנהל את סבבי ההודעות שנשלחים לאורחים לאורך חיי האירוע – מההזמנה הראשונית ועד לתזכורות ועדכונים חשובים.
-      </Typography>
-          </Box>
-        </Stack>
-      </Paper>
-
-      {/* Statistics Cards */}
-      <Grid container spacing={1.5} sx={{ mb: 3 }}>
-        <Grid item xs={4}>
-          <Paper
-            elevation={0}
-            sx={{
-              bgcolor: alpha(theme.palette.background.paper, 0.8),
-              backdropFilter: 'blur(10px)',
-              border: '1px solid',
-              borderColor: alpha(theme.palette.primary.main, 0.2),
-              borderRadius: 3,
-              p: 2,
-              textAlign: 'center',
-            }}
-          >
-            <Typography variant="h4" sx={{ fontWeight: 700, color: 'primary.main', mb: 0.5 }}>
-              {totalCampaigns}
-      </Typography>
-            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-              קמפיינים
-                </Typography>
-          </Paper>
-        </Grid>
-        <Grid item xs={4}>
-          <Paper
-            elevation={0}
-            sx={{
-              bgcolor: alpha(theme.palette.background.paper, 0.8),
-              backdropFilter: 'blur(10px)',
-              border: '1px solid',
-              borderColor: alpha(theme.palette.info.main, 0.2),
-              borderRadius: 3,
-              p: 2,
-              textAlign: 'center',
-            }}
-          >
-            <Typography variant="h4" sx={{ fontWeight: 700, color: 'info.main', mb: 0.5 }}>
-              {totalSent}
-                </Typography>
-            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-              נשלחו
-                </Typography>
-          </Paper>
-        </Grid>
-        <Grid item xs={4}>
-          <Paper
-            elevation={0}
-            sx={{
-              bgcolor: alpha(theme.palette.background.paper, 0.8),
-              backdropFilter: 'blur(10px)',
-              border: '1px solid',
-              borderColor: alpha(theme.palette.success.main, 0.2),
-              borderRadius: 3,
-              p: 2,
-              textAlign: 'center',
-            }}
-          >
-            <Typography variant="h4" sx={{ fontWeight: 700, color: 'success.main', mb: 0.5 }}>
-              {responseRate}%
-            </Typography>
-            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-              אחוז מענה
-            </Typography>
-          </Paper>
-          </Grid>
-      </Grid>
-
-      {/* Create Campaign Button */}
-          <Button
-        fullWidth
-        variant="contained"
-        startIcon={<PlusIcon />}
-        sx={{
-          background: `linear-gradient(to right, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-          color: 'white',
-          height: 56,
-          fontSize: '1rem',
-          fontWeight: 500,
-          borderRadius: 3,
-          boxShadow: `0 10px 30px ${alpha(theme.palette.primary.main, 0.2)}`,
-          mb: 3,
-          '&:hover': {
-            background: `linear-gradient(to right, ${theme.palette.primary.dark}, ${theme.palette.secondary.dark})`,
-            boxShadow: `0 10px 30px ${alpha(theme.palette.primary.main, 0.3)}`,
-          },
-          '& .MuiButton-startIcon': {
-            marginRight: 0,
-            marginLeft: 0.5,
-          },
-        }}
-      >
-        הוסף סבב הודעות
-          </Button>
-
-      {/* My Campaigns Section */}
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary', mb: 2, px: 0.5 }}>
-          הקמפיינים שלי
-      </Typography>
-
-        <Stack spacing={2}>
-          {/* Past Campaigns (Sent) */}
-          {pastCampaigns.map((campaign) => {
-            const statusColors = getStatusColor(campaign);
-            const readRate = getCampaignReadRate(campaign);
-            return (
-              <Paper
-                key={campaign.id}
-                elevation={0}
-                sx={{
-                  p: 1,
-                  backgroundColor: alpha(theme.palette.background.paper, 0.8),
-                  backdropFilter: 'blur(10px)',
-                  border: '1px solid',
-                  borderColor: alpha(theme.palette.primary.main, 0.2),
-                  borderRadius: 3,
-                  transition: 'all 0.3s',
-                  '&:hover': {
-                    boxShadow: `0 10px 30px ${alpha(theme.palette.primary.main, 0.15)}`,
-                  },
-                }}
-              >
-                <Stack direction="row" spacing={2} alignItems="flex-start">
-                  <Box
-                    sx={{
-                      borderRadius: 2,
-                      p: 1.5,
-                      background: `linear-gradient(to bottom right, ${alpha(theme.palette.primary.main, 0.1)}, ${alpha(theme.palette.secondary.main, 0.1)})`,
-                    }}
-                  >
-                    <CheckCircleIcon sx={{ fontSize: 24, color: 'success.main' }} />
-                  </Box>
-                  <Box
-                    sx={{
-                      flex: 1,
-                      minWidth: 0,
-                    }}
-                  >
-                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start"  sx={{ mb: 1 }}>
-                      <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                        {campaign.name}
-                      </Typography>
-                  <Chip
-                        label={getStatusLabel(campaign)}
-                        size="small"
-                        sx={{
-                          bgcolor: statusColors.bg,
-                          color: statusColors.color,
-                          border: '1px solid',
-                          borderColor: statusColors.color,
-                          fontWeight: 500,
-                        }}
-                      />
-                    </Stack>
-                    <Stack direction="row" spacing={2} sx={{ mb: 2, flexWrap: 'wrap' }}>
-                      <Stack direction="row" spacing={0.5} alignItems="center">
-                        <CalendarIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                          {campaign.scheduleTime ? new Date(campaign.scheduleTime).toLocaleDateString('he-IL') : 'לא מתוזמן'}
-                        </Typography>
-                      </Stack>
-                      <Stack direction="row" spacing={0.5} alignItems="center">
-                        <PeopleIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                          {campaign.recipientCount} נשלח ל
-                        </Typography>
-                      </Stack>
-                      {campaign.status === 'sent' && campaign.recipientCount > 0 && (
-                        <Stack direction="row" spacing={0.5} alignItems="center">
-                          <BarChartIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-                          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                            {readRate}% ראו
-                          </Typography>
-                        </Stack>
-                      )}
-                    </Stack>
-                    <Box sx={{ mt: 1.5 }}>
-                      <Box
-                        sx={{
-                          height: 8,
-                          bgcolor: alpha(theme.palette.divider, 0.5),
-                          borderRadius: '999px',
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <Box
-                          sx={{
-                            height: '100%',
-                            width: `${readRate}%`,
-                            background: `linear-gradient(to right, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-                            borderRadius: '999px',
-                            transition: 'width 0.5s',
-                          }}
-                        />
-                      </Box>
-                    </Box>
-                  </Box>
-                  <IconButton
-                    size="small"
-                    onClick={() => {
-                      if (campaign.status !== 'sent') {
-                        handleToggleExpand(campaign.id);
-                      }
-                    }}
-                    sx={{
-                      flexShrink: 0,
-                      transform: expandedCampaignId === campaign.id ? 'rotate(90deg)' : 'rotate(0deg)',
-                      transition: 'transform 0.2s',
-                      '&:hover': {
-                        bgcolor: alpha(theme.palette.primary.main, 0.1),
-                      },
-                    }}
-                  >
-                    <ChevronRightIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
-                  </IconButton>
-                </Stack>
-                {/* Expanded content */}
-                {expandedCampaignId === campaign.id && campaign.status !== 'sent' && (
-                  <Box
-                    sx={{
-                      pt: 2,
-                      borderTop: '1px solid',
-                      borderColor: 'divider',
-                    }}
-                  >
-                    {/* Template selection gallery */}
-                    {selectingTemplateFor === campaign.id ? (() => {
-                      // Match by template id first, then by campaign name / campaignLabel
-                      const currentTemplate = templates.find(t => t.id === campaign.template || t.id === campaign.name);
-                      const campaignLabel = currentTemplate?.campaignLabel || campaign.name;
-                      let campaignTemplates = templates.filter(t => t.campaignLabel === campaignLabel);
-                      const templateVariables = getTemplateVariables();
-                      const currentTemplateId = campaign.template || campaign.name;
-
-                      // If no templates in same group, show all templates so user can always change
-                      if (campaignTemplates.length === 0) {
-                        campaignTemplates = [...templates];
-                      }
-
-                      return (
-                        <Box sx={{ mt: 2 }}>
-                          <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 600, color: 'text.primary' }}>
-                            בחר תבנית
-                          </Typography>
-                          <Box
-                            sx={{
-                              display: 'flex',
-                              gap: 2,
-                              overflowX: 'auto',
-                              overflowY: 'hidden',
-                              pb: 2,
-                              mx: -0.5,
-                              px: 0.5,
-                              width: '100%',
-                              maxWidth: '100%',
-                              scrollSnapType: 'x proximity',
-                              WebkitOverflowScrolling: 'touch',
-                              touchAction: 'pan-x',
-                              minHeight: 280,
-                              '&::-webkit-scrollbar': {
-                                height: 8,
-                              },
-                              '&::-webkit-scrollbar-track': {
-                                bgcolor: alpha(theme.palette.primary.main, 0.1),
-                                borderRadius: 3,
-                              },
-                              '&::-webkit-scrollbar-thumb': {
-                                bgcolor: alpha(theme.palette.primary.main, 0.3),
-                                borderRadius: 3,
-                                '&:hover': {
-                                  bgcolor: alpha(theme.palette.primary.main, 0.5),
-                                },
-                              },
-                              scrollbarWidth: 'thin',
-                            }}
-                          >
-                            {campaignTemplates.map((template) => {
-                              const isSelected = template.id === currentTemplateId;
-                              const isDefault = template.isDefault === true;
-                              
-                              return (
-                                <Paper
-                                  key={template.id}
-                                  variant="outlined"
-                                  onClick={() => handleTemplateSelect(campaign, template.id)}
-                                  sx={{
-                                    p: 1.5,
-                                    cursor: updating === campaign.id ? 'default' : 'pointer',
-                                    borderWidth: isSelected ? 2 : 1,
-                                    borderColor: isSelected ? 'primary.main' : isDefault ? 'success.main' : 'divider',
-                                    bgcolor: isSelected ? 'primary.main' + '08' : isDefault ? 'success.main' + '05' : 'transparent',
-                                    transition: 'all 0.2s ease',
-                                    minWidth: 240,
-                                    width: 240,
-                                    flexShrink: 0,
-                                    scrollSnapAlign: 'start',
-                                    position: 'relative',
-                                    opacity: updating === campaign.id ? 0.6 : 1,
-                                    '&:hover': {
-                                      borderColor: updating === campaign.id ? undefined : 'primary.main',
-                                      bgcolor: updating === campaign.id ? undefined : 'primary.main' + '05',
-                                    },
-                                  }}
-                                >
-                                  {isDefault && (
-                                    <Chip
-                                      label="ברירת מחדל"
-                                      size="small"
-                                      color="success"
-                                      sx={{
-                                        position: 'absolute',
-                                        top: 8,
-                                        left: 8,
-                                        fontSize: '10px',
-                                        height: 20,
-                                        zIndex: 1,
-                                      }}
-                                    />
-                                  )}
-                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1, flexDirection: 'row-reverse', direction: 'rtl' }}>
-                                    <Typography variant="body2" fontWeight={600} sx={{ textAlign: 'right', direction: 'rtl', flex: 1, fontSize: '0.8125rem' }}>
-                                      {template.name}
-                                    </Typography>
-                                    {isSelected && (
-                                      <Chip
-                                        label="נבחר"
-                                        size="small"
-                                        color="primary"
-                                        sx={{ height: 20, fontSize: '0.7rem', ml: 1 }}
-                                      />
-                                    )}
-                                  </Box>
-                                  
-                                  {/* WhatsApp preview */}
-                                  <Box
-                                    sx={{
-                                      bgcolor: '#ece5dd',
-                                      p: 1,
-                                      borderRadius: 1,
-                                      minHeight: 100,
-                                      display: 'flex',
-                                      flexDirection: 'column',
-                                      justifyContent: 'flex-end',
-                                    }}
-                                  >
-                                    <WhatsAppBubble template={template} variables={templateVariables} />
-                                  </Box>
-                                </Paper>
-                              );
-                            })}
-                          </Box>
-                          <Button
-                            variant="text"
-                            onClick={() => setSelectingTemplateFor(null)}
-                            sx={{ mt: 1, color: 'text.secondary' }}
-                          >
-                            ביטול
-                          </Button>
-                        </Box>
-                      );
-                    })() : (
-                      /* Action buttons - Filter style */
-                      <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
-                        <Button
-                          onClick={() => handleSendNow(campaign)}
-                          disabled={updating === campaign.id}
-                          sx={{
-                            borderRadius: 3,
-                            px: 2.5,
-                            py: 0.75,
-                            fontSize: '0.875rem',
-                            fontWeight: 500,
-                            textTransform: 'none',
-                            bgcolor: 'primary.main',
-                            color: 'white',
-                            border: 'none',
-                            '&:hover': {
-                              bgcolor: 'primary.dark',
-                            },
-                            '&:disabled': {
-                              bgcolor: 'action.disabled',
-                              color: 'white',
-                            },
-                          }}
-                        >
-                          שלח עכשיו
-                        </Button>
-                        <Button
-                          onClick={() => handleChangeTemplate(campaign)}
-                          disabled={updating === campaign.id}
-                          sx={{
-                            borderRadius: 3,
-                            px: 2.5,
-                            py: 0.75,
-                            fontSize: '0.875rem',
-                            fontWeight: 500,
-                            textTransform: 'none',
-                            bgcolor: 'action.hover',
-                            color: 'text.primary',
-                            border: 'none',
-                            '&:hover': {
-                              bgcolor: 'action.selected',
-                            },
-                            '&:disabled': {
-                              bgcolor: 'action.disabledBackground',
-                              color: 'text.disabled',
-                            },
-                          }}
-                        >
-                          שנה תבנית
-                        </Button>
-                        <Button
-                          onClick={() => handleDelete(campaign)}
-                          disabled={updating === campaign.id}
-                          sx={{
-                            borderRadius: 3,
-                            px: 2.5,
-                            py: 0.75,
-                            fontSize: '0.875rem',
-                            fontWeight: 500,
-                            textTransform: 'none',
-                            border: '1px solid',
-                            borderColor: 'error.main',
-                            bgcolor: 'transparent',
-                            color: 'error.main',
-                            '&:hover': {
-                              bgcolor: alpha(theme.palette.error.main, 0.08),
-                              borderColor: 'error.dark',
-                            },
-                            '&:disabled': {
-                              borderColor: 'action.disabled',
-                              color: 'text.disabled',
-                              bgcolor: 'transparent',
-                            },
-                          }}
-                        >
-                          מחק
-                        </Button>
-                      </Stack>
-                    )}
-                  </Box>
-                )}
-              </Paper>
-            );
-          })}
-
-          {/* Upcoming Campaigns */}
-          {upcomingCampaigns.map((campaign) => {
-            const statusColors = getStatusColor(campaign);
-            const isNextCampaign = isNext(campaign, filteredCampaigns);
-            const isPaused = campaign.status === 'paused';
-            const isLoading = updating === campaign.id;
-
-            return (
-              <Paper
-                key={campaign.id}
-                elevation={0}
-                sx={{
-                  p: 2.5,
-                  backgroundColor: isNextCampaign
-                    ? alpha(theme.palette.primary.main, 0.1)
-                    : alpha(theme.palette.background.paper, 0.8),
-                  backdropFilter: 'blur(10px)',
-                  border: '1px solid',
-                  borderColor: isNextCampaign 
-                    ? alpha(theme.palette.primary.main, 0.5)
-                    : alpha(theme.palette.primary.main, 0.2),
-                  borderRadius: 3,
-                  boxShadow: isNextCampaign
-                    ? `0 10px 30px ${alpha(theme.palette.primary.main, 0.25)}, 0 0 0 2px ${alpha(theme.palette.primary.main, 0.2)}`
-                    : 'none',
-                  transition: 'all 0.3s',
-                  position: 'relative',
-                  '&:hover': {
-                    boxShadow: isNextCampaign
-                      ? `0 10px 30px ${alpha(theme.palette.primary.main, 0.3)}, 0 0 0 2px ${alpha(theme.palette.primary.main, 0.3)}`
-                      : `0 10px 30px ${alpha(theme.palette.primary.main, 0.15)}`,
-                  },
-                }}
-              >
-                {isNextCampaign && (
-                  <Box
-                    sx={{
-                      mb: 1.5,
-                      bgcolor: alpha(theme.palette.background.paper, 0.8),
-                      backdropFilter: 'blur(10px)',
-                      px: 1.5,
-                      py: 0.75,
-                      borderRadius: '999px',
-                      width: 'fit-content',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 0.5,
-                    }}
-                  >
-                    <SparklesIcon sx={{ fontSize: 16, color: 'primary.main' }} />
-                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'primary.main' }}>
-                      הקמפיין הבא בתור
-                    </Typography>
-                  </Box>
-                )}
-                {isLoading && (
-                  <Box
-                    sx={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      backgroundColor: alpha(theme.palette.background.paper, 0.8),
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderRadius: 3,
-                      zIndex: 1,
-                    }}
-                  >
-                    <CircularProgress size={40} />
-                  </Box>
-                )}
-                <Stack direction="row" spacing={0.5} alignItems="flex-start">
-                  <Box
-                    sx={{
-                      borderRadius: 2,
-                      p: 1.5,
-                      background: isNextCampaign
-                        ? `linear-gradient(to bottom right, ${alpha(theme.palette.primary.main, 0.2)}, ${alpha(theme.palette.secondary.main, 0.2)})`
-                        : `linear-gradient(to bottom right, ${alpha(theme.palette.primary.main, 0.1)}, ${alpha(theme.palette.secondary.main, 0.1)})`,
-                    }}
-                  >
-                    {campaign.status === 'sent' ? (
-                      <CheckCircleIcon sx={{ fontSize: 24, color: 'success.main' }} />
-                    ) : campaign.status === 'scheduled' ? (
-                      <SendIcon sx={{ fontSize: 24, color: 'info.main' }} />
-                    ) : (
-                      <ClockIcon sx={{ fontSize: 24, color: 'primary.main' }} />
-                    )}
-                  </Box>
-                  <Box
-                    sx={{
-                      flex: 1,
-                      minWidth: 0,
-                      pr: { xs: 1, sm: 1 }, // keep text away from right purple square
-                    }}
-                  >
-                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} sx={{ mb: 0.5 }}>
-                      <Typography variant="h6" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                        {campaign.name}
-                      </Typography>
-                      <Chip
-                        label={getStatusLabel(campaign)}
-                        size="small"
-                        sx={{
-                          bgcolor: statusColors.bg,
-                          color: statusColors.color,
-                          border: '1px solid',
-                          borderColor: statusColors.color,
-                          fontWeight: 500,
-                        }}
-                      />
-                    </Stack>
-                    {/* Short meta description under title: date + recipients */}
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        color: 'primary.main',
-                        fontWeight: 500,
-                        mb: 1.5,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.75,
-                        direction: 'rtl',
-                        textAlign: 'right',
-                      }}
-                    >
-                      <span>
-                        📅{' '}
-                        {campaign.scheduleTime
-                          ? new Date(campaign.scheduleTime).toLocaleDateString('he-IL')
-                          : 'לא מתוזמן'}
-                      </span>
-                      <span>·</span>
-                      <span>
-                        👥 {campaign.recipientCount} יישלח ל
-                      </span>
-                    </Typography>
-                    {/* WhatsApp-style message preview - only when expanded (both mobile and desktop) */}
-                    {expandedCampaignId === campaign.id && (
-                      <Box
-                        sx={{
-                          bgcolor: '#ece5dd',
-                          borderRadius: '7.5px',
-                          p: 1,
-                          mb: 2,
-                          maxWidth: '90%',
-                          mr: 'auto',
-                        }}
-                      >
-                        <CampaignMessagePreview 
-                          campaignName={campaign.name}
-                          campaignTemplate={campaign.template}
-                          variables={getTemplateVariables()} 
-                        />
-                      </Box>
-                    )}
-                    {/* Extra meta row was here; info moved under title for cleaner layout */}
-                  </Box>
-                  <IconButton
-                    size="small"
-                    onClick={() => {
-                      if (campaign.status !== 'sent') {
-                        handleToggleExpand(campaign.id);
-                      }
-                    }}
-                    sx={{
-                      flexShrink: 0,
-                      transform: expandedCampaignId === campaign.id ? 'rotate(90deg)' : 'rotate(0deg)',
-                      transition: 'transform 0.2s',
-                      '&:hover': {
-                        bgcolor: alpha(theme.palette.primary.main, 0.1),
-                      },
-                    }}
-                  >
-                    <ChevronRightIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
-                  </IconButton>
-                </Stack>
-                {/* Expanded content */}
-                {expandedCampaignId === campaign.id && campaign.status !== 'sent' && (
-                  <Box
-                    sx={{
-                      mt: 2,
-                      pt: 2,
-                      borderTop: '1px solid',
-                      borderColor: 'divider',
-                    }}
-                  >
-                    {selectingTemplateFor === campaign.id ? (() => {
-                      const currentTemplate = templates.find(t => t.id === campaign.template || t.id === campaign.name);
-                      const campaignLabel = currentTemplate?.campaignLabel || campaign.name;
-                      let campaignTemplates = templates.filter(t => t.campaignLabel === campaignLabel);
-                      const templateVariables = getTemplateVariables();
-                      const currentTemplateId = campaign.template || campaign.name;
-                      if (campaignTemplates.length === 0) campaignTemplates = [...templates];
-                      return (
-                        <Box sx={{ mt: 2 }}>
-                          <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 600, color: 'text.primary' }}>
-                            בחר תבנית
-                          </Typography>
-                          <Box
-                            sx={{
-                              display: 'flex',
-                              gap: 2,
-                              overflowX: 'auto',
-                              overflowY: 'hidden',
-                              pb: 2,
-                              mx: -0.5,
-                              px: 0.5,
-                              width: '100%',
-                              maxWidth: '100%',
-                              scrollSnapType: 'x proximity',
-                              WebkitOverflowScrolling: 'touch',
-                              touchAction: 'pan-x',
-                              minHeight: 280,
-                              '&::-webkit-scrollbar': { height: 8 },
-                              '&::-webkit-scrollbar-track': { bgcolor: alpha(theme.palette.primary.main, 0.1), borderRadius: 3 },
-                              '&::-webkit-scrollbar-thumb': { bgcolor: alpha(theme.palette.primary.main, 0.3), borderRadius: 3 },
-                              scrollbarWidth: 'thin',
-                            }}
-                          >
-                            {campaignTemplates.map((template) => {
-                              const isSelected = template.id === currentTemplateId;
-                              const isDefault = template.isDefault === true;
-                              return (
-                                <Paper
-                                  key={template.id}
-                                  variant="outlined"
-                                  onClick={() => handleTemplateSelect(campaign, template.id)}
-                                  sx={{
-                                    p: 1.5,
-                                    cursor: updating === campaign.id ? 'default' : 'pointer',
-                                    borderWidth: isSelected ? 2 : 1,
-                                    borderColor: isSelected ? 'primary.main' : isDefault ? 'success.main' : 'divider',
-                                    bgcolor: isSelected ? 'primary.main' + '08' : isDefault ? 'success.main' + '05' : 'transparent',
-                                    minWidth: 240,
-                                    width: 240,
-                                    flexShrink: 0,
-                                    scrollSnapAlign: 'start',
-                                    '&:hover': { borderColor: updating === campaign.id ? undefined : 'primary.main', bgcolor: updating === campaign.id ? undefined : 'primary.main' + '05' },
-                                  }}
-                                >
-                                  {isDefault && <Chip label="ברירת מחדל" size="small" color="success" sx={{ position: 'absolute', top: 8, left: 8, fontSize: '10px', height: 20, zIndex: 1 }} />}
-                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1, flexDirection: 'row-reverse', direction: 'rtl' }}>
-                                    <Typography variant="body2" fontWeight={600} sx={{ textAlign: 'right', direction: 'rtl', flex: 1, fontSize: '0.8125rem' }}>{template.name}</Typography>
-                                    {isSelected && <Chip label="נבחר" size="small" color="primary" sx={{ height: 20, fontSize: '0.7rem', ml: 1 }} />}
-                                  </Box>
-                                  <Box sx={{ bgcolor: '#ece5dd', p: 1, borderRadius: 1, minHeight: 100, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-                                    <WhatsAppBubble template={template} variables={templateVariables} />
-                                  </Box>
-                                </Paper>
-                              );
-                            })}
-                          </Box>
-                          <Button variant="text" onClick={() => setSelectingTemplateFor(null)} sx={{ mt: 1, color: 'text.secondary' }}>
-                            ביטול
-                          </Button>
-                        </Box>
-                      );
-                    })() : (
-                    <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
-                      <Button
-                        onClick={() => handleSendNow(campaign)}
-                        disabled={isLoading}
-                        sx={{
-                          borderRadius: 3,
-                          px: 2.5,
-                          py: 0.75,
-                          fontSize: '0.875rem',
-                          fontWeight: 500,
-                          textTransform: 'none',
-                          bgcolor: 'primary.main',
-                          color: 'white',
-                          border: 'none',
-                          '&:hover': {
-                            bgcolor: 'primary.dark',
-                          },
-                          '&:disabled': {
-                            bgcolor: 'action.disabled',
-                            color: 'white',
-                          },
-                        }}
-                      >
-                        שלח עכשיו
-                      </Button>
-                      <Button
-                        onClick={() => handleChangeTemplate(campaign)}
-                        disabled={isLoading}
-                        sx={{
-                          borderRadius: 3,
-                          px: 2.5,
-                          py: 0.75,
-                          fontSize: '0.875rem',
-                          fontWeight: 500,
-                          textTransform: 'none',
-                          bgcolor: 'action.hover',
-                          color: 'text.primary',
-                          border: 'none',
-                          '&:hover': {
-                            bgcolor: 'action.selected',
-                          },
-                          '&:disabled': {
-                            bgcolor: 'action.disabledBackground',
-                            color: 'text.disabled',
-                          },
-                        }}
-                      >
-                        שנה תבנית
-                      </Button>
-                      {campaign.status === 'paused' ? (
-                        <Button
-                          onClick={() => handleResume(campaign)}
-                          disabled={isLoading}
-                          sx={{
-                            borderRadius: 3,
-                            px: 2.5,
-                            py: 0.75,
-                            fontSize: '0.875rem',
-                            fontWeight: 500,
-                            textTransform: 'none',
-                            bgcolor: 'action.hover',
-                            color: 'text.primary',
-                            border: 'none',
-                            '&:hover': { bgcolor: 'action.selected' },
-                            '&:disabled': { bgcolor: 'action.disabledBackground', color: 'text.disabled' },
-                          }}
-                        >
-                          המשך
-                        </Button>
-                      ) : (
-                        <Button
-                          onClick={() => handlePause(campaign)}
-                          disabled={isLoading}
-                          sx={{
-                            borderRadius: 3,
-                            px: 2.5,
-                            py: 0.75,
-                            fontSize: '0.875rem',
-                            fontWeight: 500,
-                            textTransform: 'none',
-                            border: '1px solid',
-                            borderColor: 'warning.main',
-                            bgcolor: 'transparent',
-                            color: 'warning.dark',
-                            '&:hover': {
-                              bgcolor: alpha(theme.palette.warning.main, 0.1),
-                              borderColor: 'warning.dark',
-                            },
-                            '&:disabled': {
-                              borderColor: 'action.disabled',
-                              color: 'text.disabled',
-                              bgcolor: 'transparent',
-                            },
-                          }}
-                        >
-                          השהה
-                        </Button>
-                      )}
-                      <Button
-                        onClick={() => handleDelete(campaign)}
-                        disabled={isLoading}
-                        sx={{
-                          borderRadius: 3,
-                          px: 2.5,
-                          py: 0.75,
-                          fontSize: '0.875rem',
-                          fontWeight: 500,
-                          textTransform: 'none',
-                          border: '1px solid',
-                          borderColor: 'error.main',
-                          bgcolor: 'transparent',
-                          color: 'error.main',
-                          '&:hover': {
-                            bgcolor: alpha(theme.palette.error.main, 0.08),
-                            borderColor: 'error.dark',
-                          },
-                          '&:disabled': {
-                            borderColor: 'action.disabled',
-                            color: 'text.disabled',
-                            bgcolor: 'transparent',
-                          },
-                        }}
-                      >
-                        מחק
-                      </Button>
-                    </Stack>
-                    )}
-                  </Box>
-                )}
-              </Paper>
-            );
-          })}
-        </Stack>
+        ))}
       </Box>
 
-      {filteredCampaigns.length === 0 && (
-        <Paper
-          elevation={0}
-          sx={{
-            p: 4,
-            textAlign: 'center',
-            backgroundColor: alpha(theme.palette.background.paper, 0.8),
-            backdropFilter: 'blur(10px)',
-            borderRadius: 3,
-            border: '1px solid',
-            borderColor: alpha(theme.palette.primary.main, 0.2),
-          }}
-        >
-          <Typography variant="body1" color="text.secondary">
-            אין קמפיינים להצגה
-          </Typography>
-        </Paper>
+      {/* The communication journey */}
+      {timelineCampaigns.length === 0 ? (
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', py: 4 }}>
+          <Box sx={{ width: 44, height: 44, flexShrink: 0, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: alpha(primary, 0.1), color: 'primary.main' }}>
+            <SparklesIcon />
+          </Box>
+          <Box>
+            <Typography sx={{ fontSize: 18, fontWeight: 700, color: 'text.primary', mb: 0.5 }}>מסע התקשורת שלכם מתחיל כאן</Typography>
+            <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>צרו את הסבב הראשון ואנחנו נלווה את האורחים באופן אוטומטי לאורך כל הדרך.</Typography>
+            <Button startIcon={<PlusIcon sx={{ fontSize: 18 }} />} variant="contained" disableElevation onClick={openCreate} sx={{ borderRadius: 1.5, px: 2.25, py: 0.75, fontWeight: 600, textTransform: 'none', boxShadow: 'none', bgcolor: 'primary.main', gap: 0.5, '& .MuiButton-startIcon': { marginRight: 0, marginLeft: 0 }, '&:hover': { bgcolor: 'primary.dark' } }}>צרו סבב ראשון</Button>
+          </Box>
+        </Box>
+      ) : (
+        <Box sx={{ position: 'relative' }}>
+          {timelineCampaigns.map((campaign, i) => {
+            const active = (hoveredId ?? selectedId) === campaign.id;
+            const selected = selectedId === campaign.id;
+            const isSent = campaign.status === 'sent';
+            const isPaused = campaign.status === 'paused';
+            const isLoading = updating === campaign.id;
+            const isLast = i === timelineCampaigns.length - 1;
+            const dt = campaign.scheduleTime ? new Date(campaign.scheduleTime) : null;
+            const sc = getStatusColor(campaign);
+            const readRate = getCampaignReadRate(campaign);
+            // Only claim "delivered" when real delivery stats exist; the planned
+            // recipient count must not masquerade as confirmed deliveries.
+            const hasDeliveryStats = campaign.sentCount != null;
+            const delivered = campaign.sentCount ?? campaign.recipientCount ?? 0;
+            const read = campaign.readCount ?? 0;
+            const unread = Math.max(0, delivered - read);
+            // Inline template reselect (like the wizard): the alternatives for this round.
+            const curTpl = commTemplate(catalog, campaign);
+            const isCustomMsg = !!campaign.template && !catalog.templates.find(t => t.id === campaign.template);
+            // Alternatives for this round = the other variants of the same stage -
+            // sendable ones only (never cycle into a template that can't deliver).
+            const group = curTpl ? sendableTemplates.filter(t => t.flow_stage === curTpl.flow_stage) : [];
+            let tplList = group.length ? group : sendableTemplates;
+            // Keep the currently-selected template visible even if it's no longer sendable.
+            if (curTpl && !tplList.some(t => t.id === curTpl.id)) tplList = [curTpl, ...tplList];
+            const curTplIdx = Math.max(0, tplList.findIndex(t => t.id === (campaign.template || campaign.name)));
+            const goTemplate = (dir: number) => {
+              if (!tplList.length) return;
+              const n = (curTplIdx + dir + tplList.length) % tplList.length;
+              handleTemplateSelect(campaign, tplList[n].id);
+            };
+            return (
+              <Box
+                key={campaign.id}
+                role="button"
+                tabIndex={0}
+                aria-expanded={selected}
+                onMouseEnter={() => setHoveredId(campaign.id)}
+                onMouseLeave={() => setHoveredId(null)}
+                onClick={() => setSelectedId(selected ? null : campaign.id)}
+                onKeyDown={(e) => {
+                  // Only the row itself - Enter/Space on the revealed inner buttons must not re-toggle.
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setSelectedId(selected ? null : campaign.id);
+                  }
+                }}
+                sx={{ display: 'flex', gap: { xs: 1.5, sm: 2 }, cursor: 'pointer', position: 'relative', '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2, borderRadius: 1 } }}
+              >
+                {/* Rail: date + node + connecting line (right side in RTL) */}
+                <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
+                  <Box sx={{ width: 46, textAlign: 'left', pt: 0.25 }}>
+                    <Typography sx={{ fontSize: 17, fontWeight: 700, lineHeight: 1, color: active ? 'primary.main' : 'text.primary' }}>
+                      {dt ? dt.toLocaleDateString('he-IL', { day: '2-digit' }) : '-'}
+                    </Typography>
+                    <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>
+                      {dt ? dt.toLocaleDateString('he-IL', { month: 'short' }) : ''}
+                    </Typography>
+                    {dt && <Typography sx={{ fontSize: 11, color: 'text.secondary', mt: 0.25 }}>{dt.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</Typography>}
+                  </Box>
+                  <Box sx={{ position: 'relative', width: 18, display: 'flex', justifyContent: 'center' }}>
+                    {!isLast && <Box sx={{ position: 'absolute', top: 16, bottom: -8, width: 2, bgcolor: 'divider' }} />}
+                    <Box sx={{
+                      position: 'relative', zIndex: 1, width: 12, height: 12, borderRadius: '50%', mt: '4px',
+                      bgcolor: active ? primary : (isSent ? primary : 'background.paper'),
+                      border: '2px solid', borderColor: isSent || active ? primary : alpha(primary, 0.4),
+                      transition: 'all .2s ease',
+                    }} />
+                  </Box>
+                </Box>
+
+                {/* Communication block */}
+                <Box sx={{ flex: 1, minWidth: 0, pb: isLast ? 1 : 3, position: 'relative' }}>
+                  {isLoading && <Box sx={{ position: 'absolute', inset: 0, bgcolor: alpha(theme.palette.background.default, 0.6), display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3 }}><CircularProgress size={26} /></Box>}
+
+                  {/* Quick actions - top-left corner icons (when selected) */}
+                  {selected && !isSent && (
+                    <Box onClick={(e) => e.stopPropagation()} sx={{ position: 'absolute', top: -2, left: 0, display: 'flex', gap: 0.25, zIndex: 4 }}>
+                      {isPaused ? (
+                        <Tooltip title="חידוש"><IconButton size="small" onClick={() => handleResume(campaign)} disabled={isLoading} sx={{ color: 'text.secondary' }}><PlayArrowIcon fontSize="small" /></IconButton></Tooltip>
+                      ) : (
+                        <Tooltip title="השהיה"><IconButton size="small" onClick={() => handlePause(campaign)} disabled={isLoading} sx={{ color: 'text.secondary' }}><PauseIcon fontSize="small" /></IconButton></Tooltip>
+                      )}
+                      <Tooltip title="מחיקה"><IconButton size="small" onClick={() => handleDelete(campaign)} disabled={isLoading} sx={{ color: 'text.secondary', '&:hover': { color: 'error.main' } }}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                    </Box>
+                  )}
+
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, mb: 0.5, pl: selected && !isSent ? 8 : 0 }}>
+                    <Typography sx={{ fontSize: 16, fontWeight: 700, color: 'text.primary' }} noWrap>{campaign.name}</Typography>
+                    <Chip label={getStatusLabel(campaign)} size="small" sx={{ height: 20, fontSize: '0.7rem', fontWeight: 600, bgcolor: alpha(sc.color, 0.12), color: sc.color }} />
+                  </Stack>
+
+                  {isSent ? (
+                    <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: 'wrap', rowGap: 0.5, mb: 1.25 }}>
+                      {hasDeliveryStats ? (
+                        <>
+                          <Stat icon={<CheckCircleIcon sx={{ fontSize: 15, color: 'success.main' }} />} text={`נמסר ל-${delivered}`} />
+                          <Stat icon={<PeopleIcon sx={{ fontSize: 15, color: 'text.secondary' }} />} text={`נקרא ע"י ${read}`} />
+                          <Stat icon={<BarChartIcon sx={{ fontSize: 15, color: 'text.secondary' }} />} text={`שיעור פתיחה ${readRate}%`} />
+                          {unread > 0 && <Stat icon={<ClockIcon sx={{ fontSize: 15, color: 'text.secondary' }} />} text={`${unread} טרם נקראו`} />}
+                        </>
+                      ) : (
+                        <>
+                          <Stat icon={<CheckCircleIcon sx={{ fontSize: 15, color: 'success.main' }} />} text={`${campaign.recipientCount} נמענים מתוכננים`} />
+                          <Stat icon={<ClockIcon sx={{ fontSize: 15, color: 'text.secondary' }} />} text="נתוני מסירה יתעדכנו בקרוב" />
+                        </>
+                      )}
+                    </Stack>
+                  ) : (
+                    <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: 'wrap', rowGap: 0.5, mb: 1.25 }}>
+                      <Stat icon={<PeopleIcon sx={{ fontSize: 15, color: 'text.secondary' }} />} text={`${campaign.recipientCount} נמענים`} />
+                      <Stat icon={<ClockIcon sx={{ fontSize: 15, color: 'text.secondary' }} />} text={dt ? dt.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : 'לא מתוזמן'} />
+                    </Stack>
+                  )}
+
+                  {isSent && hasDeliveryStats && delivered > 0 && (
+                    <Box sx={{ maxWidth: 340, height: 5, borderRadius: 99, bgcolor: alpha(theme.palette.divider, 0.7), overflow: 'hidden', mb: 1.25 }}>
+                      <Box sx={{ height: '100%', width: `${readRate}%`, bgcolor: primary, borderRadius: 99, transition: 'width .6s ease' }} />
+                    </Box>
+                  )}
+
+                  {customFor === campaign.id ? (
+                    /* Inline custom message editor (no popup) */
+                    <Box onClick={(e) => e.stopPropagation()} sx={{ maxWidth: 360 }}>
+                      <TextField multiline minRows={4} fullWidth size="small" value={customText} onChange={(e) => setCustomText(e.target.value)} autoFocus
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, fontSize: 13, direction: 'rtl' } }} />
+                      <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                        <Button onClick={saveCustom} disabled={isLoading} variant="contained" disableElevation sx={tlBtn.primary}>שמירה</Button>
+                        <Button onClick={() => setCustomFor(null)} sx={tlBtn.neutral}>ביטול</Button>
+                      </Stack>
+                    </Box>
+                  ) : (
+                    <MsgPreview catalog={catalog} campaign={campaign} variables={getTemplateVariables()} />
+                  )}
+
+                  {/* Reselect / customise the message inline (like the wizard) */}
+                  {selected && !isSent && customFor !== campaign.id && (
+                    <Stack direction="row" spacing={0.5} alignItems="center" onClick={(e) => e.stopPropagation()} sx={{ mt: 1, maxWidth: 360 }}>
+                      <IconButton size="small" onClick={() => goTemplate(1)} disabled={tplList.length < 2} sx={{ color: 'text.secondary' }}><ChevronRightIcon fontSize="small" /></IconButton>
+                      <Typography variant="caption" sx={{ flex: 1, textAlign: 'center', color: 'text.secondary', fontWeight: 600 }} noWrap>
+                        {isCustomMsg ? 'הודעה מותאמת אישית' : `${tplList[curTplIdx]?.title || 'תבנית'}${tplList.length > 1 ? ` · ${curTplIdx + 1}/${tplList.length}` : ''}`}
+                      </Typography>
+                      <IconButton size="small" onClick={() => goTemplate(-1)} disabled={tplList.length < 2} sx={{ color: 'text.secondary' }}><ChevronLeftIcon fontSize="small" /></IconButton>
+                      <Button onClick={() => openCustom(campaign)} startIcon={<EditIcon sx={{ fontSize: 15 }} />} sx={{ ...tlBtn.neutral, flexShrink: 0 }}>מותאם</Button>
+                    </Stack>
+                  )}
+
+                  {/* Primary actions */}
+                  {selected && !isSent && customFor !== campaign.id && (
+                    <Stack direction="row" spacing={1} onClick={(e) => e.stopPropagation()} sx={{ flexWrap: 'wrap', gap: 1, mt: 1.5 }}>
+                      <Button onClick={() => handleSendNow(campaign)} disabled={isLoading} startIcon={<SendIcon sx={{ fontSize: 16 }} />} sx={tlBtn.primary}>שליחה עכשיו</Button>
+                      <Button onClick={() => handleEditTime(campaign)} disabled={isLoading} startIcon={<AccessTimeIcon sx={{ fontSize: 16 }} />} sx={tlBtn.neutral}>שינוי מועד</Button>
+                    </Stack>
+                  )}
+                </Box>
+              </Box>
+            );
+          })}
+        </Box>
       )}
 
-      {/* What Can You Do Here Card */}
-      <Paper
-        elevation={0}
-        sx={{
-          p: 2.5,
-          backgroundColor: alpha(theme.palette.background.paper, 0.6),
-          backdropFilter: 'blur(10px)',
-          border: '1px solid',
-          borderColor: alpha(theme.palette.primary.main, 0.2),
-          borderRadius: 3,
-          mt: 3,
-        }}
-      >
-        <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary', mb: 2 }}>
-          מה אפשר לעשות כאן?
-        </Typography>
-        <Stack spacing={1.5}>
-          <Stack direction="row" spacing={1.5} alignItems="flex-start">
-            <Box
-              sx={{
-                width: 6,
-                height: 6,
-                borderRadius: '50%',
-                bgcolor: 'primary.main',
-                mt: 0.75,
-                flexShrink: 0,
-              }}
-            />
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-              ליצור קמפיין חדש לשליחת הודעות לאורחים
-            </Typography>
-          </Stack>
-          <Stack direction="row" spacing={1.5} alignItems="flex-start">
-            <Box
-              sx={{
-                width: 6,
-                height: 6,
-                borderRadius: '50%',
-                bgcolor: 'primary.main',
-                mt: 0.75,
-                flexShrink: 0,
-              }}
-            />
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-              לתזמן שליחה מראש (למשל: תזכורת שבוע לפני האירוע)
-            </Typography>
-          </Stack>
-          <Stack direction="row" spacing={1.5} alignItems="flex-start">
-            <Box
-              sx={{
-                width: 6,
-                height: 6,
-                borderRadius: '50%',
-                bgcolor: 'primary.main',
-                mt: 0.75,
-                flexShrink: 0,
-              }}
-            />
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-              לעקוב אחרי סטטוס כל קמפיין – ממתין, נשלח או הושלם
-            </Typography>
-          </Stack>
-          <Stack direction="row" spacing={1.5} alignItems="flex-start">
-            <Box
-              sx={{
-                width: 6,
-                height: 6,
-                borderRadius: '50%',
-                bgcolor: 'primary.main',
-                mt: 0.75,
-                flexShrink: 0,
-              }}
-            />
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-              לראות אילו אורחים קיבלו את ההודעה ואילו עדיין לא הגיבו
-            </Typography>
-          </Stack>
-        </Stack>
-      </Paper>
 
-      {/* Edit Dialog */}
+      {/* Edit-time Dialog */}
       <ResponsiveDialog
         open={editDialogOpen}
         onClose={() => {
           if (!saving) {
             setEditDialogOpen(false);
             setEditingCampaign(null);
-            setEditType(null);
           }
         }}
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>
-          {editType === 'time' ? 'שינוי זמן שליחה' : 'עריכת הודעה'}
-        </DialogTitle>
+        <DialogTitle sx={{ fontWeight: 700, pb: 0.5 }}>מתי לשלוח?</DialogTitle>
         <DialogContent>
-          <Stack spacing={3} sx={{ mt: 1 }}>
-            {editType === 'time' ? (
-              <>
-                <Alert severity="info">
-                  שים לב: שינוי הזמן ישפיע על כל המוזמנים. הקמפיין יישלח בזמן החדש שתבחר.
-                </Alert>
-              <TextField
-                  type="datetime-local"
-                  label="תאריך ושעת שליחה"
-                  value={editedTime}
-                  onChange={(e) => setEditedTime(e.target.value)}
-                fullWidth
-                  InputLabelProps={{ shrink: true }}
-                  disabled={saving}
-              />
-                {editingCampaign && (
-                  <Typography variant="body2" color="text.secondary">
-                    זמן נוכחי: {editingCampaign.scheduleTime ? new Date(editingCampaign.scheduleTime).toLocaleString('he-IL') : 'לא מתוזמן'}
-                  </Typography>
-                )}
-              </>
-            ) : (
-              <>
-                <Alert severity="info">
-                  שים לב: שינוי ההודעה ישפיע על כל המוזמנים. הקמפיין יישלח עם התוכן החדש.
-                </Alert>
-                <TextField
-                  label="תוכן ההודעה"
-                  multiline
-                  rows={6}
-                  value={editedMessage}
-                  onChange={(e) => setEditedMessage(e.target.value)}
-                  fullWidth
-                  disabled={saving}
-                />
-              </>
+          <Stack spacing={2.5} sx={{ mt: 1 }}>
+            <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
+              בחרו את המועד שבו הסבב יישלח לאורחים. אפשר לעדכן בכל רגע כל עוד ההודעות טרם יצאו.
+            </Typography>
+            <TextField
+              type="datetime-local"
+              label="תאריך ושעת שליחה"
+              value={editedTime}
+              onChange={(e) => setEditedTime(e.target.value)}
+              fullWidth
+              InputLabelProps={{ shrink: true }}
+              disabled={saving}
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
+            />
+            {editingCampaign?.status === 'paused' && (
+              <Alert severity="warning">
+                הסבב מושהה - גם אחרי שינוי המועד הוא לא יישלח עד שתחדשו אותו.
+              </Alert>
+            )}
+            {editingCampaign && (
+              <Typography variant="body2" color="text.secondary">
+                זמן נוכחי: {editingCampaign.scheduleTime ? new Date(editingCampaign.scheduleTime).toLocaleString('he-IL') : 'לא מתוזמן'}
+              </Typography>
             )}
           </Stack>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => {
             setEditDialogOpen(false);
             setEditingCampaign(null);
-            setEditType(null);
-          }} disabled={saving}>
+          }} disabled={saving} sx={{ borderRadius: 1.5, textTransform: 'none', color: 'text.secondary' }}>
             ביטול
           </Button>
           <Button
             variant="contained"
+            disableElevation
             onClick={saveEdit}
-            disabled={saving || (editType === 'time' ? !editedTime : !editedMessage)}
+            disabled={saving || !editedTime}
+            sx={{ borderRadius: 1.5, textTransform: 'none', fontWeight: 600, px: 2.5, bgcolor: 'primary.main', '&:hover': { bgcolor: 'primary.dark' } }}
           >
-            {saving ? <CircularProgress size={20} /> : 'שמור שינויים'}
+            {saving ? <CircularProgress size={20} /> : 'שמירת המועד'}
           </Button>
         </DialogActions>
       </ResponsiveDialog>
@@ -1901,7 +1375,7 @@ function Messages() {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>
+        <DialogTitle sx={{ fontWeight: 700 }}>
           שליחה מיידית
         </DialogTitle>
         <DialogContent>
@@ -1925,10 +1399,11 @@ function Messages() {
                     mr: 'auto',
                   }}
                 >
-                  <CampaignMessagePreview 
+                  <CampaignMessagePreview
+                    catalog={catalog}
                     campaignName={sendNowCampaign.name}
                     campaignTemplate={sendNowCampaign.template}
-                    variables={getTemplateVariables()} 
+                    variables={getTemplateVariables()}
                   />
                 </Box>
               <Typography variant="body2" color="text.secondary">
@@ -1969,7 +1444,7 @@ function Messages() {
 
       {/* Delete confirmation */}
       <ResponsiveDialog open={deleteTarget !== null} onClose={() => setDeleteTarget(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>מחיקת סבב</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 700 }}>מחיקת סבב</DialogTitle>
         <DialogContent>
           <Typography>
             האם למחוק את הסבב "{deleteTarget?.name}"? לא ניתן לבטל פעולה זו.
@@ -1979,6 +1454,137 @@ function Messages() {
           <Button onClick={() => setDeleteTarget(null)}>ביטול</Button>
           <Button color="error" variant="contained" onClick={confirmDelete}>
             מחק
+          </Button>
+        </DialogActions>
+      </ResponsiveDialog>
+
+      {/* New round creation */}
+      <ResponsiveDialog open={createOpen} onClose={() => !creating && setCreateOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>סבב חדש</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2.5} sx={{ mt: 1 }}>
+            {/* Step 1 - pick the STAGE (save-the-date / invitation / reminder / …). */}
+            <FormControl fullWidth size="small">
+              <InputLabel id="create-stage-label">שלב בתקשורת</InputLabel>
+              <Select
+                labelId="create-stage-label"
+                label="שלב בתקשורת"
+                value={createStage}
+                onChange={(e) => applyCreateStage(e.target.value as string)}
+              >
+                {stagesForCreate.map((sid) => (
+                  <MenuItem key={sid} value={sid}>{stageTitle(sid)}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            {/* Step 2 - pick the template within that stage. */}
+            <FormControl fullWidth size="small" disabled={!createStage}>
+              <InputLabel id="create-template-label">תבנית ההודעה</InputLabel>
+              <Select
+                labelId="create-template-label"
+                label="תבנית ההודעה"
+                value={createTemplateId}
+                onChange={(e) => handleCreateTemplateChange(e.target.value as string)}
+              >
+                {/* Only deliverable templates for the chosen stage. */}
+                {templatesForCreateStage(createStage).map((t) => (
+                  <MenuItem key={t.id} value={t.id}>{t.title}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <TextField
+              size="small"
+              fullWidth
+              label="שם הסבב"
+              value={createName}
+              onChange={(e) => setCreateName(e.target.value)}
+            />
+            {/* Image-header templates require an image. */}
+            {createNeedsImage && (
+              <Box>
+                <input
+                  ref={createImageInputRef}
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  onChange={(e) => { uploadCreateImage(e.target.files?.[0]); e.target.value = ''; }}
+                />
+                <Stack direction="row" spacing={1.5} alignItems="center">
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<ImageIcon sx={{ fontSize: 18 }} />}
+                    onClick={() => createImageInputRef.current?.click()}
+                    disabled={uploadingImage}
+                    sx={{ fontWeight: 600 }}
+                  >
+                    {uploadingImage ? 'מעלה…' : createImageUrl ? 'החלפת תמונה' : 'העלאת תמונה'}
+                  </Button>
+                  <Typography variant="caption" color={createImageUrl ? 'success.main' : 'text.secondary'}>
+                    {createImageUrl ? 'תמונה נבחרה ✓' : 'התבנית הזו כוללת תמונה בראש ההודעה - חובה להעלות אחת.'}
+                  </Typography>
+                </Stack>
+              </Box>
+            )}
+            <TextField
+              size="small"
+              fullWidth
+              type="datetime-local"
+              label="מועד שליחה (לא חובה)"
+              InputLabelProps={{ shrink: true }}
+              value={createTime}
+              onChange={(e) => setCreateTime(e.target.value)}
+              helperText="בלי מועד, הסבב יישמר כטיוטה ותוכלו לתזמן או לשלוח אותו מתי שתרצו."
+            />
+            {createTemplateObj ? (
+              <Box>
+                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.75 }}>כך ההודעה תיראה לאורחים:</Typography>
+                <WhatsAppBubble template={createTemplateObj} variables={getTemplateVariables()} imageUrl={createImageUrl || undefined} />
+              </Box>
+            ) : null}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreateOpen(false)} disabled={creating}>ביטול</Button>
+          <Button
+            variant="contained"
+            onClick={confirmCreate}
+            disabled={creating || !createName.trim() || !createTemplateId || (createNeedsImage && !createImageUrl)}
+            sx={{ backgroundColor: 'primary.main', '&:hover': { backgroundColor: 'primary.dark' } }}
+          >
+            {creating ? 'יוצר…' : 'יצירת סבב'}
+          </Button>
+        </DialogActions>
+      </ResponsiveDialog>
+
+      {/* Paid extra-round purchase */}
+      <ResponsiveDialog open={!!purchase} onClose={() => !buying && setPurchase(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>סבב נוסף</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mb: 1.5 }}>
+            כל הסבבים הכלולים בחבילה שלכם נוצלו. אפשר להוסיף סבב נוסף בתשלום חד-פעמי.
+          </Typography>
+          {purchase && (
+            <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 0.5 }}>
+              <Typography sx={{ fontWeight: 800, fontSize: '1.6rem', color: 'primary.main' }}>₪{purchase.price}</Typography>
+              <Typography variant="body2" color="text.secondary">· {purchase.band}</Typography>
+            </Box>
+          )}
+          {purchase && (
+            <Typography variant="caption" color="text.secondary">
+              המחיר נקבע לפי מספר הנמענים בסבב ({purchase.recipients}). לאחר התשלום הסבב ייווצר וניתן יהיה לתזמן ולשלוח.
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPurchase(null)} disabled={buying}>ביטול</Button>
+          <Button
+            variant="contained"
+            onClick={startExtraRoundPurchase}
+            disabled={buying}
+            sx={{ backgroundColor: 'primary.main', '&:hover': { backgroundColor: 'primary.dark' } }}
+          >
+            {buying ? 'מעבר לתשלום…' : 'המשך לתשלום'}
           </Button>
         </DialogActions>
       </ResponsiveDialog>

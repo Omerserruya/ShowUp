@@ -62,11 +62,15 @@ export default function AssistantWidget() {
     setMessages((m) => [...m, { from: 'user', text }]);
     setSending(true);
     try {
-      // Best-effort: use the assistant endpoint if available.
+      // Multi-turn context: send the recent transcript (minus the canned greeting).
+      const history = messages
+        .slice(1)
+        .slice(-20)
+        .map((m) => ({ role: m.from === 'user' ? 'user' : 'assistant', content: m.text }));
       const res = await fetchWithAuth('/api/assistant', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, event_id: selectedEvent?.id }),
+        body: JSON.stringify({ message: text, event_id: selectedEvent?.id, history }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -87,21 +91,19 @@ export default function AssistantWidget() {
   return (
     <>
       {/* Floating trigger */}
-      <Fab
-        color="primary"
-        aria-label="עוזר חכם"
-        onClick={() => setOpen(true)}
-        sx={{
-          position: 'fixed',
-          bottom: { xs: 96, md: 28 },
-          left: { xs: 16, md: 28 },
-          zIndex: (t) => t.zIndex.appBar + 2,
-          background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-          '&:hover': { background: `linear-gradient(135deg, ${theme.palette.primary.dark}, ${theme.palette.secondary.dark})` },
-        }}
-      >
-        <AutoAwesomeIcon />
-      </Fab>
+      <Box sx={{ position: 'fixed', bottom: { xs: 96, md: 28 }, left: { xs: 16, md: 28 }, zIndex: (t) => t.zIndex.appBar + 2 }}>
+        <Fab
+          color="primary"
+          aria-label="עוזר חכם"
+          onClick={() => setOpen(true)}
+          sx={{
+            background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+            '&:hover': { background: `linear-gradient(135deg, ${theme.palette.primary.dark}, ${theme.palette.secondary.dark})` },
+          }}
+        >
+          <AutoAwesomeIcon />
+        </Fab>
+      </Box>
 
       <Drawer
         anchor="left"

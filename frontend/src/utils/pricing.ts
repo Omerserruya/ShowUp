@@ -31,10 +31,14 @@ export interface PriceBreakdown {
   taxRate: number;
   /** VAT-inclusive total BEFORE any discount. Defaults to `gross`. */
   subtotal?: number;
-  /** VAT-inclusive coupon discount applied (0 when none). */
+  /** VAT-inclusive negative adjustment applied (0 when none) - a coupon discount
+   * on a new purchase, or the current-plan credit on an upgrade. */
   discount?: number;
-  /** Applied coupon code, if any. */
+  /** Applied coupon code, if any (new purchase only). */
   couponCode?: string;
+  /** How to label the negative line: 'coupon' (new purchase), 'credit' (upgrade)
+   * or 'none'. Drives the summary row copy. */
+  adjustmentKind?: 'coupon' | 'credit' | 'none';
 }
 
 const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;

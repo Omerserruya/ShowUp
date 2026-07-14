@@ -93,8 +93,29 @@ services:
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - AWS_REGION=${AWS_REGION}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      # Upload hardening (image-only): per-file cap + per-event object quota.
+      - UPLOAD_MAX_BYTES=${UPLOAD_MAX_BYTES:-10485760}
+      - UPLOAD_MAX_PER_EVENT=${UPLOAD_MAX_PER_EVENT:-30}
       - AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID}
       - AUB_SERVICE_URL=${BACKEND_PROTOCOL}://${AUB_SERVICE_HOST}:${AUB_SERVICE_PORT}
+      # Shared secret for core<->aub internal calls (member lookup, venue owner
+      # provisioning + welcome, partner-coupon lookup). Without it every internal
+      # call is rejected 403 and the B2B2C flow silently degrades.
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+      # Meta WhatsApp template MANAGEMENT (Admin publishing API). WA_WABA_ID is the
+      # WhatsApp Business Account id; absent creds => safe simulation mode.
+      - WA_API_B=${WA_API_B:-}
+      - WA_WABA_ID=${WA_WABA_ID:-}
+      - WA_APP_ID=${WA_APP_ID:-}
+      - WA_GRAPH_VERSION=${WA_GRAPH_VERSION:-v22.0}
+      # Used by the Admin preview endpoint to resolve image/link variables.
+      - MEDIA_S3_URL=${MEDIA_S3_URL:-}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
+      # AI event assistant (POST /assistant). Absent key => 503 with a clear message.
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ASSISTANT_MODEL=${ASSISTANT_MODEL:-gpt-4o-mini}
+      # Paid extra-round price bands [[max_recipients, price],…] (null = "and above").
+      - EXTRA_ROUND_PRICES_JSON=${EXTRA_ROUND_PRICES_JSON:-}
     depends_on:
       - postgres
       - rabbitmq
@@ -119,19 +140,37 @@ services:
       - REDIS_HOST=${REDIS_HOST}
       - REDIS_PORT=${REDIS_PORT}
       - JWT_SECRET=${JWT_SECRET}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
       - JWT_EXP_SECONDS=${JWT_EXP_SECONDS}
       - OTP_TTL_SEC=${OTP_TTL_SEC}
       - OTP_QUEUE_NAME=${OTP_QUEUE_NAME}
+      # Outbound WhatsApp queue (venue welcome message publishes here).
+      - OUTPOST_QUEUE_NAME=${OUTPOST_QUEUE_NAME}
       - CORE_SERVICE_URL=${BACKEND_PROTOCOL}://${CORE_SERVICE_HOST}:${CORE_SERVICE_PORT}
       # iCount PayPage payments - set ICOUNT_API_TOKEN in .env to enable.
       - ICOUNT_BASE_URL=${ICOUNT_BASE_URL:-}
       - ICOUNT_API_TOKEN=${ICOUNT_API_TOKEN:-}
+      # PayPages by PURCHASE TYPE (new purchase supports coupons; upgrade is credit-
+      # only). ICOUNT_PAYPAGE_ID is the legacy single-PayPage fallback for both.
+      - ICOUNT_NEW_PURCHASE_PAYPAGE_ID=${ICOUNT_NEW_PURCHASE_PAYPAGE_ID:-}
+      - ICOUNT_UPGRADE_PAYPAGE_ID=${ICOUNT_UPGRADE_PAYPAGE_ID:-}
       - ICOUNT_PAYPAGE_ID=${ICOUNT_PAYPAGE_ID:-}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
+      # Customer-facing app origin for links in the venue welcome message
+      # (falls back to PUBLIC_BASE_URL when unset).
+      - APP_BASE_URL=${APP_BASE_URL:-}
       # VAT rate (fraction) for the before-VAT price breakdown. Default 0.18.
       - TAX_RATE=${TAX_RATE:-0.18}
       # Coupon catalogue as JSON, e.g. {"WELCOME10":{"type":"percent","value":10}}. Empty = coupons disabled.
       - COUPONS_JSON=${COUPONS_JSON:-}
+      # B2B2C: default venue partner coupon (used when a venue has no per-venue
+      # code). Must be a key in COUPONS_JSON to actually apply a discount.
+      - DEFAULT_VENUE_COUPON=${DEFAULT_VENUE_COUPON:-}
+      # Optional approved Meta template for the venue welcome (first-contact
+      # business-initiated messages require a template). Falls back to free_text.
+      - WA_VENUE_WELCOME_TEMPLATE=${WA_VENUE_WELCOME_TEMPLATE:-}
+      # Approved MARKETING template sent by the landing-page WhatsApp demo button.
+      - WA_DEMO_TEMPLATE_NAME=${WA_DEMO_TEMPLATE_NAME:-showup_whatsapp_demo}
     depends_on:
       - postgres
       - rabbitmq
@@ -143,6 +182,8 @@ services:
     environment:
       - WA_API_B=${WA_API_B}
       - WA_PHONE_ID=${WA_PHONE_ID}
+      - CAMPAIGN_WA_PHONE_ID=${CAMPAIGN_WA_PHONE_ID:-}
+      - ASSISTANT_WA_PHONE_ID=${ASSISTANT_WA_PHONE_ID:-}
       - RABBITMQ_HOST=${RABBITMQ_HOST}
       - RABBITMQ_PORT=${RABBITMQ_PORT}
       - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
@@ -177,9 +218,43 @@ services:
       - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
       - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
       - CAMPAIGNS_QUEUE=${CAMPAIGNS_QUEUE}
+      - OUTPOST_QUEUE_NAME=${OUTPOST_QUEUE_NAME}
+      - DAILY_SUMMARY_HOUR=${DAILY_SUMMARY_HOUR:-20}
+      - DAILY_SUMMARY_MINUTE=${DAILY_SUMMARY_MINUTE:-0}
+      - DAILY_SUMMARY_TZ=${DAILY_SUMMARY_TZ:-Asia/Jerusalem}
+      - WA_DAILY_SUMMARY_TEMPLATE_NAME=${WA_DAILY_SUMMARY_TEMPLATE_NAME:-daily_summary}
+      - WA_DAILY_SUMMARY_LANG=${WA_DAILY_SUMMARY_LANG:-he}
     depends_on:
       - postgres
       - rabbitmq
+
+  # Global Delivery Planner - owns delivery timing across all events (see prod compose).
+  planner-service:
+    build:
+      context: ./planner-service
+      dockerfile: Dockerfile
+    ports:
+      - ${PLANNER_SERVICE_PORT:-5010}:${PLANNER_SERVICE_PORT:-5010}
+    environment:
+      - PORT=${PLANNER_SERVICE_PORT:-5010}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - META_MESSAGES_PER_SECOND=${META_MESSAGES_PER_SECOND:-80}
+      - META_NEW_CONVERSATIONS_PER_24H=${META_NEW_CONVERSATIONS_PER_24H:-1000}
+      - META_TIER=${META_TIER:-TIER_1K}
+      - META_QUALITY_RATING=${META_QUALITY_RATING:-GREEN}
+      - PLANNER_SAFETY_MARGIN_PERCENT=${PLANNER_SAFETY_MARGIN_PERCENT:-15}
+      - MAX_EARLY_SEND_DAYS=${MAX_EARLY_SEND_DAYS:-5}
+      - MAX_LATE_SEND_DAYS=${MAX_LATE_SEND_DAYS:-2}
+      - PLANNER_INTERVAL_SECONDS=${PLANNER_INTERVAL_SECONDS:-60}
+      - PLANNER_STRATEGY=${PLANNER_STRATEGY:-deterministic}
+      - PLANNER_HORIZON_DAYS=${PLANNER_HORIZON_DAYS:-60}
+      - PLANNER_FLEXIBILITY_JSON=${PLANNER_FLEXIBILITY_JSON:-}
+    depends_on:
+      - postgres
 
   campaign-worker:
     build:
@@ -198,6 +273,8 @@ services:
       - CAMPAIGNS_QUEUE=${CAMPAIGNS_QUEUE}
       - OUTPOST_QUEUE_NAME=${OUTPOST_QUEUE_NAME}
       - MEDIA_S3_URL=${MEDIA_S3_URL}
+      # Public app origin for invitation/RSVP links resolved at send time.
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
     depends_on:
       - postgres
       - rabbitmq
@@ -215,6 +292,7 @@ services:
       # OTP is delivered over WhatsApp via the approved "otp" authentication template.
       - WA_API_B=${WA_API_B}
       - WA_PHONE_ID=${WA_PHONE_ID}
+      - OTP_WA_PHONE_ID=${OTP_WA_PHONE_ID:-}
       - WA_OTP_TEMPLATE_NAME=${WA_OTP_TEMPLATE_NAME:-otp}
       - WA_OTP_LANG=${WA_OTP_LANG:-he}
     depends_on:
@@ -233,6 +311,10 @@ services:
       - REDIS_URL=${REDIS_URL}
       - WEBHOOK_QUEUE=${WEBHOOK_QUEUE_NAME}
       - CONTACT_IMPORT_QUEUE=${CONTACT_IMPORT_QUEUE}
+      # Inbound routing by receiving business number (per-handler phone split).
+      - ASSISTANT_WA_PHONE_ID=${ASSISTANT_WA_PHONE_ID:-}
+      - OTP_WA_PHONE_ID=${OTP_WA_PHONE_ID:-}
+      - ASSISTANT_INBOUND_QUEUE=${ASSISTANT_INBOUND_QUEUE:-assistant_inbound_queue}
       - RABBITMQ_HOST=${RABBITMQ_HOST}
       - RABBITMQ_PORT=${RABBITMQ_PORT}
       - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
@@ -256,9 +338,45 @@ services:
       - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
       - CONTACT_IMPORT_QUEUE=${CONTACT_IMPORT_QUEUE}
       - OUTPOST_QUEUE_NAME=${OUTPOST_QUEUE_NAME}
+      - REDIS_URL=redis://${REDIS_HOST}:${REDIS_PORT}/0
+      # Debounce window for multi-contact shares (seconds).
+      - CONTACT_BATCH_WINDOW_SECONDS=${CONTACT_BATCH_WINDOW_SECONDS:-2}
     depends_on:
       - postgres
       - rabbitmq
+      - redis
+
+  # Owner-facing WhatsApp AI assistant: consumes messages that arrived on the
+  # assistant business number, authorizes by sender phone (event owners only)
+  # and answers via core-service POST /assistant.
+  assistant-worker:
+    build:
+      context: ./assistant-worker
+      dockerfile: Dockerfile
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=${RABBITMQ_PORT}
+      - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
+      # Long assistant calls run inside the consumer callback; a generous
+      # heartbeat keeps the AMQP connection alive meanwhile.
+      - RABBITMQ_HEARTBEAT=300
+      - ASSISTANT_INBOUND_QUEUE=${ASSISTANT_INBOUND_QUEUE:-assistant_inbound_queue}
+      - OUTPOST_QUEUE_NAME=${OUTPOST_QUEUE_NAME}
+      - CONTACT_IMPORT_QUEUE=${CONTACT_IMPORT_QUEUE}
+      - REDIS_URL=redis://${REDIS_HOST}:${REDIS_PORT}/0
+      - CORE_SERVICE_URL=${BACKEND_PROTOCOL}://${CORE_SERVICE_HOST}:${CORE_SERVICE_PORT}
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      - postgres
+      - rabbitmq
+      - redis
+      - core-service
 
   webhook-worker:
     build:

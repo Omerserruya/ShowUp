@@ -15,7 +15,6 @@ from sqlalchemy.orm import Session
 from app.models.models import Account, Membership, Event
 from app.crud import event as event_crud
 from shared.domain.roles import Role, Action, can
-from shared.domain.entitlements import Feature, has_feature
 
 
 def resolve_role(db: Session, event: Optional[Event], user_id: uuid.UUID) -> Optional[Role]:
@@ -34,12 +33,21 @@ def resolve_role(db: Session, event: Optional[Event], user_id: uuid.UUID) -> Opt
             )
             .first()
         )
-        if not membership:
-            return None
-        try:
-            return Role(membership.role)
-        except ValueError:
-            return None
+        if membership:
+            try:
+                return Role(membership.role)
+            except ValueError:
+                pass
+        # Owners-array bridge: the event's own `owners` array always grants OWNER
+        # on THAT specific event, even when the event is bound to an account. This
+        # is what makes the B2B2C venue model safe - a venue Account owns many
+        # events, each owned by a different couple; account membership (held by
+        # the venue admin) grants access across all of them, while each couple is
+        # isolated to their own event via the owners array. Also the legacy bridge
+        # for pre-tenancy single-owner events.
+        if event_crud.is_owner(event, user_id):
+            return Role.OWNER
+        return None
 
     # Legacy bridge: pre-tenancy events use the owners JSON array.
     if event_crud.is_owner(event, user_id):
@@ -61,22 +69,6 @@ def require_event_permission(
     if not can(role, action):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     return role
-
-
-def require_feature(event: Optional[Event], feature: Feature) -> None:
-    """Raise 403 unless the event's plan tier unlocks `feature`.
-
-    This is the plan/tier gate (entitlements), orthogonal to the role gate in
-    `require_event_permission`. Callers that need both should run the role check
-    first (it returns 404 for non-members, avoiding cross-tenant existence leaks),
-    then this. A None event or a legacy/None plan id is treated as fully entitled.
-    """
-    plan_id = getattr(event, "plan_id", None) if event is not None else None
-    if not has_feature(plan_id, feature):
-        raise HTTPException(
-            status_code=403,
-            detail=f"Your plan does not include this feature ({feature.value}). Upgrade to unlock it.",
-        )
 
 
 def ensure_personal_account(db: Session, user_id: uuid.UUID) -> uuid.UUID:

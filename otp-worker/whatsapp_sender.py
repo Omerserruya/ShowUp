@@ -22,7 +22,9 @@ class WhatsAppOTPSender:
 
     def __init__(self):
         self.token = (os.getenv("WA_API_B") or "").strip()
-        self.phone_id = (os.getenv("WA_PHONE_ID") or "").strip()
+        # Dedicated OTP number (per-handler phone split); falls back to the
+        # shared WA_PHONE_ID when no dedicated number is configured.
+        self.phone_id = (os.getenv("OTP_WA_PHONE_ID") or os.getenv("WA_PHONE_ID") or "").strip()
         # Approved authentication template - Hebrew, named "otp".
         self.template_name = os.getenv("WA_OTP_TEMPLATE_NAME", "otp")
         self.language_code = os.getenv("WA_OTP_LANG", "he")

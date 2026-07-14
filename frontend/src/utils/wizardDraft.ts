@@ -14,6 +14,11 @@ export interface WizardDraft {
   activeStep: number;
   selectedPackageId: string;
   orderId: string | null;
+  // Fingerprint (JSON) of the payload `orderId` was created with. The orders API
+  // has no endpoint to update an order's event/campaign body, so on resubmit the
+  // wizard compares against this key and creates a FRESH order when the user went
+  // back and edited - never paying for a stale order.
+  orderPayloadKey: string | null;
   // Stored loosely: these mirror wizard state shapes (EventDetails/EventSubjects/
   // paymentData) but with `date` serialized as an ISO string (Dayjs isn't JSON-safe).
   // Kept as `any` so the wizard can persist its exact state without index-signature
@@ -25,6 +30,10 @@ export interface WizardDraft {
   campaigns: unknown[];
   selectedTemplates: Record<string, string>;
   customMessages: Record<string, string>;
+  // User-authored titles + WhatsApp/Meta validity for custom messages - persisted
+  // alongside the bodies so restore never silently drops an edited title.
+  customTitles: Record<string, string>;
+  customMsgValid: Record<string, boolean>;
   scheduleCustomize: boolean;
   templatesCustomize: boolean;
   nameManuallyEdited: boolean;

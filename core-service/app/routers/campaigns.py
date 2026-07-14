@@ -13,11 +13,114 @@ from app.schemas.schemas import CampaignCreate, CampaignOut, CampaignUpdate
 from app.utils import paginate_params
 from shared.auth.deps import get_current_user_id
 from shared.domain.roles import Action
-from shared.domain.entitlements import Feature
-from app.authz import require_event_permission, require_feature
+from app.authz import require_event_permission
 
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
+
+
+# ---------------------------------------------------------------------------
+# Paid extra rounds
+# ---------------------------------------------------------------------------
+
+def _count_event_campaigns(db: Session, event_id) -> int:
+    from app.models.models import Campaign
+    return int(db.query(Campaign).filter(Campaign.event_id == str(event_id)).count())
+
+
+def _rounds_status(db: Session, event) -> dict:
+    """included / used / allowance / whether the next round is free."""
+    from shared.domain.rounds import included_rounds
+    used = _count_event_campaigns(db, event.id)
+    included = included_rounds(getattr(event, "plan_id", None))
+    allowance = int(getattr(event, "extra_rounds_allowance", 0) or 0)
+    free_total = included + allowance
+    return {
+        "included": included,
+        "allowance": allowance,
+        "used": used,
+        "free_total": free_total,
+        "next_round_free": used < free_total,
+    }
+
+
+def _wa_template_row(db: Session, ref: str) -> Optional[dict]:
+    """db_lookup for resolve_template: fetch a custom event-scoped template by id,
+    shaped like the worker's `wa_templates` row."""
+    try:
+        tid = uuid.UUID(str(ref))
+    except (ValueError, TypeError):
+        return None
+    from app.models.models import WaTemplate
+    t = db.query(WaTemplate).filter(WaTemplate.id == tid).first()
+    if not t:
+        return None
+    return {
+        "id": str(t.id), "flow_stage": t.flow_stage, "components": t.components,
+        "name": t.name, "body": t.body, "language": t.language,
+        "event_type": t.event_type, "visibility": t.visibility, "lifecycle": t.lifecycle,
+    }
+
+
+def _require_deliverable_template(db: Session, template_ref: Optional[str],
+                                  custom_message: Optional[str],
+                                  event_type: Optional[str] = None) -> None:
+    """Reject a campaign whose template cannot actually be delivered. A custom
+    free-text body sends as plain text (no Meta template needed); otherwise the
+    template must resolve to a usable catalog template - one with an approved Meta
+    mapping. Mirrors the worker's resolution (including the event-type variant
+    preference) so we never enqueue a send that will crash at build time."""
+    if custom_message and custom_message.strip():
+        return
+    from shared.domain.messaging import resolve_template
+    tmpl = resolve_template(template_ref, event_type=event_type,
+                            db_lookup=lambda ref: _wa_template_row(db, ref))
+    # Unresolvable refs are left to the worker (may be a stage/variant-addressed
+    # campaign we don't model here); only block a template we CAN resolve and know
+    # is undeliverable.
+    if tmpl is not None and not tmpl.is_usable:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Template '{template_ref}' cannot be delivered yet: it has no approved "
+                f"Meta template mapping. Choose a sendable template or provide a custom message."
+            ),
+        )
+
+
+@router.get("/rounds-status")
+def rounds_status(
+    event_id: uuid.UUID = Query(...),
+    audience: str = Query("everyone"),
+    audience_filter: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Round entitlement for an event + the price of the NEXT (extra) round.
+
+    The Messages "new round" dialog reads this to decide whether creating another
+    round is free (included/paid) or needs a purchase, and what it would cost."""
+    event = event_crud.get_event(db, event_id)
+    require_event_permission(db, event, user_id, Action.CAMPAIGN_READ)
+    status = _rounds_status(db, event)
+    from shared.domain.rounds import extra_round_price, all_bands
+    from app.audience import count_audience
+    import json as _json
+    af = None
+    if audience_filter:
+        try:
+            af = _json.loads(audience_filter)
+        except (ValueError, TypeError):
+            af = None
+    recipients = count_audience(db, event_id, audience, af)
+    price = extra_round_price(recipients)
+    return {
+        **status,
+        "recipients": recipients,
+        "next_round_price_gross": None if status["next_round_free"] else price["price_gross"],
+        "next_round_band_label": price["band_label"],
+        "price_bands": all_bands(),
+    }
 
 
 @router.get("", response_model=list[CampaignOut])
@@ -100,8 +203,6 @@ def create_campaigns(
 
     event = event_crud.get_event(db, normalized_event_id)
     require_event_permission(db, event, user_id, Action.CAMPAIGN_WRITE)
-    # Tier gate: WhatsApp campaigns are excluded from the Free plan.
-    require_feature(event, Feature.WHATSAPP_CAMPAIGNS)
 
     # Build CampaignCreate list with validation
     to_create: List[CampaignCreate] = []
@@ -112,13 +213,39 @@ def create_campaigns(
             item = CampaignCreate(**raw)
             # Force event_id to normalized value (ignore differing values in body)
             item.event_id = normalized_event_id
-            to_create.append(item)
         except ValidationError as e:
             raise HTTPException(status_code=422, detail=e.errors())
+        # Block campaigns whose template can't actually be delivered (no Meta mapping).
+        _require_deliverable_template(db, item.template, item.custom_message,
+                                      event_type=getattr(event, "event_type", None))
+        to_create.append(item)
 
     from app.usage import record_usage
     from shared.domain.enums import UsageMetric
     account_id = getattr(event, "account_id", None)
+
+    # Paid-rounds gate - only the MANUAL single-round path (the Messages "new
+    # round" dialog). Bulk creates (wizard / provisioning of the plan's included
+    # rounds) are exempt so event setup is never blocked. When the event has used
+    # up its included + paid rounds, creating another requires a paid extra-round
+    # order first (the frontend buys one, which bumps extra_rounds_allowance).
+    if len(to_create) == 1:
+        status = _rounds_status(db, event)
+        if not status["next_round_free"]:
+            from shared.domain.rounds import extra_round_price
+            from app.audience import count_audience
+            recipients = count_audience(
+                db, normalized_event_id, to_create[0].audience, to_create[0].audience_filter,
+            )
+            price = extra_round_price(recipients)
+            raise HTTPException(status_code=402, detail={
+                "code": "extra_round_required",
+                "message": "הסבב הזה הוא מעבר למה שכלול בחבילה - יש לרכוש אותו לפני היצירה.",
+                "recipients": recipients,
+                "price_gross": price["price_gross"],
+                "band_label": price["band_label"],
+                **status,
+            })
 
     if len(to_create) == 1:
         try:
@@ -151,6 +278,13 @@ def update_campaign(
         raise HTTPException(status_code=404, detail="Campaign not found")
     
     require_event_permission(db, event_crud.get_event(db, campaign.event_id), user_id, Action.CAMPAIGN_WRITE)
+
+    # If the template is being changed, ensure the new one is actually deliverable.
+    # A free-text campaign (existing custom_message) sends as plain text regardless.
+    if payload.template is not None and payload.template != campaign.template:
+        _event = event_crud.get_event(db, campaign.event_id)
+        _require_deliverable_template(db, payload.template, campaign.custom_message,
+                                      event_type=getattr(_event, "event_type", None))
 
     try:
         campaign = campaign_crud.update_campaign(db, campaign, payload)
@@ -191,8 +325,9 @@ def get_campaign_stats(
     campaign = campaign_crud.get_campaign(db, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
-    
-    require_event_permission(db, event_crud.get_event(db, campaign.event_id), user_id, Action.CAMPAIGN_READ)
+
+    event = event_crud.get_event(db, campaign.event_id)
+    require_event_permission(db, event, user_id, Action.CAMPAIGN_READ)
 
     stats = campaign_crud.get_campaign_stats(db, campaign_id)
     return stats

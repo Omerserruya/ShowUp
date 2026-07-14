@@ -15,8 +15,7 @@ from shared.auth.deps import get_current_user_id
 from shared.domain.roles import Action
 from shared.domain.enums import EventState, TemplateState
 from shared.domain.lifecycle import can_transition_event, is_live
-from shared.domain.entitlements import Feature
-from app.authz import ensure_personal_account, require_event_permission, require_feature
+from app.authz import ensure_personal_account, require_event_permission
 from app.models.models import WaTemplate
 
 
@@ -38,6 +37,7 @@ def list_events(
 ):
     page, page_size = paginate_params(page, page_size)
     items, _ = event_crud.list_events_for_user(db, user_id=user_id, page=page, page_size=page_size, search=search)
+    event_crud.annotate_venue(db, items)
     # FastAPI will serialize using response_model, which uses model_dump(by_alias=True) via our override
     return items
 
@@ -47,6 +47,7 @@ def get_event(event_id: uuid.UUID, db: Session = Depends(get_db), user_id: uuid.
     event = event_crud.get_event(db, event_id)
     if not event or not event_crud.is_owner(event, user_id):
         raise HTTPException(status_code=404, detail="Event not found")
+    event_crud.annotate_venue(db, [event])
     # FastAPI will serialize using response_model, which uses model_dump(by_alias=True) via our override
     return event
 
@@ -61,6 +62,7 @@ def create_event(payload: EventCreate, db: Session = Depends(get_db), user_id: u
     db.add(event)
     db.commit()
     db.refresh(event)
+    event_crud.annotate_venue(db, [event])
     return event
 
 
@@ -70,6 +72,7 @@ def update_event(event_id: uuid.UUID, payload: EventUpdate, db: Session = Depend
     if not event or not event_crud.is_owner(event, user_id):
         raise HTTPException(status_code=404, detail="Event not found or not permitted")
     event = event_crud.update_event(db, event, payload)
+    event_crud.annotate_venue(db, [event])
     # FastAPI will serialize using response_model, which uses model_dump(by_alias=True) via our override
     return event
 
@@ -103,6 +106,7 @@ def transition_event(event_id: uuid.UUID, payload: EventTransitionIn, db: Sessio
     db.add(event)
     db.commit()
     db.refresh(event)
+    event_crud.annotate_venue(db, [event])
     return event
 
 
@@ -146,14 +150,14 @@ def update_invitation(
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """Save the web invitation design. Requires EVENT_WRITE (role) AND the
-    WEB_INVITATION feature (tier)."""
+    (the web invitation is included in every plan)."""
     event = event_crud.get_event(db, event_id)
     require_event_permission(db, event, user_id, Action.EVENT_WRITE)
-    require_feature(event, Feature.WEB_INVITATION)
     event.invitation = payload.model_dump()
     db.add(event)
     db.commit()
     db.refresh(event)
+    event_crud.annotate_venue(db, [event])
     return event
 
 
@@ -165,10 +169,9 @@ def publish_invitation(
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """Publish (or unpublish) the public web invitation, assigning a unique slug
-    on first publish. Requires EVENT_WRITE + WEB_INVITATION."""
+    on first publish. Requires EVENT_WRITE."""
     event = event_crud.get_event(db, event_id)
     require_event_permission(db, event, user_id, Action.EVENT_WRITE)
-    require_feature(event, Feature.WEB_INVITATION)
 
     if payload.published:
         desired = payload.slug or event.public_slug or event.name
@@ -180,6 +183,7 @@ def publish_invitation(
     db.add(event)
     db.commit()
     db.refresh(event)
+    event_crud.annotate_venue(db, [event])
     return event
 
 

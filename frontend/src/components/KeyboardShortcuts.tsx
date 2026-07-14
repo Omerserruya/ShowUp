@@ -24,23 +24,20 @@ const NAV_SHORTCUTS: Record<string, string> = {
   o: '/overview',
   g: '/guests',
   m: '/messages',
-  t: '/templates',
-  e: '/team',
-  b: '/billing',
   s: '/seating',
-  p: '/profile',
+  e: '/settings',
 };
 
 const HELP_GROUPS: { title: string; rows: ShortcutRow[] }[] = [
   {
+    // Labels must match the nav rail 1:1 so the help sheet maps to what users see.
     title: 'ניווט',
     rows: [
-      { keys: ['g', 'ראשי (o)'], label: 'לוח בקרה' },
-      { keys: ['g', 'אורחים (g)'], label: 'רשימת אורחים' },
-      { keys: ['g', 'קמפיינים (m)'], label: 'קמפיינים' },
-      { keys: ['g', 'תבניות (t)'], label: 'תבניות' },
-      { keys: ['g', 'צוות (e)'], label: 'חברי צוות' },
-      { keys: ['g', 'חיוב (b)'], label: 'חבילה וחיוב' },
+      { keys: ['g', 'הבית (o)'], label: 'הבית' },
+      { keys: ['g', 'האורחים (g)'], label: 'האורחים' },
+      { keys: ['g', 'תזכורות (m)'], label: 'תזכורות' },
+      { keys: ['g', 'הושבה (s)'], label: 'הושבה' },
+      { keys: ['g', 'הגדרות (e)'], label: 'הגדרות' },
     ],
   },
   {

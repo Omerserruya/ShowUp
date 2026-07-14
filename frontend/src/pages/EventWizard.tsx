@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
   Box,
   Button,
@@ -23,6 +23,7 @@ import {
   alpha,
 } from '@mui/material';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
+import { saveOrderToken, orderAuthHeaders } from '../utils/orderToken';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CheckIcon from '@mui/icons-material/Check';
 import InventoryIcon from '@mui/icons-material/Inventory';
@@ -53,8 +54,18 @@ import { CampaignSchedule } from '../config/campaigns';
 import { buildAdaptiveTimeline } from '../config/scheduling';
 import { israelTimeToISOUTC } from '../utils/israelTime';
 // CampaignSchedule type is now imported from config/campaigns
-import { selectTemplates, processTemplate, MessageTemplate, BRIT_SECRET_INVITE_LINE, getVariableGroups, CONTENT_BLOCKS } from '../config/templates';
-import { useTemplates } from '../hooks/useTemplates';
+import { useCatalog } from '../hooks/useCatalog';
+import type { MessagingCatalog } from '../hooks/useCatalog';
+import {
+  BRIT_SECRET_INVITE_LINE,
+  CONTENT_BLOCKS,
+  renderBody,
+  variableGroups,
+  buildPreviewValues,
+  templatesForStage,
+  defaultTemplate,
+  eventTypeLabel,
+} from '../config/messaging';
 import CustomMessageEditor from '../components/CustomMessageEditor';
 import { useUser } from '../contexts/UserContext';
 import { countryOptions, normalizePhoneNumber } from '../utils/countryOptions';
@@ -64,6 +75,10 @@ import PhoneIcon from '@mui/icons-material/Phone';
 import { usePlacesAutocomplete } from '../hooks/usePlacesAutocomplete';
 import { saveWizardDraft, loadWizardDraft, clearWizardDraft, draftHasProgress, WizardDraft } from '../utils/wizardDraft';
 import RestoreRoundedIcon from '@mui/icons-material/RestoreRounded';
+
+/** The minimal shape the WhatsApp preview bubble needs - a catalog template or a
+ * custom message both satisfy it, so preview and delivery share one definition. */
+interface PreviewMsg { id: string; title: string; body: string; }
 
 interface Inviter {
   fn: string; // first name
@@ -91,66 +106,54 @@ interface EventDetails {
 
 // Helper function removed - campaigns come from config via getCampaignsForPlan
 
-// Helper function to get variables from event details
-const getTemplateVariables = (eventDetails: EventDetails, inviters: Inviter[], subjects?: EventSubjects): Record<string, string> => {
+// Preview variable values - derived from the ONE catalog (samples overridden by
+// real event details). Keyed by canonical names + legacy tokens, so previews use
+// the same values the worker resolves at send time.
+const getTemplateVariables = (
+  catalog: MessagingCatalog,
+  eventDetails: EventDetails,
+  inviters: Inviter[],
+  subjects?: EventSubjects,
+): Record<string, string> => {
   const inviterName = inviters.length > 0 && (inviters[0].fn || inviters[0].ln)
     ? `${inviters[0].fn} ${inviters[0].ln}`.trim()
     : 'המזמינים';
-
-  // Event-specific subjects (couple / parents / honoree …) for the picker's
-  // "מותאם לאירוע" group. Each falls back to gentle copy so the preview is clean.
-  const couple = subjects ? joinHe(subjects.p1, subjects.p2) : '';
-  const parents = subjects ? joinHe(subjects.parent1, subjects.parent2) : '';
   const brideName = subjects
     ? (subjects.role1 === 'bride' ? subjects.p1 : subjects.role2 === 'bride' ? subjects.p2 : subjects.p1)
     : '';
   const groomName = subjects
     ? (subjects.role1 === 'groom' ? subjects.p1 : subjects.role2 === 'groom' ? subjects.p2 : subjects.p2)
     : '';
-  
-  const eventTypeMap: Record<string, string> = {
-    'wedding': 'חתונה',
-    'brit': 'ברית',
-    'brita': 'בריתה',
-    'bar': 'בר מצווה',
-    'bat': 'בת מצווה',
-    'corporate': 'אירוע עסקי',
-    'birthday': 'יום הולדת',
-    'other': 'אירוע',
-  };
-
-  // Every variable resolves to real, human-friendly text - never a raw {{placeholder}}.
-  // Optional fields (date/time/location) fall back to gentle Hebrew copy so previews
-  // and summaries stay clean even before everything is filled in.
-  return {
-    'שם': 'דוד כהן', // דוגמה - בפועל זה יגיע מהאורח
-    'שם_מזמין': inviterName,
-    'סוג_אירוע': eventTypeMap[eventDetails.type] || 'אירוע',
-    'תאריך': eventDetails.date ? eventDetails.date.format('DD/MM/YYYY') : 'בקרוב',
-    'שעה': eventDetails.time || 'בקרוב',
-    'מיקום': eventDetails.location?.address || eventDetails.location?.name || 'יתעדכן בקרוב',
-    'שם_אירוע': eventDetails.name || 'האירוע שלנו',
-    // Links & counts (server fills real values per guest at send time).
-    'ניווט': 'https://waze.to/ul/show-up',
-    'דף_הזמנה': 'https://show-up.co.il/i/dana-amit',
-    'קישור_אישור': 'https://show-up.co.il/r/9f2k',
-    'כמות_אורחים': '2',
-    // Event-specific
-    'בני_הזוג': couple || 'בני הזוג',
-    'הורים': parents || 'המשפחה',
-    'כלה': brideName?.trim() || 'הכלה',
-    'חתן': groomName?.trim() || 'החתן',
-    'אמא': subjects?.parent1?.trim() || 'האמא',
-    'אבא': subjects?.parent2?.trim() || 'האבא',
-    'רך_נולד': subjects?.honoree?.trim() || 'הרך הנולד',
-    'חוגג': subjects?.honoree?.trim() || 'בעל/ת השמחה',
-    'חברה': subjects?.company?.trim() || 'החברה',
-  };
+  return buildPreviewValues(catalog, {
+    eventName: eventDetails.name || 'האירוע שלנו',
+    eventDate: eventDetails.date ? eventDetails.date.format('DD/MM/YYYY') : 'בקרוב',
+    eventTime: eventDetails.time || 'בקרוב',
+    venue: eventDetails.location?.address || eventDetails.location?.name || 'יתעדכן בקרוב',
+    host: inviterName,
+    // Canonical host label - mirror the worker's delivery logic exactly:
+    // company → couple → "משפחת <שם משפחה>" → raw host, so preview == delivery.
+    hostDisplay:
+      (subjects?.company?.trim()) ||
+      (subjects ? joinHe(subjects.p1, subjects.p2) : '') ||
+      (eventDetails.inviters?.[0]?.ln?.trim() ? `משפחת ${eventDetails.inviters[0].ln.trim()}` : '') ||
+      inviterName,
+    eventTypeName: eventTypeLabel(catalog, eventDetails.type),
+    couple: subjects ? joinHe(subjects.p1, subjects.p2) : '',
+    parents: subjects ? joinHe(subjects.parent1, subjects.parent2) : '',
+    bride: brideName?.trim(),
+    groom: groomName?.trim(),
+    mother: subjects?.parent1?.trim(),
+    father: subjects?.parent2?.trim(),
+    baby: subjects?.honoree?.trim(),
+    celebrant: subjects?.honoree?.trim(),
+    company: subjects?.company?.trim(),
+  });
 };
 
-// WhatsApp message bubble component (received message - always light themed to mimic WhatsApp)
-const WhatsAppBubble = ({ template, variables }: { template: MessageTemplate; variables: Record<string, string> }) => {
-  const processedBody = processTemplate(template, variables);
+// WhatsApp message bubble - renders the catalog template body (the exact copy the
+// worker delivers), not a parallel preview format.
+const WhatsAppBubble = ({ template, variables }: { template: { title?: string; body: string }; variables: Record<string, string> }) => {
+  const processedBody = renderBody(template.body, variables);
   const lines = processedBody.split('\n');
 
   return (
@@ -194,7 +197,7 @@ const WhatsAppBubble = ({ template, variables }: { template: MessageTemplate; va
             display: 'block',
           }}
         >
-          {processTemplate({ ...template, body: template.title }, variables)}
+          {renderBody(template.title, variables)}
         </Typography>
       )}
       {lines.map((line, idx) => (
@@ -213,84 +216,19 @@ const WhatsAppBubble = ({ template, variables }: { template: MessageTemplate; va
           {line || '\u00A0'}
         </Typography>
       ))}
-      {template.cta && (
-        <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid rgba(0,0,0,0.1)' }}>
-          <Typography
-            variant="body2"
-            sx={{
-              color: '#0084ff',
-              fontWeight: 500,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 0.5,
-              justifyContent: 'flex-end',
-            }}
-          >
-            {template.cta.text}
-            {template.cta.link && <span>↗</span>}
-          </Typography>
-        </Box>
-      )}
-      {template.buttons && template.buttons.length > 0 && (
-        <>
-          <Typography
-            variant="caption"
-            sx={{
-              color: 'rgba(0,0,0,0.45)',
-              fontSize: '11px',
-              display: 'flex',
-              justifyContent: 'flex-end',
-              mt: 0.5,
-              mb: 0.5,
-              direction: 'ltr',
-            }}
-          >
-            {new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
-          </Typography>
-          <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid rgba(0,0,0,0.1)', mx: -1.5, px: 1.5 }}>
-            {template.buttons.map((button, idx) => (
-              <Box key={button.id}>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: '#0084ff',
-                    fontWeight: 400,
-                    textAlign: 'center',
-                    py: 0.75,
-                  }}
-                >
-                  {button.text}
-                </Typography>
-                {idx < template.buttons!.length - 1 && (
-                  <Divider 
-                    sx={{ 
-                      borderColor: 'rgba(0,0,0,0.1)',
-                      mx: -1.5, // Negative margin to extend to edges
-                      width: 'calc(100% + 24px)', // Full width including padding
-                    }} 
-                  />
-                )}
-              </Box>
-            ))}
-          </Box>
-        </>
-      )}
-      {!template.buttons && (
-        <Typography
-          variant="caption"
-          sx={{
-            color: 'rgba(0,0,0,0.45)',
-            fontSize: '11px',
-            display: 'flex',
-            justifyContent: 'flex-end',
-            mt: 0.5,
-            direction: 'ltr',
-          }}
-        >
-          {new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
-        </Typography>
-      )}
+      <Typography
+        variant="caption"
+        sx={{
+          color: 'rgba(0,0,0,0.45)',
+          fontSize: '11px',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          mt: 0.5,
+          direction: 'ltr',
+        }}
+      >
+        {new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
+      </Typography>
     </Box>
   );
 };
@@ -304,27 +242,17 @@ const steps = [
   { label: 'תשלום', icon: VerifiedIcon },
 ];
 
-const EVENT_TYPE_LABELS: Record<string, string> = {
-  wedding: 'חתונה',
-  brit: 'ברית',
-  brita: 'בריתה',
-  bar: 'בר מצווה',
-  bat: 'בת מצווה',
-  corporate: 'אירוע עסקי',
-  birthday: 'יום הולדת',
-  other: 'אירוע שלכם',
+// Presentational subtitle copy per event type. The event TYPES themselves (ids,
+// emoji, names) come from the catalog - this is only the wizard's marketing copy.
+const EVENT_TYPE_SUBTITLES: Record<string, string> = {
+  wedding: 'המלצות, הודעות ולוח זמנים מותאמים לחתונה',
+  brit: 'הכול מוכן לרגע המרגש של המשפחה',
+  brita: 'הכול מוכן לרגע המרגש של המשפחה',
+  bar: 'התאמה מלאה לאירוע בר המצווה',
+  bat: 'הודעות ותזכורות שמותאמות למשפחה',
+  corporate: 'ניהול אישורי הגעה מקצועי לאירועים עסקיים',
+  birthday: 'דרך פשוטה לנהל את רשימת המוזמנים',
 };
-
-// The selectable event types shown as cards on the first wizard step.
-const EVENT_TYPES: Array<{ id: string; emoji: string; title: string; subtitle: string }> = [
-  { id: 'wedding', emoji: '💍', title: 'חתונה', subtitle: 'המלצות, הודעות ולוח זמנים מותאמים לחתונה' },
-  { id: 'brit', emoji: '👶', title: 'ברית', subtitle: 'הכול מוכן לרגע המרגש של המשפחה' },
-  { id: 'brita', emoji: '🍼', title: 'בריתה', subtitle: 'הכול מוכן לרגע המרגש של המשפחה' },
-  { id: 'bar', emoji: '🎉', title: 'בר מצווה', subtitle: 'התאמה מלאה לאירוע בר המצווה' },
-  { id: 'bat', emoji: '🎀', title: 'בת מצווה', subtitle: 'הודעות ותזכורות שמותאמות למשפחה' },
-  { id: 'corporate', emoji: '🏢', title: 'אירוע עסקי', subtitle: 'ניהול אישורי הגעה מקצועי לאירועים עסקיים' },
-  { id: 'birthday', emoji: '🎂', title: 'יום הולדת', subtitle: 'דרך פשוטה לנהל את רשימת המוזמנים' },
-];
 
 // A warm, celebratory opener per event type - used across the wizard so a wedding
 // feels different from a brit, and a brit from a business event.
@@ -468,16 +396,21 @@ export default function EventWizard() {
   const splitPhone = (phone: string, fallbackCode: string) => {
     const cleaned = (phone || '').replace(/\s+/g, '');
     if (cleaned.startsWith('+')) {
-      const match = cleaned.match(/^\+(\d{1,4})(.*)$/);
-      if (match) {
-        const code = `+${match[1]}`;
-        let local = match[2];
-        // להצגה למשתמש אנחנו כן רוצים את ה־0 המוביל (למשל 052...)
-        if (code === '+972' && local && !local.startsWith('0')) {
-          local = `0${local}`;
-        }
-        return { code: code || fallbackCode, phone: local };
+      // Match against KNOWN dial codes (longest first) - a greedy \d{1,4} would
+      // steal a digit from the local number (e.g. +972525401686 → code +9725,
+      // dropping the 5). Prefer the detected fallbackCode when it matches.
+      const codes = Array.from(new Set(countryOptions.map((o) => o.dialCode)))
+        .sort((a, b) => b.length - a.length);
+      const code =
+        (fallbackCode && cleaned.startsWith(fallbackCode) && fallbackCode) ||
+        codes.find((c) => cleaned.startsWith(c)) ||
+        fallbackCode;
+      let local = cleaned.slice(code.length);
+      // להצגה למשתמש אנחנו כן רוצים את ה־0 המוביל (למשל 052...)
+      if (code === '+972' && local && !local.startsWith('0')) {
+        local = `0${local}`;
       }
+      return { code: code || fallbackCode, phone: local };
     }
     // Plain local number. Self-heal an IL mobile that arrived without its leading
     // 0 (e.g. from an older session that stored it stripped) so the user always
@@ -546,6 +479,14 @@ export default function EventWizard() {
   const [paymentErrors, setPaymentErrors] = useState<Record<string, string>>({});
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
+  // Fingerprint of the payload the current order was created with. The orders API
+  // cannot update an order's event/campaign body after creation, so when the
+  // wizard state diverges (the user went back and edited) we discard the stale
+  // order and create a fresh one instead of charging for outdated details.
+  const [orderPayloadKey, setOrderPayloadKey] = useState<string | null>(null);
+  // Show the date-picker "required" error only after the user touched the field -
+  // never on a pristine form.
+  const [dateTouched, setDateTouched] = useState(false);
   // Payment step shows a confirmation of the identity we already know; the user
   // flips this to true to edit the prefilled values.
   const [editIdentity, setEditIdentity] = useState(false);
@@ -558,18 +499,23 @@ export default function EventWizard() {
     return draftHasProgress(d) ? d : null;
   });
 
-  // Scalable template architecture: fetch the available templates (public + this
-  // event's private ones) and let the wizard filter them by metadata, instead of
-  // hardcoding a per-campaign list. Falls back to the built-in seed if the backend
-  // template service isn't reachable.
-  const { pool: templatePool } = useTemplates({ eventId: null });
-  // Metadata-driven selection for a campaign label, narrowed to the event type.
-  const templatesForLabel = (label: string): MessageTemplate[] =>
-    selectTemplates(templatePool, { campaignLabel: label, eventType: eventDetails.type });
-  const defaultTemplateForLabel = (label: string): MessageTemplate | undefined => {
-    const matches = templatesForLabel(label);
-    return matches.find((t) => t.isDefault) || matches[0];
-  };
+  // Customize-schedule grid: freeze the row order (by label) while the editor is
+  // open so rows never re-sort and jump under the cursor mid-edit; offsetDrafts
+  // holds in-progress "days" input values that commit only on blur.
+  const [scheduleOrder, setScheduleOrder] = useState<string[] | null>(null);
+  const [offsetDrafts, setOffsetDrafts] = useState<Record<string, string>>({});
+
+  // Single source of truth: the messaging catalog. Templates are selected by the
+  // campaign's canonical flow STAGE, narrowed to the event type - the same catalog
+  // definitions the worker delivers, so the wizard preview cannot diverge.
+  const { catalog } = useCatalog();
+  const templatesFor = (stage?: string) => templatesForStage(catalog, stage, eventDetails.type);
+  const defaultFor = (stage?: string) => defaultTemplate(templatesFor(stage));
+  // Event-type cards for step 1, derived from the catalog (excluding the free-text
+  // "other"); subtitles are wizard copy.
+  const eventTypeCards = catalog.event_types
+    .filter((e) => e.key !== 'other')
+    .map((e) => ({ id: e.key, emoji: e.emoji, title: e.name_he, subtitle: EVENT_TYPE_SUBTITLES[e.key] || '' }));
 
   // Places Autocomplete hook - must be at component level
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
@@ -637,20 +583,58 @@ export default function EventWizard() {
       activeStep,
       selectedPackageId,
       orderId,
+      orderPayloadKey,
       eventDetails: { ...eventDetails, date: eventDetails.date && eventDetails.date.isValid() ? eventDetails.date.toISOString() : null },
       subjects,
       campaigns,
       selectedTemplates,
       customMessages,
+      customTitles,
+      customMsgValid,
       scheduleCustomize,
       templatesCustomize,
       nameManuallyEdited,
       paymentData,
     });
   }, [
-    pendingDraft, activeStep, selectedPackageId, orderId, eventDetails, subjects, campaigns,
-    selectedTemplates, customMessages, scheduleCustomize, templatesCustomize, nameManuallyEdited, paymentData,
+    pendingDraft, activeStep, selectedPackageId, orderId, orderPayloadKey, eventDetails, subjects, campaigns,
+    selectedTemplates, customMessages, customTitles, customMsgValid, scheduleCustomize, templatesCustomize,
+    nameManuallyEdited, paymentData,
   ]);
+
+  // Ignoring the restore banner and simply working is an implicit "start fresh":
+  // once the wizard state diverges from its initial (query-param-derived) values,
+  // dismiss the pending draft so autosave resumes and the new work survives a
+  // refresh. Only user-edited fields are tracked - mount-time effects (account
+  // prefill, Hero inviters, timeline resolution) must not dismiss the banner.
+  const interactionSnapshot = JSON.stringify({
+    activeStep,
+    selectedPackageId,
+    name: eventDetails.name,
+    description: eventDetails.description,
+    type: eventDetails.type,
+    date: eventDetails.date && eventDetails.date.isValid() ? eventDetails.date.toISOString() : null,
+    time: eventDetails.time,
+    location: eventDetails.location,
+    subjects,
+    selectedTemplates,
+    customMessages,
+    customTitles,
+    scheduleCustomize,
+    templatesCustomize,
+    agreedToTerms,
+  });
+  const initialSnapshotRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!pendingDraft) return;
+    if (initialSnapshotRef.current === null) {
+      initialSnapshotRef.current = interactionSnapshot;
+      return;
+    }
+    if (interactionSnapshot !== initialSnapshotRef.current) {
+      setPendingDraft(null);
+    }
+  }, [pendingDraft, interactionSnapshot]);
 
   const restoreDraft = () => {
     const d = pendingDraft;
@@ -668,11 +652,14 @@ export default function EventWizard() {
     setCampaigns(d.campaigns as CampaignSchedule[]);
     setSelectedTemplates(d.selectedTemplates || {});
     setCustomMessages(d.customMessages || {});
+    setCustomTitles(d.customTitles || {});
+    setCustomMsgValid(d.customMsgValid || {});
     setScheduleCustomize(!!d.scheduleCustomize);
     setTemplatesCustomize(!!d.templatesCustomize);
     setNameManuallyEdited(!!d.nameManuallyEdited);
     if (d.paymentData) setPaymentData(d.paymentData as any);
     setOrderId(d.orderId ?? null);
+    setOrderPayloadKey(d.orderPayloadKey ?? null);
     setActiveStep(typeof d.activeStep === 'number' ? d.activeStep : 0);
     setPendingDraft(null);
   };
@@ -693,6 +680,30 @@ export default function EventWizard() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Capture the customize-grid row order once when the editor opens (frozen while
+  // mounted so edits never reorder rows mid-typing); release it when leaving.
+  useEffect(() => {
+    if (activeStep === 2 && scheduleCustomize) {
+      setScheduleOrder((prev) =>
+        prev ?? [...campaigns].sort((a, b) => b.offsetDays - a.offsetDays).map((c) => c.label)
+      );
+    } else {
+      setScheduleOrder(null);
+      setOffsetDrafts((prev) => (Object.keys(prev).length ? {} : prev));
+    }
+  }, [activeStep, scheduleCustomize, campaigns]);
+
+  // Step transitions: return to the top and move focus to the step content so
+  // keyboard/screen-reader users land on the new step, not mid-page.
+  const stepContentRef = useRef<HTMLDivElement | null>(null);
+  const prevStepRef = useRef(activeStep);
+  useEffect(() => {
+    if (prevStepRef.current === activeStep) return;
+    prevStepRef.current = activeStep;
+    window.scrollTo({ top: 0 });
+    stepContentRef.current?.focus({ preventScroll: true });
+  }, [activeStep]);
 
   // Update event details when data comes from Hero (on mount)
   useEffect(() => {
@@ -774,9 +785,9 @@ export default function EventWizard() {
       activeCampaigns.forEach((campaign) => {
         // אם לא נבחרה תבנית לקמפיין הזה, בחר את התבנית הדיפולטית
         if (!updatedTemplates[campaign.label]) {
-          const defaultTemplate = defaultTemplateForLabel(campaign.label);
-          if (defaultTemplate) {
-            updatedTemplates[campaign.label] = defaultTemplate.id;
+          const defTpl = defaultFor(campaign.stage);
+          if (defTpl) {
+            updatedTemplates[campaign.label] = defTpl.id;
           }
         }
       });
@@ -889,13 +900,13 @@ export default function EventWizard() {
         .filter((c) => c.enabled)
         .map((c) => {
           const templateId =
-            selectedTemplates[c.label] || defaultTemplateForLabel(c.label)?.id || null;
+            selectedTemplates[c.label] || defaultFor(c.stage)?.id || null;
           // In secret-name mode the flavor line lives in the composed copy, not in the
           // stored template, so send it as a custom_message to guarantee delivery.
           const customMessage = c.label in customMessages
             ? customMessages[c.label]
             : isSecretInvite(c.label)
-              ? getBaseTemplate(c.label)?.body ?? null
+              ? getBaseTemplate(c)?.body ?? null
               : null;
 
           // scheduled_at: prefer the engine-resolved send time (already compressed to
@@ -920,20 +931,43 @@ export default function EventWizard() {
           };
         });
 
+      const orderBody = {
+        plan: selectedPackageId,
+        event_name: eventDetails.name,
+        event_description: eventDetails.description,
+        event_type: eventDetails.type,
+        // Interpret the chosen date+time as Israel time (same as the free-plan
+        // create path) - a raw local Date drops the chosen hour and can shift
+        // the event a whole day once converted to UTC.
+        event_date: eventDetails.date
+          ? israelTimeToISOUTC(eventDetails.date, eventDetails.time || '00:00')
+          : null,
+        location: eventDetails.location,
+        inviters: eventDetails.inviters,
+        // Persist the event-type-specific subjects so the SAME variables the
+        // designer previews (bride/groom/parents/baby/…) also resolve when the
+        // WhatsApp message is delivered.
+        subjects,
+        campaigns: campaignsPayload,
+      };
+      const orderBodyKey = JSON.stringify(orderBody);
+
+      // The orders API only lets us PATCH the buyer identity after creation -
+      // there is no endpoint to update the event/campaign payload. If the wizard
+      // state changed since the order was created (the user went back and
+      // edited), discard the stale order and create a fresh one so checkout
+      // never charges for outdated details.
+      if (currentOrderId && orderBodyKey !== orderPayloadKey) {
+        currentOrderId = null;
+        setOrderId(null);
+        localStorage.removeItem('pending_order_id');
+      }
+
       if (!currentOrderId) {
         const orderRes = await fetch('/api/orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            plan: selectedPackageId,
-            event_name: eventDetails.name,
-            event_description: eventDetails.description,
-            event_type: eventDetails.type,
-            event_date: eventDetails.date ? eventDetails.date.toDate() : null,
-            location: eventDetails.location,
-            inviters: eventDetails.inviters,
-            campaigns: campaignsPayload,
-          }),
+          body: orderBodyKey,
         });
 
         if (!orderRes.ok) {
@@ -942,7 +976,9 @@ export default function EventWizard() {
 
         const orderData = await orderRes.json();
         currentOrderId = orderData.order_id || orderData.orderId;
+        saveOrderToken(currentOrderId, orderData.access_token);
         setOrderId(currentOrderId);
+        setOrderPayloadKey(orderBodyKey);
       }
 
       // Remember the unfinished order so a returning user resumes straight at
@@ -954,7 +990,7 @@ export default function EventWizard() {
         const normalizedPhone = normalizePhoneNumber(paymentData.phone, paymentData.countryCode);
         const identityRes = await fetch(`/api/orders/${currentOrderId}/identity`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...orderAuthHeaders(currentOrderId) },
           body: JSON.stringify({
             first_name: paymentData.firstName,
             last_name: paymentData.lastName,
@@ -969,9 +1005,19 @@ export default function EventWizard() {
       }
 
       // 3) Verify the buyer via OTP BEFORE payment so they reach the pay page
-      //    already authenticated. Create the account (register); if it already
-      //    exists, trigger a login OTP instead. Either way an OTP is sent.
+      //    already authenticated. An already-logged-in user whose account phone
+      //    matches the buyer phone is verified by definition - no OTP round-trip,
+      //    straight to payment. If the phone differs, verify it as usual.
       const buyerPhone = normalizePhoneNumber(paymentData.phone, paymentData.countryCode);
+      const loggedInPhone = (user?.phone || '').replace(/\s+/g, '');
+      if (user && loggedInPhone && loggedInPhone === buyerPhone) {
+        localStorage.setItem('user_first_name', paymentData.firstName);
+        localStorage.setItem('user_last_name', paymentData.lastName);
+        if (paymentData.email.trim()) localStorage.setItem('user_email', paymentData.email.trim());
+        setPaymentLoading(false);
+        navigate(`/payment?orderId=${encodeURIComponent(currentOrderId || '')}`);
+        return;
+      }
       const regRes = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1098,9 +1144,30 @@ export default function EventWizard() {
   // ("החתונה של דנה ועמית"), otherwise the type ("החתונה"), otherwise a soft fallback.
   const warmEventRef = (): string => {
     if (eventDetails.name?.trim()) return eventDetails.name.trim();
-    const label = EVENT_TYPE_LABELS[eventDetails.type];
+    const label = eventTypeLabel(catalog, eventDetails.type);
     return label ? `ה${label}` : 'האירוע שלכם';
   };
+
+  // Keyboard operability for clickable selector cards: focusable, announced as a
+  // button, and activatable with Enter/Space. The target check keeps nested
+  // interactive controls (e.g. a Switch inside the card) behaving natively.
+  const pressableCardProps = (onActivate: () => void) => ({
+    role: 'button' as const,
+    tabIndex: 0,
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.target !== e.currentTarget) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onActivate();
+      }
+    },
+  });
+  const focusRingSx = {
+    '&:focus-visible': {
+      outline: `2px solid ${theme.palette.primary.main}`,
+      outlineOffset: '2px',
+    },
+  } as const;
 
   // "We've prepared this for you" header used by the Approve-or-Customize steps.
   const renderPreparedHeader = (title: string, subtitle: string) => (
@@ -1147,7 +1214,10 @@ export default function EventWizard() {
               key={plan.id}
               variant="outlined"
               onClick={() => setSelectedPackageId(plan.id)}
+              aria-pressed={selected}
+              {...pressableCardProps(() => setSelectedPackageId(plan.id))}
               sx={{
+                ...focusRingSx,
                 p: plan.isPopular ? 3 : 2.5,
                 borderRadius: 3,
                 cursor: 'pointer',
@@ -1247,14 +1317,17 @@ export default function EventWizard() {
   const renderEventStep = () => {
     const t = eventDetails.type;
     const typeSelected = !!t;
-    const typeMeta = EVENT_TYPES.find((e) => e.id === t);
+    const typeMeta = eventTypeCards.find((e) => e.id === t);
 
     // Pick an event type: set the type and (re)generate the suggested name + inviter.
+    // Re-clicking the already-selected type is a no-op - it must not clobber a
+    // manually edited event name or reset the auto-fill state.
     const selectEventType = (typeId: string) => {
+      if (typeId === eventDetails.type) return;
       const { name, inviterName } = deriveEventFromSubjects(typeId, subjects);
       setNameManuallyEdited(false);
-      // A small, subtle celebration when a type is first chosen (not on re-toggle).
-      if (typeId && typeId !== eventDetails.type) {
+      // A small, subtle celebration when a type is chosen.
+      if (typeId) {
         fireConfetti(1400);
       }
       setEventDetails((ed) => ({
@@ -1373,10 +1446,11 @@ export default function EventWizard() {
               {/* Keeping the name a secret is a cherished tradition - never force it. */}
               <Paper
                 variant="outlined"
-                role="button"
                 aria-pressed={subjects.secretName}
                 onClick={() => updateSubjects({ secretName: !subjects.secretName })}
+                {...pressableCardProps(() => updateSubjects({ secretName: !subjects.secretName }))}
                 sx={{
+                  ...focusRingSx,
                   cursor: 'pointer',
                   p: 1.75,
                   borderRadius: 3,
@@ -1460,16 +1534,17 @@ export default function EventWizard() {
 
         {/* Event-type cards */}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)' }, gap: 1.5 }}>
-          {EVENT_TYPES.map((et) => {
+          {eventTypeCards.map((et) => {
             const selected = t === et.id;
             return (
               <Paper
                 key={et.id}
                 variant="outlined"
                 onClick={() => selectEventType(et.id)}
-                role="button"
                 aria-pressed={selected}
+                {...pressableCardProps(() => selectEventType(et.id))}
                 sx={{
+                  ...focusRingSx,
                   cursor: 'pointer',
                   p: 2,
                   borderRadius: 3,
@@ -1501,7 +1576,7 @@ export default function EventWizard() {
               sx={{ borderRadius: 2, '& .MuiAlert-message': { direction: 'rtl', textAlign: 'right' } }}
             >
               <Typography variant="body2" sx={{ fontWeight: 700 }}>{EVENT_CONGRATS[t] || 'בחירה מצוינת! ✨'}</Typography>
-              כבר הכנו עבורכם את כל מהלך התקשורת ל{EVENT_TYPE_LABELS[t] || typeMeta?.title} - מההזמנה ועד התודה שאחרי. נשארו רק כמה פרטים שרק אתם יודעים.
+              כבר הכנו עבורכם את כל מהלך התקשורת ל{eventTypeLabel(catalog, t) || typeMeta?.title} - מההזמנה ועד התודה שאחרי. נשארו רק כמה פרטים שרק אתם יודעים.
             </Alert>
 
             {renderContextualFields()}
@@ -1545,7 +1620,10 @@ export default function EventWizard() {
               value={eventDetails.date}
               minDate={dayjs().startOf('day')}
               format="DD/MM/YYYY"
-              onChange={(val) => setEventDetails({ ...eventDetails, date: val })}
+              onChange={(val) => {
+                setDateTouched(true);
+                setEventDetails({ ...eventDetails, date: val });
+              }}
               // The theme is LTR (RTL is applied per-element), so MUI X doesn't
               // auto-swap the month-nav arrows. Swap them here: in RTL "previous"
               // sits on the right and must point right, "next" on the left.
@@ -1558,8 +1636,11 @@ export default function EventWizard() {
                   fullWidth: true,
                   required: true,
                   placeholder: 'בחר תאריך',
-                  error: eventDetails.date === null,
-                  helperText: eventDetails.date === null ? 'שדה חובה' : '',
+                  // Only complain once the field was actually touched - never on
+                  // a pristine form the user hasn't reached yet.
+                  onBlur: () => setDateTouched(true),
+                  error: dateTouched && eventDetails.date === null,
+                  helperText: dateTouched && eventDetails.date === null ? 'שדה חובה' : '',
                   inputProps: { style: { direction: 'rtl', textAlign: 'right' } },
                   sx: {
                     '& .MuiOutlinedInput-root': { direction: 'rtl' },
@@ -1686,8 +1767,18 @@ export default function EventWizard() {
   };
 
   const renderScheduleStep = () => {
-    // Sort campaigns by offsetDays descending (30, 7, 1, -1)
-    const sortedCampaigns = [...campaigns].sort((a, b) => b.offsetDays - a.offsetDays);
+    // Sort campaigns by offsetDays descending (30, 7, 1, -1). While the customize
+    // editor is open, render in the order frozen at open time (scheduleOrder) so
+    // editing an offset never re-sorts rows under the user's cursor.
+    const byOffsetDesc = [...campaigns].sort((a, b) => b.offsetDays - a.offsetDays);
+    const sortedCampaigns = scheduleOrder
+      ? [
+          ...scheduleOrder
+            .map((label) => campaigns.find((c) => c.label === label))
+            .filter((c): c is CampaignSchedule => Boolean(c)),
+          ...campaigns.filter((c) => !scheduleOrder.includes(c.label)),
+        ]
+      : byOffsetDesc;
     const enabledCampaigns = sortedCampaigns.filter((c) => c.enabled);
 
     // Did the Adaptive Timeline Engine have to compress the plan to fit a short window?
@@ -1913,12 +2004,27 @@ export default function EventWizard() {
                     <TextField
                       fullWidth
                       type="number"
-                      value={c.offsetDays}
-                      onChange={(e) => {
+                      value={offsetDrafts[c.label] ?? String(c.offsetDays)}
+                      onChange={(e) =>
+                        // Buffer keystrokes locally; commit on blur so a half-typed
+                        // (or cleared) value never becomes offsetDays 0 mid-edit.
+                        setOffsetDrafts((prev) => ({ ...prev, [c.label]: e.target.value }))
+                      }
+                      onBlur={() => {
+                        const raw = offsetDrafts[c.label];
+                        setOffsetDrafts((prev) => {
+                          const next = { ...prev };
+                          delete next[c.label];
+                          return next;
+                        });
+                        if (raw === undefined) return;
+                        const parsed = Number(raw);
+                        // Empty / invalid input = unchanged - never coerce to 0.
+                        if (raw.trim() === '' || Number.isNaN(parsed) || parsed === c.offsetDays) return;
                         const updated = [...campaigns];
                         // Manual edit overrides the engine's resolved time; drop it so
                         // the order payload recomputes scheduled_at from this offset.
-                        updated[originalIdx] = { ...c, offsetDays: Number(e.target.value), scheduledAt: undefined };
+                        updated[originalIdx] = { ...c, offsetDays: parsed, scheduledAt: undefined };
                         setCampaigns(updated);
                       }}
                       disabled={!c.enabled}
@@ -2008,44 +2114,41 @@ export default function EventWizard() {
 
   // Weave a single, classy secret-themed sentence into the invitation copy.
   // Never leaks a name (there is none in secret mode); appended once, idempotently.
-  const withSecretFlavor = (template: MessageTemplate | null, label: string): MessageTemplate | null => {
+  const withSecretFlavor = (template: PreviewMsg | null, label: string): PreviewMsg | null => {
     if (!template || !isSecretInvite(label)) return template;
     if (template.body.includes(BRIT_SECRET_INVITE_LINE)) return template;
     return { ...template, body: `${template.body}\n\n${BRIT_SECRET_INVITE_LINE}` };
   };
 
-  // The base (recommended/selected) template for a campaign, ignoring any custom override.
-  const getBaseTemplate = (label: string): MessageTemplate | null => {
-    const id = selectedTemplates[label] || defaultTemplateForLabel(label)?.id;
-    const base =
-      templatesForLabel(label).find((t) => t.id === id) ||
-      defaultTemplateForLabel(label) ||
-      null;
-    return withSecretFlavor(base, label);
+  // The base (recommended/selected) template for a campaign, ignoring any custom
+  // override. Resolved from the catalog by the campaign's canonical stage.
+  const getBaseTemplate = (c: CampaignSchedule): PreviewMsg | null => {
+    const id = selectedTemplates[c.label] || defaultFor(c.stage)?.id;
+    const base = templatesFor(c.stage).find((t) => t.id === id) || defaultFor(c.stage) || null;
+    const msg: PreviewMsg | null = base ? { id: base.id, title: base.title, body: base.body } : null;
+    return withSecretFlavor(msg, c.label);
   };
 
   // The message actually shown/used for a campaign - a custom override if present,
-  // otherwise the base template.
-  const getChosenMessage = (label: string): MessageTemplate | null => {
-    const base = getBaseTemplate(label);
-    if (label in customMessages) {
+  // otherwise the base template. Both are PreviewMsg (one definition for preview + send).
+  const getChosenMessage = (c: CampaignSchedule): PreviewMsg | null => {
+    const base = getBaseTemplate(c);
+    if (c.label in customMessages) {
       return {
-        id: `custom:${label}`,
-        campaignLabel: label,
-        name: 'הודעה מותאמת אישית',
-        title: customTitles[label] ?? base?.title ?? '',
-        body: customMessages[label],
-      } as MessageTemplate;
+        id: `custom:${c.label}`,
+        title: customTitles[c.label] ?? base?.title ?? '',
+        body: customMessages[c.label],
+      };
     }
     return base;
   };
 
   const isCustomMessage = (label: string) => label in customMessages;
 
-  const enableCustomMessage = (label: string) => {
-    const base = getBaseTemplate(label);
-    setCustomMessages((prev) => ({ ...prev, [label]: prev[label] ?? (base?.body || '') }));
-    setCustomTitles((prev) => ({ ...prev, [label]: prev[label] ?? (base?.title || '') }));
+  const enableCustomMessage = (c: CampaignSchedule) => {
+    const base = getBaseTemplate(c);
+    setCustomMessages((prev) => ({ ...prev, [c.label]: prev[c.label] ?? (base?.body || '') }));
+    setCustomTitles((prev) => ({ ...prev, [c.label]: prev[c.label] ?? (base?.title || '') }));
   };
 
   const clearCustomMessage = (label: string) => {
@@ -2058,7 +2161,7 @@ export default function EventWizard() {
 
   const renderTemplatesStep = () => {
     const activeCampaigns = campaigns.filter(c => c.enabled);
-    const templateVariables = getTemplateVariables(eventDetails, eventDetails.inviters, subjects);
+    const templateVariables = getTemplateVariables(catalog, eventDetails, eventDetails.inviters, subjects);
 
     // Default: show the recommended message for each campaign as a ready preview.
     if (!templatesCustomize) {
@@ -2069,14 +2172,14 @@ export default function EventWizard() {
             'כתבנו עבורכם הודעות חמות ואישיות שמביאות יותר אישורי הגעה. אפשר לאשר - או לכתוב משלכם.'
           )}
           {activeCampaigns.map((campaign) => {
-            const chosen = getChosenMessage(campaign.label);
+            const chosen = getChosenMessage(campaign);
             if (!chosen) return null;
             return (
               <Box key={campaign.label} sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, direction: 'rtl', flexWrap: 'wrap' }}>
                   <CheckCircleIcon sx={{ color: 'success.main', fontSize: 20 }} />
                   <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>{campaign.label}</Typography>
-                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>· {chosen.name}</Typography>
+                  <Typography variant="body2" sx={{ color: 'text.secondary' }}>· {renderBody(chosen.title, templateVariables)}</Typography>
                 </Box>
                 <Box
                   sx={{
@@ -2103,7 +2206,7 @@ export default function EventWizard() {
     }
 
     return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', direction: 'rtl', flexWrap: 'wrap', gap: 1 }}>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
             בחרו את הנוסח שהכי מדבר אליכם לכל הודעה.
@@ -2121,29 +2224,29 @@ export default function EventWizard() {
         </Box>
 
         {activeCampaigns.map((campaign) => {
-          const campaignTemplates = templatesForLabel(campaign.label);
+          const campaignTemplates = templatesFor(campaign.stage);
           const selectedTemplateId = selectedTemplates[campaign.label];
           const custom = isCustomMessage(campaign.label);
 
           return (
-            <Box key={campaign.label} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Box key={campaign.label} sx={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
               <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
                 {campaign.label}
               </Typography>
               
-              <Box sx={{ 
-                display: { xs: 'flex', sm: 'grid' },
-                gridTemplateColumns: { 
-                  sm: `repeat(${campaignTemplates.length}, 1fr)`,
-                  md: `repeat(${campaignTemplates.length}, 1fr)`,
-                },
+              {/* Fixed-size cards in a horizontal scroller at every breakpoint, so
+                  more than ~2 variants never get smashed into narrow columns. */}
+              <Box sx={{
+                display: 'flex',
                 gap: 2,
-                overflowX: { xs: 'auto', sm: 'visible' },
+                minWidth: 0,
+                maxWidth: '100%',
+                overflowX: 'auto',
                 overflowY: 'hidden',
                 scrollBehavior: 'smooth',
-                scrollSnapType: { xs: 'x mandatory', sm: 'none' },
-                pb: { xs: 1, sm: 0 },
-                px: { xs: 1, sm: 1 },
+                scrollSnapType: 'x mandatory',
+                pb: 1,
+                px: 1,
                 mx: { xs: -2, sm: 0 },
                 '&::-webkit-scrollbar': {
                   display: 'none',
@@ -2152,7 +2255,7 @@ export default function EventWizard() {
               }}>
                 {campaignTemplates.map((template) => {
                   const isSelected = !custom && selectedTemplateId === template.id;
-                  const isDefault = template.isDefault === true;
+                  const isDefault = template.is_default === true;
                   
                   return (
                     <Paper
@@ -2177,10 +2280,12 @@ export default function EventWizard() {
                           ? alpha(theme.palette.success.main, 0.04)
                           : 'transparent',
                         transition: 'all 0.2s ease',
-                        minWidth: { xs: '85%', sm: 'auto' },
-                        width: { xs: '85%', sm: 'auto' },
-                        flexShrink: { xs: 0, sm: 1 },
-                        scrollSnapAlign: { xs: 'center', sm: 'none' },
+                        minWidth: { xs: '85%', sm: 300 },
+                        width: { xs: '85%', sm: 300 },
+                        flexShrink: 0,
+                        scrollSnapAlign: 'start',
+                        display: 'flex',
+                        flexDirection: 'column',
                         position: 'relative',
                         '&:hover': {
                           borderColor: 'primary.main',
@@ -2204,7 +2309,7 @@ export default function EventWizard() {
                       )}
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5, flexDirection: 'row-reverse', direction: 'rtl' }}>
                         <Typography variant="body2" fontWeight={600} sx={{ textAlign: 'right', direction: 'rtl', flex: 1 }}>
-                          {template.name}
+                          {template.title}
                         </Typography>
                         {isSelected && (
                           <Chip
@@ -2223,6 +2328,7 @@ export default function EventWizard() {
                           p: 2,
                           borderRadius: 2,
                           minHeight: 150,
+                          flexGrow: 1,
                           display: 'flex',
                           flexDirection: 'column',
                           justifyContent: 'flex-end',
@@ -2240,7 +2346,7 @@ export default function EventWizard() {
                 <Button
                   variant="outlined"
                   startIcon={<EditIcon />}
-                  onClick={() => enableCustomMessage(campaign.label)}
+                  onClick={() => enableCustomMessage(campaign)}
                   sx={{ alignSelf: 'flex-start', borderRadius: 2, '& .MuiButton-startIcon': { ml: 0.75, mr: -0.25 } }}
                 >
                   כתבו הודעה משלכם
@@ -2257,7 +2363,7 @@ export default function EventWizard() {
                     </Button>
                   </Box>
                   <CustomMessageEditor
-                    title={customTitles[campaign.label] ?? getBaseTemplate(campaign.label)?.title ?? ''}
+                    title={customTitles[campaign.label] ?? getBaseTemplate(campaign)?.title ?? ''}
                     onTitleChange={(v) =>
                       setCustomTitles((prev) => ({ ...prev, [campaign.label]: v }))
                     }
@@ -2265,7 +2371,7 @@ export default function EventWizard() {
                     onChange={(v) =>
                       setCustomMessages((prev) => ({ ...prev, [campaign.label]: v }))
                     }
-                    groups={getVariableGroups(eventDetails.type)}
+                    groups={variableGroups(catalog, eventDetails.type)}
                     blocks={CONTENT_BLOCKS}
                     variables={templateVariables}
                     onValidityChange={(valid) =>
@@ -2306,7 +2412,7 @@ export default function EventWizard() {
                     }}
                   >
                     <WhatsAppBubble
-                      template={getChosenMessage(campaign.label) as MessageTemplate}
+                      template={getChosenMessage(campaign)!}
                       variables={templateVariables}
                     />
                   </Box>
@@ -2321,9 +2427,9 @@ export default function EventWizard() {
 
   const renderReviewStep = () => {
     // selectedPlan is already defined in component scope via useMemo
-    const eventTypeMap: Record<string, string> = EVENT_TYPE_LABELS;
+    const eventTypeMap = (t: string) => eventTypeLabel(catalog, t);
     // Resolve template variables so the summary shows real titles, never raw {{...}}.
-    const reviewVariables = getTemplateVariables(eventDetails, eventDetails.inviters, subjects);
+    const reviewVariables = getTemplateVariables(catalog, eventDetails, eventDetails.inviters, subjects);
     
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -2362,7 +2468,7 @@ export default function EventWizard() {
             {eventDetails.type && (
               <Box sx={{ display: 'flex', justifyContent: 'space-between', flexDirection: 'row' }}>
                 <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'right' }}>סוג:</Typography>
-                <Typography variant="body2" fontWeight={500} sx={{ textAlign: 'right' }}>{eventTypeMap[eventDetails.type] || 'אחר'}</Typography>
+                <Typography variant="body2" fontWeight={500} sx={{ textAlign: 'right' }}>{eventTypeMap(eventDetails.type) || 'אחר'}</Typography>
               </Box>
             )}
             {(eventDetails.date || eventDetails.time) && (
@@ -2404,9 +2510,9 @@ export default function EventWizard() {
             {campaigns.filter(c => c.enabled).map((c) => {
               // Use the message actually chosen (custom override or base template, incl.
               // any secret-name flavor) and resolve its title - never show raw {{...}}.
-              const chosen = getChosenMessage(c.label);
+              const chosen = getChosenMessage(c);
               const resolvedTitle = chosen
-                ? processTemplate({ ...chosen, body: chosen.title }, reviewVariables)
+                ? renderBody(chosen.title, reviewVariables)
                 : 'הודעה מותאמת';
               return (
                 <Box key={c.label} sx={{ display: 'flex', justifyContent: 'space-between', flexDirection: 'row', gap: 2 }}>
@@ -2527,10 +2633,17 @@ export default function EventWizard() {
     const hasIdentity = Boolean(
       paymentData.firstName.trim() && paymentData.lastName.trim() && paymentData.phone.trim()
     );
+    // An OTP is sent unless the logged-in account's phone matches the buyer phone
+    // (then submit goes straight to payment). Mirrors handlePaymentSubmit.
+    const buyerPhoneNormalized = paymentData.phone.trim()
+      ? normalizePhoneNumber(paymentData.phone, paymentData.countryCode)
+      : '';
+    const loggedInPhone = (user?.phone || '').replace(/\s+/g, '');
+    const otpWillBeSent = !(user && loggedInPhone && loggedInPhone === buyerPhoneNormalized);
 
     if (hasIdentity && !editIdentity) {
       const fullName = `${paymentData.firstName} ${paymentData.lastName}`.trim();
-      const detailRow = (icon: React.ReactNode, label: string, value: string) => (
+      const detailRow = (icon: React.ReactNode, label: string, value: React.ReactNode) => (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, direction: 'rtl' }}>
           {icon}
           <Box sx={{ textAlign: 'right' }}>
@@ -2544,7 +2657,7 @@ export default function EventWizard() {
           <Box sx={{ textAlign: 'center', mb: 1 }}>
             <Typography variant="h5" fontWeight={700} sx={{ mb: 1 }}>עוד רגע וזה אמיתי 🎉</Typography>
             <Typography variant="body2" color="text.secondary">
-              {user ? 'אלו הפרטים שלכם - נשאר רק לאשר.' : 'אלו הפרטים שלכם - נאמת אותם בקצרה ונמשיך.'}
+              {otpWillBeSent ? 'אלו הפרטים שלכם - נאמת אותם בקצרה ונמשיך.' : 'אלו הפרטים שלכם - נשאר רק לאשר.'}
             </Typography>
           </Box>
 
@@ -2560,14 +2673,21 @@ export default function EventWizard() {
             </Box>
             <Box sx={{ display: 'grid', gap: 2 }}>
               {detailRow(<PersonIcon sx={{ color: 'text.secondary' }} />, 'שם מלא', fullName)}
-              {detailRow(<PhoneIcon sx={{ color: 'text.secondary' }} />, 'טלפון', `${paymentData.countryCode} ${paymentData.phone}`.trim())}
+              {detailRow(
+                <PhoneIcon sx={{ color: 'text.secondary' }} />,
+                'טלפון',
+                // Bidi-isolate the phone so "+972 05..." doesn't get mangled in RTL.
+                <Box component="span" dir="ltr" sx={{ unicodeBidi: 'isolate', display: 'inline-block' }}>
+                  {`${paymentData.countryCode} ${paymentData.phone}`.trim()}
+                </Box>
+              )}
               {paymentData.email.trim() && detailRow(<EmailIcon sx={{ color: 'text.secondary' }} />, 'אימייל', paymentData.email.trim())}
             </Box>
           </Paper>
 
           {renderPaymentTotal()}
 
-          {!user && (
+          {otpWillBeSent && (
             <Alert severity="info" sx={{ textAlign: 'right' }}>
               נשלח לכם קוד אימות קצר בוואטסאפ - וכבר נחזיר אתכם לכאן להמשך.
             </Alert>
@@ -2670,7 +2790,12 @@ export default function EventWizard() {
                     },
                   }}
                   SelectProps={{
-                    renderValue: (value) => (value as string) || '+972',
+                    // Bidi-isolate the dial code so "+972" renders correctly in RTL.
+                    renderValue: (value) => (
+                      <Box component="span" dir="ltr" sx={{ unicodeBidi: 'isolate', display: 'inline-block' }}>
+                        {(value as string) || '+972'}
+                      </Box>
+                    ),
                   }}
                   inputProps={{ style: { direction: 'rtl', textAlign: 'right', fontSize: 13 } }}
                 >
@@ -2757,7 +2882,7 @@ export default function EventWizard() {
                 )}
             </Paper>
 
-            {!user && (
+            {otpWillBeSent && (
               <Alert severity="info" sx={{ mb: 2, textAlign: 'right' }}>
                 נשלח לכם קוד אימות קצר בוואטסאפ - וכבר נחזיר אתכם לכאן להמשך.
               </Alert>
@@ -2966,10 +3091,15 @@ export default function EventWizard() {
         {/* Desktop layout with sidebar */}
         <Box sx={{ display: { xs: 'block', md: 'flex' }, gap: 4 }}>
           {renderMilestoneTracker()}
-          
-          <Box sx={{ flex: 1 }}>
+
+          {/* minWidth:0 lets this flex column shrink to the available width so inner
+              horizontal scrollers (e.g. the template variant cards) scroll internally
+              instead of widening the row and pushing the nav buttons off-screen. */}
+          <Box sx={{ flex: 1, minWidth: 0 }}>
             <Box
-              sx={{ mb: 3 }}
+              ref={stepContentRef}
+              tabIndex={-1}
+              sx={{ mb: 3, minWidth: 0, outline: 'none' }}
               dir="rtl"
             >
               {renderStepContent()}

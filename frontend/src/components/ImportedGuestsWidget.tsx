@@ -37,7 +37,7 @@ export function ImportedGuestsWidget({ onClick }: ImportedGuestsWidgetProps) {
         p: 2.5,
         mb: 2,
         borderRadius: 2,
-        backgroundColor: '#5236F7',
+        backgroundColor: '#6f74e0',
         boxShadow: 'none',
         border: 'none',
         textAlign: 'right',
@@ -47,7 +47,7 @@ export function ImportedGuestsWidget({ onClick }: ImportedGuestsWidgetProps) {
         justifyContent: 'space-between',
         gap: 2,
         '&:hover': {
-          backgroundColor: '#4529D9',
+          backgroundColor: '#5f64d6',
           boxShadow: 'none',
         },
       }}
@@ -74,7 +74,8 @@ export function ImportedGuestsWidget({ onClick }: ImportedGuestsWidgetProps) {
           </Typography>
         </Box>
       </Box>
-      <ArrowForwardIcon sx={{ color: 'white' }} />
+      {/* RTL: the "forward" affordance points toward the reading-direction end (left) */}
+      <ArrowForwardIcon sx={{ color: 'white', transform: 'scaleX(-1)' }} />
     </Paper>
   );
 }

@@ -30,6 +30,7 @@ class MessageLog(Base):
     conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id"), nullable=False)
     guest_phone = Column(String(64), nullable=True)  # Denormalized from conversation for efficient queries
     wa_message_id = Column(String(128), nullable=True)
+    campaign_id = Column(UUID(as_uuid=True), nullable=True)  # denormalized: which campaign produced this outgoing message
     direction = Column(String(16), nullable=False)  # incoming | outgoing | status
     message_type = Column(String(32), nullable=False)
     reply_to_id = Column(String(128), nullable=True)

@@ -5,7 +5,9 @@ guest `count_limit`, and default campaign schedule. They live in `data/plans.jso
 and are read here. (Previously stored in MongoDB; that dependency was removed -
 the file IS the source of truth, edited via deploy.)
 
-Feature/tier *entitlements* are a separate SSOT in `shared/domain/entitlements.py`.
+Plans differ ONLY by guest capacity (`count_limit`) and included campaign rounds
+(the `campaigns` list, mirrored by `shared/domain/rounds.py`). Every plan includes
+the full feature set - there is no feature gating.
 """
 from __future__ import annotations
 
@@ -32,7 +34,11 @@ def active_plans() -> List[Dict[str, Any]]:
 
 
 def get_plan(plan_id: str) -> Optional[Dict[str, Any]]:
+    """Resolve a specific plan by id, INCLUDING non-purchasable editions
+    (is_active=false, e.g. 'starter'/'venue'). These are real plans an event can
+    be on - their price and count_limit must resolve for pricing and guest-limit
+    enforcement. Only the plans *listing* (`active_plans`) hides inactive plans."""
     for p in load_plans():
-        if p.get("id") == plan_id and p.get("is_active", True):
+        if p.get("id") == plan_id:
             return p
     return None

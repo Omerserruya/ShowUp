@@ -36,17 +36,21 @@ const theme = extendTheme({
     ...(surfacesCustomizations as any),
     MuiCssBaseline: {
       styleOverrides: {
+        // NOTE: `overflow-x: clip` (not `hidden`) - `hidden` turns the element
+        // into a scroll container, which breaks `position: sticky` for
+        // descendants (e.g. the invitation's pinned photo). `clip` prevents
+        // horizontal scroll without that side effect.
         body: {
           transition: 'background-color 0.3s, color 0.3s',
-          overflowX: 'hidden',
+          overflowX: 'clip',
         },
         html: {
-          overflowX: 'hidden',
+          overflowX: 'clip',
           // Smooth in-page anchor scrolling (landing nav) + focus jumps.
           scrollBehavior: 'smooth',
         },
         '#root': {
-          overflowX: 'hidden',
+          overflowX: 'clip',
         },
       },
     },

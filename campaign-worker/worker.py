@@ -10,15 +10,29 @@ from db import (
     connect as db_connect,
     fetch_campaign_by_id,
     fetch_event_by_id,
+    fetch_wa_template,
     was_message_sent,
     mark_message_sent,
     mark_campaign_completed,
     create_follow_up_campaign,
     record_message_usage,
+    mark_release_sent,
+    campaign_has_open_releases,
+    mark_campaign_status,
 )
 from mq import connect as mq_connect, publish_outpost
-from template_registry import get_template_spec
 from audience import select_guests_by_audience
+
+# Single source of truth - the worker holds NO template definitions of its own.
+from shared.domain.messaging import (
+    resolve_template,
+    resolve_stage_channel,
+    prefer_event_variant,
+    VariableResolver,
+    build_meta_message,
+    build_free_text,
+    DeliveryKind,
+)
 
 
 def configure_logging():
@@ -42,7 +56,11 @@ def log_json(logger: logging.Logger, level: int, message: str, **fields):
 OUTPOST_QUEUE = os.getenv("OUTPOST_QUEUE_NAME")
 
 
-def process_campaign(conn, channel, campaign_id: str):
+def process_campaign(conn, channel, campaign_id: str, limit: int = None, release_id: str = None):
+    """Send a campaign. When the planner released this as a batch, `limit` caps how
+    many not-yet-messaged recipients go out now and `release_id` identifies the
+    batch to mark done. Without them, legacy behaviour (send everyone) is kept.
+    Workers NEVER decide timing/volume - they only execute what was released."""
     logger = logging.getLogger("worker")
 
     # Fetch campaign data from database
@@ -72,22 +90,63 @@ def process_campaign(conn, channel, campaign_id: str):
              inviters=event_data.get("inviters"),
              inviters_type=type(event_data.get("inviters")).__name__ if event_data.get("inviters") else "None")
 
-    # Template controls only the message params now; the AUDIENCE is a first-class
-    # campaign field (Phase 6), decoupled from the template choice.
-    template_spec = get_template_spec(template_name)
+    # Resolve the ONE template definition from the catalog (SSOT). Accepts every
+    # legacy reference form (canonical key / Meta name / stage label / DB UUID),
+    # so a stored UUID is never sent to Meta as a template name.
+    custom_message = campaign_data.get("custom_message")
+    template = None
+    if not custom_message:
+        # Stage-first resolution: a campaign is "run Stage X, variant Y". Resolve the
+        # channel implementation from the stage catalog. This yields the SAME Template
+        # as the legacy key path, so delivery is byte-identical.
+        stage_id = campaign_data.get("stage_id")
+        variant_id = campaign_data.get("variant_id")
+        if stage_id and variant_id:
+            template = resolve_stage_channel(stage_id, variant_id, "whatsapp")
+            # The stage/variant path yields the BASE template; prefer the event-type
+            # variant actually approved on Meta (e.g. reminder -> reminder__wedding).
+            template = prefer_event_variant(template, event_data.get("event_type"))
+        # Fallback: legacy campaigns addressed by template key (or a custom DB UUID).
+        if template is None:
+            template_ref = campaign_data.get("template_key") or template_name
+            template = resolve_template(
+                template_ref,
+                flow_stage=campaign_data.get("campaign_type"),
+                # Prefer the event-type variant actually approved on Meta
+                # (e.g. final_reminder_gentle__wedding) over the base key.
+                event_type=event_data.get("event_type"),
+                db_lookup=lambda ref: fetch_wa_template(conn, ref),
+            )
+        if template is None:
+            # The Messages page stores a CUSTOM (free-text) message in the `template`
+            # field itself. If the value doesn't resolve to a catalog template but
+            # looks like a written message (contains whitespace), send it as free
+            # text rather than dropping the campaign.
+            if template_ref and (" " in str(template_ref) or "\n" in str(template_ref)):
+                custom_message = str(template_ref)
+                log_json(logger, logging.INFO, "Unresolved template treated as custom free-text",
+                         campaign_id=campaign_id)
+            else:
+                log_json(logger, logging.ERROR, "Template did not resolve in catalog; skipping",
+                         campaign_id=campaign_id, template=template_name)
+                return
+
+    # One variable resolver per event (canonical variables; no Meta slot numbers).
+    # A campaign-specific header image (image-header templates) overrides the default.
+    var_resolver = VariableResolver(
+        event_data,
+        header_image_override=campaign_data.get("header_image_url"),
+    )
 
     try:
         guests = select_guests_by_audience(
             conn, event_id, campaign_data.get("audience"), campaign_data.get("audience_filter")
         )
         log_json(
-            logger,
-            logging.INFO,
-            "Audience selected guests",
-            campaign_id=campaign_id,
-            template=template_name,
-            audience=campaign_data.get("audience"),
-            guest_count=len(guests),
+            logger, logging.INFO, "Audience selected guests",
+            campaign_id=campaign_id, template=template_name,
+            delivery="free_text" if custom_message else (template.delivery.value if template else None),
+            audience=campaign_data.get("audience"), guest_count=len(guests),
         )
     except Exception as e:
         log_json(logger, logging.ERROR, "Audience selection failed", campaign_id=campaign_id, audience=campaign_data.get("audience"), error=str(e))
@@ -95,37 +154,38 @@ def process_campaign(conn, channel, campaign_id: str):
 
     sent_count = 0
     failed_count = 0
-    
+
     for guest in guests:
+        # Planner batch cap: stop once this release's quota is filled. Remaining
+        # recipients are covered by the campaign's other releases (later days).
+        if limit is not None and sent_count >= limit:
+            break
+
         guest_id = str(guest["id"]) if isinstance(guest["id"], (str,)) else str(guest["id"])
-        
+
         # Check idempotency
         if was_message_sent(conn, campaign_id, guest_id):
             continue
 
-        # Build parameters using template-specific logic
+        # Build the outpost message: a custom message goes out as free text; every
+        # other campaign resolves through the catalog's Meta mapping. Both share
+        # one envelope - no duplicated delivery logic, language is data-driven.
         try:
-            params = template_spec.params_builder(event_data, guest)
+            recipient = str(guest.get("phone"))
+            if custom_message:
+                message = build_free_text(
+                    var_resolver.render_body(custom_message, guest),
+                    recipient=recipient, event_id=event_id, campaign_id=campaign_id, guest_id=guest_id,
+                )
+            else:
+                message = build_meta_message(
+                    template, var_resolver.values_for(guest),
+                    recipient=recipient, event_id=event_id, campaign_id=campaign_id, guest_id=guest_id,
+                )
         except Exception as e:
             failed_count += 1
-            log_json(logger, logging.ERROR, "Parameter building failed", campaign_id=campaign_id, guest_id=guest_id, error=str(e))
+            log_json(logger, logging.ERROR, "Message building failed", campaign_id=campaign_id, guest_id=guest_id, error=str(e))
             continue
-
-        # Build outpost message payload
-        # outpost-service will create Conversation when sending the message
-        message = {
-            "platform": "WA",
-            "recipient": str(guest.get("phone")),
-            "template": template_spec.wa_template,
-            "parameters": params,
-            "message_type": "template",  # Campaign messages are template-based
-            "source": "campaign_worker",
-            "event_id": event_id,  # Real event UUID, not wamid
-            # Use template name as a logical state marker for logging/traceability
-            "state": template_name,
-            "campaign_id": campaign_id,
-            "guest_id": guest_id
-        }
 
         try:
             publish_outpost(channel, OUTPOST_QUEUE, message)
@@ -135,9 +195,17 @@ def process_campaign(conn, channel, campaign_id: str):
             failed_count += 1
             log_json(logger, logging.ERROR, "Failed to enqueue message", campaign_id=campaign_id, guest_id=guest_id, error=str(e))
 
-    # After processing all guests, mark campaign as completed ('sent') and store recipient_count
+    # Finalize. Planner-released batch vs legacy whole-campaign send:
     try:
-        mark_campaign_completed(conn, campaign_id, sent_count)
+        if release_id is not None:
+            # Record this batch, then complete the campaign only when no more
+            # batches are outstanding (a multi-day campaign stays 'pending' between
+            # its releases so the scheduler keeps releasing the remaining days).
+            mark_release_sent(conn, release_id, sent_count)
+            if not campaign_has_open_releases(conn, campaign_id):
+                mark_campaign_status(conn, campaign_id, "sent")
+        else:
+            mark_campaign_completed(conn, campaign_id, sent_count)
     except Exception as e:
         log_json(
             logger,
@@ -196,6 +264,9 @@ def main():
         try:
             message = json.loads(body)
             campaign_id = message.get("campaign_id")
+            # Planner batch fields (absent for legacy whole-campaign releases).
+            limit = message.get("limit")
+            release_id = message.get("release_id")
             if not campaign_id:
                 log_json(logger, logging.ERROR, "Missing campaign_id in message")
                 ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -206,7 +277,9 @@ def main():
             return
 
         try:
-            process_campaign(conn, channel, campaign_id)
+            process_campaign(conn, channel, campaign_id,
+                             limit=int(limit) if limit is not None else None,
+                             release_id=release_id)
             ch.basic_ack(delivery_tag=method.delivery_tag)
         except Exception as e:
             log_json(logger, logging.ERROR, "Campaign processing failed", error=str(e))

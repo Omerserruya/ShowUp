@@ -7,7 +7,7 @@ import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import { alpha } from '@mui/material/styles';
-import { TemplateVarGroup, ContentBlock, validateTemplateBodyMeta } from '../config/templates';
+import { TemplateVarGroup, ContentBlock, validateTemplateBodyMeta } from '../config/messaging';
 
 const BRAND = '#888cee';
 
@@ -239,6 +239,11 @@ export default function CustomMessageEditor({
   const handleInput = () => {
     const el = editorRef.current;
     if (!el) return;
+    // After deleting all content the browser leaves a stray <br>, which defeats
+    // the :empty CSS placeholder - restore the truly-empty state.
+    if (!el.textContent && !el.querySelector('[data-var]') && el.childNodes.length) {
+      el.innerHTML = '';
+    }
     convertPlaceholders(el);
     emit();
   };
@@ -405,6 +410,9 @@ export default function CustomMessageEditor({
           contentEditable
           suppressContentEditableWarning
           dir="rtl"
+          role="textbox"
+          aria-multiline="true"
+          aria-label="תוכן ההודעה - כתבו כאן את ההודעה, או גררו שדות לתוכה"
           data-placeholder="כתבו כאן את ההודעה, או גררו שדות לתוכה…"
           onInput={handleInput}
           onKeyDown={handleKeyDown}

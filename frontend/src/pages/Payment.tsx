@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { saveOrderToken, orderAuthHeaders } from '../utils/orderToken';
 import {
   Alert,
   Box,
@@ -48,6 +49,7 @@ type OrderOut = {
   amount_vat?: number | null;
   tax_rate?: number | null;
   coupon_code?: string | null;
+  adjustment_kind?: 'coupon' | 'credit' | 'none' | null;
   currency?: string | null;
 };
 
@@ -74,16 +76,20 @@ export default function Payment() {
   const canceled = params.get('canceled') === '1';
   // iCount redirects back here with paid=1 after a successful charge.
   const returnedPaid = params.get('paid') === '1';
+  // Recover the per-order capability token from the redirect URL (?t=) so a fresh
+  // page load after payment can still authorize its order calls.
+  saveOrderToken(orderId, params.get('t'));
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [order, setOrder] = useState<OrderOut | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   const [payLoading, setPayLoading] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [confirmDelayed, setConfirmDelayed] = useState(false);
 
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const celebrated = useRef(false);
 
   const canFetch = useMemo(() => Boolean(orderId), [orderId]);
@@ -94,9 +100,9 @@ export default function Payment() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetch(`/api/orders/${encodeURIComponent(orderId)}`)
+    fetch(`/api/orders/${encodeURIComponent(orderId)}`, { headers: orderAuthHeaders(orderId) })
       .then(async (res) => {
-        if (!res.ok) throw new Error('Failed to load order');
+        if (!res.ok) throw new Error('load-failed');
         return (await res.json()) as OrderOut;
       })
       .then((data) => {
@@ -110,60 +116,75 @@ export default function Payment() {
         }
         setLoading(false);
       })
-      .catch((e) => {
+      .catch(() => {
         if (cancelled) return;
-        setError(e?.message || 'Failed to load order');
+        setError('לא הצלחנו לטעון את פרטי ההזמנה. בדקו את החיבור ונסו שוב.');
         setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [canFetch, orderId]);
+  }, [canFetch, orderId, loadAttempt]);
 
   // After returning from a successful payment, wait for the server to provision
   // the order (iCount IPN -> provision_order sets status='paid'), then go home.
+  // The IPN can lag: after ~30s we surface a "taking longer" note and keep
+  // polling at a slower pace instead of dumping the buyer on the dashboard
+  // with an unconfirmed order.
   useEffect(() => {
     if (!returnedPaid || done || !orderId) return;
+    let cancelled = false;
     let tries = 0;
-    pollRef.current = setInterval(async () => {
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
       tries += 1;
       try {
-        const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`);
+        const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, { headers: orderAuthHeaders(orderId) });
         if (res.ok) {
           const data = (await res.json()) as OrderOut;
           if (data.status === 'paid') {
             // Select the newly provisioned event so the dashboard opens it directly.
             if (data.event_id) localStorage.setItem('selected_event_id', String(data.event_id));
             localStorage.removeItem('pending_order_id'); // checkout finished
-            setDone(true);
-            if (pollRef.current) clearInterval(pollRef.current);
-            setTimeout(() => navigate('/overview'), 1800);
+            if (!cancelled) {
+              setDone(true);
+              setTimeout(() => navigate('/overview'), 1800);
+            }
             return;
           }
         }
       } catch {
         /* keep polling */
       }
-      if (tries >= 12) {
-        if (pollRef.current) clearInterval(pollRef.current);
-        navigate('/overview');
-      }
-    }, 2500);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+      if (cancelled) return;
+      if (tries >= 12) setConfirmDelayed(true);
+      timer = setTimeout(poll, tries >= 12 ? 10000 : 2500);
+    };
+    timer = setTimeout(poll, 2500);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [returnedPaid, done, orderId, navigate]);
 
-  // Celebrate the moment payment is confirmed (once) and retire the wizard draft.
+  // Celebrate only once the server has confirmed the payment (done), and only
+  // then retire the wizard draft - a redirect back with paid=1 is not proof.
   useEffect(() => {
-    if ((done || returnedPaid) && !celebrated.current) {
+    if (done && !celebrated.current) {
       celebrated.current = true;
       clearWizardDraft();
       fireConfetti(2200);
     }
-  }, [done, returnedPaid]);
+  }, [done]);
+
+  // An order that is already paid on load (e.g. resuming via pending_order_id or
+  // refreshing this page) has no polling effect to move it forward - redirect here.
+  useEffect(() => {
+    if (!done || returnedPaid) return;
+    const t = setTimeout(() => navigate('/overview'), 1500);
+    return () => clearTimeout(t);
+  }, [done, returnedPaid, navigate]);
 
   const startPayment = async () => {
     setPayLoading(true);
     setPayError(null);
     try {
-      const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/pay/icount`, { method: 'POST' });
+      const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/pay/icount`, { method: 'POST', headers: orderAuthHeaders(orderId) });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(
@@ -180,21 +201,38 @@ export default function Payment() {
     }
   };
 
-  // Success / provisioning screen (post-payment).
+  // Success / provisioning screen (post-payment). "Paid!" is claimed only once
+  // the server confirms (done); until then this is a verification state.
   if (done || returnedPaid) {
     return (
       <Fade in timeout={500}>
         <Box sx={{ maxWidth: 720, mx: 'auto', p: 3, direction: 'rtl', textAlign: 'center', minHeight: '70vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-          <Box sx={{ width: 84, height: 84, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 3, bgcolor: alpha(theme.palette.success.main, 0.12), color: 'success.main' }}>
-            <CheckCircleRoundedIcon sx={{ fontSize: 52 }} />
-          </Box>
-          <Typography variant="h4" sx={{ fontWeight: 900, mb: 1 }}>שולם! מכאן זה עלינו 🎉</Typography>
+          {done ? (
+            <Box sx={{ width: 84, height: 84, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 3, bgcolor: alpha(theme.palette.success.main, 0.12), color: 'success.main' }}>
+              <CheckCircleRoundedIcon sx={{ fontSize: 52 }} />
+            </Box>
+          ) : (
+            <CircularProgress size={56} sx={{ mb: 3 }} />
+          )}
+          <Typography variant="h4" sx={{ fontWeight: 900, mb: 1 }}>
+            {done ? 'שולם! מכאן זה עלינו 🎉' : 'מאמתים את התשלום…'}
+          </Typography>
           <Typography color="text.secondary" sx={{ mb: 3, maxWidth: 420 }}>
             {done
               ? 'הכול מוכן. מעבירים אתכם ללוח הבקרה כדי להתחיל לארגן את האירוע.'
-              : 'מאמתים את התשלום ומכינים לכם את האירוע… עוד רגע קט.'}
+              : confirmDelayed
+              ? 'האישור מחברת הסליקה מתעכב מעט. אפשר להישאר בעמוד - נמשיך לבדוק אוטומטית ונעדכן ברגע שהתשלום יאושר וההקמה תושלם.'
+              : 'התשלום התקבל, ואנחנו מאמתים אותו מול חברת הסליקה ומכינים לכם את האירוע… עוד רגע קט.'}
           </Typography>
-          <CircularProgress />
+          {done && (
+            <Button
+              variant="text"
+              onClick={() => navigate('/overview')}
+              sx={{ fontWeight: 700, textTransform: 'none' }}
+            >
+              המשך ללוח הבקרה
+            </Button>
+          )}
         </Box>
       </Fade>
     );
@@ -211,6 +249,7 @@ export default function Payment() {
           subtotal: order.amount_subtotal ?? order.amount_gross,
           discount: order.amount_discount ?? 0,
           couponCode: order.coupon_code ?? undefined,
+          adjustmentKind: order.adjustment_kind ?? undefined,
         }
       : plan
       ? breakdownFromPrice(plan.price)
@@ -285,7 +324,19 @@ export default function Payment() {
 
         {!orderId && <Alert severity="error" sx={{ mb: 2 }}>חסר מזהה הזמנה בכתובת.</Alert>}
         {canceled && <Alert severity="warning" sx={{ mb: 2 }}>התשלום בוטל, לא חויבתם. אפשר לנסות שוב מתי שבא לכם.</Alert>}
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+        {error && (
+          <Alert
+            severity="error"
+            sx={{ mb: 2 }}
+            action={
+              <Button color="inherit" size="small" sx={{ fontWeight: 700 }} onClick={() => setLoadAttempt((n) => n + 1)}>
+                נסו שוב
+              </Button>
+            }
+          >
+            {error}
+          </Alert>
+        )}
         {payError && <Alert severity="error" sx={{ mb: 2 }}>{payError}</Alert>}
 
         {loading && (

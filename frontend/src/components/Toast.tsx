@@ -23,7 +23,7 @@ export default function Toast({
       onClose={onClose}
       anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
     >
-      <Alert onClose={onClose} severity={severity} sx={{ width: '100%' }}>
+      <Alert onClose={onClose} severity={severity} dir="rtl" sx={{ width: '100%' }}>
         {message}
       </Alert>
     </Snackbar>

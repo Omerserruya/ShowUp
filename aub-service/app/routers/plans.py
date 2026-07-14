@@ -6,7 +6,7 @@ database. Output shape is unchanged from the previous Mongo-backed version.
 """
 from fastapi import APIRouter, HTTPException
 from typing import List
-from app.plans_data import active_plans, get_plan as get_plan_doc
+from app.plans_data import active_plans, load_plans, get_plan as get_plan_doc
 from app.models.plans import PlanResponse, CampaignSchedule
 
 
@@ -53,10 +53,27 @@ def _to_response(plan: dict) -> PlanResponse:
     )
 
 
+def _effective_active_plans():
+    """Active plans from the JSON catalogue, with admin enable/disable overrides
+    applied. A plan an operator disabled in the console is hidden here even if
+    its JSON default is active (and vice-versa)."""
+    import os
+    from app import plan_overrides as po
+    env = {
+        "DB_HOST": os.getenv("DB_HOST"),
+        "DB_PORT": int(os.getenv("DB_PORT", 5432)),
+        "DB_USER": os.getenv("DB_USER"),
+        "DB_PASSWORD": os.getenv("DB_PASSWORD"),
+        "DB_NAME": os.getenv("DB_NAME"),
+    }
+    overrides = po.get_overrides(env)  # best-effort; {} if unavailable
+    return [p for p in load_plans() if po.effective_is_active(p, overrides)]
+
+
 @router.get("", response_model=List[PlanResponse])
 def get_plans():
     """Get all active plans, sorted by price (ascending)."""
-    plans = sorted(active_plans(), key=_extract_price)
+    plans = sorted(_effective_active_plans(), key=_extract_price)
 
     # Fallback: guarantee exactly one "popular" plan for legacy UI expectations.
     if plans and not any(p.get("is_popular") for p in plans):

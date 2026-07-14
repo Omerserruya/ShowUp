@@ -30,6 +30,32 @@ RABBITMQ_USER = os.getenv("RABBITMQ_USER")
 RABBITMQ_PASSWORD = os.getenv("RABBITMQ_PASSWORD")
 WEBHOOK_QUEUE = os.getenv("WEBHOOK_QUEUE")
 CONTACT_IMPORT_QUEUE = os.getenv("CONTACT_IMPORT_QUEUE", "contact_import_queue")
+
+# Per-handler inbound routing. The shared webhook serves every business number
+# (OTP / AI assistant / campaigns & RSVP); inbound guest messages are routed by
+# WHICH number received them. With the per-handler ids unset (single-number
+# deploys) everything falls through to WEBHOOK_QUEUE exactly as before.
+ASSISTANT_WA_PHONE_ID = (os.getenv("ASSISTANT_WA_PHONE_ID") or "").strip()
+OTP_WA_PHONE_ID = (os.getenv("OTP_WA_PHONE_ID") or "").strip()
+ASSISTANT_INBOUND_QUEUE = os.getenv("ASSISTANT_INBOUND_QUEUE", "assistant_inbound_queue")
+
+
+def route_inbound_message(wa_phone_number_id: Optional[str]) -> Optional[str]:
+    """Pick the queue for an inbound *message* by receiving business number.
+
+    Returns a queue name, or the sentinel "drop" for numbers that must never
+    feed a conversational flow (the OTP sender is no-reply). None = default
+    WEBHOOK_QUEUE (campaigns & RSVP flow). Status updates are NOT routed here -
+    delivery receipts are processed uniformly off WEBHOOK_QUEUE.
+    """
+    pid = str(wa_phone_number_id or "").strip()
+    if not pid:
+        return None
+    if ASSISTANT_WA_PHONE_ID and pid == ASSISTANT_WA_PHONE_ID:
+        return ASSISTANT_INBOUND_QUEUE
+    if OTP_WA_PHONE_ID and pid == OTP_WA_PHONE_ID:
+        return "drop"
+    return None
 PORT = int(os.getenv("PORT"))
 
 # WhatsApp message schema
@@ -276,6 +302,10 @@ async def handle_whatsapp_webhook(request: Request):
         for entry in data.get("entry", []):
             for change in entry.get("changes", []):
                 value = change.get("value", {})
+                # Which business number received this event - the shared webhook
+                # serves all handler numbers (OTP / assistant / campaigns), so
+                # consumers route by this id.
+                wa_phone_number_id = (value.get("metadata") or {}).get("phone_number_id")
                 # Log entire 'value' object (contains messages/statuses/metadata)
                 try:
                     logger.info(f"Webhook change value: {json.dumps(value, ensure_ascii=False)}")
@@ -296,6 +326,7 @@ async def handle_whatsapp_webhook(request: Request):
                             "message_type": "status.update",
                             "payload": status,
                             "wa_message_id": status.get("id"),
+                            "wa_phone_number_id": wa_phone_number_id,
                             "received_at": datetime.utcnow().isoformat()
                         }
                         enqueue_to_rabbitmq("status.update", status_payload)
@@ -325,6 +356,7 @@ async def handle_whatsapp_webhook(request: Request):
                         "message_id": message_id,
                         "reply_to_message_id": reply_to_message_id,
                         "type": category,
+                        "wa_phone_number_id": wa_phone_number_id,
                         "payload": {
                             **message,
                             "extracted_data": extracted_data
@@ -340,6 +372,7 @@ async def handle_whatsapp_webhook(request: Request):
                             "message_id": message_id,  # For idempotency
                             "sender_phone": sender,
                             "raw_message": message,  # Full original message payload
+                            "wa_phone_number_id": wa_phone_number_id,
                             "received_at": datetime.utcnow().isoformat()
                         }
                         
@@ -347,10 +380,16 @@ async def handle_whatsapp_webhook(request: Request):
                             processed_count += 1
                             logger.info(f"Enqueued contact import message {message_id} to {CONTACT_IMPORT_QUEUE} with {len(message.get('contacts', []))} contact(s)")
                     else:
-                        # Enqueue single message with topic
-                        if enqueue_to_rabbitmq(category, queue_payload):
+                        # Route by which business number received the message
+                        # (assistant number -> assistant queue, OTP -> drop,
+                        # campaigns/RSVP or single-number deploys -> default).
+                        route = route_inbound_message(wa_phone_number_id)
+                        if route == "drop":
                             processed_count += 1
-                            logger.info(f"Enqueued {category} message {message_id} with topic '{category}'")
+                            logger.info(f"Dropping message {message_id} received on no-reply OTP number")
+                        elif enqueue_to_rabbitmq(category, queue_payload, queue_name=route):
+                            processed_count += 1
+                            logger.info(f"Enqueued {category} message {message_id} with topic '{category}' to {route or WEBHOOK_QUEUE}")
         
         return JSONResponse(
             status_code=200,

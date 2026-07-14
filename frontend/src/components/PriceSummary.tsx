@@ -56,7 +56,13 @@ export default function PriceSummary({ price, breakdown, totalLabel = 'סה״כ 
       {hasDiscount && <Row label="מחיר" value={formatILS(subtotal)} />}
       {hasDiscount && (
         <Row
-          label={b.couponCode ? `הנחה (${b.couponCode})` : 'הנחה'}
+          label={
+            b.adjustmentKind === 'credit'
+              ? 'זיכוי על החבילה הנוכחית'
+              : b.couponCode
+              ? `הנחה (${b.couponCode})`
+              : 'הנחה'
+          }
           value={`−${formatILS(discount)}`}
           accent
         />

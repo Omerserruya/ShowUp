@@ -83,6 +83,12 @@ class Worker:
         )
 
         extracted = payload.get("extracted_data", {}) if payload else {}
+        # Semantic signal (independent of the displayed label): the Meta button
+        # payload, else the quick-reply button id. Resolved to an RsvpAction in the
+        # flow manager. The button title is presentation only and is kept just as a
+        # legacy text fallback.
+        button_id = extracted.get("button_id")
+        button_payload = extracted.get("button_payload")
         button_text = extracted.get("button_title") or extracted.get("button_text") or extracted.get("button_id")
         text_value = extracted.get("text") or button_text or msg.get("text") or (payload.get("text") if payload else None) or ""
 
@@ -115,6 +121,8 @@ class Worker:
             "guest_phone": guest_phone,  # Already normalized
             "event_id": str(event_id) if event_id else None,
             "text": text_value,
+            "button_id": button_id,
+            "button_payload": button_payload,
             "context_id": context_id,
             "template_parameters": template_params or {},
             "status_payload": status_payload or {},
@@ -160,6 +168,8 @@ class Worker:
             message_type=msg_type,
             guest_phone=guest_phone,
             text=normalized.get("text") or "",
+            button_id=normalized.get("button_id"),
+            button_payload=normalized.get("button_payload"),
             event_id=event_id,
             context_id=normalized.get("context_id"),
             raw=msg,

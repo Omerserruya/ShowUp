@@ -11,6 +11,7 @@ import {
   Chip,
   CircularProgress,
   Alert,
+  Snackbar,
   Stack,
   alpha,
   AppBar,
@@ -60,6 +61,7 @@ export function ImportedGuestsReviewScreen() {
   const [processing, setProcessing] = useState<Set<string>>(new Set());
   const [removedContactIds, setRemovedContactIds] = useState<Set<string>>(new Set());
   const [approveAllDialogOpen, setApproveAllDialogOpen] = useState(false);
+  const [rejectAllDialogOpen, setRejectAllDialogOpen] = useState(false);
   const [fullEditMode, setFullEditMode] = useState<Set<string>>(new Set()); // Full edit mode for contacts
   const [menuAnchor, setMenuAnchor] = useState<{ contactId: string; anchor: HTMLElement } | null>(null);
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
@@ -67,6 +69,7 @@ export function ImportedGuestsReviewScreen() {
     message: '',
     severity: 'success',
   });
+  const [processedCount, setProcessedCount] = useState(0);
 
   // Flatten all contacts from all imports, excluding removed ones
   const allContacts: GuestImportContact[] = imports
@@ -118,7 +121,9 @@ export function ImportedGuestsReviewScreen() {
 
   // Calculate statistics
   const totalContacts = allContacts.length;
-  const approvedCount = 0; // Will be updated when we track approvals
+  // Contacts handled this session (approved or rejected) drive the progress bar;
+  // removedContactIds gets pruned on refresh, so keep a stable counter instead.
+  const sessionTotal = totalContacts + processedCount;
 
   // Navigate back if all contacts are processed
   useEffect(() => {
@@ -195,6 +200,7 @@ export function ImportedGuestsReviewScreen() {
       await approveGuestImportContactWithData(contactId, approveData);
       // Remove contact from list immediately
       setRemovedContactIds((prev) => new Set(prev).add(contactId));
+      setProcessedCount((prev) => prev + 1);
       setSnackbar({ open: true, message: 'האורח אושר בהצלחה', severity: 'success' });
       
       // Refresh the imports list
@@ -216,6 +222,7 @@ export function ImportedGuestsReviewScreen() {
       await rejectGuestImportContact(contactId);
       // Remove contact from list immediately
       setRemovedContactIds((prev) => new Set(prev).add(contactId));
+      setProcessedCount((prev) => prev + 1);
       setSnackbar({ open: true, message: 'האורח נדחה', severity: 'success' });
       
       // Refresh the imports list
@@ -277,6 +284,7 @@ export function ImportedGuestsReviewScreen() {
         allContacts.forEach((c) => next.add(c.id));
         return next;
       });
+      setProcessedCount((prev) => prev + allContacts.length);
       setSnackbar({ open: true, message: 'כל האורחים אושרו בהצלחה', severity: 'success' });
       refresh();
       setTimeout(() => {
@@ -290,6 +298,7 @@ export function ImportedGuestsReviewScreen() {
   };
 
   const handleRejectAll = async () => {
+    setRejectAllDialogOpen(false);
     setProcessing(new Set(allContacts.map(c => c.id)));
     try {
       for (const contact of allContacts) {
@@ -335,8 +344,9 @@ export function ImportedGuestsReviewScreen() {
       <Box>
         <AppBar position="static" sx={{ backgroundColor: 'white', color: 'black', boxShadow: 'none' }}>
           <Toolbar>
-            <IconButton edge="start" color="inherit" onClick={() => navigate('/guests')} sx={{ mr: 2 }}>
-              <ArrowBackIcon />
+            <IconButton edge="start" color="inherit" onClick={() => navigate('/guests')} sx={{ marginInlineEnd: 2 }}>
+              {/* RTL: "back" points toward the reading-direction start (right) */}
+              <ArrowBackIcon sx={{ transform: 'scaleX(-1)' }} />
             </IconButton>
             <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 600 }}>
               אישור אורחים מווטסאפ
@@ -356,8 +366,9 @@ export function ImportedGuestsReviewScreen() {
     <Box sx={{ backgroundColor: '#F5F5F5', minHeight: '100vh' }}>
       <AppBar position="static" sx={{ backgroundColor: 'white', color: 'black', boxShadow: 'none' }}>
         <Toolbar>
-          <IconButton edge="start" color="inherit" onClick={() => navigate('/guests')} sx={{ mr: 2 }}>
-            <ArrowBackIcon />
+          <IconButton edge="start" color="inherit" onClick={() => navigate('/guests')} sx={{ marginInlineEnd: 2 }}>
+            {/* RTL: "back" points toward the reading-direction start (right) */}
+            <ArrowBackIcon sx={{ transform: 'scaleX(-1)' }} />
           </IconButton>
           <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 600 }}>
             אישור אורחים מווטסאפ
@@ -371,7 +382,7 @@ export function ImportedGuestsReviewScreen() {
           sx={{
             mb: 1.5,
             borderRadius: 3,
-            background: 'linear-gradient(180deg, #5236F7 0%, #6B4CE6 100%)',
+            backgroundColor: '#6f74e0',
             color: 'white',
             boxShadow: 'none',
           }}
@@ -400,7 +411,7 @@ export function ImportedGuestsReviewScreen() {
             </Typography>
             <LinearProgress
               variant="determinate"
-              value={(approvedCount / totalContacts) * 100}
+              value={sessionTotal > 0 ? (processedCount / sessionTotal) * 100 : 0}
               sx={{
                 height: 4,
                 borderRadius: 2,
@@ -412,7 +423,7 @@ export function ImportedGuestsReviewScreen() {
               }}
             />
             <Typography variant="body2" sx={{ opacity: 0.9, fontSize: '0.875rem' }}>
-              {approvedCount} מתוך {totalContacts} אושרו
+              {processedCount} מתוך {sessionTotal} טופלו
             </Typography>
           </CardContent>
         </Card>
@@ -428,14 +439,14 @@ export function ImportedGuestsReviewScreen() {
             size="small"
             sx={{
               borderRadius: 3,
-              backgroundColor: '#5236F7',
+              backgroundColor: '#6f74e0',
               color: 'white',
               textTransform: 'none',
               py: 0.75,
               gap: 1,
               flexDirection: 'row-reverse',
               '&:hover': {
-                backgroundColor: '#4529D9',
+                backgroundColor: '#5f64d6',
               },
               '& .MuiButton-endIcon': {
                 marginLeft: 0,
@@ -449,7 +460,7 @@ export function ImportedGuestsReviewScreen() {
             variant="outlined"
             fullWidth
             endIcon={<CancelIcon />}
-            onClick={handleRejectAll}
+            onClick={() => setRejectAllDialogOpen(true)}
             disabled={processing.size > 0}
             size="small"
             sx={{
@@ -649,20 +660,13 @@ export function ImportedGuestsReviewScreen() {
                           <PhoneIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                           <Typography
                             variant="body2"
-                            sx={{ color: 'text.primary', cursor: 'pointer', direction: 'rtl', textAlign: 'right', fontSize: '0.875rem' }}
+                            dir="ltr"
+                            sx={{ color: 'text.primary', cursor: 'pointer', unicodeBidi: 'isolate', textAlign: 'right', fontSize: '0.875rem' }}
                             onDoubleClick={() =>
                               handleEdit(contact.id, 'phone', contact.phone)
                             }
                           >
-                            {(() => {
-                              // Format phone number: if it starts with +972, show it as 972+ (RTL)
-                              const phone = contact.phone || '';
-                              if (phone.startsWith('+972')) {
-                                const rest = phone.substring(4).trim();
-                                return `${rest} 972+`;
-                              }
-                              return phone || '-';
-                            })()}
+                            {contact.phone || '-'}
                           </Typography>
                         </Box>
                       )}
@@ -756,14 +760,14 @@ export function ImportedGuestsReviewScreen() {
                       size="small"
                       sx={{
                         borderRadius: 2,
-                        background: 'linear-gradient(90deg, #5236F7 0%, #6B4CE6 100%)',
+                        backgroundColor: '#6f74e0',
                         color: 'white',
                         textTransform: 'none',
                         px: 2.5,
                         py: 0.75,
                         flexDirection: 'row-reverse',
                         '&:hover': {
-                          background: 'linear-gradient(90deg, #4529D9 0%, #5A3FD4 100%)',
+                          backgroundColor: '#5f64d6',
                         },
                         '& .MuiButton-endIcon': {
                           marginLeft: 0,
@@ -807,7 +811,7 @@ export function ImportedGuestsReviewScreen() {
                       <ListItemIcon>
                         <CancelIcon fontSize="small" sx={{ color: 'error.main' }} />
                       </ListItemIcon>
-                      <ListItemText>מחיקה</ListItemText>
+                      <ListItemText>דחייה</ListItemText>
                     </MenuItem>
                   </Menu>
                 </CardContent>
@@ -828,22 +832,39 @@ export function ImportedGuestsReviewScreen() {
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setApproveAllDialogOpen(false)} sx={{ color: '#5236F7' }}>
+          <Button onClick={() => setApproveAllDialogOpen(false)} sx={{ color: '#6f74e0' }}>
             הבנתי
           </Button>
         </DialogActions>
       </Dialog>
 
+      {/* Reject All confirmation dialog */}
+      <Dialog open={rejectAllDialogOpen} onClose={() => setRejectAllDialogOpen(false)} dir="rtl">
+        <DialogTitle>דחיית {allContacts.length} אורחים</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            האם לדחות את כל {allContacts.length} האורחים הממתינים? לא ניתן לבטל פעולה זו.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRejectAllDialogOpen(false)} disabled={processing.size > 0}>ביטול</Button>
+          <Button variant="contained" color="error" onClick={handleRejectAll} disabled={processing.size > 0}>
+            דחה הכל
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Snackbar for notifications */}
-      {snackbar.open && (
-        <Alert 
-          severity={snackbar.severity} 
-          onClose={() => setSnackbar({ ...snackbar, open: false })}
-          sx={{ position: 'fixed', bottom: 16, right: 16, zIndex: 9999 }}
-        >
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert onClose={() => setSnackbar({ ...snackbar, open: false })} severity={snackbar.severity} sx={{ width: '100%' }}>
           {snackbar.message}
         </Alert>
-      )}
+      </Snackbar>
     </Box>
   );
 }

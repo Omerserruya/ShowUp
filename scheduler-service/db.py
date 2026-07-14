@@ -117,14 +117,39 @@ def ensure_tables(conn: psycopg2.extensions.connection):
             );
             """
         )
-        
+
+        # Planner batch releases. Owned by planner-service, but ensured here too so
+        # the scheduler's release query is always valid regardless of boot order.
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS campaign_releases (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                campaign_id UUID NOT NULL,
+                event_id UUID NOT NULL,
+                channel VARCHAR(20) NOT NULL,
+                release_date DATE NOT NULL,
+                target_date DATE,
+                count INTEGER NOT NULL DEFAULT 0,
+                moved BOOLEAN NOT NULL DEFAULT false,
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_releases_due ON campaign_releases (status, release_date)")
+
         logger.info("Ensured required tables exist")
 
 
 def fetch_and_mark_due(conn: psycopg2.extensions.connection) -> Sequence[Tuple]:
     """Atomically claim due campaigns by setting status=processing and return them.
     Only processes campaigns for events where active = true.
-    schedule_time must be stored in UTC (TIMESTAMPTZ); NOW() is compared in UTC."""
+    schedule_time must be stored in UTC (TIMESTAMPTZ); NOW() is compared in UTC.
+
+    Legacy path: only for campaigns the planner is NOT managing (no release rows).
+    Planner-managed campaigns are released via `fetch_and_mark_due_releases`, so
+    the planner is the single source of truth for their timing."""
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
@@ -137,6 +162,9 @@ def fetch_and_mark_due(conn: psycopg2.extensions.connection) -> Sequence[Tuple]:
                 AND c.schedule_time IS NOT NULL
                 AND c.schedule_time <= NOW()
                 AND e.active = true
+                AND NOT EXISTS (
+                      SELECT 1 FROM campaign_releases r WHERE r.campaign_id = c.id
+                )
               FOR UPDATE SKIP LOCKED
             )
             RETURNING id, event_id, name, template, channel, schedule_time, status
@@ -146,8 +174,43 @@ def fetch_and_mark_due(conn: psycopg2.extensions.connection) -> Sequence[Tuple]:
     return rows
 
 
+def fetch_and_mark_due_releases(conn: psycopg2.extensions.connection) -> Sequence[Tuple]:
+    """Atomically claim planner releases whose day has arrived (status=queued) and
+    return them for publishing. The planner decided the day + batch size; the
+    scheduler only transports. Skips inactive events."""
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            UPDATE campaign_releases r
+            SET status = 'queued', updated_at = NOW()
+            FROM campaigns c, events e
+            WHERE r.campaign_id = c.id
+              AND c.event_id = e.id
+              AND r.id IN (
+                SELECT r2.id FROM campaign_releases r2
+                INNER JOIN campaigns c2 ON r2.campaign_id = c2.id
+                INNER JOIN events e2 ON c2.event_id = e2.id
+                WHERE r2.status = 'pending'
+                  AND r2.release_date <= (NOW() AT TIME ZONE 'UTC')::date
+                  AND r2.count > 0
+                  AND e2.active = true
+                FOR UPDATE OF r2 SKIP LOCKED
+              )
+            RETURNING r.id AS release_id, r.count, r.campaign_id, r.event_id,
+                      c.name, c.template, c.channel, r.release_date
+            """
+        )
+        rows = cur.fetchall()
+    return rows
+
+
 def revert_to_pending(conn: psycopg2.extensions.connection, campaign_id: str):
     with conn.cursor() as cur:
         cur.execute("UPDATE campaigns SET status='pending' WHERE id=%s", (campaign_id,))
+
+
+def revert_release_to_pending(conn: psycopg2.extensions.connection, release_id: str):
+    with conn.cursor() as cur:
+        cur.execute("UPDATE campaign_releases SET status='pending' WHERE id=%s", (release_id,))
 
 

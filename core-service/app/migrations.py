@@ -11,6 +11,34 @@ from sqlalchemy.engine import Engine
 logger = logging.getLogger(__name__)
 
 
+def ensure_messaging_template_state(engine: Engine) -> None:
+    """Create `messaging_template_state` - the DB home for MUTABLE Meta runtime
+    state of built-in catalog templates (the catalog YAML stays pure authored
+    content). Idempotent; a key with no row is treated as its catalog default."""
+    with engine.begin() as conn:
+        try:
+            conn.execute(text(
+                """
+                CREATE TABLE IF NOT EXISTS messaging_template_state (
+                    template_key       VARCHAR(80) PRIMARY KEY,
+                    internal_status    VARCHAR(30) NOT NULL DEFAULT 'draft',
+                    meta_id            VARCHAR(128),
+                    meta_status        VARCHAR(20) NOT NULL DEFAULT 'none',
+                    meta_category      VARCHAR(30),
+                    uploaded_at        TIMESTAMPTZ,
+                    last_sync          TIMESTAMPTZ,
+                    rejection_reason   TEXT,
+                    published_checksum VARCHAR(64),
+                    published_version  INTEGER NOT NULL DEFAULT 0,
+                    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            ))
+        except Exception as exc:  # pragma: no cover
+            logger.debug("messaging_template_state create skipped: %s", exc)
+
+
 def ensure_guest_counts_and_group(engine: Engine) -> None:
     """
     Ensure guests table schema matches application expectations:
@@ -53,6 +81,9 @@ def ensure_campaign_recipient_count(engine: Engine) -> None:
         "UPDATE campaigns SET recipient_count = 0 WHERE recipient_count IS NULL",
         "ALTER TABLE campaigns ALTER COLUMN recipient_count SET DEFAULT 0",
         "ALTER TABLE campaigns ALTER COLUMN recipient_count SET NOT NULL",
+        # Optional header image for templates whose header is an image. When set,
+        # it overrides the default header_image_url at send time (see worker).
+        "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS header_image_url TEXT",
     ]
 
     with engine.begin() as conn:
@@ -142,6 +173,8 @@ def ensure_events_v2_columns(engine: Engine) -> None:
         "ALTER TABLE events ADD COLUMN IF NOT EXISTS public_slug VARCHAR(120)",
         "CREATE UNIQUE INDEX IF NOT EXISTS ix_events_public_slug ON events (public_slug)",
         "ALTER TABLE events ADD COLUMN IF NOT EXISTS invitation JSONB",
+        # Paid extra message-round credits (beyond the plan's included rounds).
+        "ALTER TABLE events ADD COLUMN IF NOT EXISTS extra_rounds_allowance INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE events ADD COLUMN IF NOT EXISTS invitation_published BOOLEAN NOT NULL DEFAULT false",
     ]
     with engine.begin() as conn:
@@ -194,6 +227,18 @@ def ensure_events_payment_status(engine: Engine) -> None:
     logger.info("Event schema verified (payment_status column exists)")
 
 
+def ensure_events_subjects(engine: Engine) -> None:
+    """Ensure events.subjects (JSONB) exists - the event-type-specific subjects
+    (bride/groom/parents/baby/celebrant/company). Persisted so subject variables
+    resolve identically in preview and delivery."""
+    with engine.begin() as conn:
+        try:
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS subjects JSONB"))
+            logger.info("Schema patch applied: events.subjects")
+        except Exception as exc:  # pragma: no cover
+            logger.debug("events.subjects skipped: %s", exc)
+
+
 def ensure_events_event_type(engine: Engine) -> None:
     """Ensure events.event_type exists. Drives the adaptive timeline + template
     recommendations (wedding, brit, brita, bar, bat, corporate, birthday, other)."""
@@ -224,6 +269,83 @@ def ensure_campaign_custom_message(engine: Engine) -> None:
             except Exception as exc:  # pragma: no cover - best-effort migration
                 logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
                 continue
+
+
+def ensure_campaign_template_key(engine: Engine) -> None:
+    """Add campaigns.template_key (the canonical catalog id) and backfill it for
+    existing rows by resolving their legacy `template` reference through the
+    messaging SSOT. This is the messaging-refactor migration path: the raw
+    `template` value is preserved (rollback-safe); the worker prefers the
+    canonical key when present and still resolves `template` when it is NULL."""
+    with engine.begin() as conn:
+        try:
+            conn.execute(text("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS template_key VARCHAR(80)"))
+        except Exception as exc:  # pragma: no cover
+            logger.debug("template_key column skipped: %s", exc)
+            return
+
+    # Backfill (best-effort): resolve legacy template -> canonical key. UUID/DB
+    # references without a lookup resolve to None and are left for the worker.
+    try:
+        from shared.domain.messaging import resolve_template
+    except Exception as exc:  # pragma: no cover
+        logger.warning("messaging SSOT unavailable, skipping template_key backfill: %s", exc)
+        return
+
+    with engine.begin() as conn:
+        rows = conn.execute(text(
+            "SELECT id, template, campaign_type FROM campaigns WHERE template_key IS NULL AND template IS NOT NULL"
+        )).mappings().all()
+        backfilled = 0
+        for r in rows:
+            t = resolve_template(r["template"], flow_stage=r.get("campaign_type"))
+            if t is not None:
+                conn.execute(
+                    text("UPDATE campaigns SET template_key = :k WHERE id = :id"),
+                    {"k": t.key, "id": r["id"]},
+                )
+                backfilled += 1
+        if rows:
+            logger.info("template_key backfill: %d/%d campaigns resolved", backfilled, len(rows))
+
+
+def ensure_campaign_stage_variant(engine: Engine) -> None:
+    """Add campaigns.stage_id / variant_id (the stage-execution coordinates) and
+    backfill them from each campaign's template via the stage catalog. Additive and
+    rollback-safe: the worker prefers (stage,variant) but resolves the same Template
+    the legacy key would, so nothing changes at runtime."""
+    with engine.begin() as conn:
+        for stmt in (
+            "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS stage_id VARCHAR(40)",
+            "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS variant_id VARCHAR(60)",
+        ):
+            try:
+                conn.execute(text(stmt))
+            except Exception as exc:  # pragma: no cover
+                logger.debug("stage/variant column skipped: %s", exc)
+                return
+
+    try:
+        from shared.domain.messaging import stage_variant_for_template
+    except Exception as exc:  # pragma: no cover
+        logger.warning("messaging SSOT unavailable, skipping stage/variant backfill: %s", exc)
+        return
+
+    with engine.begin() as conn:
+        rows = conn.execute(text(
+            "SELECT id, template_key, template FROM campaigns WHERE stage_id IS NULL"
+        )).mappings().all()
+        n = 0
+        for r in rows:
+            sv = stage_variant_for_template(r["template_key"] or r["template"])
+            if sv:
+                conn.execute(
+                    text("UPDATE campaigns SET stage_id = :s, variant_id = :v WHERE id = :id"),
+                    {"s": sv[0], "v": sv[1], "id": r["id"]},
+                )
+                n += 1
+        if rows:
+            logger.info("stage/variant backfill: %d/%d campaigns mapped", n, len(rows))
 
 
 def ensure_campaign_audience(engine: Engine) -> None:
@@ -268,93 +390,79 @@ def ensure_wa_template_metadata(engine: Engine) -> None:
                 continue
 
 
-# Built-in PUBLIC templates. Seeded once so the wizard can fetch+filter templates
-# by metadata instead of hardcoding them. Adding a public template later is just a
-# new row here (or via API) - no frontend change required. Mirrors the frontend
-# seed in frontend/src/config/templates.ts.
-_PUBLIC_TEMPLATE_SEED = [
-    {
-        "name": "תבנית שמור תאריך עם כפתורים", "flow_stage": "invitation", "is_default": True,
-        "title": "שמור את התאריך! 📅",
-        "body": "שלום {{שם}},\n\nאנחנו שמחים להזמין אותך ל{{סוג_אירוע}} של {{שם_מזמין}}.\n\n📅 תאריך: {{תאריך}}\n🕐 שעה: {{שעה}}\n📍 מיקום: {{מיקום}}\n\nנשמח לראותך!",
-        "buttons": [{"id": "view_details", "text": "צפה בפרטים", "type": "url"}, {"id": "confirm", "text": "אשר הגעה", "type": "quick_reply"}],
-    },
-    {
-        "name": "תבנית שמור תאריך פשוטה", "flow_stage": "invitation", "is_default": False,
-        "title": "{{שם_אירוע}}",
-        "body": "שלום {{שם}},\n\n{{שם_מזמין}} מזמינים אותך ל{{סוג_אירוע}}.\n\n{{תאריך}} בשעה {{שעה}}\n{{מיקום}}\n\nנשמח לראותך!",
-        "buttons": None,
-    },
-    {
-        "name": "תזכורת שבוע לפני - מפורטת", "flow_stage": "reminder", "is_default": True,
-        "title": "תזכורת: {{שם_אירוע}}",
-        "body": "שלום {{שם}},\n\nזו תזכורת ש{{סוג_אירוע}} של {{שם_מזמין}} יתקיים בעוד שבוע.\n\n📅 {{תאריך}} בשעה {{שעה}}\n📍 {{מיקום}}\n\nמצפים לראותך!",
-        "buttons": None,
-    },
-    {
-        "name": "תזכורת שבוע לפני - עם כפתור", "flow_stage": "reminder", "is_default": False,
-        "title": "תזכורת שבוע לפני",
-        "body": "שלום {{שם}},\n\n{{שם_אירוע}} מתקרב! האירוע יתקיים ב{{תאריך}} בשעה {{שעה}} ב{{מיקום}}.\n\nנשמח לראותך שם!",
-        "buttons": [{"id": "view_location", "text": "צפה במיקום", "type": "url"}],
-    },
-    {
-        "name": "תזכורת יום לפני - מפורטת", "flow_stage": "final_reminder", "is_default": True,
-        "title": "מחר: {{שם_אירוע}}",
-        "body": "שלום {{שם}},\n\nתזכורת אחרונה: מחר {{תאריך}} בשעה {{שעה}} יתקיים {{סוג_אירוע}} של {{שם_מזמין}} ב{{מיקום}}.\n\nמצפים לראותך!",
-        "buttons": None,
-    },
-    {
-        "name": "תזכורת יום לפני - עם כפתורים", "flow_stage": "final_reminder", "is_default": False,
-        "title": "תזכורת: מחר האירוע!",
-        "body": "שלום {{שם}},\n\n{{שם_אירוע}} מחר ב{{תאריך}} בשעה {{שעה}}.\nמיקום: {{מיקום}}\n\nלא לשכוח! 😊",
-        "buttons": [{"id": "confirm", "text": "אשר הגעה", "type": "quick_reply"}, {"id": "cancel", "text": "לא אוכל להגיע", "type": "quick_reply"}],
-    },
-    {
-        "name": "תודה מפורטת", "flow_stage": "thank_you", "is_default": True,
-        "title": "תודה שהגעת! 🙏",
-        "body": "שלום {{שם}},\n\nתודה רבה שהגעת ל{{סוג_אירוע}} של {{שם_מזמין}}.\n\nהנוכחות שלך הייתה משמעותית עבורנו ואנחנו מעריכים את זה מאוד.\n\nתודה רבה!",
-        "buttons": None,
-    },
-    {
-        "name": "תודה קצרה", "flow_stage": "thank_you", "is_default": False,
-        "title": "תודה!",
-        "body": "שלום {{שם}},\n\nתודה שהגעת ל{{שם_אירוע}}.\n\nשמחנו לראותך ואנחנו מעריכים את הנוכחות שלך.\n\nתודה רבה!",
-        "buttons": None,
-    },
-]
+# NOTE: Global templates are defined in the messaging SSOT
+# (shared/domain/messaging/catalog.py) and served via GET /catalog. The old DB
+# seed of public templates was removed to keep ONE source of truth; the
+# wa_templates table now holds only custom, event-scoped templates.
 
 
-def seed_public_templates(engine: Engine) -> None:
-    """Insert the built-in public templates once (idempotent). Only seeds when no
-    global public templates exist yet, so it never duplicates or fights edits."""
-    try:
-        with engine.begin() as conn:
-            existing = conn.execute(
-                text("SELECT COUNT(*) FROM wa_templates WHERE event_id IS NULL AND visibility = 'public'")
-            ).scalar()
-            if existing and int(existing) > 0:
-                logger.info("Public templates already present (%s) - skipping seed", existing)
-                return
-            for t in _PUBLIC_TEMPLATE_SEED:
-                components = {"title": t["title"], "is_default": t["is_default"]}
-                if t.get("buttons"):
-                    components["buttons"] = t["buttons"]
-                conn.execute(
-                    text(
-                        "INSERT INTO wa_templates (id, name, language, body, components, lifecycle, flow_stage, visibility) "
-                        "VALUES (:id, :name, 'he', :body, CAST(:components AS json), 'approved', :flow_stage, 'public')"
-                    ),
-                    {
-                        "id": uuid.uuid4(),
-                        "name": t["name"],
-                        "body": t["body"],
-                        "components": json.dumps(components, ensure_ascii=False),
-                        "flow_stage": t["flow_stage"],
-                    },
-                )
-            logger.info("Seeded %d public templates", len(_PUBLIC_TEMPLATE_SEED))
-    except Exception as exc:  # pragma: no cover - best-effort seed
-        logger.debug("Public template seed skipped: %s", exc)
+def ensure_accounts_venue_columns(engine: Engine) -> None:
+    """Ensure the Venue Edition columns exist on accounts: type, event_capacity,
+    partner_coupon_code. The ORM model declares them, so without these every
+    Account query fails with UndefinedColumn on pre-existing deployments."""
+    statements = [
+        "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS type VARCHAR(20) NOT NULL DEFAULT 'personal'",
+        "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS event_capacity INTEGER",
+        "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS partner_coupon_code VARCHAR(50)",
+    ]
+    with engine.begin() as conn:
+        for stmt in statements:
+            try:
+                conn.execute(text(stmt))
+                logger.info("Schema patch applied: %s", stmt)
+            except Exception as exc:  # pragma: no cover - best-effort migration
+                logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
+                continue
+    logger.info("Account schema verified (type, event_capacity, partner_coupon_code columns exist)")
+
+
+def ensure_admin_ops_schema(engine: Engine) -> None:
+    """Phase 2 (production ops): account suspend/branding, audit log, feature flags.
+
+    - accounts.status         : 'active' | 'suspended' (venue suspend/reactivate)
+    - accounts.branding       : JSONB, future-ready venue branding config
+    - audit_log               : append-only record of privileged admin/venue actions
+    - feature_flags           : global operational flags toggled from the admin console
+    """
+    statements = [
+        "CREATE EXTENSION IF NOT EXISTS pgcrypto",
+        "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'",
+        "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS branding JSONB",
+        # Matches the existing AuditLog ORM model (models.py) so both agree.
+        """
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            account_id UUID,
+            actor_type VARCHAR(20) NOT NULL,
+            actor_id UUID,
+            action VARCHAR(60) NOT NULL,
+            entity_type VARCHAR(40),
+            entity_id UUID,
+            data JSONB,
+            occurred_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_audit_log_occurred ON audit_log (occurred_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_audit_log_account ON audit_log (account_id)",
+        """
+        CREATE TABLE IF NOT EXISTS feature_flags (
+            key VARCHAR(80) PRIMARY KEY,
+            enabled BOOLEAN NOT NULL DEFAULT false,
+            description TEXT,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_by UUID
+        )
+        """,
+    ]
+    with engine.begin() as conn:
+        for stmt in statements:
+            try:
+                conn.execute(text(stmt))
+                logger.info("Schema patch applied: %s", stmt.strip().split("\n")[0])
+            except Exception as exc:  # pragma: no cover - best-effort migration
+                logger.debug("Schema patch skipped: %s (%s)", stmt.strip()[:50], exc)
+                continue
+    logger.info("Admin-ops schema verified (accounts.status/branding, audit_log, feature_flags)")
 
 
 def apply_schema_patches(engine: Engine) -> None:
@@ -366,9 +474,14 @@ def apply_schema_patches(engine: Engine) -> None:
     ensure_events_v2_columns(engine)
     ensure_events_payment_status(engine)
     ensure_events_event_type(engine)
+    ensure_events_subjects(engine)
     ensure_campaign_custom_message(engine)
+    ensure_campaign_template_key(engine)
+    ensure_campaign_stage_variant(engine)
     ensure_campaign_audience(engine)
     ensure_wa_template_metadata(engine)
-    seed_public_templates(engine)
+    ensure_accounts_venue_columns(engine)
+    ensure_admin_ops_schema(engine)
+    ensure_messaging_template_state(engine)
 
 

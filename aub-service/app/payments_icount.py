@@ -21,7 +21,7 @@ slightly different key spellings across versions / accounts).
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 
@@ -33,11 +33,28 @@ def get_config() -> Dict[str, str]:
         "base_url": os.getenv("ICOUNT_BASE_URL", DEFAULT_BASE).rstrip("/") + "/",
         "api_token": os.getenv("ICOUNT_API_TOKEN", ""),
         "public_base_url": os.getenv("PUBLIC_BASE_URL", "").rstrip("/"),
-        # Which iCount PayPage (עמוד סליקה) to charge against. Created in the iCount
-        # dashboard; its id must be passed to generate_sale or iCount rejects with
-        # "missing_paypage_id".
+        # PayPages (עמודי סליקה) are chosen by PURCHASE TYPE, not customer origin:
+        #   new_purchase → the customer's first paid purchase (supports coupons)
+        #   upgrade      → an existing paying customer moving up a tier (credit only)
+        # `paypage_id` is the legacy single-PayPage id, kept as a fallback so a
+        # not-yet-split setup keeps charging during the migration.
         "paypage_id": os.getenv("ICOUNT_PAYPAGE_ID", ""),
+        "new_purchase_paypage_id": os.getenv("ICOUNT_NEW_PURCHASE_PAYPAGE_ID", ""),
+        "upgrade_paypage_id": os.getenv("ICOUNT_UPGRADE_PAYPAGE_ID", ""),
     }
+
+
+def paypage_for(purchase_type: str) -> str:
+    """iCount PayPage id for a PURCHASE TYPE (never the acquisition channel).
+
+    ``"upgrade"`` → ICOUNT_UPGRADE_PAYPAGE_ID, anything else ("new_purchase") →
+    ICOUNT_NEW_PURCHASE_PAYPAGE_ID. Both fall back to the legacy ICOUNT_PAYPAGE_ID
+    so a single-PayPage configuration still works while the two are being set up.
+    """
+    cfg = get_config()
+    if purchase_type == "upgrade":
+        return cfg["upgrade_paypage_id"] or cfg["paypage_id"]
+    return cfg["new_purchase_paypage_id"] or cfg["paypage_id"]
 
 
 def is_configured() -> bool:
@@ -67,44 +84,50 @@ def _ok(body: Dict[str, Any]) -> bool:
 def generate_sale(
     *,
     order_id: str,
-    amount: float,
-    description: str,
+    items: List[Dict[str, Any]],
     full_name: str,
     phone: str,
     email: Optional[str],
     success_url: str,
     cancel_url: str,
     ipn_url: str,
+    paypage_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Generate an iCount PayPage. Returns {url, sale_id}.
 
     Raises RuntimeError if iCount isn't configured or the API returns a failure.
-    The amount is authoritative and comes from the caller (server-side plan price);
-    it is never taken from the client.
+    `items` is a list of line items (each {description, unitprice, quantity}) with
+    BEFORE-VAT unit prices - iCount adds VAT per the PayPage settings. A partner
+    discount is represented as a second, negative-priced line item so it shows on
+    both the PayPage and the tax invoice (iCount v3 has no coupon/discount field).
+    The amounts are authoritative and computed server-side; never from the client.
     """
     if not is_configured():
         raise RuntimeError("iCount is not configured (set ICOUNT_API_TOKEN)")
 
     cfg = get_config()
-    if not cfg["paypage_id"]:
+    pid = paypage_id or cfg["paypage_id"]
+    if not pid:
         raise RuntimeError(
-            "No iCount PayPage configured: create a PayPage (עמוד סליקה) in the "
-            "iCount dashboard and set ICOUNT_PAYPAGE_ID"
+            "No iCount PayPage configured: create the PayPages (עמודי סליקה) in the "
+            "iCount dashboard and set ICOUNT_NEW_PURCHASE_PAYPAGE_ID / "
+            "ICOUNT_UPGRADE_PAYPAGE_ID (or the legacy ICOUNT_PAYPAGE_ID)"
         )
 
+    norm_items = [
+        {
+            "description": it.get("description", ""),
+            "unitprice": round(float(it.get("unitprice", 0)), 2),
+            "quantity": int(it.get("quantity", 1)),
+        }
+        for it in (items or [])
+    ]
+
     payload: Dict[str, Any] = {
-        "paypage_id": cfg["paypage_id"],
+        "paypage_id": pid,
         "doc_type": "invrec",  # tax invoice + receipt on successful charge
         "currency_code": "ILS",
-        # Single line item. `unitprice` is BEFORE VAT - iCount adds VAT per the
-        # PayPage settings, so the customer pays net + VAT = the displayed price.
-        "items": [
-            {
-                "description": description,
-                "unitprice": round(float(amount), 2),
-                "quantity": 1,
-            }
-        ],
+        "items": norm_items,
         "success_url": success_url,
         "failure_url": cancel_url,
         "cancel_url": cancel_url,

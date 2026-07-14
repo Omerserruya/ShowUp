@@ -4,21 +4,16 @@ import { Box, Typography } from '@mui/material';
 import { UserProvider } from './contexts/UserContext';
 import { EventProvider } from './contexts/EventContext';
 import { AccountProvider } from './contexts/AccountContext';
-import { SearchProvider } from './contexts/SearchContext';
 import ThemeProvider from './theme/ThemeProvider';
 import Layout from './components/Layout';
 import InactiveEventBanner from './components/InactiveEventBanner';
 import { BannerProvider } from './contexts/BannerContext';
-import Home from './pages/Home';
 import Overview from './pages/Overview';
 import Guests from './pages/Guests';
 import Messages from './pages/Messages';
-import Templates from './pages/Templates';
-import Team from './pages/Team';
-import Billing from './pages/Billing';
 import Recap from './pages/Recap';
 import Seating from './pages/Seating';
-import Profile from './pages/Profile';
+import Settings from './pages/Settings';
 import { ImportedGuestsReviewScreen } from './components/ImportedGuestsReviewScreen';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -31,9 +26,21 @@ import Payment from './pages/Payment';
 import Invitation from './pages/Invitation';
 import PublicInvitation from './pages/PublicInvitation';
 import DemoInvite from './pages/DemoInvite';
+import WhatsAppRedirect from './pages/WhatsAppRedirect';
 import AdminRoute from './components/AdminRoute';
 import AdminUsers from './pages/admin/Users';
 import AdminEvents from './pages/admin/Events';
+import AdminSystemDashboard from './pages/admin/SystemDashboard';
+import AdminVenues from './pages/admin/Venues';
+import AdminSubscriptions from './pages/admin/Subscriptions';
+import AdminCoupons from './pages/admin/Coupons';
+import AdminPlans from './pages/admin/Plans';
+import AdminFeatureFlags from './pages/admin/FeatureFlags';
+import AdminMonitoring from './pages/admin/Monitoring';
+import AdminAuditLog from './pages/admin/AuditLog';
+import VenueRoute from './components/VenueRoute';
+import VenueDashboard from './pages/venue/VenueDashboard';
+import VenueSettings from './pages/venue/VenueSettings';
 
 function App() {
   useEffect(() => {
@@ -48,6 +55,7 @@ function App() {
         <Route path="/i/:slug" element={<PublicInvitation />} />
         {/* Public no-auth demo invitation (landing-page demo CTA target) */}
         <Route path="/demo/invite" element={<DemoInvite />} />
+        <Route path="/go/whatsapp" element={<WhatsAppRedirect />} />
         <Route 
           path="/wizard" 
           element={
@@ -90,11 +98,9 @@ function App() {
               <AccountProvider>
                 <EventProvider>
                   <BannerProvider>
-                  <SearchProvider>
-                      {/* Inactive Event Banner - Full width, above everything (fixed position) */}
-                      <InactiveEventBanner />
+                    {/* Inactive Event Banner - Full width, above everything (fixed position) */}
+                    <InactiveEventBanner />
                     <Layout />
-                  </SearchProvider>
                   </BannerProvider>
                 </EventProvider>
               </AccountProvider>
@@ -106,16 +112,25 @@ function App() {
           <Route path="/guests" element={<Guests />} />
           <Route path="/guests/imported" element={<ImportedGuestsReviewScreen />} />
           <Route path="/messages" element={<Messages />} />
-          <Route path="/templates" element={<Templates />} />
-          <Route path="/team" element={<Team />} />
-          <Route path="/billing" element={<Billing />} />
           <Route path="/recap" element={<Recap />} />
           <Route path="/seating" element={<Seating />} />
-          <Route path="/profile" element={<Profile />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/venue" element={<VenueRoute><VenueDashboard /></VenueRoute>} />
+          <Route path="/venue/settings" element={<VenueRoute><VenueSettings /></VenueRoute>} />
+          {/* Unified into /settings - keep old paths working as redirects */}
+          <Route path="/profile" element={<Navigate to="/settings?tab=profile" replace />} />
+          <Route path="/team" element={<Navigate to="/settings?tab=team" replace />} />
+          <Route path="/billing" element={<Navigate to="/settings?tab=billing" replace />} />
+          <Route path="/admin" element={<AdminRoute><AdminSystemDashboard /></AdminRoute>} />
+          <Route path="/admin/venues" element={<AdminRoute><AdminVenues /></AdminRoute>} />
           <Route path="/admin/users" element={<AdminRoute><AdminUsers /></AdminRoute>} />
           <Route path="/admin/events" element={<AdminRoute><AdminEvents /></AdminRoute>} />
-          <Route path="/admin/purchases" element={<AdminRoute><Box sx={{ p: 4 }}><Typography variant="h5">רכישות ובילינג - בקרוב</Typography></Box></AdminRoute>} />
-          <Route path="/admin/settings" element={<AdminRoute><Box sx={{ p: 4 }}><Typography variant="h5">הגדרות מערכת - בקרוב</Typography></Box></AdminRoute>} />
+          <Route path="/admin/subscriptions" element={<AdminRoute><AdminSubscriptions /></AdminRoute>} />
+          <Route path="/admin/plans" element={<AdminRoute><AdminPlans /></AdminRoute>} />
+          <Route path="/admin/coupons" element={<AdminRoute><AdminCoupons /></AdminRoute>} />
+          <Route path="/admin/feature-flags" element={<AdminRoute><AdminFeatureFlags /></AdminRoute>} />
+          <Route path="/admin/monitoring" element={<AdminRoute><AdminMonitoring /></AdminRoute>} />
+          <Route path="/admin/audit-log" element={<AdminRoute><AdminAuditLog /></AdminRoute>} />
         </Route>
         </Routes>
     </ThemeProvider>

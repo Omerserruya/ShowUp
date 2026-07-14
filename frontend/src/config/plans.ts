@@ -12,6 +12,9 @@ export type PlanTier = {
   countLimit?: number | null; // Max guests allowed (null = unlimited)
 };
 
+// Plans differ ONLY by guest capacity and included campaign rounds - every plan
+// includes the full ShowUp experience (AI assistant, WhatsApp campaigns, contact
+// import, invitation builder, seating, analytics and the rest).
 export const plans: PlanTier[] = [
   {
     id: 'basic',
@@ -20,9 +23,9 @@ export const plans: PlanTier[] = [
     price: '₪39',
     description: 'עד 50 אורחים',
     features: [
-      'שליחת הודעות בסיסיות בוואטסאפ',
-      'מעקב תגובות בסיסי',
-      'דשבורד תגובות',
+      'עד 50 אורחים',
+      '2 סבבי הודעות כלולים',
+      'כל היכולות כלולות',
     ],
     color: '#4CAF50',
     isPopular: false,
@@ -35,10 +38,9 @@ export const plans: PlanTier[] = [
     price: '₪99',
     description: 'עד 250 אורחים',
     features: [
-      'תזמון הודעות מתקדם',
-      'תגובות מסווגות לפי תוכן',
-      'ייבוא אנשי קשר מכל פורמט',
-      'תמיכה בצ\'אט',
+      'עד 250 אורחים',
+      '4 סבבי הודעות כלולים',
+      'כל היכולות כלולות',
     ],
     color: '#2196F3',
     isPopular: true,
@@ -47,15 +49,13 @@ export const plans: PlanTier[] = [
   {
     id: 'pro',
     title: 'Pro',
-    subtitle: 'כשרוצים את הכול',
+    subtitle: 'לאירועים הכי גדולים',
     price: '₪199',
     description: 'ללא הגבלת אורחים',
     features: [
-      'אוטומציות ותזכורות מתקדמות',
-      'אינטגרציות עם Google Sheets / CRM',
-      'תובנות חכמות על התגובות',
-      'תיוגים והערות על אורחים',
-      'תמיכה טלפונית',
+      'ללא הגבלת אורחים',
+      '4 סבבי הודעות כלולים',
+      'כל היכולות כלולות',
     ],
     color: '#9C27B0',
     isPopular: false,

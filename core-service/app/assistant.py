@@ -19,7 +19,6 @@ from app.models.models import AssistantIdentityLink, AssistantSession
 from app.authz import resolve_role
 from app.ai_tools import ToolContext, dispatch_tool
 from shared.domain.enums import ActorType
-from shared.domain.entitlements import Feature, has_feature
 
 SESSION_TTL_MINUTES = 30
 
@@ -80,9 +79,8 @@ def open_session(db: Session, phone: str, event_id: uuid.UUID) -> AssistantSessi
     role = resolve_role(db, event, user_id)
     if role is None:
         raise AssistantAuthError("user has no role on this event")
-    # Tier gate: the AI assistant is a Pro feature. Excluded from Free/Basic/Plus.
-    if not has_feature(getattr(event, "plan_id", None), Feature.AI_ASSISTANT):
-        raise AssistantAuthError("the AI assistant is not included in this event's plan")
+    # The AI assistant is included in every plan - no tier gate (plans differ
+    # only by guest capacity and campaign rounds).
 
     session = AssistantSession(
         user_id=user_id,

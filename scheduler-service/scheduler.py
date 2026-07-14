@@ -8,8 +8,15 @@ from logging.config import dictConfig
 from fastapi import FastAPI
 import uvicorn
 
-from db import connect as db_connect, fetch_and_mark_due, revert_to_pending
+from db import (
+    connect as db_connect,
+    fetch_and_mark_due,
+    fetch_and_mark_due_releases,
+    revert_to_pending,
+    revert_release_to_pending,
+)
 from mq import connect as mq_connect, publish_campaign, is_connection_healthy, reconnect_rabbitmq, send_heartbeat
+from daily_summary import ensure_daily_summary_table, run_daily_summary_check
 
 
 def configure_logging():
@@ -35,9 +42,11 @@ def run_loop():
     logger = logging.getLogger("scheduler")
     check_interval = int(os.getenv("CHECK_INTERVAL", "30"))
     queue_name = os.getenv("CAMPAIGNS_QUEUE", "campaigns")
+    outpost_queue = os.getenv("OUTPOST_QUEUE_NAME", os.getenv("OUTPOST_QUEUE", "outpost_queue"))
 
     log_json(logger, logging.INFO, "Scheduler started", interval=check_interval, queue=queue_name)
     conn = db_connect()
+    ensure_daily_summary_table(conn)
     rabbit, channel = reconnect_rabbitmq()
     
     # Heartbeat interval (every 30 seconds to stay well under 60s heartbeat timeout)
@@ -96,6 +105,57 @@ def run_loop():
                         log_json(logger, logging.INFO, "Reconnected to RabbitMQ after failure")
                     except Exception as reconnect_error:
                         log_json(logger, logging.ERROR, "Failed to reconnect to RabbitMQ", error=str(reconnect_error))
+
+            # Planner-released batches: the planner already decided the day + size;
+            # publish each due release with its per-batch `limit` and `release_id`.
+            releases = fetch_and_mark_due_releases(conn)
+            if releases:
+                log_json(logger, logging.INFO, "Releases due", count=len(releases))
+            for rel in releases:
+                msg = {
+                    "campaign_id": str(rel["campaign_id"]),
+                    "event_id": str(rel["event_id"]),
+                    "release_id": str(rel["release_id"]),
+                    "limit": int(rel["count"]),
+                    "payload": {
+                        "name": rel["name"],
+                        "template": rel["template"],
+                        "channel": rel["channel"],
+                        "release_date": rel["release_date"].isoformat() if rel["release_date"] else None,
+                    },
+                }
+                try:
+                    if not is_connection_healthy(rabbit) or channel.is_closed:
+                        rabbit, channel = reconnect_rabbitmq()
+                        last_heartbeat = current_time
+                    publish_campaign(channel, queue_name, msg)
+                    log_json(logger, logging.INFO, "Published release",
+                             release_id=msg["release_id"], campaign_id=msg["campaign_id"], limit=msg["limit"])
+                except Exception as e:
+                    log_json(logger, logging.ERROR, "Release publish failed; reverting", release_id=str(rel["release_id"]), error=str(e))
+                    try:
+                        revert_release_to_pending(conn, str(rel["release_id"]))
+                    except Exception as revert_error:
+                        log_json(logger, logging.ERROR, "Failed to revert release", release_id=str(rel["release_id"]), error=str(revert_error))
+                    try:
+                        rabbit, channel = reconnect_rabbitmq()
+                        last_heartbeat = current_time
+                    except Exception as reconnect_error:
+                        log_json(logger, logging.ERROR, "Failed to reconnect to RabbitMQ", error=str(reconnect_error))
+
+            # Daily 20:00 owner summaries - claimed once per event per local day,
+            # sent only when confirmations changed since the previous summary.
+            try:
+                if not is_connection_healthy(rabbit) or channel.is_closed:
+                    rabbit, channel = reconnect_rabbitmq()
+                    last_heartbeat = current_time
+                summarized = run_daily_summary_check(
+                    conn, lambda msg: publish_campaign(channel, outpost_queue, msg)
+                )
+                if summarized:
+                    log_json(logger, logging.INFO, "Daily summaries dispatched", events=summarized)
+            except Exception as e:
+                log_json(logger, logging.ERROR, "Daily summary cycle failed", error=str(e))
 
             time.sleep(check_interval)
     finally:

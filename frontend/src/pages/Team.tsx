@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Box, Typography, Paper, Button, Stack, Chip, Avatar, IconButton, Dialog, DialogTitle,
+  Box, Typography, Button, Stack, Chip, Avatar, IconButton, Dialog, DialogTitle,
   DialogContent, DialogActions, TextField, MenuItem, CircularProgress, Alert, Select, FormControl,
   InputLabel, Tooltip, useTheme, alpha,
 } from '@mui/material';
@@ -36,7 +36,7 @@ const ASSIGNABLE = [
   { value: 'viewer', label: 'צופה', desc: 'צפייה בלבד' },
 ];
 
-export default function Team() {
+export default function Team({ embedded = false }: { embedded?: boolean } = {}) {
   const theme = useTheme();
   const { selectedEvent } = useEvent();
   const [members, setMembers] = useState<Member[]>([]);
@@ -47,6 +47,8 @@ export default function Team() {
   const [role, setRole] = useState('editor');
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
+  const [memberToRemove, setMemberToRemove] = useState<Member | null>(null);
   const [toast, setToast] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({ open: false, message: '', severity: 'info' });
   const showToast = (m: string, s: 'success' | 'error' | 'info' = 'info') => setToast({ open: true, message: m, severity: s });
 
@@ -109,7 +111,9 @@ export default function Team() {
     }
   };
 
-  const handleRemove = async (m: Member) => {
+  const handleRemoveConfirm = async () => {
+    const m = memberToRemove;
+    if (!m) return;
     setBusyId(m.id);
     try {
       const res = await fetchWithAuth(`/api/members/${m.id}`, { method: 'DELETE' });
@@ -120,6 +124,8 @@ export default function Team() {
       showToast('שגיאה בהסרת חבר/ת הצוות', 'error');
     } finally {
       setBusyId(null);
+      setRemoveDialogOpen(false);
+      setMemberToRemove(null);
     }
   };
 
@@ -128,10 +134,10 @@ export default function Team() {
   }
 
   return (
-    <Box sx={{ p: { xs: 2, sm: 4 }, direction: 'rtl' }}>
+    <Box sx={{ p: embedded ? 0 : { xs: 2, sm: 4 }, direction: 'rtl' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1 }}>
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 700 }}>חברי צוות</Typography>
+          {!embedded && <Typography variant="h4" sx={{ fontWeight: 700 }}>חברי צוות</Typography>}
           <Typography variant="body2" color="text.secondary">הזמינו בני משפחה או מתכננת לעזור בניהול האירוע. כל אחד מקבל בדיוק את ההרשאות שמתאימות לו.</Typography>
         </Box>
         <Button variant="contained" startIcon={<PersonAddIcon />} onClick={() => setInviteOpen(true)} sx={{ borderRadius: 2 }}>הזמן שותף/ה</Button>
@@ -142,12 +148,12 @@ export default function Team() {
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>
       ) : (
-        <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
+        <Box>
           {members.map((m, i) => {
             const isOwner = m.role === 'owner';
             const display = m.name || (m.is_self ? 'את/ה' : 'חבר/ת צוות');
             return (
-              <Box key={m.id} sx={{ display: 'flex', alignItems: 'center', gap: 2, p: 2, borderTop: i ? '1px solid' : 'none', borderColor: 'divider' }}>
+              <Box key={m.id} sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 2, borderTop: i ? '1px solid' : 'none', borderColor: 'divider' }}>
                 <Avatar sx={{ bgcolor: alpha(theme.palette.primary.main, 0.15), color: 'primary.main' }}>
                   {(m.name || '?').charAt(0)}
                 </Avatar>
@@ -168,7 +174,7 @@ export default function Team() {
                     </FormControl>
                     <Tooltip title="הסר מהצוות">
                       <span>
-                        <IconButton color="error" disabled={busyId === m.id} onClick={() => handleRemove(m)}>
+                        <IconButton color="error" disabled={busyId === m.id} onClick={() => { setMemberToRemove(m); setRemoveDialogOpen(true); }}>
                           <DeleteOutlineIcon />
                         </IconButton>
                       </span>
@@ -184,7 +190,7 @@ export default function Team() {
               <Typography sx={{ mt: 1 }} color="text.secondary">עדיין רק את/ה כאן. הזמן/ני שותף/ה לעזור!</Typography>
             </Box>
           )}
-        </Paper>
+        </Box>
       )}
 
       <Dialog open={inviteOpen} onClose={() => setInviteOpen(false)} maxWidth="xs" fullWidth>
@@ -210,6 +216,37 @@ export default function Team() {
         <DialogActions>
           <Button onClick={() => setInviteOpen(false)}>ביטול</Button>
           <Button variant="contained" onClick={handleInvite} disabled={saving || !phone.trim()} startIcon={saving ? <CircularProgress size={16} /> : undefined}>הוסף לצוות</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Remove member confirm dialog */}
+      <Dialog
+        open={removeDialogOpen}
+        onClose={() => !busyId && setRemoveDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 2 } }}
+      >
+        <DialogTitle>הסרת חבר/ת צוות</DialogTitle>
+        <DialogContent>
+          <Typography variant="body1">
+            להסיר את &quot;{memberToRemove?.name || memberToRemove?.phone || 'חבר/ת הצוות'}&quot; מצוות האירוע?
+            הגישה שלו/ה לאירוע תבוטל מיידית.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+          <Button onClick={() => setRemoveDialogOpen(false)} disabled={!!busyId}>
+            ביטול
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleRemoveConfirm}
+            disabled={!!busyId}
+            startIcon={busyId ? <CircularProgress size={18} color="inherit" /> : <DeleteOutlineIcon />}
+          >
+            {busyId ? 'מסיר...' : 'הסר מהצוות'}
+          </Button>
         </DialogActions>
       </Dialog>
 

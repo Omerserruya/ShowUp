@@ -6,10 +6,9 @@
     "price": "₪0",
     "description": "עד 25 אורחים",
     "features": [
-      "הזמנה דיגיטלית (דף אינטרנט) עם אישור הגעה",
-      "קישור לשיתוף ידני",
-      "דשבורד תגובות לצפייה",
-      "ייצוא רשימת אורחים ל-CSV"
+      "עד 25 אורחים",
+      "ללא סבבי הודעות כלולים (ניתן לרכוש סבבים בנפרד)",
+      "כל היכולות כלולות: עוזרת AI, קמפיינים בוואטסאפ, ייבוא אנשי קשר, הזמנה דיגיטלית, ניהול אורחים, סידורי הושבה ואנליטיקות"
     ],
     "color": "#9E9E9E",
     "is_popular": false,
@@ -24,17 +23,27 @@
     "price": "₪39",
     "description": "עד 50 אורחים",
     "features": [
-      "שליחת הודעות בסיסיות בוואטסאפ",
-      "מעקב תגובות בסיסי",
-      "דשבורד תגובות"
+      "עד 50 אורחים",
+      "2 סבבי הודעות כלולים (סבבים נוספים בתשלום)",
+      "כל היכולות כלולות: עוזרת AI, קמפיינים בוואטסאפ, ייבוא אנשי קשר, הזמנה דיגיטלית, ניהול אורחים, סידורי הושבה ואנליטיקות"
     ],
     "color": "#4CAF50",
     "is_popular": false,
     "is_active": true,
     "count_limit": 50,
     "campaigns": [
-      { "enabled": true, "label": "RSVP", "offset_days": 7, "time": "12:00" },
-      { "enabled": true, "label": "rsvp_reminder", "offset_days": 1, "time": "18:00" }
+      {
+        "enabled": true,
+        "label": "RSVP",
+        "offset_days": 7,
+        "time": "12:00"
+      },
+      {
+        "enabled": true,
+        "label": "rsvp_reminder",
+        "offset_days": 1,
+        "time": "18:00"
+      }
     ]
   },
   {
@@ -44,20 +53,39 @@
     "price": "₪99",
     "description": "עד 250 אורחים",
     "features": [
-      "תזמון הודעות מתקדם",
-      "תגובות מסווגות לפי תוכן",
-      "ייבוא אנשי קשר מכל פורמט",
-      "תמיכה בצ'אט"
+      "עד 250 אורחים",
+      "4 סבבי הודעות כלולים (סבבים נוספים בתשלום)",
+      "כל היכולות כלולות: עוזרת AI, קמפיינים בוואטסאפ, ייבוא אנשי קשר, הזמנה דיגיטלית, ניהול אורחים, סידורי הושבה ואנליטיקות"
     ],
     "color": "#2196F3",
     "is_popular": true,
     "is_active": true,
     "count_limit": 250,
     "campaigns": [
-      { "enabled": true, "label": "RSVP", "offset_days": 30, "time": "10:00" },
-      { "enabled": true, "label": "nudge_reminder", "offset_days": 7, "time": "12:00" },
-      { "enabled": true, "label": "event_remind", "offset_days": 1, "time": "18:00" },
-      { "enabled": true, "label": "thank_you", "offset_days": -1, "time": "11:00" }
+      {
+        "enabled": true,
+        "label": "RSVP",
+        "offset_days": 30,
+        "time": "10:00"
+      },
+      {
+        "enabled": true,
+        "label": "nudge_reminder",
+        "offset_days": 7,
+        "time": "12:00"
+      },
+      {
+        "enabled": true,
+        "label": "event_remind",
+        "offset_days": 1,
+        "time": "18:00"
+      },
+      {
+        "enabled": true,
+        "label": "thank_you",
+        "offset_days": -1,
+        "time": "11:00"
+      }
     ]
   },
   {
@@ -67,21 +95,73 @@
     "price": "₪199",
     "description": "ללא הגבלת אורחים",
     "features": [
-      "אוטומציות ותזכורות מתקדמות",
-      "אינטגרציות עם Google Sheets / CRM",
-      "ניתוחי בינה מלאכותית לתגובות",
-      "תיוגים והערות על אורחים",
-      "תמיכה טלפונית"
+      "ללא הגבלת אורחים",
+      "4 סבבי הודעות כלולים (סבבים נוספים בתשלום)",
+      "כל היכולות כלולות: עוזרת AI, קמפיינים בוואטסאפ, ייבוא אנשי קשר, הזמנה דיגיטלית, ניהול אורחים, סידורי הושבה ואנליטיקות"
     ],
     "color": "#9C27B0",
     "is_popular": false,
     "is_active": true,
     "count_limit": null,
     "campaigns": [
-      { "enabled": true, "label": "RSVP", "offset_days": 30, "time": "10:00" },
-      { "enabled": true, "label": "nudge_reminder", "offset_days": 7, "time": "12:00" },
-      { "enabled": true, "label": "event_remind", "offset_days": 1, "time": "18:00" },
-      { "enabled": true, "label": "thank_you", "offset_days": -1, "time": "11:00" }
+      {
+        "enabled": true,
+        "label": "RSVP",
+        "offset_days": 30,
+        "time": "10:00"
+      },
+      {
+        "enabled": true,
+        "label": "nudge_reminder",
+        "offset_days": 7,
+        "time": "12:00"
+      },
+      {
+        "enabled": true,
+        "label": "event_remind",
+        "offset_days": 1,
+        "time": "18:00"
+      },
+      {
+        "enabled": true,
+        "label": "thank_you",
+        "offset_days": -1,
+        "time": "11:00"
+      }
     ]
+  },
+  {
+    "id": "starter",
+    "title": "Starter",
+    "subtitle": "כלול",
+    "price": "₪0",
+    "description": "עד 50 אורחים",
+    "features": [
+      "עד 50 אורחים",
+      "ללא סבבי הודעות כלולים (ניתן לרכוש סבבים בנפרד)",
+      "כל היכולות כלולות: עוזרת AI, קמפיינים בוואטסאפ, ייבוא אנשי קשר, הזמנה דיגיטלית, ניהול אורחים, סידורי הושבה ואנליטיקות"
+    ],
+    "color": "#9E9E9E",
+    "is_popular": false,
+    "is_active": false,
+    "count_limit": 50,
+    "campaigns": []
+  },
+  {
+    "id": "venue",
+    "title": "Venue Edition",
+    "subtitle": "באדיבות האולם",
+    "price": "₪0",
+    "description": "ניהול אורחים מלא",
+    "features": [
+      "ללא הגבלת אורחים",
+      "ללא סבבי הודעות כלולים (ניתן לרכוש סבבים בנפרד)",
+      "כל היכולות כלולות: עוזרת AI, קמפיינים בוואטסאפ, ייבוא אנשי קשר, הזמנה דיגיטלית, ניהול אורחים, סידורי הושבה ואנליטיקות"
+    ],
+    "color": "#888cee",
+    "is_popular": false,
+    "is_active": false,
+    "count_limit": null,
+    "campaigns": []
   }
 ]
