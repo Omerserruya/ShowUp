@@ -14,7 +14,7 @@ import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import InvitationView, { EditCtl, CONTENT_BLOCKS } from '../InvitationView';
 import EnvelopeIntro from '../EnvelopeIntro';
 import { InvitationConfig, InvitationData, InvitationTheme, DEFAULT_INVITATION } from '../types';
-import { resolveTheme, THEME_PRESETS, TITLE_FONTS, BODY_FONTS, DEFAULT_THEME } from '../theme';
+import { resolveTheme, THEME_PRESETS, TITLE_FONTS, BODY_FONTS, DEFAULT_THEME, LAYOUTS } from '../theme';
 import { templatesForEventType, InvitationTemplate } from '../templates';
 import { ensureAllFonts } from '../../../utils/fonts';
 
@@ -43,7 +43,9 @@ export default function InvitationStudio({ data, saving, published, publicUrl, o
   const [unpublishConfirm, setUnpublishConfirm] = useState(false);
   // Guest-eye mode: the exact page guests see - no edit chrome, no outlines.
   const [guestPreview, setGuestPreview] = useState(false);
-  const [templatesOpen, setTemplatesOpen] = useState(false);
+  // Step 1 of the editor: a design must be chosen before fiddling with details -
+  // first-ever visit (no preset saved) opens the gallery automatically.
+  const [templatesOpen, setTemplatesOpen] = useState<boolean>(() => !(data.invitation?.theme?.preset));
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const templates = useMemo(() => templatesForEventType(data.event_type), [data.event_type]);
@@ -53,7 +55,7 @@ export default function InvitationStudio({ data, saving, published, publicUrl, o
   const applyTemplate = (tpl: InvitationTemplate) => {
     setCfg((c) => ({
       ...c,
-      theme: { ...(tpl.config.theme || {}) },
+      theme: { layout: c.theme?.layout || 'editorial', ...(tpl.config.theme || {}) },
       envelope: { ...c.envelope, ...(tpl.config.envelope || {}) },
       hero: { ...c.hero, ...(tpl.config.hero?.font ? { font: tpl.config.hero.font } : {}) },
       personalText: c.personalText && c.personalText.trim() ? c.personalText : (tpl.config.personalText ?? c.personalText),
@@ -247,48 +249,32 @@ export default function InvitationStudio({ data, saving, published, publicUrl, o
         </Box>
       </Box>
 
-      {/* Trending designs gallery */}
+      {/* Design gallery - STEP 1 of the editor. Design templates first (each a
+          genuinely different page layout), then event-type color palettes. */}
       <Dialog open={templatesOpen} onClose={() => setTemplatesOpen(false)} dir="rtl" maxWidth="md" fullWidth
         PaperProps={{ sx: { borderRadius: 4 } }}>
         <DialogTitle sx={{ fontWeight: 800 }}>
-          עיצובים מוכנים
+          באיזה סגנון ההזמנה שלכם?
           <Typography sx={{ fontWeight: 500, fontSize: '0.85rem', color: 'text.secondary', mt: 0.25 }}>
             בחרו עיצוב פתיחה - הכול נשאר ניתן לעריכה, והתמונות והשמות שלכם נשמרים.
           </Typography>
         </DialogTitle>
         <DialogContent>
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2,1fr)', sm: 'repeat(3,1fr)', md: 'repeat(4,1fr)' }, gap: 1.5, py: 1 }}>
-            {templates.map((tpl) => {
-              const th = tpl.config.theme || {};
-              const bg = th.bg || '#f5efe6';
-              const ink = th.ink || '#2b2622';
-              const accent = th.accent || '#95836b';
-              const active = (cfg.theme?.preset || '') === (th.preset || tpl.id);
-              return (
-                <Box key={tpl.id} onClick={() => applyTemplate(tpl)}
-                  sx={{ cursor: 'pointer', borderRadius: 3, overflow: 'hidden', border: '2px solid', borderColor: active ? BRAND : 'transparent', boxShadow: '0 2px 10px rgba(16,24,40,0.08)', transition: 'transform .15s, box-shadow .15s', '&:hover': { transform: 'translateY(-2px)', boxShadow: '0 8px 22px rgba(16,24,40,0.16)' } }}>
-                  {/* Design swatch - a mini invite rendered from the theme tokens */}
-                  <Box sx={{ bgcolor: bg, height: 132, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0.75, px: 1.5, textAlign: 'center' }}>
-                    <Box sx={{ width: 22, height: 2, bgcolor: accent, opacity: 0.9 }} />
-                    <Typography sx={{ fontFamily: th.titleFont || '"Frank Ruhl Libre", serif', color: ink, fontSize: '1.15rem', lineHeight: 1.15 }}>
-                      {coupleNames || 'ההזמנה שלכם'}
-                    </Typography>
-                    <Typography sx={{ fontFamily: th.bodyFont || '"Assistant", sans-serif', color: accent, fontSize: '0.62rem', letterSpacing: 2 }}>
-                      SAVE THE DATE
-                    </Typography>
-                    <Box sx={{ width: 22, height: 2, bgcolor: accent, opacity: 0.9 }} />
-                  </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1.25, py: 0.85, bgcolor: 'background.paper' }}>
-                    <Typography sx={{ fontWeight: 700, fontSize: '0.82rem' }}>{tpl.label}</Typography>
-                    {tpl.trending && (
-                      <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.25, px: 0.75, py: 0.15, borderRadius: 99, bgcolor: alpha(BRAND, 0.12), color: BRAND, fontSize: '0.62rem', fontWeight: 800 }}>
-                        <AutoAwesomeRoundedIcon sx={{ fontSize: 11 }} /> טרנד
-                      </Box>
-                    )}
-                  </Box>
-                </Box>
-              );
-            })}
+          <Typography sx={{ fontWeight: 800, fontSize: '0.85rem', color: 'text.secondary', mb: 1 }}>עיצובי בסיס</Typography>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2,1fr)', sm: 'repeat(3,1fr)' }, gap: 1.5, pb: 2 }}>
+            {templates.filter((tpl) => (tpl.config.theme as any)?.layout).map((tpl) => (
+              <TemplateCard key={tpl.id} tpl={tpl} coupleNames={coupleNames}
+                active={(cfg.theme?.preset || '') === ((tpl.config.theme?.preset) || tpl.id)}
+                onClick={() => applyTemplate(tpl)} />
+            ))}
+          </Box>
+          <Typography sx={{ fontWeight: 800, fontSize: '0.85rem', color: 'text.secondary', mb: 1 }}>ערכות צבע לפי סוג האירוע</Typography>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2,1fr)', sm: 'repeat(3,1fr)', md: 'repeat(4,1fr)' }, gap: 1.5, py: 0.5 }}>
+            {templates.filter((tpl) => !(tpl.config.theme as any)?.layout).map((tpl) => (
+              <TemplateCard key={tpl.id} tpl={tpl} coupleNames={coupleNames} compact
+                active={(cfg.theme?.preset || '') === ((tpl.config.theme?.preset) || tpl.id)}
+                onClick={() => applyTemplate(tpl)} />
+            ))}
           </Box>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
@@ -413,6 +399,126 @@ function PreviewRsvp({ themeCfg }: { themeCfg?: InvitationTheme | null }) {
         ))}
         <Box sx={{ mt: 1, py: 1.4, textAlign: 'center', border: `1px solid ${t.accent}`, color: t.ink, fontFamily: t.bodyFont, letterSpacing: 3, fontWeight: 500 }}>שליחת אישור</Box>
       </Stack>
+    </Box>
+  );
+}
+
+/** Visual gallery card. Design templates get a mini PAGE SKELETON of their
+ *  layout (two columns / medallion / arch / glass...), so the choice is about
+ *  structure, not just a color chip. */
+function TemplateCard({ tpl, coupleNames, active, compact, onClick }: {
+  tpl: InvitationTemplate; coupleNames: string; active: boolean; compact?: boolean; onClick: () => void;
+}) {
+  const th: any = tpl.config.theme || {};
+  const layoutKey: string = th.layout || 'editorial';
+  const spec = LAYOUTS.find((l) => l.key === layoutKey);
+  const bg = th.bg || '#f5efe6';
+  const ink = th.ink || '#2b2622';
+  const accent = th.accent || '#95836b';
+  const line = (w: string | number, h = 3, c = ink, o = 0.5) => (
+    <Box sx={{ width: w, height: h, bgcolor: c, opacity: o, borderRadius: 1, mx: 'auto' }} />
+  );
+
+  const skeleton = (() => {
+    switch (layoutKey) {
+      case 'classic':
+        return (
+          <Box sx={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0.9 }}>
+            <Box sx={{ position: 'absolute', inset: 7, border: `1px solid ${accent}`, outline: `1px solid ${accent}55`, outlineOffset: 2, pointerEvents: 'none' }} />
+            <Box sx={{ width: 34, height: 44, borderRadius: '50% / 40%', border: `1.5px solid ${accent}`, bgcolor: `${accent}33` }} />
+            <Typography sx={{ fontFamily: th.titleFont, color: ink, fontSize: '0.8rem', lineHeight: 1 }}>{coupleNames || 'שם ושם'}</Typography>
+            {line(46, 1.5, accent, 0.7)}
+            {line(30, 1.5, accent, 0.4)}
+          </Box>
+        );
+      case 'minimal':
+        return (
+          <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1.4 }}>
+            <Typography sx={{ fontFamily: th.titleFont, color: ink, fontSize: '1.05rem', fontWeight: 300, letterSpacing: 1, lineHeight: 1 }}>{coupleNames || 'שם ושם'}</Typography>
+            {line(28, 1, ink, 0.4)}
+            {line(52, 2, ink, 0.14)}
+          </Box>
+        );
+      case 'luxury':
+        return (
+          <Box sx={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0.9 }}>
+            {[{ top: 6, right: 6, borderTop: `1.5px solid ${accent}`, borderRight: `1.5px solid ${accent}` },
+              { top: 6, left: 6, borderTop: `1.5px solid ${accent}`, borderLeft: `1.5px solid ${accent}` },
+              { bottom: 6, right: 6, borderBottom: `1.5px solid ${accent}`, borderRight: `1.5px solid ${accent}` },
+              { bottom: 6, left: 6, borderBottom: `1.5px solid ${accent}`, borderLeft: `1.5px solid ${accent}` }].map((sx, i) => (
+              <Box key={i} sx={{ position: 'absolute', width: 13, height: 13, ...sx }} />
+            ))}
+            <Box sx={{ width: 32, height: 42, borderRadius: '16px 16px 2px 2px', border: `1.5px solid ${accent}`, bgcolor: `${accent}22` }} />
+            <Typography sx={{ fontFamily: th.titleFont, color: ink, fontSize: '0.78rem', letterSpacing: 1, lineHeight: 1 }}>{coupleNames || 'שם ושם'}</Typography>
+            <Box sx={{ width: 40, height: 2, background: `linear-gradient(90deg, transparent, ${accent}, transparent)` }} />
+          </Box>
+        );
+      case 'floral':
+        return (
+          <Box sx={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0.9 }}>
+            {[0, 1].map((i) => (
+              <Typography key={i} sx={{ position: 'absolute', color: accent, opacity: 0.55, fontSize: 13, top: i === 0 ? 4 : undefined, bottom: i === 1 ? 2 : undefined, right: i === 0 ? 6 : undefined, left: i === 1 ? 6 : undefined }}>✿</Typography>
+            ))}
+            <Box sx={{ width: 36, height: 36, borderRadius: 2.5, border: `1.5px solid ${accent}`, bgcolor: `${accent}26` }} />
+            <Typography sx={{ fontFamily: th.titleFont, color: ink, fontSize: '0.8rem', lineHeight: 1 }}>{coupleNames || 'שם ושם'}</Typography>
+            <Typography sx={{ color: accent, fontSize: 9, lineHeight: 1 }}>❀ ─ ❀</Typography>
+          </Box>
+        );
+      case 'night':
+        return (
+          <Box sx={{ position: 'relative', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `radial-gradient(circle at 30% 20%, ${accent}33, transparent 60%), linear-gradient(180deg, #171a28, #0c0e16)` }}>
+            <Box sx={{ px: 1.5, py: 1, borderRadius: 2, bgcolor: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.18)', backdropFilter: 'blur(2px)', textAlign: 'center' }}>
+              <Typography sx={{ fontFamily: th.titleFont, color: '#fff', fontSize: '0.78rem', lineHeight: 1.1, textShadow: `0 0 10px ${accent}` }}>{coupleNames || 'שם ושם'}</Typography>
+              <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: accent, boxShadow: `0 0 8px 1px ${accent}`, mx: 'auto', mt: 0.75 }} />
+            </Box>
+          </Box>
+        );
+      case 'editorial':
+        return (
+          <Box sx={{ height: '100%', display: 'flex', gap: 0.75, p: 1 }}>
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0.8 }}>
+              <Typography sx={{ fontFamily: th.titleFont, color: ink, fontSize: '0.72rem', lineHeight: 1.05, textAlign: 'center' }}>{coupleNames || 'שם ושם'}</Typography>
+              {line('60%', 1.5, accent, 0.7)}
+              {line('42%', 1.5, ink, 0.25)}
+              {line('50%', 1.5, ink, 0.25)}
+            </Box>
+            <Box sx={{ flex: 1, borderRadius: 1, bgcolor: `${accent}44`, border: `1px solid ${accent}55` }} />
+          </Box>
+        );
+      default:
+        // Palette swatch (no layout) - the classic mini-invite chip.
+        return (
+          <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0.75, px: 1.5, textAlign: 'center' }}>
+            <Box sx={{ width: 22, height: 2, bgcolor: accent, opacity: 0.9 }} />
+            <Typography sx={{ fontFamily: th.titleFont || '"Frank Ruhl Libre", serif', color: ink, fontSize: '1.05rem', lineHeight: 1.15 }}>
+              {coupleNames || 'ההזמנה שלכם'}
+            </Typography>
+            <Typography sx={{ fontFamily: th.bodyFont || '"Assistant", sans-serif', color: accent, fontSize: '0.62rem', letterSpacing: 2 }}>
+              SAVE THE DATE
+            </Typography>
+            <Box sx={{ width: 22, height: 2, bgcolor: accent, opacity: 0.9 }} />
+          </Box>
+        );
+    }
+  })();
+
+  return (
+    <Box onClick={onClick}
+      sx={{ cursor: 'pointer', borderRadius: 3, overflow: 'hidden', border: '2px solid', borderColor: active ? BRAND : 'transparent', boxShadow: '0 2px 10px rgba(16,24,40,0.08)', transition: 'transform .15s, box-shadow .15s', '&:hover': { transform: 'translateY(-2px)', boxShadow: '0 8px 22px rgba(16,24,40,0.16)' } }}>
+      <Box sx={{ bgcolor: bg, height: compact ? 118 : 148 }}>{skeleton}</Box>
+      <Box sx={{ px: 1.25, py: 0.85, bgcolor: 'background.paper' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Typography sx={{ fontWeight: 700, fontSize: '0.82rem' }}>{tpl.label}</Typography>
+          {tpl.trending && (
+            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.25, px: 0.75, py: 0.15, borderRadius: 99, bgcolor: alpha(BRAND, 0.12), color: BRAND, fontSize: '0.62rem', fontWeight: 800 }}>
+              <AutoAwesomeRoundedIcon sx={{ fontSize: 11 }} /> טרנד
+            </Box>
+          )}
+        </Box>
+        {spec && !compact && (
+          <Typography sx={{ fontSize: '0.68rem', color: 'text.secondary', mt: 0.25, lineHeight: 1.3 }}>{spec.description}</Typography>
+        )}
+      </Box>
     </Box>
   );
 }

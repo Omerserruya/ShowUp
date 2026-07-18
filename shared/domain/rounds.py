@@ -62,13 +62,30 @@ def _bands() -> List[Tuple[Optional[int], float]]:
         return _DEFAULT_BANDS
 
 
-def extra_round_price(recipients: int) -> Dict[str, object]:
+def parse_bands(raw) -> Optional[List[Tuple[Optional[int], float]]]:
+    """Parse a plan's `extra_round_prices` value ([[cap|null, price], ...]) into
+    band tuples, or None when missing/invalid (callers fall back to defaults)."""
+    if not raw:
+        return None
+    try:
+        bands: List[Tuple[Optional[int], float]] = []
+        for cap, price in raw:
+            bands.append((None if cap is None else int(cap), float(price)))
+        bands.sort(key=lambda b: (b[0] is None, b[0] if b[0] is not None else math.inf))
+        return bands or None
+    except Exception:
+        return None
+
+
+def extra_round_price(recipients: int, bands: Optional[List[Tuple[Optional[int], float]]] = None) -> Dict[str, object]:
     """Resolve the extra-round price for a recipient count.
 
-    Returns {price_gross, band_max, band_label}. `recipients` is clamped to >= 0.
+    `bands` are the PLAN's price bands (from the plan doc's `extra_round_prices`);
+    when None, the global defaults / env override apply. Returns
+    {price_gross, band_max, band_label}. `recipients` is clamped to >= 0.
     """
     n = max(0, int(recipients or 0))
-    bands = _bands()
+    bands = bands or _bands()
     for cap, price in bands:
         if cap is None or n <= cap:
             label = f"עד {cap} נמענים" if cap is not None else (f"מעל {bands[-2][0]} נמענים" if len(bands) >= 2 and bands[-2][0] is not None else "כל כמות נמענים")
@@ -78,9 +95,9 @@ def extra_round_price(recipients: int) -> Dict[str, object]:
     return {"price_gross": float(price), "band_max": cap, "band_label": "כל כמות נמענים"}
 
 
-def all_bands() -> List[Dict[str, object]]:
-    """The full price table, for display before purchase."""
+def all_bands(bands: Optional[List[Tuple[Optional[int], float]]] = None) -> List[Dict[str, object]]:
+    """The full price table, for display before purchase (plan bands or defaults)."""
     out: List[Dict[str, object]] = []
-    for cap, price in _bands():
+    for cap, price in (bands or _bands()):
         out.append({"band_max": cap, "price_gross": float(price)})
     return out

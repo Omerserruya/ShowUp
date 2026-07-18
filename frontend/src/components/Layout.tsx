@@ -128,9 +128,11 @@ function Layout() {
 
         <Box
           sx={{
-            maxWidth: 1280,
+            // The seating canvas wants the whole viewport width - every other
+            // page keeps the comfortable reading column.
+            maxWidth: location.pathname.startsWith('/seating') ? 'none' : 1280,
             mx: 'auto',
-            px: { xs: 2.25, sm: 4 },
+            px: location.pathname.startsWith('/seating') ? { xs: 1, sm: 2 } : { xs: 2.25, sm: 4 },
             pt: { xs: 2.5, md: 3.5 },
             pb: { xs: '120px', md: 6 }, // room for the mobile dock
           }}

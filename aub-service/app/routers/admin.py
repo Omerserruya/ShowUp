@@ -410,6 +410,8 @@ def _plan_view(plan: dict, overrides: dict, matrix: dict) -> dict:
         "features": plan.get("features", []),            # marketing bullets
         "capabilities": matrix.get(pid, []),             # entitlement feature keys (SSOT)
         "campaigns_count": len(plan.get("campaigns", []) or []),
+        # Per-plan extra-round price bands: [[max_recipients|null, price], ...]
+        "extra_round_prices": plan.get("extra_round_prices"),
     }
 
 

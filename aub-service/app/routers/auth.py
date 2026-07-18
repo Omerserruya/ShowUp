@@ -3,6 +3,7 @@ Auth API endpoints
 """
 import os
 import json
+import httpx
 import pika
 import psycopg2
 import redis
@@ -476,10 +477,35 @@ def verify_otp(payload: dict = Body(...)):
     if status == "suspended":
         return JSONResponse(status_code=403, content={"error": "account_suspended"})
 
+    # Convert any pending team invitations for this phone into memberships -
+    # this is what makes "invite by phone, join on first sign-in" work without
+    # the inviter caring whether the account existed. Best-effort: sign-in must
+    # never fail because the claim call did.
+    if user_id:
+        _claim_team_invites(phone, user_id)
+
     # Issue JWT valid for configured duration; include user_id and sub (phone)
     jwt_payload = {"user_id": user_id, "sub": phone}
     token = create_jwt(jwt_payload, env["JWT_EXP_SECONDS"])
     return JSONResponse(status_code=200, content={"access_token": token})
+
+
+def _claim_team_invites(phone: str, user_id: str) -> None:
+    """Best-effort: tell core to convert pending team invitations for this phone
+    into active memberships (core owns memberships/tenancy)."""
+    base = os.getenv("CORE_SERVICE_URL")
+    secret = os.getenv("INTERNAL_API_SECRET")
+    if not base or not secret:
+        return
+    try:
+        httpx.post(
+            f"{base.rstrip('/')}/internal/team-invites/claim",
+            json={"phone": phone, "user_id": str(user_id)},
+            headers={"X-Internal-Secret": secret},
+            timeout=5.0,
+        )
+    except Exception as exc:
+        print(f"[AUTH] team-invite claim failed for {phone}: {exc}")
 
 
 @router.get("/me")

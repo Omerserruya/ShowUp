@@ -168,7 +168,43 @@ def create_guest(db: Session, data: GuestCreate) -> Guest:
     db.add(guest)
     db.commit()
     db.refresh(guest)
+    _maybe_queue_capacity_warning(db, event)
     return guest
+
+
+def _maybe_queue_capacity_warning(db: Session, event: Event) -> None:
+    """Queue a one-time owner WhatsApp warning when the guest list crosses ~90%
+    of the plan's capacity. Best-effort - never breaks guest creation. Deduped
+    per event via the outbox dedupe_key, so it fires exactly once."""
+    try:
+        if not event.plan_id:
+            return
+        limit = _get_plan_count_limit(event.plan_id)
+        if not limit:
+            return
+        used = db.query(func.sum(Guest.import_count)).filter(
+            Guest.event_id == str(event.id)
+        ).scalar() or 0
+        if used < limit * 0.9:
+            return
+        from app.notifications import queue_owner_notification
+        from app.user_directory import resolve_users_by_ids
+        owner_ids = [str(o) for o in (event.owners or []) if o]
+        directory = resolve_users_by_ids(owner_ids)
+        for oid in owner_ids:
+            phone = (directory.get(oid) or {}).get("phone")
+            if not phone:
+                continue
+            queue_owner_notification(
+                db,
+                kind="capacity_warning",
+                recipient_phone=phone,
+                event_id=event.id,
+                params={"1": event.name or "האירוע", "2": str(int(used)), "3": str(int(limit))},
+                dedupe_key=f"capacity_warning:{event.id}:{oid}",
+            )
+    except Exception as exc:  # pragma: no cover - never block guest creation
+        logger.warning("capacity warning check failed for event %s: %s", event.id, exc)
 
 
 def update_guest(db: Session, guest: Guest, data: GuestUpdate) -> Guest:

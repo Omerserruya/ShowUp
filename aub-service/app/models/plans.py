@@ -44,6 +44,8 @@ class PlanResponse(BaseModel):
     isPopular: bool = False
     campaigns: List[CampaignSchedule] = []
     countLimit: Optional[int] = None  # Maximum number of guests allowed
+    # Per-plan extra-round price bands: [[max_recipients|null, price_gross], ...].
+    extraRoundPrices: Optional[List[list]] = None
 
     class Config:
         populate_by_name = True

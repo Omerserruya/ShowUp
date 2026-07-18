@@ -1,6 +1,6 @@
 """Customer-facing usage view (Phase 10 metering surfaced to users).
 
-Returns guests + rounds used for an event. Plan limits live in MongoDB and are
+Returns guests + rounds used for an event. Plan limits live in aub's static plans.json and are
 fetched by the frontend via /api/plans/{plan_id}. Messages are NEVER exposed -
 they're an internal cost metric, not a customer quota.
 """

@@ -14,6 +14,7 @@ import { useOverviewStats, useCampaigns, useGuests } from '../hooks/useOverviewD
 import { useEvent } from '../contexts/EventContext';
 import { fireConfettiOnce } from '../utils/confetti';
 import { daysUntilEvent } from '../utils/dates';
+import OnboardingImagesDialog from '../components/OnboardingImagesDialog';
 
 const HE_DAYS = ['יום ראשון', 'יום שני', 'יום שלישי', 'יום רביעי', 'יום חמישי', 'יום שישי', 'שבת'];
 
@@ -51,6 +52,26 @@ function Overview() {
   // The `_refresh_` suffix is stripped by useGuests before hitting the API - it
   // only exists to re-run the fetch when the user retries after a failure.
   const { guests, loading: guestsLoading, error: guestsError } = useGuests(1, 6, statsRetry ? `_refresh_${statsRetry}` : '');
+
+  // First-run onboarding: a fresh event with no cover images gets a one-time
+  // prompt to upload the WhatsApp cover + the invitation cover.
+  const [onboardImages, setOnboardImages] = React.useState(false);
+  React.useEffect(() => {
+    if (!selectedEvent?.id) return;
+    const flag = `onboarding_images_${selectedEvent.id}`;
+    if (localStorage.getItem(flag)) return;
+    let cancelled = false;
+    import('../utils/fetchWithAuth').then(({ fetchWithAuth }) =>
+      fetchWithAuth(`/api/events/${selectedEvent.id}`).then((r) => (r.ok ? r.json() : null)),
+    ).then((ev) => {
+      if (cancelled || !ev) return;
+      const hasWa = !!(ev.waImageUrl || ev.wa_image_url);
+      const hasInvite = !!ev.invitation?.hero?.imageUrl;
+      if (!hasWa && !hasInvite) setOnboardImages(true);
+      else localStorage.setItem(flag, '1'); // images exist - never prompt again
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [selectedEvent?.id]);
 
   React.useEffect(() => {
     if (!selectedEvent?.id || (stats?.approved || 0) < 1) return;
@@ -187,6 +208,14 @@ function Overview() {
 
   return (
     <Box sx={{ direction: 'rtl' }}>
+      <OnboardingImagesDialog
+        open={onboardImages}
+        eventId={selectedEvent.id}
+        onClose={() => {
+          setOnboardImages(false);
+          localStorage.setItem(`onboarding_images_${selectedEvent.id}`, '1');
+        }}
+      />
       {/* 1. When is my event? - state only */}
       <EventHero
         name={selectedEvent.name}

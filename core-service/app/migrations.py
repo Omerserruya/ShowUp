@@ -465,6 +465,77 @@ def ensure_admin_ops_schema(engine: Engine) -> None:
     logger.info("Admin-ops schema verified (accounts.status/branding, audit_log, feature_flags)")
 
 
+def ensure_events_wa_image(engine: Engine) -> None:
+    """events.wa_image_url - the event's WhatsApp COVER image. Uploaded during
+    onboarding (or replaced any time in settings) and used as the default header
+    image for every image-header WhatsApp template (save-the-date, invitation);
+    a per-campaign header_image_url still overrides it."""
+    with engine.begin() as conn:
+        try:
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS wa_image_url TEXT"))
+        except Exception as exc:  # pragma: no cover
+            logger.debug("events.wa_image_url add skipped: %s", exc)
+
+
+def ensure_team_invitations(engine: Engine) -> None:
+    """Pending team invitations by phone. Unlike memberships, the invitee may
+    not have a user account yet - the invitation is claimed (converted to an
+    active Membership) on their first sign-in, keyed by canonical E.164 phone."""
+    with engine.begin() as conn:
+        try:
+            conn.execute(text(
+                """
+                CREATE TABLE IF NOT EXISTS team_invitations (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    account_id UUID NOT NULL,
+                    event_id UUID,
+                    phone VARCHAR(32) NOT NULL,
+                    role VARCHAR(30) NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    invited_by UUID,
+                    user_id UUID,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    accepted_at TIMESTAMPTZ,
+                    UNIQUE (account_id, phone)
+                )
+                """
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_team_invitations_phone ON team_invitations (phone) WHERE status = 'pending'"
+            ))
+        except Exception as exc:  # pragma: no cover
+            logger.debug("team_invitations create skipped: %s", exc)
+
+
+def ensure_owner_notifications(engine: Engine) -> None:
+    """Owner-notification OUTBOX. Writers (core, aub) insert rows; the
+    scheduler-service dispatcher publishes them to WhatsApp via outpost and
+    marks them sent. Template contract: shared/content/system_templates.yaml."""
+    with engine.begin() as conn:
+        try:
+            conn.execute(text(
+                """
+                CREATE TABLE IF NOT EXISTS owner_notifications (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    kind VARCHAR(40) NOT NULL,
+                    recipient_phone VARCHAR(32) NOT NULL,
+                    event_id UUID,
+                    params JSONB NOT NULL DEFAULT '{}',
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    dedupe_key VARCHAR(160) UNIQUE,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    sent_at TIMESTAMPTZ
+                )
+                """
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_owner_notifications_pending ON owner_notifications (created_at) WHERE status = 'pending'"
+            ))
+        except Exception as exc:  # pragma: no cover
+            logger.debug("owner_notifications create skipped: %s", exc)
+
+
 def apply_schema_patches(engine: Engine) -> None:
     ensure_guest_counts_and_group(engine)
     ensure_campaign_recipient_count(engine)
@@ -483,5 +554,8 @@ def apply_schema_patches(engine: Engine) -> None:
     ensure_accounts_venue_columns(engine)
     ensure_admin_ops_schema(engine)
     ensure_messaging_template_state(engine)
+    ensure_events_wa_image(engine)
+    ensure_team_invitations(engine)
+    ensure_owner_notifications(engine)
 
 

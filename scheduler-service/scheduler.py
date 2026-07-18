@@ -17,6 +17,7 @@ from db import (
 )
 from mq import connect as mq_connect, publish_campaign, is_connection_healthy, reconnect_rabbitmq, send_heartbeat
 from daily_summary import ensure_daily_summary_table, run_daily_summary_check
+from notifications import ensure_owner_notifications_table, dispatch_owner_notifications
 
 
 def configure_logging():
@@ -47,6 +48,7 @@ def run_loop():
     log_json(logger, logging.INFO, "Scheduler started", interval=check_interval, queue=queue_name)
     conn = db_connect()
     ensure_daily_summary_table(conn)
+    ensure_owner_notifications_table(conn)
     rabbit, channel = reconnect_rabbitmq()
     
     # Heartbeat interval (every 30 seconds to stay well under 60s heartbeat timeout)
@@ -156,6 +158,18 @@ def run_loop():
                     log_json(logger, logging.INFO, "Daily summaries dispatched", events=summarized)
             except Exception as e:
                 log_json(logger, logging.ERROR, "Daily summary cycle failed", error=str(e))
+
+            # Owner-notification outbox (team invites, assistant intro, ...):
+            # rows inserted by core/aub, published here through outpost.
+            try:
+                if not is_connection_healthy(rabbit) or channel.is_closed:
+                    rabbit, channel = reconnect_rabbitmq()
+                    last_heartbeat = current_time
+                dispatch_owner_notifications(
+                    conn, lambda msg: publish_campaign(channel, outpost_queue, msg)
+                )
+            except Exception as e:
+                log_json(logger, logging.ERROR, "Owner notifications cycle failed", error=str(e))
 
             time.sleep(check_interval)
     finally:

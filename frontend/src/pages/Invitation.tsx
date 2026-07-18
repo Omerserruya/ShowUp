@@ -67,16 +67,18 @@ export default function Invitation() {
         setToast('סוג קובץ לא נתמך - ניתן להעלות תמונות בלבד');
         return null;
       }
+      // The hero IS the invitation cover - upload into its stable slot so a
+      // replacement overwrites the old object instead of orphaning it.
       const presign = await fetchWithAuth('/api/uploads/generate-upload-url', {
         method: 'POST',
-        body: JSON.stringify({ event_id: eventId, filename: file.name, content_type: file.type, folder: 'invitations' }),
+        body: JSON.stringify({ event_id: eventId, filename: file.name, content_type: file.type, folder: 'invitations', purpose: 'invite_cover' }),
       });
       if (!presign.ok) {
         const d = await presign.json().catch(() => ({} as any));
         setToast(d.detail || 'העלאת התמונה נכשלה');
         return null;
       }
-      const { url, fields, object_url, max_bytes } = await presign.json();
+      const { url, fields, object_url, key, max_bytes } = await presign.json();
       if (max_bytes && file.size > max_bytes) {
         setToast(`הקובץ גדול מדי - מקסימום ${Math.round(max_bytes / 1024 / 1024)}MB`);
         return null;
@@ -87,6 +89,16 @@ export default function Invitation() {
       form.append('file', file);
       const up = await fetch(url, { method: 'POST', body: form });
       if (!up.ok) throw new Error('upload failed');
+      // Finalize: prunes the previous cover from storage, cache-busts the URL
+      // and updates the event default in one server-side step.
+      const fin = await fetchWithAuth('/api/uploads/finalize', {
+        method: 'POST',
+        body: JSON.stringify({ event_id: eventId, purpose: 'invite_cover', key }),
+      });
+      if (fin.ok) {
+        const { url: finalUrl } = await fin.json();
+        return finalUrl;
+      }
       return object_url;
     } catch { setToast('העלאת התמונה נכשלה'); return null; }
   };

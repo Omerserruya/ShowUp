@@ -659,6 +659,54 @@ def _grant_round_allowance(event_id: str, delta: int = 1) -> None:
   print(f"[EXTRA_ROUND] granted {delta} round credit(s) to event {event_id}")
 
 
+def _mask_phone(phone) -> str:
+  """PII-safe log form of a phone: keep only the last 4 digits."""
+  digits = "".join(ch for ch in str(phone or "") if ch.isdigit())
+  return f"***{digits[-4:]}" if digits else "(none)"
+
+
+def _queue_assistant_intro(env, *, event_id: str, phone: str, first_name: str, event_name: str) -> None:
+  """Queue the post-payment AI-assistant intro message (owner_notifications
+  outbox, drained by scheduler-service). Idempotent per event via dedupe_key;
+  best-effort - provisioning never fails because of it."""
+  try:
+    with psycopg2.connect(
+        host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"],
+        password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
+    ) as conn:
+      with conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS owner_notifications (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                kind VARCHAR(40) NOT NULL,
+                recipient_phone VARCHAR(32) NOT NULL,
+                event_id UUID,
+                params JSONB NOT NULL DEFAULT '{}',
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                dedupe_key VARCHAR(160) UNIQUE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                sent_at TIMESTAMPTZ
+            )
+            """
+        )
+        cur.execute(
+            """
+            INSERT INTO owner_notifications (kind, recipient_phone, event_id, params, dedupe_key)
+            VALUES ('assistant_intro', %s, %s, %s::jsonb, %s)
+            ON CONFLICT (dedupe_key) DO NOTHING
+            """,
+            (phone, str(event_id),
+             json.dumps({"1": first_name or "חבר/ה", "2": event_name or "האירוע"}, ensure_ascii=False),
+             f"assistant_intro:{event_id}"),
+        )
+        conn.commit()
+    print(f"[PROVISION] Assistant intro queued for event {event_id}")
+  except Exception as exc:
+    print(f"[PROVISION] WARNING: assistant intro queue failed: {exc}")
+
+
 def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
   """
   Provision order after payment confirmation.
@@ -680,13 +728,13 @@ def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
   
   # Log location data
   location_raw = order_row.get("location")
-  print(f"[PROVISION] Location raw type={type(location_raw)}, value={location_raw}")
+  print(f"[PROVISION] Location raw type={type(location_raw)}, len={len(str(location_raw)) if location_raw else 0}")
   
   # Log campaigns data
   campaigns_raw = order_row.get("campaigns")
   print(f"[PROVISION] Campaigns raw type={type(campaigns_raw)}, count={len(campaigns_raw) if isinstance(campaigns_raw, list) else 'N/A'}")
   if campaigns_raw:
-    print(f"[PROVISION] Campaigns raw content: {json.dumps(campaigns_raw, default=str, ensure_ascii=False)}")
+    print(f"[PROVISION] Campaigns raw items={len(campaigns_raw) if isinstance(campaigns_raw, list) else 0}")
   
   # ── Extra-round purchase: no user/event to create - just grant the event one
   #    paid round credit and mark paid. Runs before identity validation (an
@@ -721,7 +769,7 @@ def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
   first_name = order_row["first_name"]
   last_name = order_row["last_name"]
   email = order_row.get("email")
-  print(f"[PROVISION] User: phone={phone}, name={first_name} {last_name}, email={email}")
+  print(f"[PROVISION] User: phone={_mask_phone(phone)} (name/email redacted)")
   
   # Ensure users table exists
   ensure_users_table(auth_env)
@@ -792,7 +840,7 @@ def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
 
   # Prepare event data - save location as JSON string
   location_data = order_row.get("location")
-  print(f"[PROVISION] Location from DB: type={type(location_data)}, value={location_data}")
+  print(f"[PROVISION] Location from DB: type={type(location_data)}")
   
   # Keep location as JSON string (core-service stores as TEXT)
   location_str = None
@@ -822,7 +870,7 @@ def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
   else:
     print(f"[PROVISION] WARNING: location_data is None or empty!")
   
-  print(f"[PROVISION] Final location_str: {location_str}")
+  print(f"[PROVISION] Final location_str: len={len(location_str) if location_str else 0}")
   
   inviters_data = order_row.get("inviters") or []
   if isinstance(inviters_data, str):
@@ -983,6 +1031,11 @@ def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
   else:
     print(f"[PROVISION] WARNING: No campaigns data found in order or not a list")
   
+  # Event is live and paid - queue the one-time AI-assistant intro WhatsApp
+  # message to the owner (owner_notifications outbox; scheduler-service sends).
+  _queue_assistant_intro(env, event_id=event_id, phone=phone,
+                         first_name=first_name, event_name=order_row.get("event_name") or "")
+
   # Mark the order paid AND link the created event back to it, so the dashboard
   # can open exactly this event after payment (never a stale selection).
   print(f"[PROVISION] Updating order status to 'paid', linking event_id={event_id}")
@@ -1265,7 +1318,8 @@ async def icount_callback(request: Request) -> JSONResponse:
 
   # Log the raw IPN (body + content-type + query) so the field shape is never a
   # mystery again.
-  print(f"[ICOUNT IPN] ctype={ctype!r} query={query_params} body={raw_body[:800]!r} parsed={payload}")
+  # PII-safe: the IPN body carries buyer name/phone/email - log shape only.
+  print(f"[ICOUNT IPN] ctype={ctype!r} body_len={len(raw_body)} keys={sorted(payload.keys()) if isinstance(payload, dict) else type(payload)}")
 
   env = get_env()
   ensure_orders_table(env)

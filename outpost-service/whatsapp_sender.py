@@ -11,7 +11,19 @@ from typing import Dict, Any, List
 from datetime import datetime
 
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
+
+
+def _is_retryable_wa_error(exc: BaseException) -> bool:
+    """Retry network errors and transient server errors (5xx / 429). Permanent
+    failures - bad token (401), bad phone id (404), invalid template/params
+    (other 4xx) - never succeed on retry, so retrying just burns time and
+    delays every message behind them in the queue."""
+    import httpx as _httpx
+    if isinstance(exc, _httpx.HTTPStatusError):
+        code = exc.response.status_code if exc.response is not None else 0
+        return code >= 500 or code == 429
+    return isinstance(exc, _httpx.RequestError)
 
 
 class WhatsAppSender:
@@ -213,7 +225,7 @@ class WhatsAppSender:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError))
+        retry=retry_if_exception(_is_retryable_wa_error)
     )
     async def send_template_message(self, recipient: str, template_name: str, parameters: Dict[str, Any], language: str = None, sender: str = None) -> Dict[str, Any]:
         """
@@ -350,7 +362,7 @@ class WhatsAppSender:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError))
+        retry=retry_if_exception(_is_retryable_wa_error)
     )
     async def send_text_message(self, recipient: str, text: str, sender: str = None) -> Dict[str, Any]:
         """
@@ -460,7 +472,7 @@ class WhatsAppSender:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError))
+        retry=retry_if_exception(_is_retryable_wa_error)
     )
     async def send_interactive_message(self, recipient: str, interactive: Dict[str, Any], sender: str = None) -> Dict[str, Any]:
         """

@@ -104,6 +104,7 @@ def rounds_status(
     require_event_permission(db, event, user_id, Action.CAMPAIGN_READ)
     status = _rounds_status(db, event)
     from shared.domain.rounds import extra_round_price, all_bands
+    from app.plans_client import plan_extra_round_bands
     from app.audience import count_audience
     import json as _json
     af = None
@@ -113,13 +114,15 @@ def rounds_status(
         except (ValueError, TypeError):
             af = None
     recipients = count_audience(db, event_id, audience, af)
-    price = extra_round_price(recipients)
+    # Extra-round pricing is per-plan (plans.json `extra_round_prices`).
+    bands = plan_extra_round_bands(getattr(event, "plan_id", None))
+    price = extra_round_price(recipients, bands)
     return {
         **status,
         "recipients": recipients,
         "next_round_price_gross": None if status["next_round_free"] else price["price_gross"],
         "next_round_band_label": price["band_label"],
-        "price_bands": all_bands(),
+        "price_bands": all_bands(bands),
     }
 
 
@@ -233,11 +236,12 @@ def create_campaigns(
         status = _rounds_status(db, event)
         if not status["next_round_free"]:
             from shared.domain.rounds import extra_round_price
+            from app.plans_client import plan_extra_round_bands
             from app.audience import count_audience
             recipients = count_audience(
                 db, normalized_event_id, to_create[0].audience, to_create[0].audience_filter,
             )
-            price = extra_round_price(recipients)
+            price = extra_round_price(recipients, plan_extra_round_bands(getattr(event, "plan_id", None)))
             raise HTTPException(status_code=402, detail={
                 "code": "extra_round_required",
                 "message": "הסבב הזה הוא מעבר למה שכלול בחבילה - יש לרכוש אותו לפני היצירה.",

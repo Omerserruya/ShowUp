@@ -5,9 +5,12 @@ import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded';
 import Diversity3RoundedIcon from '@mui/icons-material/Diversity3Rounded';
 import CreditCardRoundedIcon from '@mui/icons-material/CreditCardRounded';
+import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded';
 import Profile from './Profile';
 import Team from './Team';
 import Billing from './Billing';
+import EventImagesPanel from '../components/EventImagesPanel';
+import { useEvent } from '../contexts/EventContext';
 
 /**
  * Unified account settings - Profile, Team and Billing under one page with a
@@ -17,6 +20,7 @@ import Billing from './Billing';
 const TABS = [
   { key: 'profile', label: 'הפרופיל שלי', desc: 'פרטים אישיים והעדפות', icon: <PersonRoundedIcon /> },
   { key: 'team', label: 'הצוות', desc: 'שותפים והרשאות', icon: <Diversity3RoundedIcon /> },
+  { key: 'media', label: 'תמונות האירוע', desc: 'תמונת וואטסאפ והזמנה', icon: <PhotoLibraryRoundedIcon /> },
   // "חבילה", never "מנוי" - the product promise is a one-time payment, no subscription.
   { key: 'billing', label: 'חבילה ותשלום', desc: 'החבילה והשימוש שלך', icon: <CreditCardRoundedIcon /> },
 ] as const;
@@ -24,6 +28,7 @@ const TABS = [
 export default function Settings() {
   const theme = useTheme();
   const primary = theme.palette.primary.main;
+  const { selectedEvent } = useEvent();
   const [params, setParams] = useSearchParams();
   const requested = params.get('tab');
   const [tab, setTab] = useState<string>(TABS.some(t => t.key === requested) ? requested! : 'profile');
@@ -112,6 +117,14 @@ export default function Settings() {
           <Typography variant="h6" sx={{ fontWeight: 700, mb: 2, display: { xs: 'none', md: 'block' } }}>{active.label}</Typography>
           {tab === 'profile' && <Profile embedded />}
           {tab === 'team' && <Team embedded />}
+          {tab === 'media' && (selectedEvent?.id
+            ? (<>
+                <Typography sx={{ color: 'text.secondary', fontSize: '0.875rem', mb: 2 }}>
+                  שתי תמונות מלוות את האירוע: אחת בהודעות הוואטסאפ ואחת בדף ההזמנה. אפשר להחליף אותן בכל רגע - כל המקומות שבהם הן מופיעות מתעדכנים מיד.
+                </Typography>
+                <EventImagesPanel eventId={selectedEvent.id} />
+              </>)
+            : <Typography color="text.secondary">בחרו אירוע כדי לנהל את התמונות</Typography>)}
           {tab === 'billing' && <Billing embedded />}
         </Box>
       </Box>

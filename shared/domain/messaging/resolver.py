@@ -262,7 +262,11 @@ class VariableResolver:
             "host_name": format_inviters(e.get("inviters", [])),
             "nav_link": e.get("waze_url") or waze_link_from_location(e.get("location")) or DEFAULT_WAZE_URL,
             "event_type_name": etm.name_he if etm else "",
-            "header_image_url": self.header_image_override or ((self.media_base or "") + DEFAULT_HEADER_IMAGE_PATH),
+            # Header image chain: per-campaign override -> the EVENT's WhatsApp
+            # cover (uploaded at onboarding / settings) -> static default asset.
+            "header_image_url": (self.header_image_override
+                                 or (e.get("wa_image_url") or "").strip()
+                                 or ((self.media_base or "") + DEFAULT_HEADER_IMAGE_PATH)),
         }
         # cover_image is an alias of the header image (used by save-the-date copy).
         vals["cover_image"] = vals["header_image_url"]

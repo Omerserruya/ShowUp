@@ -27,6 +27,54 @@ const env = (color: string, wax: string, font = SERIF, text = 'הזמנה'): Inv
 });
 
 export const INVITATION_TEMPLATES: InvitationTemplate[] = [
+  // =========================================================================
+  // DESIGN templates - each one is a genuinely different PAGE (layout,
+  // typography, spacing, decorations, hero and button language), not a
+  // recolor. One per layout in theme.ts LAYOUTS.
+  // =========================================================================
+  {
+    id: 'design-editorial', label: 'מגזין', eventTypes: [], trending: true,
+    config: {
+      theme: { preset: 'design-editorial', layout: 'editorial', bg: '#f5efe6', ink: '#2b2622', accent: '#95836b', titleFont: SERIF, bodyFont: ASSISTANT },
+      envelope: env('#3e121a', '#d8ccb8', SERIF),
+    },
+  },
+  {
+    id: 'design-classic', label: 'אלגנטי', eventTypes: [], trending: true,
+    config: {
+      theme: { preset: 'design-classic', layout: 'classic', bg: '#faf7f0', ink: '#33302b', accent: '#a08b5f', titleFont: '"Bellefair", "Frank Ruhl Libre", serif', bodyFont: ASSISTANT },
+      envelope: env('#4a4335', '#cfc0a0', SERIF),
+    },
+  },
+  {
+    id: 'design-minimal', label: 'מינימלי', eventTypes: [],
+    config: {
+      theme: { preset: 'design-minimal', layout: 'minimal', bg: '#fcfcfa', ink: '#191919', accent: '#191919', titleFont: HEEBO, bodyFont: HEEBO },
+      envelope: env('#232323', '#d9d9d4', HEEBO),
+    },
+  },
+  {
+    id: 'design-luxury', label: 'יוקרתי', eventTypes: [], trending: true,
+    config: {
+      theme: { preset: 'design-luxury', layout: 'luxury', bg: '#171512', ink: '#efe6d4', accent: '#c9a250', titleFont: SUEZ, bodyFont: RUBIK },
+      envelope: env('#0f0e0b', '#c9a250', SUEZ),
+    },
+  },
+  {
+    id: 'design-floral', label: 'פרחוני', eventTypes: [], trending: true,
+    config: {
+      theme: { preset: 'design-floral', layout: 'floral', bg: '#f8f2ee', ink: '#4c3f3d', accent: '#b0766e', titleFont: DAVID, bodyFont: ASSISTANT },
+      envelope: env('#7a4b45', '#e6c4bd', DAVID),
+    },
+  },
+  {
+    id: 'design-night', label: 'לילה', eventTypes: [],
+    config: {
+      theme: { preset: 'design-night', layout: 'night', bg: '#0c0e16', ink: '#f2f3f8', accent: '#8b93ff', titleFont: SECULAR, bodyFont: RUBIK },
+      envelope: env('#101322', '#8b93ff', SECULAR, 'הזמנה'),
+    },
+  },
+
   // ---- Wedding ----
   {
     id: 'gold-classic', label: 'זהב קלאסי', eventTypes: ['wedding', 'other'], trending: true,

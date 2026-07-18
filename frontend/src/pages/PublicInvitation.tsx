@@ -7,7 +7,7 @@ import InvitationView from '../components/invitation/InvitationView';
 import EnvelopeIntro from '../components/invitation/EnvelopeIntro';
 import { InvitationData } from '../components/invitation/types';
 import { formStyles } from '../components/invitation/rsvpStyle';
-import { resolveTheme } from '../components/invitation/theme';
+import { resolveTheme, resolveLayout, LayoutSpec } from '../components/invitation/theme';
 import { fireConfetti } from '../utils/confetti';
 import { ensureThemeFonts } from '../utils/fonts';
 
@@ -75,12 +75,13 @@ export default function PublicInvitation() {
   }
 
   const t = resolveTheme(data.invitation?.theme);
+  const layout = resolveLayout(data.invitation?.theme);
   const alreadyOpened = (() => {
     try { return sessionStorage.getItem(openedKey(slug!)) === '1'; } catch { return false; }
   })();
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: t.bg }}>
-      <InvitationView data={data} rsvpSlot={<RsvpForm slug={slug!} theme={t} />} />
+      <InvitationView data={data} rsvpSlot={<RsvpForm slug={slug!} theme={t} layout={layout} />} />
       {data.invitation?.envelope?.enabled && !alreadyOpened && (
         <EnvelopeIntro
           config={data.invitation}
@@ -100,8 +101,8 @@ function Centered({ children }: { children: React.ReactNode }) {
   );
 }
 
-function RsvpForm({ slug, theme }: { slug: string; theme: ReturnType<typeof resolveTheme> }) {
-  const EDITORIAL = formStyles(theme);
+function RsvpForm({ slug, theme, layout }: { slug: string; theme: ReturnType<typeof resolveTheme>; layout?: LayoutSpec }) {
+  const EDITORIAL = formStyles(theme, layout);
   const saved = React.useMemo(() => loadSavedRsvp(slug), [slug]);
   const [name, setName] = useState(saved?.name || '');
   const [phone, setPhone] = useState(saved?.phone || '');

@@ -49,13 +49,16 @@ class Event(Base):
     # V2 tenancy: nullable during migration; new events are bound to an account.
     # Legacy events keep ownership via the `owners` JSON array until backfilled.
     account_id = Column(PG_UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=True, index=True)
-    plan_id = Column(String(50), nullable=True)  # Plan ID from MongoDB (e.g., "basic", "plus", "pro")
+    plan_id = Column(String(50), nullable=True)  # Plan id from aub plans.json (e.g., "basic", "plus", "pro")
     # Paid extra message-round credits beyond the plan's included rounds. Granted
     # by a paid extra-round order (aub provision); consumed by round creation.
     extra_rounds_allowance = Column(Integer, nullable=False, default=0, server_default="0")
     # Event type (wedding, brit, brita, bar, bat, corporate, birthday, other). Drives
     # the adaptive timeline + which templates are recommended. Loosely typed string.
     event_type = Column(String(50), nullable=True)
+    # WhatsApp cover image (default header for image-header WA templates).
+    # The digital-invitation cover lives inside `invitation.hero.imageUrl`.
+    wa_image_url = Column(Text, nullable=True)
     # Event-type-specific subjects (bride/groom/parents/baby/celebrant/company),
     # captured in the wizard. Persisted so the SAME subject variables the designer
     # previews also resolve during WhatsApp delivery (preview == delivery).

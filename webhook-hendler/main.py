@@ -252,7 +252,7 @@ async def verify_webhook(request: Request):
         return Response(content=challenge, media_type="text/plain", status_code=200)
     else:
         logger.warning("Webhook verification failed")
-        return "Forbidden", 403
+        return Response(content="Forbidden", media_type="text/plain", status_code=403)
 
 @app.get("/health")
 async def health_check():
@@ -306,19 +306,18 @@ async def handle_whatsapp_webhook(request: Request):
                 # serves all handler numbers (OTP / assistant / campaigns), so
                 # consumers route by this id.
                 wa_phone_number_id = (value.get("metadata") or {}).get("phone_number_id")
-                # Log entire 'value' object (contains messages/statuses/metadata)
-                try:
-                    logger.info(f"Webhook change value: {json.dumps(value, ensure_ascii=False)}")
-                except Exception:
-                    pass
+                # SECURITY: never log the raw value - it carries guest phones and
+                # message text. Metadata only.
+                logger.info(
+                    "Webhook change | phone_number_id=%s messages=%d statuses=%d",
+                    wa_phone_number_id, len(value.get("messages", [])), len(value.get("statuses", [])),
+                )
                 # If Meta sends delivery/status updates, log them fully as well
                 statuses = value.get("statuses", [])
                 if statuses:
                     for status in statuses:
-                        try:
-                            logger.info(f"Webhook status update: {json.dumps(status, ensure_ascii=False)}")
-                        except Exception:
-                            pass
+                        logger.info("Webhook status update | id=%s status=%s",
+                                    status.get("id"), status.get("status"))
                         status_payload = {
                             "event_id": status.get("event_id"),
                             "recipient": status.get("recipient_id"),
@@ -333,11 +332,9 @@ async def handle_whatsapp_webhook(request: Request):
                 messages = value.get("messages", [])
                 
                 for message in messages:
-                    # Log each message record completely
-                    try:
-                        logger.info(f"Webhook inbound message: {json.dumps(message, ensure_ascii=False)}")
-                    except Exception:
-                        pass
+                    # SECURITY: log id + type only - never sender phone or body.
+                    logger.info("Webhook inbound message | id=%s type=%s",
+                                message.get("id"), message.get("type"))
                     message_id = message.get("id")
                     sender = message.get("from")
                     # WhatsApp includes reply context when a user replies to a specific message
@@ -411,6 +408,6 @@ if __name__ == "__main__":
         "main:app",
         host="0.0.0.0",
         port=PORT,
-        reload=True,
+        reload=False,  # never run the file-watching reloader in production
         log_level="info"
     )

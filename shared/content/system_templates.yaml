@@ -1,0 +1,113 @@
+# ============================================================================
+# ShowUp - System / Owner-Notification WhatsApp Templates
+#
+# These are BUSINESS-INITIATED messages to event OWNERS and TEAM MEMBERS (not
+# guests), so they are deliberately outside the guest messaging catalog
+# (messaging_catalog.yaml: Stage -> Event Type -> Variant). Owner notifications
+# have no event-type variants and no wizard - one canonical template per kind.
+#
+# Loader: shared/domain/messaging/system_templates.py (get_system_template).
+# Sender: scheduler-service/notifications.py drains the owner_notifications
+# outbox table and publishes one outpost message per row.
+#
+# Every template here must be created + APPROVED on the WABA under `meta.name`
+# (business-initiated sends cannot use free text). The body below is the exact
+# copy submitted to Meta; {{n}} are positional body parameters.
+# ============================================================================
+schema_version: 1
+templates:
+
+  team_invite:
+    # Sent when someone is invited to an event team. The invitee may not have a
+    # ShowUp account yet - the message tells them to sign in with THIS phone
+    # number, and the pending invitation auto-joins them on first sign-in.
+    meta:
+      name: team_invite
+      category: UTILITY
+    language: he
+    params:
+      "1": inviter first name
+      "2": event name
+      "3": role label (Hebrew)
+    body: |-
+      היי! 👋
+
+      {{1}} הזמין/ה אותך להצטרף לצוות של "{{2}}" ב-ShowUp, בתפקיד {{3}}.
+
+      נכנסים עם מספר הטלפון הזה - והאירוע כבר מחכה לך בפנים:
+      https://app.showup.co.il/login
+
+      נתראה שם! 💜
+
+  assistant_intro:
+    # Sent once, right after an event is created + paid (provisioning done).
+    # Introduces the AI Event Assistant on WhatsApp.
+    meta:
+      name: assistant_intro
+      category: UTILITY
+    language: he
+    params:
+      "1": owner first name
+      "2": event name
+    body: |-
+      מזל טוב, {{1}}! 🎉 "{{2}}" רשמית בדרך.
+
+      תכירו: העוזרת האישית שלכם ל-AI - כן, ממש כאן בוואטסאפ. תחשבו עליה כמו מפיקת אירועים שאף פעם לא ישנה, לא שוכחת כלום, ולא מבקשת קפה ☕
+
+      אפשר פשוט לכתוב לה מה שצריך:
+      ✅ "כמה אישרו הגעה?"
+      📋 "תוסיפי את דודה רחל, 052-1234567"
+      ⏰ "תזכירי למי שלא ענה"
+      🪑 "מי יושב בשולחן 3?"
+
+      אורחים, קמפיינים, אישורי הגעה, תזכורות, שולחנות והגדרות האירוע - הכול בהודעה אחת.
+
+      נסו עכשיו - תשאלו אותה משהו 😉
+
+  capacity_warning:
+    # Sent once per event when confirmed+expected guests cross ~90% of the
+    # plan's guest capacity. Actionable: upgrade or trim the list before RSVPs
+    # start bouncing off the limit.
+    meta:
+      name: capacity_warning
+      category: UTILITY
+    language: he
+    params:
+      "1": event name
+      "2": guests used
+      "3": plan guest limit
+    body: |-
+      היי! שימו לב 👀
+
+      רשימת האורחים של "{{1}}" כמעט מלאה: {{2}} מתוך {{3}} מקומות בחבילה כבר תפוסים.
+
+      כדי שאף אורח לא ייתקע בחוץ, אפשר לשדרג את החבילה בכמה לחיצות מעמוד החיוב באפליקציה 💜
+
+  daily_summary:
+    # Daily 20:00 (Asia/Jerusalem) owner summary. Sent only when something
+    # meaningful changed since the previous summary. Replaces the legacy
+    # 4-param "daily_summary" template with a delta-based, actionable digest.
+    meta:
+      name: daily_summary_v2
+      category: UTILITY
+    language: he
+    params:
+      "1": event name
+      "2": new confirmations since last summary (count)
+      "3": new declines since last summary (count)
+      "4": new "maybe" replies since last summary (count)
+      "5": total expected attendees (sum of confirmed party sizes)
+      "6": campaigns sent today (count)
+      "7": attention line (what needs the owner's action, or a calm "all good")
+    body: |-
+      סיכום יומי - {{1}} 📋
+
+      מאז העדכון הקודם:
+      ✅ {{2}} אישורים חדשים
+      ❌ {{3}} סירובים
+      🤔 {{4}} אולי
+
+      🎉 סה"כ צפויים: {{5}} אורחים
+      📤 קמפיינים שנשלחו היום: {{6}}
+
+      👀 {{7}}

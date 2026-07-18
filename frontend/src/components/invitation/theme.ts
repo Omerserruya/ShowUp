@@ -88,6 +88,86 @@ function blend(a: string, b: string, ratio: number): string {
   return `#${mix.map((x) => x.toString(16).padStart(2, '0')).join('')}`;
 }
 
+/* ------------------------------------------------------------------ *
+ * Layouts - the STRUCTURE dimension of a design, orthogonal to colors
+ * and fonts. Each layout is a genuinely different page: hero composition,
+ * typography scale, spacing, decorations and button shapes.
+ * ------------------------------------------------------------------ */
+
+export type InvitationLayoutId = 'editorial' | 'classic' | 'minimal' | 'luxury' | 'floral' | 'night';
+
+export interface LayoutSpec {
+  key: InvitationLayoutId;
+  label: string;
+  description: string;
+  /** Hero composition:
+   *  split    - two-column magazine, photo pinned on one side (the editorial).
+   *  medallion- centered column, photo in an oval medallion above the names.
+   *  banner   - type-first opening, photo (if any) as a small strip below.
+   *  arch     - photo in an arched gold-framed window, dark & ceremonial.
+   *  backdrop - photo behind EVERYTHING; content floats in glass panels. */
+  hero: 'split' | 'medallion' | 'banner' | 'arch' | 'backdrop';
+  /** Divider ornament between sections. */
+  ornament: 'diamond' | 'doubleRule' | 'none' | 'goldBar' | 'petal' | 'glowDot';
+  /** Decorative page frame. */
+  frame: 'none' | 'double' | 'corners';
+  /** Content sections rendered as translucent glass panels (night). */
+  glassPanels?: boolean;
+  /** Floral corner decorations on the page. */
+  florals?: boolean;
+  /** Display type: weight + tracking personality. */
+  display: { weight: number; letterSpacing: number; sizeDesktop: number; sizeMobile: number };
+  /** Vertical rhythm of the story column. */
+  density: 'airy' | 'normal' | 'tight';
+  /** RSVP / link button shape. */
+  buttonShape: 'sharp' | 'pill' | 'underline' | 'glow';
+}
+
+export const LAYOUTS: LayoutSpec[] = [
+  {
+    key: 'editorial', label: 'מגזין', description: 'שתי עמודות - תמונה מלאה לצד סיפור נגלל',
+    hero: 'split', ornament: 'diamond', frame: 'none',
+    display: { weight: 400, letterSpacing: 0, sizeDesktop: 56, sizeMobile: 60 },
+    density: 'normal', buttonShape: 'sharp',
+  },
+  {
+    key: 'classic', label: 'אלגנטי', description: 'עמודה סימטרית עם מדליון תמונה ומסגרת כפולה',
+    hero: 'medallion', ornament: 'doubleRule', frame: 'double',
+    display: { weight: 400, letterSpacing: 0.5, sizeDesktop: 52, sizeMobile: 44 },
+    density: 'normal', buttonShape: 'sharp',
+  },
+  {
+    key: 'minimal', label: 'מינימלי', description: 'טיפוגרפיה בלבד - שקט, אוויר, ואף קישוט מיותר',
+    hero: 'banner', ornament: 'none', frame: 'none',
+    display: { weight: 300, letterSpacing: 1, sizeDesktop: 64, sizeMobile: 46 },
+    density: 'airy', buttonShape: 'underline',
+  },
+  {
+    key: 'luxury', label: 'יוקרתי', description: 'קשת מוזהבת, רקע כהה וטקס חגיגי',
+    hero: 'arch', ornament: 'goldBar', frame: 'corners',
+    display: { weight: 400, letterSpacing: 1.5, sizeDesktop: 48, sizeMobile: 40 },
+    density: 'normal', buttonShape: 'sharp',
+  },
+  {
+    key: 'floral', label: 'פרחוני', description: 'פינות פורחות, תמונה מעוגלת ורוך בכל פרט',
+    hero: 'medallion', ornament: 'petal', frame: 'none', florals: true,
+    display: { weight: 400, letterSpacing: 0, sizeDesktop: 50, sizeMobile: 42 },
+    density: 'normal', buttonShape: 'pill',
+  },
+  {
+    key: 'night', label: 'לילה', description: 'התמונה ברקע כל הדף, התוכן צף בזכוכית זוהרת',
+    hero: 'backdrop', ornament: 'glowDot', frame: 'none', glassPanels: true,
+    display: { weight: 500, letterSpacing: 1, sizeDesktop: 58, sizeMobile: 48 },
+    density: 'tight', buttonShape: 'glow',
+  },
+];
+
+const LAYOUT_BY_KEY: Record<string, LayoutSpec> = Object.fromEntries(LAYOUTS.map((l) => [l.key, l]));
+
+export function resolveLayout(t?: InvitationTheme | null): LayoutSpec {
+  return LAYOUT_BY_KEY[(t?.layout || '').trim()] || LAYOUT_BY_KEY.editorial;
+}
+
 export function resolveTheme(t?: InvitationTheme | null): ResolvedTheme {
   const ink = t?.ink || DEFAULT_THEME.ink;
   const accent = t?.accent || DEFAULT_THEME.accent;

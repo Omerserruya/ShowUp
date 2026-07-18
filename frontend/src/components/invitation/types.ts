@@ -37,6 +37,9 @@ export interface InvitationConfig {
  *  renderer fills in sensible defaults (see engine `resolveTheme`). */
 export interface InvitationTheme {
   preset?: string | null;
+  /** Page STRUCTURE (hero composition, spacing, decorations, button shapes) -
+   *  one of the LAYOUTS keys in theme.ts. Default: 'editorial'. */
+  layout?: string | null;
   bg?: string | null;         // page background
   ink?: string | null;        // primary text
   accent?: string | null;     // overlines, dividers, buttons

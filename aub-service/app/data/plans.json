@@ -14,7 +14,21 @@
     "is_popular": false,
     "is_active": true,
     "count_limit": 25,
-    "campaigns": []
+    "campaigns": [],
+    "extra_round_prices": [
+      [
+        100,
+        49
+      ],
+      [
+        300,
+        89
+      ],
+      [
+        null,
+        129
+      ]
+    ]
   },
   {
     "id": "basic",
@@ -44,6 +58,20 @@
         "offset_days": 1,
         "time": "18:00"
       }
+    ],
+    "extra_round_prices": [
+      [
+        100,
+        45
+      ],
+      [
+        300,
+        79
+      ],
+      [
+        null,
+        119
+      ]
     ]
   },
   {
@@ -86,6 +114,20 @@
         "offset_days": -1,
         "time": "11:00"
       }
+    ],
+    "extra_round_prices": [
+      [
+        100,
+        39
+      ],
+      [
+        300,
+        69
+      ],
+      [
+        null,
+        99
+      ]
     ]
   },
   {
@@ -128,6 +170,20 @@
         "offset_days": -1,
         "time": "11:00"
       }
+    ],
+    "extra_round_prices": [
+      [
+        100,
+        29
+      ],
+      [
+        300,
+        59
+      ],
+      [
+        null,
+        89
+      ]
     ]
   },
   {
@@ -145,7 +201,21 @@
     "is_popular": false,
     "is_active": false,
     "count_limit": 50,
-    "campaigns": []
+    "campaigns": [],
+    "extra_round_prices": [
+      [
+        100,
+        49
+      ],
+      [
+        300,
+        89
+      ],
+      [
+        null,
+        129
+      ]
+    ]
   },
   {
     "id": "venue",
@@ -162,6 +232,20 @@
     "is_popular": false,
     "is_active": false,
     "count_limit": null,
-    "campaigns": []
+    "campaigns": [],
+    "extra_round_prices": [
+      [
+        100,
+        49
+      ],
+      [
+        300,
+        89
+      ],
+      [
+        null,
+        129
+      ]
+    ]
   }
 ]

@@ -13,7 +13,7 @@ import { useEvent } from '../contexts/EventContext';
 
 interface Member {
   id: string;
-  user_id: string;
+  user_id: string | null;
   role: string;
   status: string;
   is_self: boolean;
@@ -78,13 +78,19 @@ export default function Team({ embedded = false }: { embedded?: boolean } = {}) 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ event_id: selectedEvent.id, phone: phone.trim(), role }),
       });
-      if (res.status === 404) { showToast('המספר אינו רשום ב-ShowUp. בקשו מהשותף/ה להירשם תחילה.', 'error'); return; }
-      if (res.status === 409) { showToast('כבר חבר/ת צוות', 'info'); return; }
+      if (res.status === 409) { showToast('כבר חבר/ת צוות או שכבר נשלחה הזמנה', 'info'); return; }
+      if (res.status === 400) { showToast('מספר הטלפון לא תקין', 'error'); return; }
       if (!res.ok) throw new Error();
+      const created = await res.json();
       setInviteOpen(false);
       setPhone('');
       setRole('editor');
-      showToast('השותף/ה נוסף/ה לצוות', 'success');
+      showToast(
+        created?.status === 'invited'
+          ? 'הזמנה נשלחה בוואטסאפ! ברגע שיתחברו לראשונה הם יצטרפו לצוות אוטומטית'
+          : 'השותף/ה נוסף/ה לצוות ועודכן/ה בוואטסאפ',
+        'success',
+      );
       load();
     } catch {
       showToast('שגיאה בהוספת חבר/ת צוות', 'error');
@@ -151,7 +157,8 @@ export default function Team({ embedded = false }: { embedded?: boolean } = {}) 
         <Box>
           {members.map((m, i) => {
             const isOwner = m.role === 'owner';
-            const display = m.name || (m.is_self ? 'את/ה' : 'חבר/ת צוות');
+            const isPendingInvite = m.status === 'invited';
+            const display = m.name || (m.is_self ? 'את/ה' : (isPendingInvite ? (m.phone || 'הזמנה ממתינה') : 'חבר/ת צוות'));
             return (
               <Box key={m.id} sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 2, borderTop: i ? '1px solid' : 'none', borderColor: 'divider' }}>
                 <Avatar sx={{ bgcolor: alpha(theme.palette.primary.main, 0.15), color: 'primary.main' }}>
@@ -163,7 +170,19 @@ export default function Team({ embedded = false }: { embedded?: boolean } = {}) 
                   </Typography>
                   {m.phone && <Typography variant="body2" color="text.secondary">{m.phone}</Typography>}
                 </Box>
-                {isOwner || m.is_self ? (
+                {isPendingInvite ? (
+                  <>
+                    <Chip label={`ממתין/ה להצטרפות · ${ROLE_LABELS[m.role] || m.role}`} size="small"
+                      sx={{ bgcolor: alpha(theme.palette.warning.main, 0.14), color: 'warning.dark', fontWeight: 600 }} />
+                    <Tooltip title="ביטול ההזמנה">
+                      <span>
+                        <IconButton color="error" disabled={busyId === m.id} onClick={() => { setMemberToRemove(m); setRemoveDialogOpen(true); }}>
+                          <DeleteOutlineIcon />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  </>
+                ) : isOwner || m.is_self ? (
                   <Chip label={ROLE_LABELS[m.role] || m.role} color={isOwner ? 'primary' : 'default'} />
                 ) : (
                   <>
@@ -197,7 +216,7 @@ export default function Team({ embedded = false }: { embedded?: boolean } = {}) 
         <DialogTitle>הזמנת שותף/ה</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
-            <TextField label="מספר טלפון" value={phone} onChange={(e) => setPhone(e.target.value)} fullWidth placeholder="+972…" helperText="השותף/ה צריך/ה להיות רשום/ה ב-ShowUp" />
+            <TextField label="מספר טלפון" value={phone} onChange={(e) => setPhone(e.target.value)} fullWidth placeholder="050-1234567" helperText="נשלח הזמנה בוואטסאפ - גם אם עוד אין להם חשבון ShowUp" />
             <FormControl fullWidth>
               <InputLabel>הרשאה</InputLabel>
               <Select value={role} label="הרשאה" onChange={(e) => setRole(e.target.value)}>
@@ -215,7 +234,7 @@ export default function Team({ embedded = false }: { embedded?: boolean } = {}) 
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setInviteOpen(false)}>ביטול</Button>
-          <Button variant="contained" onClick={handleInvite} disabled={saving || !phone.trim()} startIcon={saving ? <CircularProgress size={16} /> : undefined}>הוסף לצוות</Button>
+          <Button variant="contained" onClick={handleInvite} disabled={saving || !phone.trim()} startIcon={saving ? <CircularProgress size={16} /> : undefined}>שליחת הזמנה</Button>
         </DialogActions>
       </Dialog>
 

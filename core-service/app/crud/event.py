@@ -127,6 +127,8 @@ def update_event(db: Session, event: Event, data: EventUpdate) -> Event:
         event.plan_id = data.plan_id
     if data.seating_layout is not None:
         event.seating_layout = data.seating_layout
+    if data.wa_image_url is not None:
+        event.wa_image_url = data.wa_image_url or None
     db.add(event)
     db.commit()
     db.refresh(event)

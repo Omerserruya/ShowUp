@@ -98,11 +98,24 @@ def get_s3_client():
     return boto3.client("s3", **client_kwargs)
 
 
+# Named image slots with a STABLE logical path per event. Replacing a slot
+# overwrites the same key (or deletes the old-extension sibling), so no orphan
+# objects accumulate and every consumer keeps one canonical URL per slot.
+IMAGE_PURPOSES = {
+    "wa_cover",      # WhatsApp cover - default header for image-header WA templates
+    "invite_cover",  # digital invitation / event-website cover (hero image)
+}
+
+
 class GenerateUploadUrlRequest(BaseModel):
     event_id: uuid.UUID = Field(..., description="Event this upload belongs to (ownership + quota are scoped to it)")
     filename: str = Field(..., max_length=255, description="Original filename (used only for its extension)")
     content_type: str = Field(..., max_length=100, description="MIME type; must be an allowed image type")
     folder: Optional[str] = Field(default="invitations", description="Target folder (allow-listed)")
+    # Optional named slot. When set, the object key is the slot's stable path
+    # (invitations/{event_id}/{purpose}{ext}) instead of a random UUID, and
+    # /uploads/finalize replaces the previous image + updates the event default.
+    purpose: Optional[str] = Field(default=None, description="Named image slot (wa_cover | invite_cover)")
 
 
 class GenerateUploadUrlResponse(BaseModel):
@@ -187,7 +200,12 @@ def generate_upload_url(
     except Exception as e:  # noqa: BLE001
         logger.warning(f"upload quota check failed for {prefix} (allowing): {e}")
 
-    key = f"{prefix}{uuid.uuid4()}{ext}"
+    purpose = (request_data.purpose or "").strip() or None
+    if purpose and purpose not in IMAGE_PURPOSES:
+        raise HTTPException(status_code=400, detail=f"Unknown image purpose '{purpose}'")
+    # Named slots keep a stable logical path so replacing an image overwrites it
+    # in place; ad-hoc uploads (gallery/hero variants) stay collision-free UUIDs.
+    key = f"{prefix}{purpose}{ext}" if purpose else f"{prefix}{uuid.uuid4()}{ext}"
     try:
         presigned = s3_client.generate_presigned_post(
             Bucket=bucket_name,
@@ -212,3 +230,86 @@ def generate_upload_url(
         expires_in=900,
     )
 
+
+class FinalizeImageRequest(BaseModel):
+    event_id: uuid.UUID
+    purpose: str = Field(..., description="Named image slot (wa_cover | invite_cover)")
+    key: str = Field(..., max_length=512, description="The S3 key returned by generate-upload-url")
+
+
+class FinalizeImageResponse(BaseModel):
+    url: str = Field(..., description="Canonical, cache-busted URL to use everywhere")
+
+
+@router.post("/finalize", response_model=FinalizeImageResponse)
+def finalize_image(
+    request_data: FinalizeImageRequest = Body(...),
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Complete a named-slot image upload (or replacement).
+
+    - verifies the object actually landed in S3;
+    - deletes any STALE siblings of the slot (same logical name, other
+      extension) so no orphan originals/previews remain in storage;
+    - stamps a cache-busting version on the URL so guests / WhatsApp / the app
+      never keep serving the replaced image;
+    - updates the event's default in every place the slot feeds:
+        wa_cover     -> events.wa_image_url (default WA template header)
+        invite_cover -> event.invitation.hero.imageUrl (landing page + website)
+    """
+    event = event_crud.get_event(db, request_data.event_id)
+    require_event_permission(db, event, user_id, Action.EVENT_WRITE)
+
+    purpose = (request_data.purpose or "").strip()
+    if purpose not in IMAGE_PURPOSES:
+        raise HTTPException(status_code=400, detail=f"Unknown image purpose '{purpose}'")
+
+    prefix = f"invitations/{request_data.event_id}/"
+    key = request_data.key
+    if not key.startswith(f"{prefix}{purpose}"):
+        raise HTTPException(status_code=400, detail="key does not belong to this slot")
+
+    bucket_name = os.getenv("S3_BUCKET_NAME")
+    if not bucket_name:
+        raise HTTPException(status_code=500, detail="Uploads are not configured on the server")
+    region = os.getenv("AWS_REGION", "il-central-1")
+    try:
+        s3_client = get_s3_client()
+    except Exception:
+        raise HTTPException(status_code=500, detail="Uploads are not configured on the server")
+
+    # The upload must exist before we delete anything or point defaults at it.
+    try:
+        s3_client.head_object(Bucket=bucket_name, Key=key)
+    except ClientError:
+        raise HTTPException(status_code=409, detail="upload not found - complete the upload first")
+
+    # Remove stale siblings (same slot, different extension) - the "previous
+    # original + preview" cleanup. Same-key replacement already overwrote.
+    # Deleting each candidate extension directly (instead of ListObjects) works
+    # under an IAM policy that grants only object-level permissions, and S3's
+    # DeleteObject succeeds silently for keys that don't exist.
+    all_exts = {e for exts in ALLOWED_IMAGE_TYPES.values() for e in exts}
+    stale = [f"{prefix}{purpose}{e}" for e in sorted(all_exts) if f"{prefix}{purpose}{e}" != key]
+    try:
+        s3_client.delete_objects(Bucket=bucket_name, Delete={"Objects": [{"Key": k} for k in stale], "Quiet": True})
+        logger.info("finalize_image: pruned stale slot siblings for %s", f"{prefix}{purpose}")
+    except Exception as e:  # noqa: BLE001 - cleanup is best-effort
+        logger.warning("finalize_image: stale cleanup failed for %s: %s", key, e)
+
+    # Cache-bust: S3/browser/WhatsApp caches must never pin the old bytes.
+    url = f"{_object_url(bucket_name, region, key)}?v={uuid.uuid4().hex[:10]}"
+
+    if purpose == "wa_cover":
+        event.wa_image_url = url
+    else:  # invite_cover
+        invitation = dict(event.invitation or {})
+        hero = dict(invitation.get("hero") or {})
+        hero["imageUrl"] = url
+        invitation["hero"] = hero
+        event.invitation = invitation
+    db.add(event)
+    db.commit()
+
+    return FinalizeImageResponse(url=url)

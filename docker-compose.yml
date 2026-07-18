@@ -180,8 +180,8 @@ services:
 
   schedule-service:
     build:
-      context: ./scheduler-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: scheduler-service/Dockerfile
     ports:
       - ${SCHEDUALE_SERVICE_PORT}:${SCHEDUALE_SERVICE_PORT}
     environment:
@@ -200,7 +200,7 @@ services:
       - DAILY_SUMMARY_HOUR=${DAILY_SUMMARY_HOUR:-20}
       - DAILY_SUMMARY_MINUTE=${DAILY_SUMMARY_MINUTE:-0}
       - DAILY_SUMMARY_TZ=${DAILY_SUMMARY_TZ:-Asia/Jerusalem}
-      - WA_DAILY_SUMMARY_TEMPLATE_NAME=${WA_DAILY_SUMMARY_TEMPLATE_NAME:-daily_summary}
+      - WA_DAILY_SUMMARY_TEMPLATE_NAME=${WA_DAILY_SUMMARY_TEMPLATE_NAME:-}
       - WA_DAILY_SUMMARY_LANG=${WA_DAILY_SUMMARY_LANG:-he}
     depends_on:
       - postgres

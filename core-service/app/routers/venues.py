@@ -349,8 +349,10 @@ def internal_extra_round_quote(
         raise HTTPException(status_code=404, detail="event not found")
     from app.audience import count_audience
     from shared.domain.rounds import extra_round_price
+    from app.plans_client import plan_extra_round_bands
     recipients = count_audience(db, event_id, audience, None)
-    price = extra_round_price(recipients)
+    # Per-plan extra-round pricing (plans.json `extra_round_prices`).
+    price = extra_round_price(recipients, plan_extra_round_bands(getattr(event, "plan_id", None)))
     return {
         "event_id": str(event_id),
         "plan_id": getattr(event, "plan_id", None),

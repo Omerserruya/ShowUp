@@ -142,6 +142,9 @@ const DraggableGuest = ({ guest }: { guest: Guest }) => {
 // Update TableNode component
 const TableNode = ({ data }: { data: { table: Table; guests: Guest[]; onSeatClick: (tableId: string, seatIndex: number) => void; onTableEdit: (table: Table) => void; onTableDelete: (tableId: string) => void; onGuestDrop: (guest: Guest, tableId: string) => void } }) => {
   const { table, guests, onSeatClick, onTableEdit, onTableDelete, onGuestDrop } = data;
+  const theme = useTheme();
+  const dark = theme.palette.mode === 'dark';
+  const sideColor = table.side === 'bride' ? theme.palette.primary.main : theme.palette.secondary.main;
   const [contextMenu, setContextMenu] = useState<{
     mouseX: number;
     mouseY: number;
@@ -196,7 +199,7 @@ const TableNode = ({ data }: { data: { table: Table; guests: Guest[]; onSeatClic
 
   const guestSeatCount = (g: Guest) => g.confirmedCount ?? g.expectedCount ?? 1;
 
-  function renderSeat(index: number, x: number, y: number) {
+  function renderSeat(index: number, x: number, y: number, rotationDeg: number = 0) {
     // ceil(seats/4)*4 (ריבוע) או ceil(seats/2)*2 (שורה) יוצרים מושבי-רפאים מעבר
     // לקיבולת - לא מציירים מושב שמעבר ל-table.seats (הגיאומטריה נשארת כפי שהיא).
     if (index >= table.seats) return;
@@ -219,6 +222,9 @@ const TableNode = ({ data }: { data: { table: Table; guests: Guest[]; onSeatClic
         : assignedGuest.name
       : '';
 
+    const fill = assignedGuest ? statusColors[assignedGuest.status as keyof typeof statusColors] : null;
+    // A chair: a backrest bar on the OUTER side (rotated away from the table)
+    // plus a round cushion. Occupied cushions take the guest's RSVP color.
     seats.push(
       <Box
         key={index}
@@ -228,30 +234,61 @@ const TableNode = ({ data }: { data: { table: Table; guests: Guest[]; onSeatClic
         }}
         sx={{
           position: 'absolute',
-          left: x - 15,
-          top: y - 15,
-          width: 30,
-          height: 30,
-          borderRadius: '50%',
-          backgroundColor: assignedGuest ? statusColors[assignedGuest.status as keyof typeof statusColors] : 'background.paper',
-          border: '2px solid',
-          borderColor: 'primary.main',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          left: x - 14,
+          top: y - 14,
+          width: 28,
+          height: 28,
+          transform: `rotate(${rotationDeg}deg)`,
           cursor: 'pointer',
-          '&:hover': {
-            backgroundColor: 'action.hover',
+          '&:hover .seat-cushion': {
+            transform: 'scale(1.12)',
+            boxShadow: `0 4px 10px ${alpha('#000', 0.3)}`,
           },
         }}
       >
-        {assignedGuest && (
-          <Tooltip title={tooltipTitle}>
-            <Typography variant="caption" sx={{ color: 'white', fontWeight: 600 }}>
-              {blockSize > 1 ? positionInBlock : index + 1}
-            </Typography>
-          </Tooltip>
-        )}
+        {/* backrest */}
+        <Box sx={{
+          position: 'absolute',
+          top: -6,
+          left: 4,
+          right: 4,
+          height: 9,
+          borderRadius: '7px 7px 2px 2px',
+          bgcolor: fill || (dark ? '#3a4152' : '#aeb6c4'),
+          filter: 'brightness(0.82)',
+        }} />
+        {/* cushion */}
+        <Box
+          className="seat-cushion"
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '50%',
+            background: fill
+              ? `radial-gradient(circle at 35% 30%, ${alpha('#fff', 0.35)}, transparent 50%), ${fill}`
+              : dark
+                ? 'radial-gradient(circle at 35% 30%, #39404f, #262b36)'
+                : 'radial-gradient(circle at 35% 30%, #ffffff, #dfe3ec)',
+            border: '1.5px solid',
+            borderColor: fill ? alpha('#000', 0.18) : (dark ? '#4a5264' : '#b9c1cf'),
+            boxShadow: `0 2px 5px ${alpha('#000', 0.22)}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'transform .15s ease, box-shadow .15s ease',
+          }}
+        >
+          {assignedGuest && (
+            <Tooltip title={tooltipTitle}>
+              <Typography
+                variant="caption"
+                sx={{ color: 'white', fontWeight: 700, fontSize: 10, lineHeight: 1, transform: `rotate(${-rotationDeg}deg)` }}
+              >
+                {blockSize > 1 ? positionInBlock : (assignedGuest.name || '?').trim().charAt(0)}
+              </Typography>
+            </Tooltip>
+          )}
+        </Box>
       </Box>
     );
   }
@@ -263,55 +300,56 @@ const TableNode = ({ data }: { data: { table: Table; guests: Guest[]; onSeatClic
       const angle = (i * 2 * Math.PI) / table.seats;
       const x = centerX + radius * Math.cos(angle);
       const y = centerY + radius * Math.sin(angle);
-      renderSeat(i, x, y);
+      // Backrest faces outward: rotate the chair so its top points away from center.
+      renderSeat(i, x, y, (angle * 180) / Math.PI + 90);
     }
   } else if (table.style === 'square') {
     const seatsPerSide = Math.ceil(table.seats / 4);
     const spacing = table.size.width / (seatsPerSide + 1);
-    
+
     // Top side
     for (let i = 0; i < seatsPerSide; i++) {
       const x = spacing * (i + 1);
       const y = -30;
-      renderSeat(i, x, y);
+      renderSeat(i, x, y, 0);
     }
-    
+
     // Right side
     for (let i = 0; i < seatsPerSide; i++) {
       const x = table.size.width + 30;
       const y = spacing * (i + 1);
-      renderSeat(seatsPerSide + i, x, y);
+      renderSeat(seatsPerSide + i, x, y, 90);
     }
-    
+
     // Bottom side
     for (let i = 0; i < seatsPerSide; i++) {
       const x = table.size.width - spacing * (i + 1);
       const y = table.size.height + 30;
-      renderSeat(seatsPerSide * 2 + i, x, y);
+      renderSeat(seatsPerSide * 2 + i, x, y, 180);
     }
-    
+
     // Left side
     for (let i = 0; i < seatsPerSide; i++) {
       const x = -30;
       const y = table.size.height - spacing * (i + 1);
-      renderSeat(seatsPerSide * 3 + i, x, y);
+      renderSeat(seatsPerSide * 3 + i, x, y, 270);
     }
   } else if (table.style === 'row') {
     const seatsPerRow = Math.ceil(table.seats / 2);
     const spacing = table.size.width / (seatsPerRow + 1);
-    
+
     // Top row
     for (let i = 0; i < seatsPerRow; i++) {
       const x = spacing * (i + 1);
       const y = -30;
-      renderSeat(i, x, y);
+      renderSeat(i, x, y, 0);
     }
-    
+
     // Bottom row
     for (let i = 0; i < seatsPerRow; i++) {
       const x = spacing * (i + 1);
       const y = table.size.height + 30;
-      renderSeat(seatsPerRow + i, x, y);
+      renderSeat(seatsPerRow + i, x, y, 180);
     }
   }
 
@@ -322,30 +360,57 @@ const TableNode = ({ data }: { data: { table: Table; guests: Guest[]; onSeatClic
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onContextMenu={handleContextMenu}
-        sx={{ 
+        sx={{
           width: table.size.width,
           height: table.size.height,
-          backgroundColor: isOver ? 'action.hover' : 'background.paper',
-          border: '2px solid',
-          borderColor: table.side === 'bride' ? 'primary.main' : 'secondary.main',
-          borderRadius: table.style === 'round' ? '50%' : 1,
-          display: 'flex', 
-          alignItems: 'center', 
+          // A dressed table: soft cloth gradient + a real drop shadow, with a
+          // side-colored glow while a guest is dragged over it.
+          background: dark
+            ? 'radial-gradient(circle at 35% 28%, #323848 0%, #262b38 60%, #20242f 100%)'
+            : 'radial-gradient(circle at 35% 28%, #ffffff 0%, #f4f5fa 55%, #e9ebf3 100%)',
+          border: '1px solid',
+          borderColor: isOver ? sideColor : (dark ? '#414a5e' : '#d7dbe6'),
+          borderRadius: table.style === 'round' ? '50%' : '16px',
+          display: 'flex',
+          alignItems: 'center',
           justifyContent: 'center',
           position: 'relative',
           cursor: 'move',
-          transition: 'background-color 0.2s',
+          boxShadow: isOver
+            ? `0 0 0 3px ${alpha(sideColor, 0.35)}, 0 16px 32px ${alpha('#000', dark ? 0.5 : 0.18)}`
+            : `0 2px 4px ${alpha('#000', dark ? 0.4 : 0.06)}, 0 16px 32px ${alpha('#000', dark ? 0.45 : 0.14)}`,
+          transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
+          // Inner cloth seam - the "runner" ring that reads as a set table.
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            inset: 12,
+            borderRadius: table.style === 'round' ? '50%' : '10px',
+            border: '1.5px dashed',
+            borderColor: alpha(sideColor, dark ? 0.4 : 0.3),
+            pointerEvents: 'none',
+          },
         }}
       >
-        <Box sx={{ textAlign: 'center' }}>
-          <Typography variant="h6">{table.name}</Typography>
-          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-            {Object.keys(table.seatAssignments || {}).length}/{table.seats}
+        <Box sx={{ textAlign: 'center', px: 1 }}>
+          <Typography sx={{ fontWeight: 800, fontSize: '1.05rem', lineHeight: 1.2, color: dark ? '#e8eaf2' : '#2a2f42' }}>
+            {table.name}
           </Typography>
+          <Box sx={{
+            display: 'inline-flex', alignItems: 'center', gap: 0.6, mt: 0.5,
+            px: 1, py: 0.2, borderRadius: 99,
+            bgcolor: alpha(sideColor, dark ? 0.22 : 0.12),
+          }}>
+            <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: sideColor }} />
+            <Typography variant="caption" sx={{ fontWeight: 700, color: dark ? '#cfd4e2' : '#4a5062' }}>
+              {Object.keys(table.seatAssignments || {}).length}/{table.seats}
+            </Typography>
+          </Box>
         </Box>
         {seats}
-        <Handle type="target" position={Position.Top} />
-        <Handle type="source" position={Position.Bottom} />
+        {/* Tables don't connect to anything - keep the flow handles invisible. */}
+        <Handle type="target" position={Position.Top} style={{ opacity: 0, pointerEvents: 'none' }} />
+        <Handle type="source" position={Position.Bottom} style={{ opacity: 0, pointerEvents: 'none' }} />
       </Box>
       <Menu
         open={contextMenu !== null}

@@ -65,7 +65,7 @@ def fetch_event_by_id(conn: psycopg2.extensions.connection, event_id: str) -> Op
         cur.execute(
             """
             SELECT id, name, description, event_date, location, active, event_type,
-                   subjects, public_slug, created_at, updated_at, inviters, owners, account_id
+                   subjects, public_slug, wa_image_url, created_at, updated_at, inviters, owners, account_id
             FROM events
             WHERE id = %s
             """,

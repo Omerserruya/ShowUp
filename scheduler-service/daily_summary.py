@@ -11,13 +11,17 @@ one template message per owner onto the outpost queue. outpost-service is the
 single Meta egress; `sender: "assistant"` routes the send through the assistant
 phone number (falls back to WA_PHONE_ID when no dedicated number is configured).
 
-The WhatsApp template (WA_DAILY_SUMMARY_TEMPLATE_NAME, default "daily_summary")
-must exist and be APPROVED on the WABA - it is business-initiated, so free text
-is not an option. Body parameters, in order:
+The WhatsApp template comes from the system-templates SSOT
+(shared/content/system_templates.yaml, key "daily_summary"; overridable via
+WA_SYSTEM_TEMPLATE_DAILY_SUMMARY). It must exist and be APPROVED on the WABA -
+business-initiated, so free text is not an option. Body parameters, in order:
   {{1}} event name
-  {{2}} attending people total (sum of confirmed party sizes)
-  {{3}} declined count
-  {{4}} pending (invited/maybe) count
+  {{2}} NEW confirmations since the previous summary
+  {{3}} NEW declines since the previous summary
+  {{4}} NEW "maybe" replies since the previous summary
+  {{5}} total expected attendees (sum of confirmed party sizes)
+  {{6}} campaigns sent today
+  {{7}} attention line (actionable, or a calm all-good)
 """
 
 import json
@@ -35,8 +39,14 @@ logger = logging.getLogger("daily_summary")
 SUMMARY_HOUR = int(os.getenv("DAILY_SUMMARY_HOUR", "20"))
 SUMMARY_MINUTE = int(os.getenv("DAILY_SUMMARY_MINUTE", "0"))
 SUMMARY_TZ = os.getenv("DAILY_SUMMARY_TZ", "Asia/Jerusalem")
-TEMPLATE_NAME = os.getenv("WA_DAILY_SUMMARY_TEMPLATE_NAME", "daily_summary")
-TEMPLATE_LANG = os.getenv("WA_DAILY_SUMMARY_LANG", "he")
+def _template():
+    """Meta template name + language from the system-templates SSOT, with the
+    legacy env vars still honored as a final override."""
+    from shared.domain.messaging.system_templates import get_system_template
+    t = get_system_template("daily_summary")
+    name = os.getenv("WA_DAILY_SUMMARY_TEMPLATE_NAME") or (t.meta_name if t else "daily_summary_v2")
+    lang = os.getenv("WA_DAILY_SUMMARY_LANG") or (t.language if t else "he")
+    return name, lang
 
 
 def ensure_daily_summary_table(conn: psycopg2.extensions.connection) -> None:
@@ -60,6 +70,8 @@ def ensure_daily_summary_table(conn: psycopg2.extensions.connection) -> None:
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_daily_summaries_event ON daily_summaries (event_id, summary_date DESC)"
         )
+        cur.execute("ALTER TABLE daily_summaries ADD COLUMN IF NOT EXISTS maybe INTEGER NOT NULL DEFAULT 0")
+        cur.execute("ALTER TABLE daily_summaries ADD COLUMN IF NOT EXISTS campaigns_sent INTEGER NOT NULL DEFAULT 0")
 
 
 def _local_now() -> datetime:
@@ -75,11 +87,16 @@ def _fetch_candidates(conn, summary_date) -> Sequence[dict]:
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
-            SELECT e.id, e.name, e.owners,
-                   COUNT(g.id) FILTER (WHERE g.status = 'confirmed') AS confirmed,
-                   COALESCE(SUM(COALESCE(g.guest_count, 1)) FILTER (WHERE g.status = 'confirmed'), 0)::int AS attending,
+            SELECT e.id, e.name, e.event_date, e.owners,
+                   COUNT(g.id) FILTER (WHERE g.status IN ('confirmed', 'attending')) AS confirmed,
+                   COALESCE(SUM(COALESCE(g.guest_count, 1)) FILTER (WHERE g.status IN ('confirmed', 'attending')), 0)::int AS attending,
                    COUNT(g.id) FILTER (WHERE g.status = 'declined') AS declined,
-                   COUNT(g.id) FILTER (WHERE g.status IN ('invited', 'maybe')) AS pending
+                   COUNT(g.id) FILTER (WHERE g.status = 'maybe') AS maybe,
+                   COUNT(g.id) FILTER (WHERE g.status IN ('invited', 'pending')) AS pending,
+                   (SELECT COUNT(*) FROM campaigns c
+                     WHERE c.event_id = e.id AND c.status = 'sent'
+                       AND c.updated_at >= %s::date AND c.updated_at < %s::date + INTERVAL '1 day'
+                   )::int AS campaigns_sent
             FROM events e
             LEFT JOIN guests g ON g.event_id = e.id
             WHERE e.active = true
@@ -90,7 +107,7 @@ def _fetch_candidates(conn, summary_date) -> Sequence[dict]:
               )
             GROUP BY e.id
             """,
-            (summary_date,),
+            (summary_date, summary_date, summary_date),
         )
         return cur.fetchall()
 
@@ -99,7 +116,7 @@ def _last_summary(conn, event_id) -> Optional[dict]:
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
-            SELECT confirmed, attending, declined, pending
+            SELECT confirmed, attending, declined, maybe, pending
             FROM daily_summaries
             WHERE event_id = %s
             ORDER BY summary_date DESC
@@ -133,12 +150,44 @@ def _owner_contacts(conn, owners_json) -> Sequence[dict]:
 
 
 def _changed(current: dict, last: Optional[dict]) -> bool:
+    """Something meaningful happened since the previous summary: RSVP movement
+    in any direction, or campaigns that went out today."""
+    if current.get("campaigns_sent", 0) > 0:
+        return True
     if last is None:
         # First-ever summary: only worth sending once someone has responded.
-        return (current["confirmed"] + current["declined"]) > 0
+        return (current["confirmed"] + current["declined"] + current.get("maybe", 0)) > 0
     return any(
-        current[k] != last[k] for k in ("confirmed", "attending", "declined", "pending")
+        current[k] != last.get(k, 0) for k in ("confirmed", "attending", "declined", "maybe", "pending")
     )
+
+
+def _deltas(current: dict, last: Optional[dict]) -> dict:
+    """NEW responses since the previous summary (never negative - a guest
+    flipping away from a status shows up in the status they moved TO)."""
+    base = last or {"confirmed": 0, "declined": 0, "maybe": 0}
+    return {
+        "new_confirmed": max(0, current["confirmed"] - int(base.get("confirmed") or 0)),
+        "new_declined": max(0, current["declined"] - int(base.get("declined") or 0)),
+        "new_maybe": max(0, current.get("maybe", 0) - int(base.get("maybe") or 0)),
+    }
+
+
+def _attention_line(event: dict) -> str:
+    """One short, actionable line - what deserves the owner's attention."""
+    pending = int(event.get("pending") or 0)
+    event_date = event.get("event_date")
+    days_left = None
+    if event_date is not None:
+        try:
+            days_left = (event_date.date() - _local_now().date()).days
+        except Exception:
+            days_left = None
+    if pending > 0 and days_left is not None and days_left <= 7:
+        return f"{pending} אורחים עדיין לא ענו והאירוע בעוד {days_left} ימים - שווה לשלוח תזכורת"
+    if pending > 0:
+        return f"{pending} אורחים עדיין לא ענו - אפשר לבקש מהעוזרת לשלוח להם תזכורת"
+    return "הכול תחת שליטה, אין מה לעשות כרגע 👌"
 
 
 def _claim(conn, event_id, summary_date, counts: dict, recipients: int) -> bool:
@@ -146,8 +195,8 @@ def _claim(conn, event_id, summary_date, counts: dict, recipients: int) -> bool:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO daily_summaries (event_id, summary_date, confirmed, attending, declined, pending, recipients)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO daily_summaries (event_id, summary_date, confirmed, attending, declined, maybe, pending, campaigns_sent, recipients)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (event_id, summary_date) DO NOTHING
             RETURNING id
             """,
@@ -157,7 +206,9 @@ def _claim(conn, event_id, summary_date, counts: dict, recipients: int) -> bool:
                 counts["confirmed"],
                 counts["attending"],
                 counts["declined"],
+                counts["maybe"],
                 counts["pending"],
+                counts["campaigns_sent"],
                 recipients,
             ),
         )
@@ -172,18 +223,22 @@ def _unclaim(conn, event_id, summary_date) -> None:
         )
 
 
-def _build_message(event: dict, owner: dict) -> dict:
+def _build_message(event: dict, owner: dict, deltas: dict) -> dict:
+    name, lang = _template()
     return {
         "platform": "WA",
         "message_type": "template",
         "recipient": owner["phone"],
-        "template": TEMPLATE_NAME,
-        "language": TEMPLATE_LANG,
+        "template": name,
+        "language": lang,
         "parameters": {
             "1": event["name"],
-            "2": str(event["attending"]),
-            "3": str(event["declined"]),
-            "4": str(event["pending"]),
+            "2": str(deltas["new_confirmed"]),
+            "3": str(deltas["new_declined"]),
+            "4": str(deltas["new_maybe"]),
+            "5": str(event["attending"]),
+            "6": str(event["campaigns_sent"]),
+            "7": _attention_line(event),
         },
         "sender": "assistant",
         "event_id": str(event["id"]),
@@ -205,9 +260,11 @@ def run_daily_summary_check(conn, publish) -> int:
 
     sent_events = 0
     for event in _fetch_candidates(conn, summary_date):
-        counts = {k: event[k] for k in ("confirmed", "attending", "declined", "pending")}
-        if not _changed(counts, _last_summary(conn, event["id"])):
+        counts = {k: event[k] for k in ("confirmed", "attending", "declined", "maybe", "pending", "campaigns_sent")}
+        last = _last_summary(conn, event["id"])
+        if not _changed(counts, last):
             continue
+        deltas = _deltas(counts, last)
         owners = _owner_contacts(conn, event["owners"])
         if not owners:
             logger.warning("Daily summary skipped - no owner phones | event=%s", event["id"])
@@ -218,7 +275,7 @@ def run_daily_summary_check(conn, publish) -> int:
         delivered = 0
         for owner in owners:
             try:
-                publish(_build_message(event, owner))
+                publish(_build_message(event, owner, deltas))
                 delivered += 1
             except Exception as e:
                 logger.error(

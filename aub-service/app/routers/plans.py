@@ -50,6 +50,7 @@ def _to_response(plan: dict) -> PlanResponse:
         isPopular=plan.get("is_popular", False),
         campaigns=_normalize_campaigns(plan.get("campaigns", [])),
         countLimit=plan.get("count_limit"),
+        extraRoundPrices=plan.get("extra_round_prices"),
     )
 
 

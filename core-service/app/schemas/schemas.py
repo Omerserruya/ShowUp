@@ -93,9 +93,11 @@ class EventBase(BaseModel):
     subjects: Optional[dict] = None
     # Payment dimension (paid | free | pending | unpaid), independent of `state`.
     payment_status: Optional[str] = Field(None, serialization_alias="paymentStatus", validation_alias="paymentStatus")
-    plan_id: Optional[str] = Field(None, serialization_alias="planId")  # Plan ID from MongoDB (serialized as planId)
+    plan_id: Optional[str] = Field(None, serialization_alias="planId")  # Plan id from aub plans.json (serialized as planId)
     seating_layout: Optional[dict] = Field(None, serialization_alias="seatingLayout", validation_alias="seatingLayout")  # { tables: [...] }
     public_slug: Optional[str] = Field(None, serialization_alias="publicSlug", validation_alias="publicSlug")
+    # WhatsApp cover image (default header for image-header WA templates).
+    wa_image_url: Optional[str] = Field(None, serialization_alias="waImageUrl", validation_alias="waImageUrl")
     invitation: Optional[dict] = None  # InvitationConfig design (see schemas.InvitationConfig)
     invitation_published: Optional[bool] = Field(False, serialization_alias="invitationPublished", validation_alias="invitationPublished")
 
@@ -116,6 +118,7 @@ class EventUpdate(BaseModel):
     event_date: Optional[dt.datetime] = None
     location: Optional[str] = None
     plan_id: Optional[str] = None
+    wa_image_url: Optional[str] = Field(None, serialization_alias="waImageUrl", validation_alias="waImageUrl")
     seating_layout: Optional[dict] = Field(None, serialization_alias="seatingLayout", validation_alias="seatingLayout")
 
 
