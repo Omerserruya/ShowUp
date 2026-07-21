@@ -116,6 +116,9 @@ def chat(
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
+    import time as _time
+    _t0 = _time.perf_counter()
+
     event = event_crud.get_event(db, body.event_id)
     if not event:
         raise HTTPException(status_code=404, detail="event not found")
@@ -180,10 +183,20 @@ def chat(
                     result = dispatch_tool(ctx, call.function.name, args)
                     content = _to_json_str(result)
                 except (ToolDenied, ToolError) as e:
+                    # Expected business outcome (permission / validation) - not Sentry.
                     logger.info("assistant tool '%s' rejected: %s", call.function.name, e)
                     content = f"Error: {e}"
-                except Exception:
+                except Exception as e:
                     logger.exception("assistant tool '%s' failed", call.function.name)
+                    # UNEXPECTED tool failure was silently swallowed into a chat
+                    # reply - surface it to Sentry with AI + event context.
+                    try:
+                        from shared.obs import set_ai, capture
+                        set_ai(conversation_id=str(body.event_id), tool=call.function.name,
+                               tool_call=(call.function.arguments or "")[:200], assistant_mode="http")
+                        capture(e, operation="assistant_tool", flow="assistant")
+                    except Exception:
+                        pass
                     content = "Error: the tool failed unexpectedly."
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": content})
             response = client.chat.completions.create(
@@ -198,13 +211,28 @@ def chat(
         logger.error("assistant API error %s: %s", e.status_code, e.message)
         raise HTTPException(status_code=502, detail="assistant is temporarily unavailable")
 
+    # Record the turn for the ops dashboard (assistant conversation volume +
+    # response time). Best-effort: never let instrumentation break a reply.
+    def _record_turn():
+        try:
+            from app.audit import record_audit
+            from shared.domain.enums import ActorType
+            record_audit(db, actor_type=ActorType.ASSISTANT, actor_id=user_id,
+                         account_id=getattr(event, "account_id", None),
+                         action="assistant.turn", entity_type="event", entity_id=event.id,
+                         data={"duration_ms": round((_time.perf_counter() - _t0) * 1000)})
+        except Exception:
+            pass
+
     final = response.choices[0].message
     if getattr(final, "refusal", None):
+        _record_turn()
         return AssistantResponse(reply="אני לא יכול לעזור עם הבקשה הזו. אפשר לשאול אותי כל דבר על ניהול האירוע 🙂")
 
     reply = (final.content or "").strip()
     if not reply:
         reply = "סיימתי לבצע את הפעולה. יש עוד משהו שאפשר לעזור בו?"
+    _record_turn()
     return AssistantResponse(reply=reply)
 
 

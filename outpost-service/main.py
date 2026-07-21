@@ -88,6 +88,11 @@ class OutpostService:
 
 async def main():
     """Main entry point."""
+    try:
+        from shared.obs import bootstrap
+        bootstrap("outpost")
+    except Exception:
+        pass
     service = OutpostService()
     await service.start()
 

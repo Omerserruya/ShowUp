@@ -106,18 +106,48 @@ export const INVITATION_TEMPLATES: InvitationTemplate[] = [
   },
 
   // ---- Brit / Brita ----
+  // Each entry carries its own `layout`, so the four designs an event type sees
+  // are genuinely different PAGES, not one page in four palettes.
   {
     id: 'soft-sky', label: 'תכלת רך', eventTypes: ['brit', 'brita'], trending: true,
     config: {
-      theme: { preset: 'soft-sky', bg: '#eef4f8', ink: '#29404e', accent: '#7fa8c2', titleFont: DAVID, bodyFont: HEEBO },
+      theme: { preset: 'soft-sky', layout: 'classic', bg: '#eef4f8', ink: '#29404e', accent: '#7fa8c2', titleFont: DAVID, bodyFont: HEEBO },
       envelope: env('#2c4a5a', '#b4d0e0', DAVID, 'הזמנה'),
     },
   },
   {
     id: 'cream-cloud', label: 'ענן קרם', eventTypes: ['brit', 'brita', 'birthday'],
     config: {
-      theme: { preset: 'cream-cloud', bg: '#f6f1e8', ink: '#4a4234', accent: '#cbb489', titleFont: DAVID, bodyFont: ASSISTANT },
+      theme: { preset: 'cream-cloud', layout: 'minimal', bg: '#f6f1e8', ink: '#4a4234', accent: '#cbb489', titleFont: DAVID, bodyFont: ASSISTANT },
       envelope: env('#6b5c43', '#e0cfac', DAVID),
+    },
+  },
+  {
+    id: 'morning-dew', label: 'טל בוקר', eventTypes: ['brit'], trending: true,
+    config: {
+      theme: { preset: 'morning-dew', layout: 'editorial', bg: '#f7f4ee', ink: '#2f4250', accent: '#7c9fb8', titleFont: SERIF, bodyFont: ASSISTANT },
+      envelope: env('#31505f', '#cfe0ea', SERIF, 'הזמנה'),
+    },
+  },
+  {
+    id: 'first-light', label: 'אור ראשון', eventTypes: ['brit'],
+    config: {
+      theme: { preset: 'first-light', layout: 'floral', bg: '#fbf6ef', ink: '#3d382f', accent: '#b9a888', titleFont: DAVID, bodyFont: ASSISTANT },
+      envelope: env('#5d5344', '#e8dcc6', DAVID, 'הזמנה'),
+    },
+  },
+  {
+    id: 'almond-blossom', label: 'שקד', eventTypes: ['brita'], trending: true,
+    config: {
+      theme: { preset: 'almond-blossom', layout: 'floral', bg: '#faf1ec', ink: '#4b3a38', accent: '#c48f88', titleFont: DAVID, bodyFont: ASSISTANT },
+      envelope: env('#7c4d47', '#eccbc4', DAVID, 'הזמנה'),
+    },
+  },
+  {
+    id: 'pearl', label: 'פנינה', eventTypes: ['brita'],
+    config: {
+      theme: { preset: 'pearl', layout: 'editorial', bg: '#f6f3f6', ink: '#413546', accent: '#a08faa', titleFont: '"Bellefair", "Frank Ruhl Libre", serif', bodyFont: ASSISTANT },
+      envelope: env('#4e4157', '#d8cee0', '"Bellefair", "Frank Ruhl Libre", serif', 'הזמנה'),
     },
   },
 
@@ -125,15 +155,29 @@ export const INVITATION_TEMPLATES: InvitationTemplate[] = [
   {
     id: 'navy-gold', label: 'נייבי וזהב', eventTypes: ['bar'], trending: true,
     config: {
-      theme: { preset: 'navy-gold', bg: '#14213a', ink: '#eef1f6', accent: '#c9a24a', titleFont: SUEZ, bodyFont: RUBIK },
+      theme: { preset: 'navy-gold', layout: 'luxury', bg: '#14213a', ink: '#eef1f6', accent: '#c9a24a', titleFont: SUEZ, bodyFont: RUBIK },
       envelope: env('#0e1930', '#c9a24a', SUEZ),
     },
   },
   {
     id: 'urban-slate', label: 'אורבני', eventTypes: ['bar', 'corporate'],
     config: {
-      theme: { preset: 'urban-slate', bg: '#23262b', ink: '#eef0f2', accent: '#6aa0c9', titleFont: SERIF, bodyFont: RUBIK },
+      theme: { preset: 'urban-slate', layout: 'night', bg: '#23262b', ink: '#eef0f2', accent: '#6aa0c9', titleFont: SERIF, bodyFont: RUBIK },
       envelope: env('#16181c', '#6aa0c9', SERIF),
+    },
+  },
+  {
+    id: 'jerusalem-stone', label: 'אבן ירושלמית', eventTypes: ['bar'], trending: true,
+    config: {
+      theme: { preset: 'jerusalem-stone', layout: 'classic', bg: '#f2ece1', ink: '#33302b', accent: '#b08d4f', titleFont: SUEZ, bodyFont: RUBIK },
+      envelope: env('#4a4030', '#ddc9a2', SUEZ),
+    },
+  },
+  {
+    id: 'midnight', label: 'חצות', eventTypes: ['bar'],
+    config: {
+      theme: { preset: 'midnight', layout: 'editorial', bg: '#0e1118', ink: '#eef1f8', accent: '#6f8cff', titleFont: SECULAR, bodyFont: RUBIK },
+      envelope: env('#0a0c12', '#6f8cff', SECULAR),
     },
   },
 
@@ -141,15 +185,29 @@ export const INVITATION_TEMPLATES: InvitationTemplate[] = [
   {
     id: 'rose-gold', label: 'ורוד וזהב', eventTypes: ['bat'], trending: true,
     config: {
-      theme: { preset: 'rose-gold', bg: '#f7ebe9', ink: '#4a3138', accent: '#c98a86', titleFont: DAVID, bodyFont: ASSISTANT },
+      theme: { preset: 'rose-gold', layout: 'editorial', bg: '#f7ebe9', ink: '#4a3138', accent: '#c98a86', titleFont: DAVID, bodyFont: ASSISTANT },
       envelope: env('#7a4750', '#e6c0bb', DAVID),
     },
   },
   {
     id: 'lavender', label: 'לבנדר', eventTypes: ['bat', 'birthday'], trending: true,
     config: {
-      theme: { preset: 'lavender', bg: '#efecf6', ink: '#37324a', accent: '#9285bd', titleFont: DAVID, bodyFont: HEEBO },
+      theme: { preset: 'lavender', layout: 'floral', bg: '#efecf6', ink: '#37324a', accent: '#9285bd', titleFont: DAVID, bodyFont: HEEBO },
       envelope: env('#443b63', '#c7bce2', DAVID),
+    },
+  },
+  {
+    id: 'sunrise', label: 'זריחה', eventTypes: ['bat'],
+    config: {
+      theme: { preset: 'sunrise', layout: 'classic', bg: '#f8f1e8', ink: '#42302c', accent: '#c08b72', titleFont: '"Bellefair", "Frank Ruhl Libre", serif', bodyFont: ASSISTANT },
+      envelope: env('#6d4436', '#e8c9b4', '"Bellefair", "Frank Ruhl Libre", serif'),
+    },
+  },
+  {
+    id: 'lilac-night', label: 'לילך', eventTypes: ['bat'],
+    config: {
+      theme: { preset: 'lilac-night', layout: 'night', bg: '#100c1a', ink: '#f2eff8', accent: '#b49ae8', titleFont: SECULAR, bodyFont: RUBIK },
+      envelope: env('#0b0813', '#b49ae8', SECULAR),
     },
   },
 

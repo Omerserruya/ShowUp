@@ -11,6 +11,7 @@ from typing import Optional, Sequence
 import psycopg2.extras
 
 from shared.domain.enums import GuestStatus, CampaignAudience
+from shared.domain.optout import OPT_OUT_SQL_PREDICATE
 
 
 def select_guests_by_audience(conn, event_id: str, audience, audience_filter: Optional[dict] = None) -> Sequence[dict]:
@@ -18,7 +19,9 @@ def select_guests_by_audience(conn, event_id: str, audience, audience_filter: Op
     f = audience_filter or {}
 
     join = ""
-    where = ["g.event_id = %s", "g.phone IS NOT NULL", "g.phone <> ''"]
+    # OPT_OUT_SQL_PREDICATE is the shared suppression rule - a guest who replied
+    # STOP is excluded from every audience, on every send path.
+    where = ["g.event_id = %s", "g.phone IS NOT NULL", "g.phone <> ''", OPT_OUT_SQL_PREDICATE]
     params = [event_id]
     status_values = None
 

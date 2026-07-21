@@ -227,6 +227,214 @@ def ensure_events_payment_status(engine: Engine) -> None:
     logger.info("Event schema verified (payment_status column exists)")
 
 
+def ensure_events_provisioning(engine: Engine) -> None:
+    """Payment-as-source-of-truth schema (production hardening, 2026-07).
+
+    Adds `events.provisioning_order_id` plus the UNIQUE index that makes
+    provisioning idempotent: two concurrent IPN deliveries for one order cannot
+    create two events, because the second INSERT violates this constraint rather
+    than relying on the caller to lock correctly.
+
+    Then backfills settlement for pre-existing rows. `payment_status` used to
+    default to 'unpaid' and was written only sporadically, so enforcing on it
+    without a backfill would deactivate every legacy event. The rule
+    grandfathers them: an event on a free-of-charge plan becomes 'free',
+    anything else is assumed 'paid' (it is already live in production). Only
+    rows still carrying the legacy 'unpaid' default are touched, so this is
+    safe to re-run and never downgrades a row the provisioning path has since
+    written.
+    """
+    statements = [
+        "ALTER TABLE events ADD COLUMN IF NOT EXISTS provisioning_order_id VARCHAR(64)",
+        "ALTER TABLE events ADD COLUMN IF NOT EXISTS last_plan_order_id VARCHAR(64)",
+        "CREATE INDEX IF NOT EXISTS ix_events_last_plan_order_id ON events (last_plan_order_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_events_provisioning_order_id "
+        "ON events (provisioning_order_id) WHERE provisioning_order_id IS NOT NULL",
+        # Name the implicit unmetered exemption. Events predating billing carry
+        # plan_id NULL, which the old code treated as unmetered by accident;
+        # `included_rounds` now fails closed on an unknown/absent plan, so these
+        # rows are moved onto the explicit `legacy` plan to preserve their
+        # existing (unmetered) behaviour instead of suddenly blocking their sends.
+        "UPDATE events SET plan_id = 'legacy' WHERE plan_id IS NULL",
+        # Grandfather legacy rows: free-of-charge plans -> 'free'.
+        "UPDATE events SET payment_status = 'free' "
+        "WHERE payment_status = 'unpaid' "
+        "AND (plan_id IS NULL OR lower(plan_id) IN ('free', 'starter', 'venue'))",
+        # ...everything else is an existing paid customer -> 'paid'.
+        "UPDATE events SET payment_status = 'paid' WHERE payment_status = 'unpaid'",
+        # `active` is now derived from (state, payment_status). Re-derive it once
+        # so the column agrees with the invariant from here on.
+        "UPDATE events SET active = (state IN ('draft', 'active') "
+        "AND payment_status IN ('paid', 'free'))",
+    ]
+    with engine.begin() as conn:
+        for stmt in statements:
+            try:
+                conn.execute(text(stmt))
+                logger.info("Schema patch applied: %s", stmt.split("\n")[0])
+            except Exception as exc:  # pragma: no cover - best-effort migration
+                logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
+                continue
+    logger.info("Event provisioning schema verified (order id + settlement backfill)")
+
+
+def ensure_guest_optout(engine: Engine) -> None:
+    """Guest opt-out columns (STOP/UNSUBSCRIBE suppression).
+
+    DDL is owned by `shared.domain.optout` so core, campaign-worker and
+    webhook-worker all agree on the shape. All columns are nullable, so every
+    existing guest stays subscribed - nobody is retroactively suppressed.
+    """
+    from shared.domain.optout import ENSURE_GUEST_OPTOUT_DDL
+    with engine.begin() as conn:
+        for stmt in ENSURE_GUEST_OPTOUT_DDL:
+            try:
+                conn.execute(text(stmt))
+                logger.info("Schema patch applied: %s", stmt)
+            except Exception as exc:  # pragma: no cover
+                logger.debug("guest opt-out patch skipped: %s (%s)", stmt, exc)
+    logger.info("Guest opt-out schema verified")
+
+
+def ensure_message_delivery(engine: Engine) -> None:
+    """Per-message delivery state on `messages_sent`.
+
+    Owned by `shared.domain.delivery`. The workers create this table themselves,
+    but core reads it for campaign statistics, so it ensures the shape too rather
+    than depending on which service happened to boot first.
+    """
+    from shared.domain.delivery import ENSURE_MESSAGES_SENT_DDL
+    with engine.begin() as conn:
+        for stmt in ENSURE_MESSAGES_SENT_DDL:
+            try:
+                conn.execute(text(stmt))
+            except Exception as exc:  # pragma: no cover
+                logger.debug("message delivery patch skipped: %s", exc)
+    logger.info("Message delivery schema verified")
+
+
+def ensure_ops_tables(engine: Engine) -> None:
+    """Operations-dashboard tables: service heartbeats + captured errors.
+
+    The `shared.ops` helpers self-create these on first write, but core ensures
+    them here (with indexes) so the ops API can read them before any worker has
+    beaten, and so the indexes exist regardless of which service wrote first.
+    """
+    from shared.ops.heartbeat import _DDL as HEARTBEAT_DDL
+    from shared.ops.errors import _DDL as ERRORS_DDL
+    with engine.begin() as conn:
+        try:
+            conn.execute(text(HEARTBEAT_DDL))
+        except Exception as exc:  # pragma: no cover
+            logger.debug("service_heartbeats ensure skipped: %s", exc)
+        for stmt in ERRORS_DDL:
+            try:
+                conn.execute(text(stmt))
+            except Exception as exc:  # pragma: no cover
+                logger.debug("ops_errors ensure skipped: %s", exc)
+    logger.info("Ops tables verified (service_heartbeats, ops_errors)")
+
+
+def ensure_entitlements(engine: Engine) -> None:
+    """Entitlement system: the single record of WHY an event may be created.
+
+    The `entitlements` table itself is created by `Base.metadata.create_all`
+    (it is a new model). This patch adds the columns that link an EXISTING
+    `events` table to it, and backfills a synthetic entitlement for every event
+    that predates the system - so the invariant "every event consumes exactly
+    one entitlement" holds retroactively, not just for new events.
+
+    The backfill classifies each legacy event by its settlement: a paid event
+    gets a `payment` entitlement, everything else a `system` one. All are
+    `redeemed`, linked both ways, and idempotent (only events with no
+    entitlement yet are touched), so this is safe to re-run.
+    """
+    statements = [
+        "ALTER TABLE events ADD COLUMN IF NOT EXISTS entitlement_id UUID",
+        "ALTER TABLE events ADD COLUMN IF NOT EXISTS max_guests_override INTEGER",
+        "ALTER TABLE events ADD COLUMN IF NOT EXISTS included_rounds_override INTEGER",
+        # The FK + uniqueness that make "one event per entitlement" a database
+        # guarantee. Added defensively (IF NOT EXISTS via DO block) so a re-run
+        # or a create_all that already added them does not error.
+        """
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_events_entitlement_id') THEN
+                ALTER TABLE events ADD CONSTRAINT fk_events_entitlement_id
+                    FOREIGN KEY (entitlement_id) REFERENCES entitlements(id) ON DELETE RESTRICT;
+            END IF;
+        END $$;
+        """,
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_events_entitlement_id ON events (entitlement_id) "
+        "WHERE entitlement_id IS NOT NULL",
+        # Backfill: mint one redeemed entitlement per un-linked event and link it.
+        """
+        WITH ins AS (
+            INSERT INTO entitlements
+                (id, code, status, source, plan_id, redeemed_at,
+                 redeemed_by_user_id, redeemed_event_id, order_id, created_at, updated_at)
+            SELECT gen_random_uuid(),
+                   'legacy-' || replace(gen_random_uuid()::text, '-', ''),
+                   'redeemed',
+                   CASE WHEN e.payment_status = 'paid' THEN 'payment' ELSE 'system' END,
+                   COALESCE(e.plan_id, 'legacy'),
+                   COALESCE(e.created_at, NOW()),
+                   NULLIF(e.owners->>0, '')::uuid,
+                   e.id,
+                   e.provisioning_order_id,
+                   NOW(), NOW()
+            FROM events e
+            WHERE e.entitlement_id IS NULL
+            RETURNING id, redeemed_event_id
+        )
+        UPDATE events SET entitlement_id = ins.id
+        FROM ins WHERE events.id = ins.redeemed_event_id;
+        """,
+    ]
+    with engine.begin() as conn:
+        for stmt in statements:
+            try:
+                conn.execute(text(stmt))
+                logger.info("Schema patch applied: %s", stmt.strip().split("\n")[0])
+            except Exception as exc:  # pragma: no cover - best-effort migration
+                logger.debug("entitlements patch skipped: %s (%s)", stmt.strip()[:60], exc)
+    logger.info("Entitlement schema verified (table + event link + backfill)")
+
+
+def ensure_round_usage_backfill(engine: Engine) -> None:
+    """Seed the round-usage ledger from existing campaigns.
+
+    Round entitlement now counts consumption from the append-only `usage_events`
+    ledger instead of `COUNT(campaigns)` (which was refundable by deleting a
+    campaign). Events created before the ledger existed have campaigns but few
+    or no ROUND_LAUNCHED rows, so without this backfill they would read as
+    "0 rounds used" and be handed their whole allowance a second time.
+
+    Inserts only the DIFFERENCE per event, so it is safe to re-run: once the
+    ledger matches the campaign count the gap is zero and nothing is written.
+    """
+    stmt = """
+        INSERT INTO usage_events (id, account_id, event_id, metric, quantity, occurred_at)
+        SELECT gen_random_uuid(), e.account_id, e.id, 'round_launched',
+               c.campaign_count - COALESCE(u.ledger_total, 0), NOW()
+        FROM events e
+        JOIN (
+            SELECT event_id::uuid AS event_id, COUNT(*) AS campaign_count
+            FROM campaigns GROUP BY event_id
+        ) c ON c.event_id = e.id
+        LEFT JOIN (
+            SELECT event_id, SUM(quantity) AS ledger_total
+            FROM usage_events WHERE metric = 'round_launched' GROUP BY event_id
+        ) u ON u.event_id = e.id
+        WHERE c.campaign_count > COALESCE(u.ledger_total, 0)
+    """
+    with engine.begin() as conn:
+        try:
+            result = conn.execute(text(stmt))
+            logger.info("Round usage ledger backfilled for %s event(s)", result.rowcount)
+        except Exception as exc:  # pragma: no cover - best-effort migration
+            logger.debug("round usage backfill skipped: %s", exc)
+
+
 def ensure_events_subjects(engine: Engine) -> None:
     """Ensure events.subjects (JSONB) exists - the event-type-specific subjects
     (bride/groom/parents/baby/celebrant/company). Persisted so subject variables
@@ -537,25 +745,59 @@ def ensure_owner_notifications(engine: Engine) -> None:
 
 
 def apply_schema_patches(engine: Engine) -> None:
-    ensure_guest_counts_and_group(engine)
-    ensure_campaign_recipient_count(engine)
-    ensure_events_location_text(engine)
-    ensure_events_plan_id(engine)
-    ensure_events_seating_layout(engine)
-    ensure_events_v2_columns(engine)
-    ensure_events_payment_status(engine)
-    ensure_events_event_type(engine)
-    ensure_events_subjects(engine)
-    ensure_campaign_custom_message(engine)
-    ensure_campaign_template_key(engine)
-    ensure_campaign_stage_variant(engine)
-    ensure_campaign_audience(engine)
-    ensure_wa_template_metadata(engine)
-    ensure_accounts_venue_columns(engine)
-    ensure_admin_ops_schema(engine)
-    ensure_messaging_template_state(engine)
-    ensure_events_wa_image(engine)
-    ensure_team_invitations(engine)
-    ensure_owner_notifications(engine)
+    """Apply every schema patch, isolating failures.
+
+    Each patch runs independently: one that raises is logged and the rest still
+    run. Previously a single failing patch aborted the whole chain, so every
+    LATER patch was silently skipped - and on a virgin database
+    `ensure_campaign_template_key` does raise (it selects `campaigns.campaign_type`,
+    which `create_all` never creates). That turned one legacy bug into "the
+    opt-out and delivery-tracking columns were never created", failing at runtime
+    far from the cause. Ordering still matters for dependencies, so the sequence
+    is unchanged - only the isolation is new.
+    """
+    patches = (
+        ensure_guest_counts_and_group,
+        ensure_campaign_recipient_count,
+        ensure_events_location_text,
+        ensure_events_plan_id,
+        ensure_events_seating_layout,
+        ensure_events_v2_columns,
+        ensure_events_payment_status,
+        ensure_events_provisioning,
+        ensure_events_event_type,
+        ensure_events_subjects,
+        ensure_campaign_custom_message,
+        ensure_campaign_template_key,
+        ensure_campaign_stage_variant,
+        ensure_campaign_audience,
+        ensure_wa_template_metadata,
+        ensure_accounts_venue_columns,
+        ensure_admin_ops_schema,
+        ensure_messaging_template_state,
+        ensure_events_wa_image,
+        ensure_team_invitations,
+        ensure_owner_notifications,
+        ensure_guest_optout,
+        ensure_message_delivery,
+        ensure_ops_tables,
+        # Must run AFTER the events table exists (adds the event->entitlement link).
+        ensure_entitlements,
+        # Must run AFTER the campaigns/usage tables exist.
+        ensure_round_usage_backfill,
+    )
+    failed = []
+    for patch in patches:
+        try:
+            patch(engine)
+        except Exception as exc:
+            failed.append(patch.__name__)
+            logger.error("Schema patch %s FAILED: %s", patch.__name__, exc)
+    if failed:
+        logger.error(
+            "%s schema patch(es) failed and were skipped: %s. The service will run, "
+            "but features depending on those columns may misbehave.",
+            len(failed), ", ".join(failed),
+        )
 
 

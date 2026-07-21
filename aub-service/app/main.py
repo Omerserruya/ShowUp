@@ -28,6 +28,23 @@ def get_env():
 
 app = FastAPI(title="AUB Service")
 
+
+@app.on_event("startup")
+def _start_heartbeat():
+    try:
+        from shared.obs import bootstrap
+        bootstrap("aub")
+    except Exception:
+        pass
+
+
+try:
+    from shared.obs.fastapi import install_fastapi_observability
+    install_fastapi_observability(app)
+except Exception:
+    pass
+
+
 # Include routers
 app.include_router(auth.router)
 app.include_router(plans.router)

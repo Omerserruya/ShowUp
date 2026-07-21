@@ -49,6 +49,11 @@ def run_loop():
     config = load_config()
     planner = Planner(config)
     log.info("planner loop started interval=%ss strategy=%s", config.interval_seconds, config.strategy)
+    try:
+        from shared.obs import bootstrap
+        bootstrap("planner")
+    except Exception:
+        pass
     conn = runtime.connect()
     while True:
         try:

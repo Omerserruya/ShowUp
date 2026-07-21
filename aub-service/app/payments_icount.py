@@ -181,6 +181,26 @@ def _num(v: Any) -> float:
         return 0.0
 
 
+def paid_amount(sale_info: Dict[str, Any]) -> Optional[float]:
+    """The amount iCount reports as actually charged, or None if not stated.
+
+    `is_paid` only answers *whether* a charge completed; it deliberately accepts a
+    bare `confirmation_code` with no total. Provisioning must also check *how
+    much* was charged, otherwise a ₪1 sale against a ₪199 order provisions the
+    full plan. None means "iCount did not tell us the amount" - the caller
+    decides whether that is acceptable, rather than this function guessing.
+    """
+    data = sale_info.get("sale") or sale_info.get("data") or sale_info
+    if not isinstance(data, dict):
+        data = sale_info if isinstance(sale_info, dict) else {}
+    for key in ("total_paid", "cc_total", "total", "sum", "amount"):
+        if key in data:
+            value = _num(data.get(key))
+            if value > 0:
+                return value
+    return None
+
+
 def is_paid(sale_info: Dict[str, Any]) -> bool:
     """True when iCount reports the sale as successfully paid.
 

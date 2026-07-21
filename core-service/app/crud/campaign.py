@@ -268,12 +268,23 @@ def get_campaign_stats(db: Session, campaign_id: uuid.UUID) -> dict:
     
     campaign_id_str = str(campaign_id)
     
-    # Count sent recipients from messages_sent table
-    sent_result = db.execute(
-        text("SELECT COUNT(*) FROM messages_sent WHERE campaign_id = :campaign_id"),
-        {"campaign_id": campaign_id_str}
+    # Per-status message counts. `sent_count` deliberately counts only messages
+    # Meta ACCEPTED - a plain COUNT(*) counted rows the worker had merely queued,
+    # so a campaign that Meta rejected wholesale still reported a full send.
+    from shared.domain.delivery import MessageDeliveryStatus
+    status_rows = db.execute(
+        text("SELECT status, COUNT(*) FROM messages_sent WHERE campaign_id = :campaign_id GROUP BY status"),
+        {"campaign_id": campaign_id_str},
+    ).fetchall()
+    by_status = {row[0]: int(row[1]) for row in status_rows}
+
+    sent_count = sum(by_status.get(s, 0) for s in MessageDeliveryStatus.successful_values())
+    failed_count = by_status.get(MessageDeliveryStatus.FAILED.value, 0)
+    queued_count = by_status.get(MessageDeliveryStatus.QUEUED.value, 0)
+    delivered_count = (
+        by_status.get(MessageDeliveryStatus.DELIVERED.value, 0)
+        + by_status.get(MessageDeliveryStatus.READ.value, 0)
     )
-    sent_count = sent_result.scalar() or 0
     
     # Count read recipients from messages_log table
     # A message is considered "read" if there's a status update with status='read' 
@@ -298,8 +309,15 @@ def get_campaign_stats(db: Session, campaign_id: uuid.UUID) -> dict:
     read_count = read_result.scalar() or 0
     
     return {
+        # Accepted by Meta - the honest "sent" number.
         "sent_count": sent_count,
-        "read_count": read_count
+        "read_count": read_count,
+        # Partial-failure visibility. Zero for a healthy campaign, so existing
+        # consumers that ignore these fields are unaffected.
+        "failed_count": failed_count,
+        "queued_count": queued_count,
+        "delivered_count": delivered_count,
+        "attempted_count": sent_count + failed_count + queued_count,
     }
 
 

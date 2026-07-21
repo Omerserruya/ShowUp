@@ -21,6 +21,22 @@ app = FastAPI(
     version="1.0.0"
 )
 
+
+@app.on_event("startup")
+def _start_heartbeat():
+    try:
+        from shared.obs import bootstrap
+        bootstrap("webhook-handler")
+    except Exception:
+        pass
+
+
+try:
+    from shared.obs.fastapi import install_fastapi_observability
+    install_fastapi_observability(app)
+except Exception:
+    pass
+
 # Environment variables
 VERIFY_TOKEN = os.getenv("WEBHOOK_VERIFY_TOKEN")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
@@ -221,6 +237,13 @@ def enqueue_to_rabbitmq(topic: str, message_data: Dict[str, Any], queue_name: Op
             "topic": topic,
             "enqueued_at": datetime.utcnow().isoformat()
         }
+        # Stamp the correlation id so downstream workers (webhook-worker,
+        # assistant-worker, contact-import) continue the same flow.
+        try:
+            from shared.obs import inject_into
+            inject_into(tagged_message)
+        except Exception:
+            pass
         
         # Publish message
         channel.basic_publish(
@@ -312,6 +335,15 @@ async def handle_whatsapp_webhook(request: Request):
                     "Webhook change | phone_number_id=%s messages=%d statuses=%d",
                     wa_phone_number_id, len(value.get("messages", [])), len(value.get("statuses", [])),
                 )
+                # Lifecycle: webhook received (counts + receiving number only - no
+                # phones or message content).
+                try:
+                    from shared.obs import log_event, set_whatsapp
+                    set_whatsapp(phone_number_id=wa_phone_number_id)
+                    log_event("webhook.received", messages=len(value.get("messages", [])),
+                              statuses=len(value.get("statuses", [])))
+                except Exception:
+                    pass
                 # If Meta sends delivery/status updates, log them fully as well
                 statuses = value.get("statuses", [])
                 if statuses:

@@ -5,7 +5,7 @@ archived and cancelled are terminal.
 """
 from __future__ import annotations
 
-from shared.domain.enums import EventState
+from shared.domain.enums import EventState, is_settled
 
 EVENT_TRANSITIONS = {
     EventState.DRAFT: {EventState.ACTIVE, EventState.CANCELLED},
@@ -35,3 +35,17 @@ def is_live(state) -> bool:
         return _as_state(state) in LIVE_STATES
     except ValueError:
         return False
+
+
+def derive_active(state, payment_status) -> bool:
+    """The authoritative value of `events.active`.
+
+    An event is active only when it is BOTH in a live lifecycle state AND
+    settled (see `PaymentStatus`). Deriving the legacy boolean this way is what
+    makes payment a real gate: every existing `WHERE active` filter - scheduler,
+    campaign-worker, planner, audience queries - inherits payment enforcement
+    without each one growing its own duplicated settlement check.
+
+    `active` must never be assigned directly; call this instead.
+    """
+    return is_live(state) and is_settled(payment_status)

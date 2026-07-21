@@ -262,15 +262,15 @@ export default function InvitationStudio({ data, saving, published, publicUrl, o
         <DialogContent>
           <Typography sx={{ fontWeight: 800, fontSize: '0.85rem', color: 'text.secondary', mb: 1 }}>עיצובי בסיס</Typography>
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2,1fr)', sm: 'repeat(3,1fr)' }, gap: 1.5, pb: 2 }}>
-            {templates.filter((tpl) => (tpl.config.theme as any)?.layout).map((tpl) => (
+            {templates.filter((tpl) => tpl.eventTypes.length === 0).map((tpl) => (
               <TemplateCard key={tpl.id} tpl={tpl} coupleNames={coupleNames}
                 active={(cfg.theme?.preset || '') === ((tpl.config.theme?.preset) || tpl.id)}
                 onClick={() => applyTemplate(tpl)} />
             ))}
           </Box>
-          <Typography sx={{ fontWeight: 800, fontSize: '0.85rem', color: 'text.secondary', mb: 1 }}>ערכות צבע לפי סוג האירוע</Typography>
+          <Typography sx={{ fontWeight: 800, fontSize: '0.85rem', color: 'text.secondary', mb: 1 }}>עיצובים לפי סוג האירוע</Typography>
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2,1fr)', sm: 'repeat(3,1fr)', md: 'repeat(4,1fr)' }, gap: 1.5, py: 0.5 }}>
-            {templates.filter((tpl) => !(tpl.config.theme as any)?.layout).map((tpl) => (
+            {templates.filter((tpl) => tpl.eventTypes.length > 0).map((tpl) => (
               <TemplateCard key={tpl.id} tpl={tpl} coupleNames={coupleNames} compact
                 active={(cfg.theme?.preset || '') === ((tpl.config.theme?.preset) || tpl.id)}
                 onClick={() => applyTemplate(tpl)} />

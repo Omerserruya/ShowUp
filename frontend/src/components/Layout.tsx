@@ -24,9 +24,11 @@ const DOC_TITLES: Record<string, string> = {
   '/recap': 'סיכום החגיגה',
   '/settings': 'הגדרות',
   '/venue': 'ניהול האולם',
+  '/admin/operations': 'מרכז תפעול',
   '/admin/users': 'ניהול משתמשים',
   '/admin/events': 'ניהול אירועים',
   '/admin/plans': 'חבילות ומהדורות',
+  '/admin/entitlements': 'הזמנות למימוש',
   '/admin/purchases': 'רכישות ובילינג',
   '/admin/settings': 'הגדרות מערכת',
 };

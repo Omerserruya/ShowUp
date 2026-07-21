@@ -332,7 +332,35 @@ class VariableResolver:
             vals["guest_last_name"] = " ".join(parts[1:]) if len(parts) > 1 else ""
         if g.get("guest_count") is not None:
             vals["party_size"] = str(g.get("guest_count"))
+        # Personalise the invitation links with this guest's signed token, so the
+        # page can show THEIR existing RSVP and let them update it. Without the
+        # token the public endpoints allow creating an RSVP but never reading or
+        # overwriting one - see shared/domain/invite_token.py.
+        vals.update(self._guest_links(g))
         return vals
+
+    def _guest_links(self, guest: Dict[str, Any]) -> Dict[str, str]:
+        """Tokened invitation/RSVP links for a specific guest.
+
+        Returns {} when there is no guest id, no slug, or no signing secret - the
+        untokened event-scoped links from `_resolve_event_scope` then stand, which
+        is exactly what previews and the wizard want.
+        """
+        slug = (self.event.get("public_slug") or "").strip()
+        guest_id = guest.get("id")
+        if not slug or not guest_id or not self.public_base:
+            return {}
+        try:
+            from shared.domain.invite_token import make_guest_token
+            token = make_guest_token(self.event.get("id"), guest_id)
+        except Exception:
+            # A missing signing secret must not break message delivery; the guest
+            # still gets a working (untokened) invitation.
+            return {}
+        return {
+            "invitation_link": f"{self.public_base}/i/{slug}?g={token}",
+            "rsvp_link": f"{self.public_base}/r/{slug}?g={token}",
+        }
 
     def render_body(self, body: str, guest: Dict[str, Any]) -> str:
         """Fill a copy body's {{token}} placeholders (canonical or legacy Hebrew).

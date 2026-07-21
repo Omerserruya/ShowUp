@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from shared.auth.middleware import AuthMiddleware
 
 from app.db import Base, engine
@@ -25,6 +28,11 @@ from app.routers.messaging_admin import router as messaging_admin_router
 from app.routers.public_invite import router as public_invite_router
 from app.routers.venues import router as venues_router
 from app.routers.assistant import router as assistant_router
+from app.routers.internal_provisioning import router as internal_provisioning_router
+from app.routers.redeem import router as redeem_router, public_router as redeem_public_router
+from app.routers.entitlements_admin import router as entitlements_admin_router
+from app.routers.ops import router as ops_router
+from app.plans_client import PlanLookupUnavailable
 
 
 def create_app() -> FastAPI:
@@ -96,6 +104,26 @@ def create_app() -> FastAPI:
     app.include_router(public_invite_router)
     app.include_router(venues_router)
     app.include_router(assistant_router)
+    app.include_router(internal_provisioning_router)
+    app.include_router(redeem_public_router)
+    app.include_router(redeem_router)
+    app.include_router(entitlements_admin_router)
+    app.include_router(ops_router)
+
+    @app.exception_handler(PlanLookupUnavailable)
+    async def _plan_lookup_unavailable(request, exc: PlanLookupUnavailable):
+        """Capacity enforcement fails CLOSED (see app/plans_client.py).
+
+        Handled once here so every write path that consults a plan limit reports
+        the same honest 503 - "we cannot verify your plan right now" - instead of
+        each route duplicating the translation, or worse, treating an unresolved
+        limit as "unlimited".
+        """
+        logging.getLogger(__name__).error("plan lookup unavailable: %s", exc)
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "plan_limit_unavailable"},
+        )
 
     @app.get("/healthz")
     def healthz():
@@ -110,6 +138,26 @@ def create_app() -> FastAPI:
         # shared X-Internal-Secret itself, so it bypasses the JWT middleware.
         allow_unauthenticated_prefixes=["/entitlements/", "/public/", "/internal/"],
     )
+
+    # Arm Sentry + start the ops heartbeat (best-effort; never blocks boot).
+    try:
+        from shared.obs import bootstrap
+        from shared.obs.fastapi import install_fastapi_observability
+        bootstrap("core")
+        install_fastapi_observability(app)
+    except Exception as exc:
+        logging.getLogger(__name__).warning("observability bootstrap failed: %s", exc)
+
+    # Record request latency into the process-local ring the ops dashboard reads.
+    import time as _time
+    from app.ops_metrics import record_request
+
+    @app.middleware("http")
+    async def _latency_mw(request, call_next):
+        start = _time.perf_counter()
+        response = await call_next(request)
+        record_request((_time.perf_counter() - start) * 1000.0)
+        return response
 
     return app
 

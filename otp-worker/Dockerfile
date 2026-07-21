@@ -2,10 +2,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY ./requirements.txt /app/requirements.txt
+COPY otp-worker/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY . /app
+COPY otp-worker/ /app/
+# Shared observability + ops helpers. Build context is the repo root.
+COPY shared /app/shared
 
 ENV PYTHONUNBUFFERED=1
 

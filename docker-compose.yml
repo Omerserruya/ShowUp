@@ -58,6 +58,9 @@ services:
     ports:
       - ${CORE_SERVICE_PORT}:${CORE_SERVICE_PORT}
     environment:
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+      - SENTRY_RELEASE=${SENTRY_RELEASE:-}
       - PORT=${CORE_SERVICE_PORT}
       - JWT_SECRET=${JWT_SECRET}
       - DB_HOST=${DB_HOST}
@@ -98,11 +101,14 @@ services:
   # aub-service:
   aub-service:
     build:
-      context: ./aub-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: aub-service/Dockerfile
     ports:
       - ${AUB_SERVICE_PORT}:${AUB_SERVICE_PORT}
     environment:
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+      - SENTRY_RELEASE=${SENTRY_RELEASE:-}
       - PORT=${AUB_SERVICE_PORT}
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
@@ -154,9 +160,12 @@ services:
 
   outpost-service:
     build:
-      context: ./outpost-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: outpost-service/Dockerfile
     environment:
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+      - SENTRY_RELEASE=${SENTRY_RELEASE:-}
       - WA_API_B=${WA_API_B}
       - WA_PHONE_ID=${WA_PHONE_ID}
       - CAMPAIGN_WA_PHONE_ID=${CAMPAIGN_WA_PHONE_ID:-}
@@ -185,6 +194,9 @@ services:
     ports:
       - ${SCHEDUALE_SERVICE_PORT}:${SCHEDUALE_SERVICE_PORT}
     environment:
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+      - SENTRY_RELEASE=${SENTRY_RELEASE:-}
       - PORT=${SCHEDUALE_SERVICE_PORT}
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
@@ -202,6 +214,11 @@ services:
       - DAILY_SUMMARY_TZ=${DAILY_SUMMARY_TZ:-Asia/Jerusalem}
       - WA_DAILY_SUMMARY_TEMPLATE_NAME=${WA_DAILY_SUMMARY_TEMPLATE_NAME:-}
       - WA_DAILY_SUMMARY_LANG=${WA_DAILY_SUMMARY_LANG:-he}
+      # Payment reconciliation: recovers orders whose iCount IPN was lost.
+      - AUB_SERVICE_URL=${AUB_SERVICE_URL:-http://aub-service:8000}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+      - PAYMENT_RECONCILE_INTERVAL_SECONDS=${PAYMENT_RECONCILE_INTERVAL_SECONDS:-300}
+      - PAYMENT_RECONCILE_MIN_AGE_MINUTES=${PAYMENT_RECONCILE_MIN_AGE_MINUTES:-15}
     depends_on:
       - postgres
       - rabbitmq
@@ -212,11 +229,14 @@ services:
   # them and the worker executes. All limits are read from env (never hardcoded).
   planner-service:
     build:
-      context: ./planner-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: planner-service/Dockerfile
     ports:
       - ${PLANNER_SERVICE_PORT:-5010}:${PLANNER_SERVICE_PORT:-5010}
     environment:
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+      - SENTRY_RELEASE=${SENTRY_RELEASE:-}
       - PORT=${PLANNER_SERVICE_PORT:-5010}
       - DB_HOST=${DB_HOST}
       - DB_PORT=${DB_PORT}
@@ -246,6 +266,9 @@ services:
       context: .
       dockerfile: campaign-worker/Dockerfile
     environment:
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+      - SENTRY_RELEASE=${SENTRY_RELEASE:-}
       - DB_HOST=postgres
       - DB_PORT=${DB_PORT}
       - DB_USER=${DB_USER}
@@ -268,11 +291,14 @@ services:
   # webhook-hendler:
   webhook-hendler:
     build:
-      context: ./webhook-hendler
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: webhook-hendler/Dockerfile
     ports:
       - ${WEBHOOK_HANDLER_PORT}:${WEBHOOK_HANDLER_PORT}
     environment:
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+      - SENTRY_RELEASE=${SENTRY_RELEASE:-}
       - PORT=${WEBHOOK_HANDLER_PORT}
       - WEBHOOK_VERIFY_TOKEN=${WEBHOOK_VERIFY_TOKEN}
       - WEBHOOK_SECRET=${WEBHOOK_SECRET}
@@ -292,9 +318,12 @@ services:
 
   contact-import-worker:
     build:
-      context: ./contact-import-worker
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: contact-import-worker/Dockerfile
     environment:
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+      - SENTRY_RELEASE=${SENTRY_RELEASE:-}
       - DB_HOST=postgres
       - DB_PORT=${DB_PORT}
       - DB_USER=${DB_USER}
@@ -319,9 +348,12 @@ services:
   # and answers via core-service POST /assistant.
   assistant-worker:
     build:
-      context: ./assistant-worker
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: assistant-worker/Dockerfile
     environment:
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+      - SENTRY_RELEASE=${SENTRY_RELEASE:-}
       - DB_HOST=postgres
       - DB_PORT=${DB_PORT}
       - DB_USER=${DB_USER}
@@ -352,6 +384,9 @@ services:
       context: .
       dockerfile: webhook-worker/Dockerfile
     environment:
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+      - SENTRY_RELEASE=${SENTRY_RELEASE:-}
       - DB_HOST=postgres
       - DB_PORT=${DB_PORT}
       - DB_USER=${DB_USER}
@@ -377,9 +412,12 @@ services:
 
   otp-worker:
     build:
-      context: ./otp-worker
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: otp-worker/Dockerfile
     environment:
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+      - SENTRY_RELEASE=${SENTRY_RELEASE:-}
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=${RABBITMQ_PORT}
       - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}

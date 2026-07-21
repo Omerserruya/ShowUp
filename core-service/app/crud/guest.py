@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, text
 
 from app.models.models import Guest, Event
+from app.plans_client import PlanLookupUnavailable, plan_count_limit
 from app.schemas.schemas import GuestCreate, GuestUpdate
 from app.utils import normalize_phone
 from shared.domain.enums import GuestStatus
@@ -65,32 +66,9 @@ def get_guest(db: Session, guest_id: uuid.UUID) -> Optional[Guest]:
     return db.query(Guest).filter(Guest.id == str(guest_id)).first()
 
 
-def _get_plan_count_limit(plan_id: Optional[str]) -> Optional[int]:
-    """
-    Fetch count_limit from plan via aub-service API.
-    Returns None if plan_id is None, plan not found, or API call fails.
-    """
-    if not plan_id:
-        return None
-    
-    aub_service_url = os.getenv("AUB_SERVICE_URL", "http://aub-service:8000")
-    try:
-        with httpx.Client(timeout=2.0) as client:
-            # aub exposes /plans/{id} (the /api prefix is an nginx-only rewrite and
-            # is NOT present on the service address, so /api/plans/... 404s here).
-            response = client.get(f"{aub_service_url}/plans/{plan_id}")
-            if response.status_code == 200:
-                plan_data = response.json()
-                return plan_data.get("countLimit")
-            logger.warning(
-                "plan count_limit lookup failed: aub returned %s for plan '%s'",
-                response.status_code, plan_id,
-            )
-    except Exception as exc:
-        # NOTE (fail-open): a lookup failure currently disables the limit. Hardening
-        # this to fail-closed/cache is a separate (Medium) item.
-        logger.warning("plan count_limit lookup errored for '%s': %s", plan_id, exc)
-    return None
+# Guest capacity is resolved by app.entitlement_service.effective_max_guests:
+# the event's per-event override (from its entitlement) if set, else the plan's
+# cap via app.plans_client (fail-CLOSED). One implementation, one cache.
 
 
 def lock_event_capacity(db: Session, event_id) -> None:
@@ -105,25 +83,29 @@ def lock_event_capacity(db: Session, event_id) -> None:
         logger.warning("advisory lock unavailable for event %s: %s", event_id, exc)
 
 
-def check_capacity_limit(db: Session, event: Event, new_guests_count: int) -> None:
+def check_capacity_limit(
+    db: Session, event: Event, new_guests_count: int, *, exclude_guest_id=None
+) -> None:
     """
-    Check if adding `new_guests_count` (import_count) would exceed the plan's
+    Check whether adding `new_guests_count` seats would exceed the plan's
     count_limit. Raises ValueError if it would. Call INSIDE the advisory lock (see
     `lock_event_capacity`) for the check to be race-free.
+
+    `exclude_guest_id` omits one guest from the current total, so an UPDATE can
+    be checked as "replace this guest's seats with N" rather than "add N on top".
     """
-    if not event.plan_id:
-        # No plan set, no limit enforced
-        return
+    if new_guests_count <= 0:
+        return  # freeing or keeping capacity never needs a check
 
-    count_limit = _get_plan_count_limit(event.plan_id)
+    from app.entitlement_service import effective_max_guests
+    count_limit = effective_max_guests(event)
     if count_limit is None:
-        # No limit set for this plan, or couldn't fetch it
-        return
+        return  # genuinely unmetered (entitlement override or plan says so)
 
-    # Count current total guests (sum of import_count)
-    current_total = db.query(func.sum(Guest.import_count)).filter(
-        Guest.event_id == str(event.id)
-    ).scalar() or 0
+    q = db.query(func.sum(Guest.import_count)).filter(Guest.event_id == str(event.id))
+    if exclude_guest_id is not None:
+        q = q.filter(Guest.id != exclude_guest_id)
+    current_total = q.scalar() or 0
 
     if current_total + new_guests_count > count_limit:
         raise ValueError(
@@ -179,7 +161,11 @@ def _maybe_queue_capacity_warning(db: Session, event: Event) -> None:
     try:
         if not event.plan_id:
             return
-        limit = _get_plan_count_limit(event.plan_id)
+        from app.entitlement_service import effective_max_guests
+        try:
+            limit = effective_max_guests(event)
+        except Exception:
+            return  # a plan-lookup blip must never break guest creation
         if not limit:
             return
         used = db.query(func.sum(Guest.import_count)).filter(
@@ -208,6 +194,17 @@ def _maybe_queue_capacity_warning(db: Session, event: Event) -> None:
 
 
 def update_guest(db: Session, guest: Guest, data: GuestUpdate) -> Guest:
+    # Raising a guest's seat count consumes plan capacity exactly like creating
+    # guests does. Without this check, the cap was trivially bypassed by adding
+    # one guest and then PATCHing import_count to an arbitrary number.
+    if data.import_count is not None and data.import_count > (guest.import_count or 0):
+        event = db.query(Event).filter(Event.id == str(guest.event_id)).first()
+        if event:
+            lock_event_capacity(db, guest.event_id)
+            # Checked as a replacement, not an addition: this guest's existing
+            # seats are released back before the new total is tested.
+            check_capacity_limit(db, event, data.import_count, exclude_guest_id=guest.id)
+
     if data.name is not None:
         guest.name = data.name
     if data.phone is not None:
@@ -255,8 +252,10 @@ def create_guests_bulk(db: Session, event_id: uuid.UUID, items: List[GuestCreate
 
     # Calculate total new guests count (sum of import_count)
     total_new_count = sum(item.import_count or 1 for item in items)
-    # Check capacity limit before creating any guests
-    _check_capacity_limit(db, event, total_new_count)
+    # Lock BEFORE checking: without it two concurrent imports both pass the
+    # check and both insert, overshooting the cap. Same pattern as create_guest.
+    lock_event_capacity(db, event_id)
+    check_capacity_limit(db, event, total_new_count)
 
     created: List[Guest] = []
     seen_phones: set[str] = set()

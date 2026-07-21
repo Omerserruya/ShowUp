@@ -87,6 +87,100 @@ class EventState(str, Enum):
     CANCELLED = "cancelled"
 
 
+class PaymentStatus(str, Enum):
+    """Settlement state of an event, orthogonal to its lifecycle `state`.
+
+    An event is *settled* when nothing is owed for it - either a paid plan was
+    purchased and verified (PAID) or the plan costs nothing (FREE). Only the
+    provisioning path (`core-service/app/provisioning.py`, driven by aub's
+    verified-payment flow) may write PAID; no client payload can.
+
+    UNPAID is the legacy/unknown default that predates this enum. It is treated
+    as NOT settled, so it can never accidentally grant entitlement; existing rows
+    are backfilled to FREE/PAID by `ensure_events_payment_backfill`.
+    """
+    PAID = "paid"
+    FREE = "free"
+    PENDING = "pending"
+    UNPAID = "unpaid"
+
+    @classmethod
+    def normalize(cls, value) -> "PaymentStatus":
+        if isinstance(value, cls):
+            return value
+        try:
+            return cls((str(value) if value is not None else "").strip().lower())
+        except ValueError:
+            return cls.UNPAID
+
+    @classmethod
+    def settled_values(cls) -> set[str]:
+        """DB string values that mean 'nothing owed'. Use in raw-SQL filters."""
+        return {cls.PAID.value, cls.FREE.value}
+
+
+def is_settled(payment_status) -> bool:
+    """True when nothing is owed for the event (paid plan verified, or free)."""
+    return PaymentStatus.normalize(payment_status) in (PaymentStatus.PAID, PaymentStatus.FREE)
+
+
+class EntitlementStatus(str, Enum):
+    """Lifecycle of an event Entitlement - the right to create one event.
+
+    AVAILABLE  issued, not yet used. The only status a redemption can consume.
+    REDEEMED   consumed by exactly one event (terminal). `redeemed_event_id`
+               and `redeemed_by_user_id` record which and by whom.
+    EXPIRED    passed `expires_at` without being redeemed (terminal).
+    CANCELLED  revoked before redemption (terminal).
+
+    Only AVAILABLE is redeemable, and a past `expires_at` is treated as
+    unavailable even before a sweep flips the row - see `effective_status`.
+    """
+    AVAILABLE = "available"
+    REDEEMED = "redeemed"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+    @classmethod
+    def normalize(cls, value) -> "EntitlementStatus":
+        if isinstance(value, cls):
+            return value
+        try:
+            return cls((str(value) if value is not None else "").strip().lower())
+        except ValueError:
+            return cls.CANCELLED  # unknown => not redeemable, fail closed
+
+
+class EntitlementSource(str, Enum):
+    """WHO issued an entitlement - the reason a user may create an event.
+
+    This is the extensibility seam the whole design turns on: a new business
+    model (affiliate, reseller, loyalty, ...) is a new source value plus an
+    issuer that mints entitlements, with NO change to event creation or
+    enforcement. Payment is deliberately just one member of this set.
+
+    SYSTEM is the auto-issued free/starter grant for self-service creation and
+    clones - it keeps the invariant "every event consumes an entitlement" true
+    without putting a redemption link in front of a user making a free event.
+    """
+    PAYMENT = "payment"
+    VENUE = "venue"
+    BETA = "beta"
+    ADMIN = "admin"
+    PROMOTION = "promotion"
+    PARTNER = "partner"
+    SYSTEM = "system"
+
+    @classmethod
+    def normalize(cls, value) -> "EntitlementSource":
+        if isinstance(value, cls):
+            return value
+        try:
+            return cls((str(value) if value is not None else "").strip().lower())
+        except ValueError:
+            raise ValueError(f"unknown entitlement source: {value!r}")
+
+
 class CampaignAudience(str, Enum):
     """Who a campaign/round targets (Phase 6). Decoupled from template choice."""
     EVERYONE = "everyone"

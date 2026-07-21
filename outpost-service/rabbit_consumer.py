@@ -20,6 +20,83 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 from whatsapp_sender import WhatsAppSender
 from db_utils import get_conversation_db
+from shared.domain.delivery import MessageDeliveryStatus
+
+
+def _meta_error_detail(exc: httpx.HTTPStatusError) -> str:
+    """Human-readable reason from a Meta Graph API error response.
+
+    Meta nests the useful part in {"error": {...}}; falling back to the raw body
+    keeps us honest when the shape is unexpected rather than storing nothing.
+    """
+    try:
+        body = exc.response.json()
+        err = body.get("error") or {}
+        parts = [
+            str(err.get("message") or ""),
+            str((err.get("error_data") or {}).get("details") or ""),
+        ]
+        detail = " | ".join(p for p in parts if p)
+        return detail or str(body)[:500]
+    except Exception:
+        try:
+            return exc.response.text[:500]
+        except Exception:
+            return str(exc)[:500]
+
+
+# --- observability helpers (best-effort; never break a send) ----------------
+def _obs_adopt(message_data: dict) -> None:
+    try:
+        from shared.obs import adopt_from, clear_context, set_flow, set_whatsapp, set_campaign
+        clear_context()
+        adopt_from(message_data)
+        set_flow(worker="outpost", flow="whatsapp",
+                 operation=message_data.get("message_type", "template"))
+        set_whatsapp(recipient=message_data.get("recipient"),
+                     template=message_data.get("template"),
+                     language=message_data.get("language"),
+                     phone_number_id=message_data.get("wa_phone_number_id"),
+                     conversation_id=message_data.get("conversation_id"))
+        if message_data.get("campaign_id"):
+            set_campaign(campaign_id=message_data.get("campaign_id"))
+    except Exception:
+        pass
+
+
+def _obs_wa(**fields) -> None:
+    try:
+        from shared.obs import set_whatsapp
+        set_whatsapp(**fields)
+    except Exception:
+        pass
+
+
+def _obs_log(event, **fields) -> None:
+    try:
+        from shared.obs import log_event
+        log_event(event, **fields)
+    except Exception:
+        pass
+
+
+def _obs_meta_failure(message_data: dict, *, status_code=None, error_code=None,
+                      error_message=None, exc=None) -> None:
+    """Record a Meta send failure: context + a Sentry signal. A Meta rejection is
+    a warning (business-ish, high volume possible); an unexpected exception is an
+    error."""
+    try:
+        from shared.obs import set_whatsapp, set_external, capture, capture_message
+        set_whatsapp(meta_error_code=error_code, meta_error_message=error_message,
+                     delivery_status="failed")
+        set_external(provider="meta", endpoint="/messages", status_code=status_code)
+        if exc is not None and status_code is None:
+            capture(exc, provider="meta")               # unexpected transport error
+        else:
+            capture_message(f"Meta rejected message ({error_code or status_code})",
+                            level="warning")
+    except Exception:
+        pass
 
 
 class RabbitMQConsumer:
@@ -101,7 +178,11 @@ class RabbitMQConsumer:
 
                 # Parse message body
                 message_data = json.loads(message.body.decode())
-                
+
+                # Adopt the correlation id that rode the message + attach the
+                # WhatsApp/campaign/event context so any Meta failure is described.
+                _obs_adopt(message_data)
+
                 self.logger.info(
                     "Processing outpost message",
                     extra={
@@ -168,6 +249,16 @@ class RabbitMQConsumer:
                         except Exception:
                             pass
                         wa_id = (wa_resp or {}).get("messages", [{}])[0].get("id")
+                        # Meta took the message: THIS is what "sent" means, not the
+                        # earlier enqueue. Resolves the QUEUED claim campaign-worker made.
+                        self.conversation_db.record_delivery_outcome(
+                            campaign_id=message_data.get("campaign_id"),
+                            guest_id=message_data.get("guest_id"),
+                            status=MessageDeliveryStatus.ACCEPTED.value,
+                            wa_message_id=wa_id,
+                        )
+                        _obs_wa(message_id=wa_id, delivery_status="accepted")
+                        _obs_log("external.response", provider="meta", status="accepted", message_id=wa_id)
                         if wa_id:
                             # Ensure conversation exists before logging
                             conversation_id = message_data.get("conversation_id")
@@ -249,6 +340,18 @@ class RabbitMQConsumer:
                             }
                         )
                     except httpx.HTTPStatusError as e:
+                        # Persist Meta's rejection against this message. Logging
+                        # alone made a fully-failed campaign look successful.
+                        self.conversation_db.record_delivery_outcome(
+                            campaign_id=message_data.get("campaign_id"),
+                            guest_id=message_data.get("guest_id"),
+                            status=MessageDeliveryStatus.FAILED.value,
+                            error_code=f"http_{e.response.status_code}",
+                            error_detail=_meta_error_detail(e),
+                        )
+                        _obs_meta_failure(message_data, status_code=e.response.status_code,
+                                          error_code=f"http_{e.response.status_code}",
+                                          error_message=_meta_error_detail(e))
                         self.logger.error(
                             "WhatsApp API error - template message not sent",
                             extra={
@@ -259,6 +362,14 @@ class RabbitMQConsumer:
                             }
                         )
                     except Exception as e:
+                        self.conversation_db.record_delivery_outcome(
+                            campaign_id=message_data.get("campaign_id"),
+                            guest_id=message_data.get("guest_id"),
+                            status=MessageDeliveryStatus.FAILED.value,
+                            error_code=type(e).__name__,
+                            error_detail=str(e),
+                        )
+                        _obs_meta_failure(message_data, exc=e)
                         self.logger.error(
                             f"Unexpected error sending template message: {str(e)}",
                             extra={
@@ -313,6 +424,16 @@ class RabbitMQConsumer:
                         except Exception:
                             pass
                         wa_id = (wa_resp or {}).get("messages", [{}])[0].get("id")
+                        # Meta took the message: THIS is what "sent" means, not the
+                        # earlier enqueue. Resolves the QUEUED claim campaign-worker made.
+                        self.conversation_db.record_delivery_outcome(
+                            campaign_id=message_data.get("campaign_id"),
+                            guest_id=message_data.get("guest_id"),
+                            status=MessageDeliveryStatus.ACCEPTED.value,
+                            wa_message_id=wa_id,
+                        )
+                        _obs_wa(message_id=wa_id, delivery_status="accepted")
+                        _obs_log("external.response", provider="meta", status="accepted", message_id=wa_id)
                         if wa_id:
                             # Ensure conversation exists before logging
                             conversation_id = message_data.get("conversation_id")
@@ -361,6 +482,16 @@ class RabbitMQConsumer:
                             }
                         )
                     except httpx.HTTPStatusError as e:
+                        self.conversation_db.record_delivery_outcome(
+                            campaign_id=message_data.get("campaign_id"),
+                            guest_id=message_data.get("guest_id"),
+                            status=MessageDeliveryStatus.FAILED.value,
+                            error_code=f"http_{e.response.status_code}",
+                            error_detail=_meta_error_detail(e),
+                        )
+                        _obs_meta_failure(message_data, status_code=e.response.status_code,
+                                          error_code=f"http_{e.response.status_code}",
+                                          error_message=_meta_error_detail(e))
                         self.logger.error(
                             "WhatsApp API error - free text message not sent",
                             extra={

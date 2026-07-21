@@ -36,8 +36,10 @@ from app.schemas.schemas import EventCreate, EventOut
 from app import user_directory
 from app.audit import record_audit
 from shared.auth.deps import get_current_user_id
-from shared.domain.enums import ActorType
-from shared.domain.roles import Role
+from app import entitlement_service
+from app.provisioning import apply_entitlement
+from shared.domain.enums import ActorType, EntitlementSource, PaymentStatus
+from shared.domain.roles import Action, Role, can
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +61,20 @@ def _load_venue(db: Session, venue_id: uuid.UUID) -> Account:
     return venue
 
 
-def _require_venue_admin(db: Session, venue_id: uuid.UUID, user_id: uuid.UUID) -> Account:
-    """The venue Account, or 404 unless the caller is an active member of it.
-    A suspended venue is blocked (403) from all venue-admin actions."""
+def _require_venue_admin(
+    db: Session, venue_id: uuid.UUID, user_id: uuid.UUID, action: Action = Action.EVENT_READ
+) -> Account:
+    """The venue Account, or 404 unless the caller may perform `action` on it.
+
+    Membership alone is NOT enough. This used to check only that an active
+    Membership row existed and never read `member.role`, so a user invited as
+    VIEWER could create events, rewrite the venue's billing and partner coupon,
+    invite an accomplice as MANAGER, and suspend other members - a
+    viewer-to-manager escalation. The role matrix in shared/domain/roles.py is
+    the authority; default-deny applies to anything not granted.
+
+    A suspended venue is blocked (403) from all venue-admin actions.
+    """
     venue = _load_venue(db, venue_id)
     member = (
         db.query(Membership)
@@ -76,6 +89,8 @@ def _require_venue_admin(db: Session, venue_id: uuid.UUID, user_id: uuid.UUID) -
         raise HTTPException(status_code=404, detail="Not found")
     if getattr(venue, "status", "active") == "suspended":
         raise HTTPException(status_code=403, detail="This venue is suspended. Contact ShowUp support.")
+    if not can(member.role, action):
+        raise HTTPException(status_code=403, detail="Your role does not permit this action")
     return venue
 
 
@@ -221,7 +236,7 @@ def create_venue_event(
     creates/links the owner account (by phone) in aub-service, and fires a
     WhatsApp welcome. The event gets plan_id='venue' and is owned by the owner
     (via the `owners` array) while belonging to the venue Account."""
-    venue = _require_venue_admin(db, venue_id, user_id)
+    venue = _require_venue_admin(db, venue_id, user_id, Action.EVENT_WRITE)
 
     # Hard quota: block once the venue's MONTHLY subscription capacity is used up
     # (slots reset at the start of each calendar month).
@@ -242,27 +257,26 @@ def create_venue_event(
         raise HTTPException(status_code=502, detail="לא ניתן ליצור את חשבון בעל האירוע")
     owner_id = uuid.UUID(str(owner["user_id"]))
 
-    # Create the event owned by the couple, on the Venue Edition tier.
-    event = event_crud.create_event(
+    # A venue creating an event directly is a VENUE entitlement issuer. The event
+    # is GRANTED by the venue's commercial agreement (settled/FREE) on the Venue
+    # Edition tier, and is bound to the venue Account so it appears on the venue
+    # dashboard. This routes through the same issue+redeem path as every other
+    # source - there is no venue-only event-creation code.
+    event, _ = entitlement_service.issue_and_redeem(
         db,
-        EventCreate(
-            owners=[owner_id],
-            name=payload.name,
-            event_type=payload.event_type,
-            event_date=payload.event_date,
-            location=payload.location,
-            plan_id="venue",
-            payment_status="paid",
-        ),
+        source=EntitlementSource.VENUE,
+        plan_id="venue",
+        owner_user_id=owner_id,
+        account_id=venue_id,
+        created_by=user_id,
+        event_fields={
+            "name": payload.name,
+            "event_type": payload.event_type,
+            "event_date": payload.event_date,
+            "location": payload.location,
+        },
+        metadata={"venue_id": str(venue_id), "created_via": "venue_direct"},
     )
-    # Bind to the venue Account (drives the venue dashboard + partner-discount
-    # detection). We deliberately do NOT create an owner Membership - per-event
-    # isolation comes from the owners array (see authz.resolve_role), so one
-    # couple can't see another couple's event under the same venue.
-    event.account_id = venue_id
-    db.add(event)
-    db.commit()
-    db.refresh(event)
 
     # Premium-service WhatsApp welcome (best-effort; never fails event creation).
     try:
@@ -279,26 +293,76 @@ def create_venue_event(
     return event
 
 
+# ---- venue admin: entitlement pool ----------------------------------------
+
+class VenueEntitlementCreate(BaseModel):
+    plan_id: str = Field(..., max_length=50)
+    count: int = Field(1, ge=1, le=200)
+    max_guests: Optional[int] = Field(None, ge=1)
+    campaign_rounds: Optional[int] = Field(None, ge=0)
+    expires_at: Optional[datetime] = None
+
+
+@router.post("/venues/{venue_id}/entitlements", status_code=201)
+def generate_venue_entitlements(
+    venue_id: uuid.UUID = Path(...),
+    payload: VenueEntitlementCreate = Body(...),
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Mint redemption links from the venue's pool.
+
+    A venue distributes entitlements to its couples instead of creating each
+    event directly - each is a VENUE-sourced grant bound to this venue Account,
+    so it shows up in the pool and disappears once redeemed. Same
+    `entitlement_service.issue` every other issuer uses.
+    """
+    _require_venue_admin(db, venue_id, user_id, Action.EVENT_WRITE)
+    from app.models.models import Entitlement  # local: avoid a module cycle at import time
+    created = []
+    for _ in range(payload.count):
+        ent = entitlement_service.issue(
+            db, source=EntitlementSource.VENUE, plan_id=payload.plan_id,
+            created_by=user_id, account_id=venue_id, max_guests=payload.max_guests,
+            campaign_rounds=payload.campaign_rounds, expires_at=payload.expires_at,
+            metadata={"venue_id": str(venue_id)}, commit=False,
+        )
+        created.append(ent)
+    db.commit()
+    for ent in created:
+        db.refresh(ent)
+    return {"count": len(created),
+            "entitlements": [entitlement_service.to_dict(e, include_code=True) for e in created]}
+
+
+@router.get("/venues/{venue_id}/entitlements")
+def list_venue_entitlements(
+    venue_id: uuid.UUID = Path(...),
+    status: Optional[str] = None,
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """The venue's entitlement pool - available links to share + redeemed history."""
+    _require_venue_admin(db, venue_id, user_id, Action.EVENT_READ)
+    from app.models.models import Entitlement
+    q = db.query(Entitlement).filter(Entitlement.account_id == venue_id)
+    if status:
+        q = q.filter(Entitlement.status == status.strip().lower())
+    rows = q.order_by(Entitlement.created_at.desc()).all()
+    return {"items": [entitlement_service.to_dict(e, include_code=True) for e in rows]}
+
+
 # ---- internal: partner coupon lookup (called by aub-service) ---------------
 
-def _check_internal_secret(x_internal_secret: Optional[str]) -> None:
-    expected = os.getenv("INTERNAL_API_SECRET")
-    if not expected:
-        # Misconfiguration, not an attack: without the secret the partner-coupon
-        # lookup always fails and the venue discount silently never applies. Log
-        # loudly and return a distinct 503 so it's diagnosable.
-        logger.error(
-            "INTERNAL_API_SECRET is not set on core-service; rejecting internal "
-            "partner lookup. Venue partner discounts are disabled until it is set."
-        )
-        raise HTTPException(status_code=503, detail="internal auth not configured")
-    if x_internal_secret != expected:
-        raise HTTPException(status_code=403, detail="forbidden")
+# The guard lives in app/internal_auth.py so every `/internal/*` handler in the
+# service shares one implementation (and one constant-time comparison).
+from app.internal_auth import require_internal_secret as _check_internal_secret
 
 
 @router.get("/internal/events/{event_id}/partner")
 def internal_event_partner(
     event_id: uuid.UUID = Path(...),
+    user_id: Optional[str] = None,
     x_internal_secret: str = Header(None),
     db: Session = Depends(get_db),
 ):
@@ -312,8 +376,14 @@ def internal_event_partner(
     _check_internal_secret(x_internal_secret)
     event = event_crud.get_event(db, event_id)
     if not event:
-        return {"plan_id": None, "is_venue": False, "venue_name": None, "partner_coupon_code": None}
+        return {"plan_id": None, "is_venue": False, "venue_name": None,
+                "partner_coupon_code": None, "is_owner": False}
     plan_id = getattr(event, "plan_id", None)
+    # Ownership answer for aub's checkout guard. aub has no auth middleware of its
+    # own, so without this it cannot tell whether the person creating a
+    # plan-change order for this event is entitled to change it - and a
+    # plan-change order is a write against someone else's entitlement.
+    is_owner = bool(user_id) and event_crud.is_owner(event, user_id)
     venue = None
     if getattr(event, "account_id", None):
         venue = (
@@ -322,12 +392,14 @@ def internal_event_partner(
             .first()
         )
     if not venue:
-        return {"plan_id": plan_id, "is_venue": False, "venue_name": None, "partner_coupon_code": None}
+        return {"plan_id": plan_id, "is_venue": False, "venue_name": None,
+                "partner_coupon_code": None, "is_owner": is_owner}
     return {
         "plan_id": plan_id,
         "is_venue": True,
         "venue_name": venue.name,
         "partner_coupon_code": venue.partner_coupon_code,
+        "is_owner": is_owner,
     }
 
 
@@ -437,7 +509,7 @@ def update_venue_self(venue_id: uuid.UUID = Path(...), payload: VenueSelfUpdate 
     """Venue admin edits their own venue: display name, billing email, partner
     coupon, and branding. (Capacity/plan/status stay admin-only.) The coupon code
     is stored as-is; it only yields a discount if present in aub COUPONS_JSON."""
-    venue = _require_venue_admin(db, venue_id, user_id)
+    venue = _require_venue_admin(db, venue_id, user_id, Action.BILLING_MANAGE)
     fields = payload.model_dump(exclude_unset=True)
     if "name" in fields and fields["name"] is not None:
         venue.name = fields["name"].strip() or venue.name
@@ -497,7 +569,7 @@ def invite_venue_member(venue_id: uuid.UUID = Path(...), payload: VenueMemberInv
                         db: Session = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
     """Add a team member to the venue by phone (creating their user if needed).
     Role limited to manager/viewer - ownership is never transferable here."""
-    _require_venue_admin(db, venue_id, user_id)
+    _require_venue_admin(db, venue_id, user_id, Action.MEMBER_MANAGE)
     role = payload.role if payload.role in VENUE_ASSIGNABLE else "manager"
     # Resolve or create the user in aub.
     info = user_directory.resolve_user_id_by_phone(payload.phone)
@@ -537,7 +609,7 @@ def remove_venue_member(venue_id: uuid.UUID = Path(...), membership_id: uuid.UUI
                         db: Session = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
     """Remove a venue team member (soft: status='suspended'). The venue OWNER and
     self cannot be removed here."""
-    _require_venue_admin(db, venue_id, user_id)
+    _require_venue_admin(db, venue_id, user_id, Action.MEMBER_MANAGE)
     m = (
         db.query(Membership)
         .filter(Membership.id == membership_id, Membership.account_id == venue_id)

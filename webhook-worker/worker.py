@@ -131,15 +131,42 @@ class Worker:
 
     async def _handle(self, body: bytes) -> None:
         try:
+            from shared.obs import clear_context, adopt_from, set_flow
+            clear_context()
+        except Exception:
+            pass
+        try:
             msg = json.loads(body.decode("utf-8"))
         except Exception as e:
             logger.error(f"Invalid JSON in webhook message: {e}")
             return
+        try:
+            adopt_from(msg)
+            set_flow(worker="webhook-worker", flow="rsvp")
+        except Exception:
+            pass
 
+        try:
+            await self._dispatch(msg)
+        except Exception as e:
+            logger.exception("webhook processing failed")
+            try:
+                from shared.obs import capture
+                capture(e, operation="handle_webhook", flow="rsvp", worker="webhook-worker")
+            except Exception:
+                pass
+
+    async def _dispatch(self, msg: dict) -> None:
         normalized = self._extract_incoming(msg)
         msg_type = normalized.get("message_type")
         guest_phone = normalized.get("guest_phone")
         event_id = normalized.get("event_id")
+        try:
+            from shared.obs import set_event, log_event
+            set_event(event_id=event_id)
+            log_event("webhook.processed", message_type=msg_type)
+        except Exception:
+            pass
 
         logger.info(
             "Consumed webhook event",
@@ -200,7 +227,13 @@ class Worker:
 
 async def main():
     logging.basicConfig(level=logging.INFO)
-    
+
+    try:
+        from shared.obs import bootstrap
+        bootstrap("webhook-worker")
+    except Exception:
+        pass
+
     # Initialize database tables
     try:
         await init_db()

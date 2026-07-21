@@ -18,6 +18,9 @@ from app.routers.custom_fields import validate_field_value
 from shared.auth.deps import get_current_user_id
 from shared.domain.roles import Action
 from shared.domain.enums import TemplateState, EventState, UsageMetric, GuestStatus
+from app import entitlement_service, provisioning
+from app.provisioning import DEFAULT_SELF_SERVICE_PLAN
+from shared.domain.enums import EntitlementSource
 
 router = APIRouter(tags=["event-ops"])
 
@@ -34,22 +37,33 @@ def clone_event(event_id: uuid.UUID, payload: CloneEventIn, db: Session = Depend
     """Duplicate an event (config + custom fields + templates, optionally guests)
     into a new DRAFT event in the same account."""
     src = event_crud.get_event(db, event_id)
-    require_event_permission(db, src, user_id, Action.EVENT_WRITE)
+    # EVENT_WRITE is not enough: the clone is created with `owners=[caller]`, so a
+    # MANAGER could copy an event (optionally with its whole guest list) and
+    # become OWNER of the copy. Require owner-level authority over the source.
+    require_event_permission(db, src, user_id, Action.EVENT_DELETE)
 
-    new = Event(
-        name=payload.name or f"{src.name} (copy)",
-        description=src.description,
-        event_date=src.event_date,
-        location=src.location,
-        inviters=src.inviters or [],
-        owners=[str(user_id)],
+    # A clone is a NEW event and must consume its own entitlement, exactly like
+    # any other creation. It is a free SYSTEM grant on the starter plan - copying
+    # the source's paid tier would hand out entitlement for free. The base event
+    # is created here; the config/templates/guests are copied onto it below.
+    new, _ = entitlement_service.issue_and_redeem(
+        db,
+        source=EntitlementSource.SYSTEM,
+        plan_id=DEFAULT_SELF_SERVICE_PLAN,
+        owner_user_id=user_id,
         account_id=src.account_id,
-        seating_layout=src.seating_layout,
-        state=EventState.DRAFT.value,
-        active=True,
+        event_fields={
+            "name": payload.name or f"{src.name} (copy)",
+            "description": src.description,
+            "event_date": src.event_date,
+            "location": src.location,
+            "inviters": src.inviters or [],
+        },
     )
-    db.add(new)
-    db.flush()  # assign new.id
+    # A clone opens as a DRAFT; re-derive `active` for the new state.
+    new.state = EventState.DRAFT.value
+    new.seating_layout = src.seating_layout
+    provisioning.resync_active(db, new)
 
     # Copy custom field definitions, keeping a key->new-id map for guest values.
     field_map: Dict[str, uuid.UUID] = {}

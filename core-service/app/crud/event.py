@@ -74,44 +74,16 @@ def get_event_by_slug(db: Session, slug: str) -> Optional[Event]:
     return db.query(Event).filter(Event.public_slug == slug).first()
 
 
-def create_event(db: Session, data: EventCreate) -> Event:
-    # Ensure owners is a list of strings, not UUID objects
-    owners_list = []
-    if data.owners:
-        owners_list = [str(owner) for owner in data.owners]
-    
-    # Convert inviters from Pydantic models to dicts for JSON storage
-    inviters_list = []
-    if data.inviters:
-        inviters_list = [{"fn": inviter.fn, "ln": inviter.ln} for inviter in data.inviters]
-    
-    event = Event(
-        owners=owners_list,
-        inviters=inviters_list,
-        name=data.name,
-        description=data.description,
-        event_date=data.event_date,
-        location=data.location,
-        # B2B2C default: an event with no explicit plan is a couple's included
-        # "starter" plan. A paid plan (basic/plus/pro) is set by the payment
-        # provisioning path or by an explicit plan change.
-        plan_id=data.plan_id or "starter",
-        event_type=getattr(data, "event_type", None),
-        subjects=getattr(data, "subjects", None),
-        # Default to 'unpaid' when the client doesn't specify; the free-plan
-        # path sends 'free' and the payment provisioning path sends 'paid'.
-        payment_status=getattr(data, "payment_status", None) or "unpaid",
-        seating_layout=None,
-    )
-    db.add(event)
-    db.commit()
-    db.refresh(event)
-    return event
+# NOTE: event CREATION no longer lives here. Every event - free or paid, self-
+# service or venue - is now created by redeeming an entitlement
+# (`app.entitlement_service`), so there is a single event-construction path and
+# no way to build an event without consuming an entitlement. This module keeps
+# only reads and non-entitlement updates.
 
 
 def update_event(db: Session, event: Event, data: EventUpdate) -> Event:
-    if data.owners is not None:
-        event.owners = [str(owner) for owner in data.owners]
+    # `owners` is not accepted here - ownership changes go through the members
+    # API, which enforces its own guards. See the note on EventUpdate.
     if data.inviters is not None:
         # Convert inviters from Pydantic models to dicts for JSON storage
         event.inviters = [{"fn": inviter.fn, "ln": inviter.ln} for inviter in data.inviters]
@@ -123,8 +95,9 @@ def update_event(db: Session, event: Event, data: EventUpdate) -> Event:
         event.event_date = data.event_date
     if data.location is not None:
         event.location = data.location
-    if data.plan_id is not None:
-        event.plan_id = data.plan_id
+    # `plan_id` / `payment_status` are deliberately NOT updatable here - see the
+    # note above EventBase in schemas.py. Plan changes go through
+    # app.provisioning.change_plan, driven by a verified paid order.
     if data.seating_layout is not None:
         event.seating_layout = data.seating_layout
     if data.wa_image_url is not None:

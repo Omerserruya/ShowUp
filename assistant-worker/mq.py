@@ -41,6 +41,7 @@ def connect() -> pika.BlockingConnection:
 
 def publish(channel, queue_name: str, message: dict):
     channel.queue_declare(queue=queue_name, durable=True)
+    _inject_correlation(message)
     body = json.dumps(message, ensure_ascii=False).encode("utf-8")
     headers = {"message_type": message.get("message_type", "text")}
     channel.basic_publish(
@@ -49,3 +50,12 @@ def publish(channel, queue_name: str, message: dict):
         body=body,
         properties=pika.BasicProperties(delivery_mode=2, headers=headers),
     )
+
+
+def _inject_correlation(message: dict) -> None:
+    """Stamp the current correlation id onto an outgoing message (best-effort)."""
+    try:
+        from shared.obs import inject_into
+        inject_into(message)
+    except Exception:
+        pass

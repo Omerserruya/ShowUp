@@ -36,6 +36,7 @@ def connect() -> pika.BlockingConnection:
 
 def publish_outpost(channel: pika.adapters.blocking_connection.BlockingChannel, queue_name: str, message: dict):
     channel.queue_declare(queue=queue_name, durable=True)
+    _inject_correlation(message)
     body = json.dumps(message).encode("utf-8")
     
     # Add message_type as header for easy filtering
@@ -52,4 +53,10 @@ def publish_outpost(channel: pika.adapters.blocking_connection.BlockingChannel, 
     )
 
 
-
+def _inject_correlation(message: dict) -> None:
+    """Stamp the current correlation id onto an outgoing message (best-effort)."""
+    try:
+        from shared.obs import inject_into
+        inject_into(message)
+    except Exception:
+        pass

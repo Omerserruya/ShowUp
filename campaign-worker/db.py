@@ -6,6 +6,8 @@ import psycopg2
 import psycopg2.extras
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from shared.domain.delivery import MessageDeliveryStatus, ensure_messages_sent_schema
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,18 +30,9 @@ def connect() -> psycopg2.extensions.connection:
 
 
 def ensure_schema(conn: psycopg2.extensions.connection):
-    """Ensure idempotency table exists."""
+    """Ensure the per-message delivery table exists (schema owned by shared)."""
     with conn.cursor() as cur:
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS messages_sent (
-                campaign_id uuid NOT NULL,
-                guest_id uuid NOT NULL,
-                sent_at timestamptz NOT NULL DEFAULT NOW(),
-                PRIMARY KEY (campaign_id, guest_id)
-            );
-            """
-        )
+        ensure_messages_sent_schema(cur)
 
 
 def fetch_campaign_by_id(conn: psycopg2.extensions.connection, campaign_id: str) -> Optional[dict]:
@@ -113,46 +106,96 @@ def fetch_guests_for_event(conn: psycopg2.extensions.connection, event_id: str) 
         return cur.fetchall()
 
 
-def was_message_sent(conn: psycopg2.extensions.connection, campaign_id: str, guest_id: str) -> bool:
+def claim_message(conn: psycopg2.extensions.connection, campaign_id: str, guest_id: str) -> bool:
+    """Atomically claim a (campaign, guest) send. True if THIS caller won.
+
+    Replaces the old `was_message_sent` check followed by a post-publish
+    `mark_message_sent`. That sequence was check-then-act: a crash between the
+    publish and the mark re-sent the guest on restart, and two workers (or two
+    releases of one campaign) could both pass the check and both send. The
+    INSERT is the claim, so the database decides the winner - and because the
+    claim precedes the publish, a crash can only ever under-send, never
+    double-send a guest.
+    """
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT 1 FROM messages_sent WHERE campaign_id=%s AND guest_id=%s LIMIT 1",
-            (campaign_id, guest_id),
+            """
+            INSERT INTO messages_sent (campaign_id, guest_id, status)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (campaign_id, guest_id) DO NOTHING
+            RETURNING 1
+            """,
+            (campaign_id, guest_id, MessageDeliveryStatus.QUEUED.value),
         )
         return cur.fetchone() is not None
 
 
-def mark_message_sent(conn: psycopg2.extensions.connection, campaign_id: str, guest_id: str):
+def release_message_claim(conn: psycopg2.extensions.connection, campaign_id: str, guest_id: str) -> None:
+    """Undo a claim whose publish failed, so the guest can be retried.
+
+    Only removes rows still QUEUED - never one Meta has already acted on.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM messages_sent WHERE campaign_id=%s AND guest_id=%s AND status=%s",
+            (campaign_id, guest_id, MessageDeliveryStatus.QUEUED.value),
+        )
+
+
+def mark_message_failed(conn: psycopg2.extensions.connection, campaign_id: str, guest_id: str,
+                        error_code: str, error_detail: str) -> None:
+    """Record a send that failed before it ever reached Meta (e.g. build error).
+
+    Kept as a FAILED row rather than deleted, so the owner can see that this
+    guest was not reached instead of the failure vanishing into the logs.
+    """
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO messages_sent (campaign_id, guest_id)
-            VALUES (%s, %s)
-            ON CONFLICT (campaign_id, guest_id) DO NOTHING
+            INSERT INTO messages_sent (campaign_id, guest_id, status, error_code, error_detail)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (campaign_id, guest_id) DO UPDATE
+            SET status = EXCLUDED.status, error_code = EXCLUDED.error_code,
+                error_detail = EXCLUDED.error_detail, updated_at = NOW()
+            WHERE messages_sent.status = %s
             """,
-            (campaign_id, guest_id),
+            (campaign_id, guest_id, MessageDeliveryStatus.FAILED.value,
+             str(error_code)[:100], str(error_detail)[:500],
+             MessageDeliveryStatus.QUEUED.value),
         )
+
+
+def campaign_delivery_counts(conn: psycopg2.extensions.connection, campaign_id: str) -> dict:
+    """Per-status message counts for a campaign - the basis of honest stats."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT status, COUNT(*) FROM messages_sent WHERE campaign_id=%s GROUP BY status",
+            (campaign_id,),
+        )
+        return {row[0]: int(row[1]) for row in cur.fetchall()}
 
 
 def mark_campaign_completed(
     conn: psycopg2.extensions.connection,
     campaign_id: str,
-    sent_count: int,
+    queued_count: int,
 ) -> None:
-    """
-    Update campaign row after processing:
-    - Set status='sent'
-    - Update recipient_count with the actual number of successfully enqueued messages.
+    """Mark a campaign as SENDING once its messages are queued.
+
+    Deliberately not 'sent': at this point outpost has not yet called Meta, so
+    nothing is known to have been delivered. `finalize_campaigns` promotes the
+    campaign to 'sent' (or 'failed') once no messages remain in flight, which is
+    what makes the status reflect Meta's answer rather than our own enqueue.
     """
     with conn.cursor() as cur:
         cur.execute(
             """
             UPDATE campaigns
-            SET status = 'sent',
+            SET status = 'sending',
                 recipient_count = %s
             WHERE id = %s
             """,
-            (sent_count, campaign_id),
+            (queued_count, campaign_id),
         )
 
 

@@ -17,7 +17,7 @@ from fastapi import APIRouter, Body, Header, HTTPException, Path, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from app.token_utils import create_jwt
+from app.token_utils import create_jwt, verify_jwt
 from app.routers.auth import ensure_users_table, get_env as get_auth_env
 from app.plans_data import get_plan as get_plan_doc
 from app import payments_icount
@@ -25,6 +25,34 @@ from app.pricing import vat_breakdown, validate_coupon, price_before_vat
 
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+
+
+# --- observability helpers (best-effort; never break the payment flow) ------
+def _obs_payment(order_id, *, provider=None, status=None, order=None, amount=None) -> None:
+    try:
+        from shared.obs import set_payment, set_flow
+        set_flow(operation="payment", flow="payment")
+        o = order or {}
+        set_payment(payment_id=str(order_id), provider=provider, status=status,
+                    amount=amount, currency="ILS", entitlement_id=o.get("plan"))
+    except Exception:
+        pass
+
+
+def _obs_log(event, *, level="info", **fields) -> None:
+    try:
+        from shared.obs import log_event
+        log_event(event, level=level, **fields)
+    except Exception:
+        pass
+
+
+def _obs_capture(exc, **ctx) -> None:
+    try:
+        from shared.obs import capture
+        capture(exc, **ctx)
+    except Exception:
+        pass
 
 
 def get_env() -> Dict[str, Any]:
@@ -182,7 +210,59 @@ class OrderOut(BaseModel):
   currency: str = "ILS"
 
 
-def _core_event_partner(event_id: str) -> Dict[str, Any]:
+# Tiers that exist commercially but are NOT self-service purchases. `venue` is
+# granted by a venue's own agreement (₪0, unlimited guests) and `legacy`/`starter`
+# are internal; allowing them to be ordered would hand out an unlimited plan for
+# nothing, since a zero-cost order settles without payment.
+_NON_PURCHASABLE_PLANS = {"venue", "legacy", "starter"}
+
+
+def _require_purchasable_plan(plan_id: Optional[str]) -> None:
+  """Reject an order for a plan that is not on sale."""
+  key = (str(plan_id or "")).strip().lower()
+  if not key:
+    raise HTTPException(status_code=422, detail="plan is required")
+  if key in _NON_PURCHASABLE_PLANS:
+    raise HTTPException(status_code=400, detail="this plan is not available for purchase")
+  if not get_plan_doc(key):
+    raise HTTPException(status_code=400, detail="unknown plan")
+
+
+def _caller_user_id(authorization: Optional[str]) -> Optional[str]:
+  """The authenticated user id from a Bearer token, or None."""
+  if not authorization or not authorization.lower().startswith("bearer "):
+    return None
+  try:
+    claims = verify_jwt(authorization.split(" ", 1)[1].strip())
+  except Exception:
+    return None
+  uid = claims.get("user_id")
+  return str(uid) if uid else None
+
+
+def _require_event_owner(event_id: str, authorization: Optional[str]) -> None:
+  """Reject an order targeting an event the caller does not own.
+
+  Checkout is deliberately pre-auth (a new customer buys before they have an
+  account), so this router has no blanket auth. But an order carrying an
+  `event_id` is a write against an EXISTING event's entitlement - a plan change.
+  Without this check anyone could create a paid-plan order for any event id and,
+  because a zero-cost order settles without payment, downgrade a paying
+  customer's event or grant themselves a free unlimited tier.
+
+  Ownership is resolved by core (the authority on `events.owners`); aub never
+  decides it locally.
+  """
+  user_id = _caller_user_id(authorization)
+  if not user_id:
+    raise HTTPException(status_code=401, detail="sign in to change this event's plan")
+  info = _core_event_partner(str(event_id), user_id=user_id)
+  if not info.get("is_owner"):
+    # 404, not 403: never confirm that an event id exists to a non-owner.
+    raise HTTPException(status_code=404, detail="event not found")
+
+
+def _core_event_partner(event_id: str, user_id: Optional[str] = None) -> Dict[str, Any]:
   """Ask core-service whether an event belongs to a partner venue, and its
   partner-discount config. Best-effort: {} on any failure."""
   base = os.getenv("CORE_SERVICE_URL")
@@ -199,6 +279,7 @@ def _core_event_partner(event_id: str) -> Dict[str, Any]:
     with httpx.Client(timeout=6.0) as client:
       r = client.get(
           f"{base.rstrip('/')}/internal/events/{event_id}/partner",
+          params={"user_id": user_id} if user_id else None,
           headers={"X-Internal-Secret": secret or ""},
       )
       if r.status_code != 200:
@@ -212,14 +293,30 @@ def _core_event_partner(event_id: str) -> Dict[str, Any]:
 
 
 @router.post("", response_model=Dict[str, str])
-def create_order(payload: OrderCreate = Body(...)) -> Dict[str, str]:
+def create_order(
+    payload: OrderCreate = Body(...),
+    authorization: Optional[str] = Header(None),
+) -> Dict[str, str]:
   """
   Step 1 – Create order after event approval.
   - Creates a new order row with status 'event_confirmed'
   - Returns the generated order_id
+
+  A NEW purchase needs no authentication - the customer has no account yet. An
+  order carrying `event_id` is a plan change against an existing event, so it
+  must prove ownership first.
   """
   env = get_env()
   ensure_orders_table(env)
+
+  if payload.event_id:
+    _require_event_owner(str(payload.event_id), authorization)
+
+  # Only plans that are actually on sale may be ordered. `get_plan` deliberately
+  # resolves inactive/internal tiers (so existing events keep working), which
+  # would otherwise let a client order the ₪0 `venue` tier - unlimited guests,
+  # zero cost, and a zero-cost order settles without payment.
+  _require_purchasable_plan(payload.plan)
 
   # Resolve the order's CURRENT plan (prev_plan) from SERVER TRUTH, never the
   # client: for an in-place change we ask core for the event's real plan_id. This
@@ -360,7 +457,10 @@ def _core_extra_round_quote(event_id: str, audience: str) -> Dict[str, Any]:
 
 
 @router.post("/extra-round", response_model=Dict[str, str])
-def create_extra_round_order(payload: ExtraRoundOrderCreate = Body(...)) -> Dict[str, str]:
+def create_extra_round_order(
+    payload: ExtraRoundOrderCreate = Body(...),
+    authorization: Optional[str] = Header(None),
+) -> Dict[str, str]:
   """Create a paid extra-message-round order for an existing event.
 
   The price is resolved SERVER-SIDE from core's authoritative recipient count and
@@ -368,6 +468,9 @@ def create_extra_round_order(payload: ExtraRoundOrderCreate = Body(...)) -> Dict
   grants the event one extra-round credit (extra_rounds_allowance += 1)."""
   env = get_env()
   ensure_orders_table(env)
+
+  # Buying rounds for an event is a write against that event's entitlement.
+  _require_event_owner(str(payload.event_id), authorization)
 
   quote = _core_extra_round_quote(str(payload.event_id), payload.audience or "everyone")
   if not quote:
@@ -443,17 +546,34 @@ def _fetch_order_authorized(
   return order
 
 
+class IpnSecretMissing(RuntimeError):
+  """No IPN signing secret configured."""
+
+
 def _ipn_secret() -> bytes:
   """Secret for signing the iCount IPN callback URL. The IPN URL we hand iCount
   carries an HMAC over the order id; only a caller in possession of this secret
   (i.e. iCount replaying the URL we configured) can produce a valid signature,
-  so a forged callback cannot trigger provisioning."""
-  return (
+  so a forged callback cannot trigger provisioning.
+
+  Raises rather than falling back to an empty key. With `b""` the signature is
+  HMAC over a publicly-known key, so anyone who learns an order id can forge a
+  callback - and because the callback body is itself treated as payment
+  evidence, that is a free-provisioning hole. Failing closed makes the
+  misconfiguration loud instead of silently authenticating attackers.
+  """
+  secret = (
       os.getenv("ICOUNT_IPN_SECRET")
       or os.getenv("INTERNAL_API_SECRET")
       or os.getenv("JWT_SECRET")
       or ""
-  ).encode("utf-8")
+  )
+  if not secret:
+    raise IpnSecretMissing(
+        "ICOUNT_IPN_SECRET / INTERNAL_API_SECRET / JWT_SECRET must be set to "
+        "authenticate iCount IPN callbacks"
+    )
+  return secret.encode("utf-8")
 
 
 def _order_ipn_sig(order_id: Any) -> str:
@@ -643,19 +763,40 @@ class PaymentWebhookPayload(BaseModel):
   order_id: uuid.UUID
 
 
-def _grant_round_allowance(event_id: str, delta: int = 1) -> None:
-  """Grant paid extra-round credit(s) to an event via core's internal endpoint."""
+def _core_internal_post(path: str, payload: Dict[str, Any], *, timeout: float = 30.0) -> Dict[str, Any]:
+  """POST to a core-service `/internal/*` endpoint with the shared secret.
+
+  Entitlement changes (provisioning an event, changing its plan, granting round
+  credits) MUST go through these internal endpoints rather than the public API.
+  The public `POST /events` no longer accepts `plan_id`/`payment_status` at all -
+  that is what stops a user forging the same request to get a free paid plan.
+  """
   base = os.getenv("CORE_SERVICE_URL")
   secret = os.getenv("INTERNAL_API_SECRET")
   if not base:
-    raise RuntimeError("CORE_SERVICE_URL not set; cannot grant round allowance")
-  with httpx.Client(timeout=15.0) as client:
+    raise RuntimeError("CORE_SERVICE_URL not set; cannot reach core-service")
+  if not secret:
+    # Fail loudly: without the secret core rejects us with 503 and provisioning
+    # would silently never complete for a customer who has already paid.
+    raise RuntimeError("INTERNAL_API_SECRET not set; cannot provision")
+  with httpx.Client(timeout=timeout) as client:
     r = client.post(
-        f"{base.rstrip('/')}/internal/events/{event_id}/rounds-allowance",
-        json={"delta": delta},
-        headers={"X-Internal-Secret": secret or ""},
+        f"{base.rstrip('/')}{path}",
+        json=payload,
+        headers={"X-Internal-Secret": secret},
     )
     r.raise_for_status()
+    try:
+      return r.json()
+    except Exception:
+      return {}
+
+
+def _grant_round_allowance(event_id: str, delta: int = 1) -> None:
+  """Grant paid extra-round credit(s) to an event via core's internal endpoint."""
+  _core_internal_post(
+      f"/internal/events/{event_id}/rounds-allowance", {"delta": delta}, timeout=15.0
+  )
   print(f"[EXTRA_ROUND] granted {delta} round credit(s) to event {event_id}")
 
 
@@ -813,16 +954,13 @@ def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
   #    and finish. No new event or campaigns are provisioned. ─────────────────
   existing_event_id = order_row.get("event_id")
   if existing_event_id:
-    core_service_url = os.getenv("CORE_SERVICE_URL")
     event_id = str(uuid.UUID(str(existing_event_id)))
     print(f"[PROVISION] Plan-change order → set event {event_id} plan to '{order_row.get('plan')}'")
-    with httpx.Client(timeout=30.0) as client:
-      resp = client.put(
-          f"{core_service_url}/events/{event_id}",
-          json={"plan_id": order_row.get("plan")},
-          headers={"Authorization": f"Bearer {jwt_token}"},
-      )
-      resp.raise_for_status()
+    # Internal endpoint, not the public PUT /events: entitlement is backend-owned.
+    _core_internal_post(
+        f"/internal/provisioning/events/{event_id}/plan",
+        {"plan_id": order_row.get("plan"), "order_id": str(order_id)},
+    )
     with psycopg2.connect(
         host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"],
         password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
@@ -889,6 +1027,12 @@ def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
       event_date_str = event_date
   
   event_payload = {
+      # Idempotency key: replaying this order (duplicate IPN, retry after a
+      # mid-provision crash) resolves to the SAME event instead of a second one.
+      "order_id": str(order_id),
+      "owner_user_id": str(user_id),
+      # Entitlement, set by core from THIS verified order - never from a client.
+      "plan_id": order_row.get("plan"),
       "name": order_row["event_name"],
       "description": order_row.get("event_description"),
       "event_date": event_date_str,
@@ -900,33 +1044,20 @@ def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
       # Carry the event-type-specific subjects so subject variables resolve at
       # delivery exactly as they did in the wizard preview.
       "subjects": order_row.get("subjects"),
-      # Provisioned only after a confirmed payment → mark the event paid, and
-      # carry the purchased plan so the dashboard shows the right tier.
-      "payment_status": "paid",
-      "plan_id": order_row.get("plan"),
   }
   print(f"[PROVISION] Event payload: name={event_payload['name']}, location={location_str[:100] if location_str else None}...")
-  
-  # Call core-service to create event
+
   core_service_url = os.getenv("CORE_SERVICE_URL")
-  print(f"[PROVISION] Calling core-service at {core_service_url}/events")
+  print(f"[PROVISION] Provisioning event via core internal API")
   try:
-    with httpx.Client(timeout=30.0) as client:
-      response = client.post(
-          f"{core_service_url}/events",
-          json=event_payload,
-          headers={"Authorization": f"Bearer {jwt_token}"},
-      )
-      print(f"[PROVISION] Event creation response: status={response.status_code}")
-      response.raise_for_status()
-      event_data = response.json()
-      print(f"[PROVISION] Event created: event_data={json.dumps(event_data, default=str)}")
-      event_id_raw = event_data.get("id")
-      if not event_id_raw:
-        raise RuntimeError("Event created but no event_id returned")
-      # Ensure event_id is UUID string
-      event_id = str(uuid.UUID(str(event_id_raw)))
-      print(f"[PROVISION] Event ID: {event_id}")
+    event_data = _core_internal_post("/internal/provisioning/events", event_payload)
+    event_id_raw = event_data.get("id")
+    if not event_id_raw:
+      raise RuntimeError("Event provisioned but no event_id returned")
+    event_id = str(uuid.UUID(str(event_id_raw)))
+    if event_data.get("created") is False:
+      print(f"[PROVISION] Order already provisioned; reusing event {event_id}")
+    print(f"[PROVISION] Event ID: {event_id}")
   except httpx.HTTPError as e:
     print(f"[PROVISION] ERROR creating event: {e}")
     if hasattr(e, 'response') and e.response is not None:
@@ -1101,6 +1232,62 @@ def _is_upgrade(order: Dict[str, Any]) -> bool:
   return _is_paid_plan(order.get("prev_plan"))
 
 
+def _event_paid_total(event_id) -> float:
+  """Money actually received for this event's PLAN purchases, VAT-inclusive.
+
+  Upgrade credit must be backed by real revenue. It used to be
+  `_plan_amount(prev_plan)` - the list price of whatever tier the event happened
+  to be on - with no check that anyone ever paid it. A plan acquired for ₪0 (a
+  100%-off coupon, or a comped/admin event) therefore generated a full-price
+  credit against the next purchase, letting a customer reach a paid tier having
+  funded none of it.
+
+  Extra-round orders are excluded: they buy rounds, not plan tenure, and must not
+  discount a later plan upgrade.
+  """
+  if not event_id:
+    return 0.0
+  env = get_env()
+  try:
+    with psycopg2.connect(
+        host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"],
+        password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
+    ) as conn:
+      with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            "SELECT plan, coupon_code, prev_plan, kind FROM orders "
+            "WHERE event_id = %s AND status = 'paid' AND COALESCE(kind, 'plan') <> 'extra_round'",
+            (str(event_id),),
+        )
+        rows = cur.fetchall() or []
+  except Exception as exc:
+    # Fail CLOSED: an unreadable ledger yields no credit. Charging full price is
+    # recoverable (support can refund); granting an unbacked credit is not.
+    print(f"[BREAKDOWN] paid-total lookup failed for event {event_id}: {exc}")
+    return 0.0
+
+  total = 0.0
+  for row in rows:
+    # Value each past order the same way it was charged, so a discounted purchase
+    # credits only what it actually cost.
+    total += float(_order_breakdown_static(dict(row)).get("gross") or 0.0)
+  return total
+
+
+def _order_breakdown_static(order: Dict[str, Any]) -> Dict[str, Any]:
+  """Breakdown WITHOUT the DB-backed upgrade credit.
+
+  Used when valuing historical orders inside `_event_paid_total`, which would
+  otherwise recurse: computing an order's credit requires reading paid orders,
+  each of which would compute its own credit, and so on.
+  """
+  subtotal = _plan_amount(order.get("plan"))
+  if _is_upgrade(order):
+    return vat_breakdown(subtotal, 0.0)
+  coupon = validate_coupon(order.get("coupon_code"), subtotal)
+  return vat_breakdown(subtotal, coupon["discount"] if coupon else 0.0)
+
+
 def _order_breakdown(order: Dict[str, Any]) -> Dict[str, Any]:
   """Authoritative price breakdown for an order, driven by purchase type.
 
@@ -1120,8 +1307,10 @@ def _order_breakdown(order: Dict[str, Any]) -> Dict[str, Any]:
     return bd
   subtotal = _plan_amount(order.get("plan"))
   if _is_upgrade(order):
-    # Credit for the plan the customer already pays for; capped at the new price.
-    credit = min(_plan_amount(order.get("prev_plan")), subtotal)
+    # Credit for what the customer has ACTUALLY paid for this event, capped at
+    # the new price. Derived from the paid-orders ledger, never from the list
+    # price of `prev_plan` - see `_event_paid_total`.
+    credit = min(_event_paid_total(order.get("event_id")), subtotal)
     bd = vat_breakdown(subtotal, credit)
     bd["adjustment_kind"] = "credit" if credit > 0 else "none"
     return bd
@@ -1169,8 +1358,24 @@ def pay_with_icount(
   # sending - the customer ends up paying the displayed VAT-inclusive amount.
   bd = _order_breakdown(order)
   amount = price_before_vat(bd["gross"])
+  _obs_payment(order_id, provider="icount", status="started", order=order, amount=bd.get("gross"))
+  _obs_log("payment.started", order_id=str(order_id), plan=order.get("plan"), gross=bd.get("gross"))
   if amount <= 0:
-    raise HTTPException(status_code=400, detail="This plan requires no payment")
+    # Nothing left to charge - the customer's existing credit already covers the
+    # target plan (a downgrade, or an upgrade fully offset by what they have
+    # paid). This used to raise 400, which left the order permanently stuck:
+    # unpayable because it cost nothing, and unprovisionable because it was never
+    # paid. Settle it directly instead; provisioning is idempotent and verifies
+    # nothing is owed, so no payment is skipped that was actually due.
+    print(f"[PAY] order {order_id} has nothing to charge (gross={bd['gross']}); provisioning directly")
+    if not _claim_order_for_provisioning(env, order_id):
+      return {"status": "already_in_progress", "order_id": str(order_id)}
+    try:
+      result = provision_order(order_id)
+    except Exception as exc:
+      _release_provisioning_claim(env, order_id)
+      raise HTTPException(status_code=500, detail=f"could not apply the plan change: {exc}")
+    return {"status": "paid", "no_payment_required": True, "order_id": str(order_id), "result": result}
 
   # Itemize the charge so the adjustment appears on the PayPage + invoice: a full
   # target-plan price line, plus one negative line (iCount v3 has no coupon field).
@@ -1283,6 +1488,91 @@ def _order_id_from_callback(env: Dict[str, Any], payload: Dict[str, Any]) -> Opt
   return None
 
 
+# Statuses an order may hold while it has not yet been provisioned. Only these
+# may be claimed - 'paid' and 'provisioning' are excluded so a claim can never
+# re-run a completed or in-flight provisioning.
+_CLAIMABLE_STATUSES = ("draft", "event_confirmed", "identity_added", "payment_pending", "underpaid")
+
+# Tolerance when comparing the charged amount to our own breakdown, in ILS.
+# Absorbs rounding between our VAT math and iCount's, without leaving room for a
+# materially short payment.
+_AMOUNT_TOLERANCE_ILS = 1.0
+
+
+def _verify_paid_amount(order: Dict[str, Any], sale_info: Dict[str, Any]) -> tuple[bool, str]:
+  """Check the charged amount covers what the order is worth.
+
+  Returns (ok, detail). When iCount does not state an amount at all we accept -
+  refusing would strand legitimate customers on a payload shape we cannot
+  control - but the decision is logged so it is visible rather than implicit.
+  """
+  expected = float(_order_breakdown(order).get("gross") or 0.0)
+  actual = payments_icount.paid_amount(sale_info)
+  if actual is None:
+    return True, f"amount not reported by iCount (expected {expected:.2f}); accepted"
+  if actual + _AMOUNT_TOLERANCE_ILS < expected:
+    return False, f"charged {actual:.2f} < expected {expected:.2f}"
+  return True, f"charged {actual:.2f} >= expected {expected:.2f}"
+
+
+def _mark_order_status(env, order_id, status: str) -> None:
+  """Set an order's status (ops-visible states like 'underpaid')."""
+  try:
+    with psycopg2.connect(
+        host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"],
+        password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
+    ) as conn:
+      with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE orders SET status = %s, updated_at = NOW() WHERE order_id = %s AND status <> 'paid'",
+            (status, str(order_id)),
+        )
+        conn.commit()
+  except Exception as exc:
+    print(f"[ORDER] failed to set status={status} on {order_id}: {exc}")
+
+
+def _claim_order_for_provisioning(env, order_id) -> bool:
+  """Atomically claim an order for provisioning. True if THIS caller won.
+
+  A conditional UPDATE is the whole mechanism: the database decides the winner,
+  so concurrent IPN deliveries cannot both proceed. Previously the code did a
+  non-locking `SELECT status` followed by an unguarded provision, so two retries
+  arriving together each saw 'payment_pending' and both provisioned.
+  """
+  with psycopg2.connect(
+      host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"],
+      password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
+  ) as conn:
+    with conn.cursor() as cur:
+      cur.execute(
+          "UPDATE orders SET status = 'provisioning', updated_at = NOW() "
+          "WHERE order_id = %s AND status = ANY(%s) RETURNING order_id",
+          (str(order_id), list(_CLAIMABLE_STATUSES)),
+      )
+      claimed = cur.fetchone() is not None
+      conn.commit()
+  return claimed
+
+
+def _release_provisioning_claim(env, order_id) -> None:
+  """Return a failed claim to 'payment_pending' so it can be retried."""
+  try:
+    with psycopg2.connect(
+        host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"],
+        password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
+    ) as conn:
+      with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE orders SET status = 'payment_pending', updated_at = NOW() "
+            "WHERE order_id = %s AND status = 'provisioning'",
+            (str(order_id),),
+        )
+        conn.commit()
+  except Exception as exc:
+    print(f"[ORDER] failed to release claim on {order_id}: {exc}")
+
+
 @router.post("/icount/callback")
 async def icount_callback(request: Request) -> JSONResponse:
   """Server-to-server IPN from iCount. Re-verifies the sale with iCount
@@ -1331,7 +1621,14 @@ async def icount_callback(request: Request) -> JSONResponse:
   # pay_with_icount, can present a valid HMAC over this order id. A forged callback
   # (attacker POSTing paid=1) is rejected here BEFORE any provisioning happens.
   provided_sig = str(payload.get("sig") or "")
-  if not provided_sig or not hmac.compare_digest(provided_sig, _order_ipn_sig(order_id)):
+  try:
+    expected_sig = _order_ipn_sig(order_id)
+  except IpnSecretMissing as exc:
+    # Fail closed: without a signing secret we cannot distinguish iCount from an
+    # attacker, so we refuse to provision rather than trust the callback body.
+    print(f"[ICOUNT IPN] REFUSING callback for {order_id}: {exc}")
+    return JSONResponse(status_code=200, content={"status": "ignored", "reason": "ipn auth not configured"})
+  if not provided_sig or not hmac.compare_digest(provided_sig, expected_sig):
     print(f"[ICOUNT IPN] REJECTED: bad/missing sig for order {order_id} (possible forgery)")
     return JSONResponse(status_code=200, content={"status": "ignored", "reason": "bad signature"})
 
@@ -1343,23 +1640,173 @@ async def icount_callback(request: Request) -> JSONResponse:
   # lookup (get_sale_info => "bad_method"), so verify from the IPN payload, with a
   # server-side lookup only as a best-effort when it happens to be available.
   sale_id = order.get("icount_sale_id")
+  sale_info: Dict[str, Any] = payload
   verified = payments_icount.is_paid(payload)
   if not verified and sale_id:
     try:
-      verified = payments_icount.is_paid(payments_icount.get_sale_info(sale_id))
+      sale_info = payments_icount.get_sale_info(sale_id)
+      verified = payments_icount.is_paid(sale_info)
     except Exception as e:
       print(f"[ICOUNT IPN] get_sale_info unavailable ({e}); relying on IPN payload")
   if not verified:
     print(f"[ICOUNT IPN] sale not verified as paid for {order_id}; payload={payload}")
     return JSONResponse(status_code=200, content={"status": "not_approved"})
 
+  # Verify HOW MUCH was charged, not just that a charge happened. Without this a
+  # ₪1 sale against a ₪199 order provisions the full plan - `is_paid` returns
+  # True on a bare confirmation_code.
+  ok_amount, amount_detail = _verify_paid_amount(order, sale_info)
+  if not ok_amount:
+    print(f"[ICOUNT IPN] REJECTED underpayment for {order_id}: {amount_detail}")
+    _mark_order_status(env, order_id, "underpaid")
+    _obs_payment(order_id, provider="icount", status="underpaid", order=order)
+    _obs_log("payment.failed", level="warning", order_id=str(order_id), reason=amount_detail)
+    return JSONResponse(status_code=200, content={"status": "underpaid", "detail": amount_detail})
+
+  # Claim the order before provisioning. iCount retries IPNs, so two deliveries
+  # can arrive concurrently; the claim is a conditional UPDATE, so exactly one
+  # wins and the loser is a no-op instead of a second provisioning run.
+  if not _claim_order_for_provisioning(env, order_id):
+    print(f"[ICOUNT IPN] order {order_id} already being provisioned; skipping duplicate")
+    return JSONResponse(status_code=200, content={"status": "ok", "already_claimed": True})
+
+  _obs_payment(order_id, provider="icount", status="verified", order=order)
   try:
     result = provision_order(order_id)
+    _obs_log("payment.completed", order_id=str(order_id), event_id=result.get("event_id"))
     return JSONResponse(status_code=200, content={"status": "ok", "result": result})
   except Exception as e:
-    # Log and 200 so iCount stops retrying; surfaced in server logs for debugging.
+    # Release the claim so the next IPN retry (or reconciliation) can pick it up
+    # again - otherwise a transient core-service failure would strand a paid
+    # customer in 'provisioning' forever.
+    _release_provisioning_claim(env, order_id)
     print(f"[ICOUNT IPN] provisioning failed for {order_id}: {e}")
+    # Surface to the ops dashboard: a verified payment that failed to provision is
+    # a customer stuck paid-but-eventless and needs an operator's eyes.
+    try:
+      import traceback
+      from shared.ops.errors import record_error, SEVERITY_CRITICAL
+      record_error("aub", f"provisioning failed after payment: {e}",
+                   severity=SEVERITY_CRITICAL, error_type=type(e).__name__,
+                   stack=traceback.format_exc(), context={"order_id": str(order_id)})
+    except Exception:
+      pass
+    # ...and to Sentry (unexpected failure, with payment context on the scope).
+    _obs_log("payment.failed", level="error", order_id=str(order_id), reason=str(e))
+    _obs_capture(e, operation="provision_order", flow="payment", order_id=str(order_id))
     return JSONResponse(status_code=200, content={"status": "error", "detail": str(e)})
+
+
+def reconcile_pending_orders(max_age_minutes: int = 15, limit: int = 50) -> Dict[str, Any]:
+  """Recover orders whose IPN never arrived, or whose provisioning died midway.
+
+  Why this exists: `pay_with_icount` moves an order to 'payment_pending' and,
+  before this, nothing ever revisited it. If iCount's callback was dropped - our
+  host briefly 502s, a network blip - the customer's card was charged and no
+  event ever appeared, with no automated recovery at all.
+
+  Two recoveries, both safe to run repeatedly:
+
+  * 'provisioning' rows older than the cutoff are stale claims left by a crashed
+    provisioning run; they are released so they can be retried.
+  * 'payment_pending' rows older than the cutoff are re-verified against iCount
+    and provisioned when the sale did in fact complete.
+
+  Orders we cannot verify are reported, never guessed at - provisioning without
+  a verified payment is exactly what this whole effort removes.
+  """
+  env = get_env()
+  ensure_orders_table(env)
+  cutoff_expr = f"NOW() - INTERVAL '{int(max_age_minutes)} minutes'"
+
+  released = 0
+  with psycopg2.connect(
+      host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"],
+      password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
+  ) as conn:
+    with conn.cursor() as cur:
+      cur.execute(
+          f"UPDATE orders SET status = 'payment_pending', updated_at = NOW() "
+          f"WHERE status = 'provisioning' AND updated_at < {cutoff_expr}"
+      )
+      released = cur.rowcount or 0
+      conn.commit()
+
+  with psycopg2.connect(
+      host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"],
+      password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
+  ) as conn:
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+      cur.execute(
+          f"SELECT order_id, icount_sale_id FROM orders "
+          f"WHERE status = 'payment_pending' AND icount_sale_id IS NOT NULL "
+          f"AND updated_at < {cutoff_expr} ORDER BY updated_at ASC LIMIT %s",
+          (int(limit),),
+      )
+      candidates = cur.fetchall() or []
+
+  provisioned, unverified, errors = [], [], []
+  for row in candidates:
+    order_id = str(row["order_id"])
+    sale_id = row.get("icount_sale_id")
+    try:
+      sale_info = payments_icount.get_sale_info(sale_id)
+    except Exception as exc:
+      # get_sale_info is documented as unavailable on the paypage API; when it is
+      # we simply cannot self-heal, so surface the order for ops rather than
+      # provisioning an unverified payment.
+      unverified.append({"order_id": order_id, "reason": f"lookup unavailable: {exc}"})
+      continue
+    if not payments_icount.is_paid(sale_info):
+      unverified.append({"order_id": order_id, "reason": "sale not paid"})
+      continue
+    order = _fetch_order(env, order_id)
+    ok_amount, detail = _verify_paid_amount(order, sale_info)
+    if not ok_amount:
+      _mark_order_status(env, order_id, "underpaid")
+      unverified.append({"order_id": order_id, "reason": detail})
+      continue
+    if not _claim_order_for_provisioning(env, order_id):
+      continue
+    try:
+      provision_order(uuid.UUID(order_id))
+      provisioned.append(order_id)
+    except Exception as exc:
+      _release_provisioning_claim(env, order_id)
+      errors.append({"order_id": order_id, "error": str(exc)})
+
+  summary = {
+      "checked": len(candidates),
+      "stale_claims_released": released,
+      "provisioned": provisioned,
+      "unverified": unverified,
+      "errors": errors,
+  }
+  if provisioned or errors or unverified:
+    print(f"[RECONCILE] {json.dumps(summary, default=str)}")
+  return summary
+
+
+@router.post("/internal/reconcile", response_model=Dict[str, Any])
+def internal_reconcile(
+    payload: Dict[str, Any] = Body(default={}),
+    x_internal_secret: Optional[str] = Header(None, alias="X-Internal-Secret"),
+) -> Dict[str, Any]:
+  """Internal: run payment reconciliation. Driven by scheduler-service's loop.
+
+  Lives here rather than in the scheduler because iCount knowledge belongs to
+  aub; the scheduler only owns *when* platform jobs run.
+  """
+  expected = os.getenv("INTERNAL_API_SECRET")
+  if not expected:
+    raise HTTPException(status_code=503, detail="internal auth not configured")
+  if not x_internal_secret or not hmac.compare_digest(str(x_internal_secret), str(expected)):
+    raise HTTPException(status_code=403, detail="forbidden")
+  try:
+    max_age = int(payload.get("max_age_minutes", 15))
+  except (TypeError, ValueError):
+    max_age = 15
+  return reconcile_pending_orders(max_age_minutes=max_age)
 
 
 @router.post("/webhook/payment", response_model=Dict[str, Any])

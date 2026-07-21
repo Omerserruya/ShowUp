@@ -21,6 +21,11 @@ def _audience_value(audience) -> str:
 
 def apply_audience(query: Query, audience, audience_filter: Optional[dict]) -> Query:
     a = _audience_value(audience)
+    # Opted-out guests are excluded from EVERY audience, including 'everyone'.
+    # Applied before the audience branch so no branch can forget it - this count
+    # is what the owner is quoted for an extra round, so it must match what
+    # campaign-worker will actually send.
+    query = query.filter(Guest.opted_out_at.is_(None))
     if a == CampaignAudience.EVERYONE.value:
         return query
     if a == CampaignAudience.CONFIRMED.value:

@@ -15,6 +15,54 @@ def now_utc() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
 
+class Entitlement(Base):
+    """The right to create exactly one event with a specific plan.
+
+    An entitlement is the single answer to "why is this user allowed to create
+    this event?". Payment is one issuer of entitlements; venue pools, the beta
+    program, admin grants and promotions are others. Event creation always
+    consumes exactly one, and the consumed entitlement is linked to its event
+    forever (`redeemed_event_id` here, `events.entitlement_id` there).
+
+    Codes are cryptographically random (`secrets.token_urlsafe`), so they cannot
+    be guessed, and redemption is a single atomic conditional UPDATE, so a code
+    can be consumed exactly once even under concurrent requests.
+    """
+    __tablename__ = "entitlements"
+
+    id = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # The redemption credential. Random, unique, retrievable by the issuing
+    # dashboard so a venue/admin can re-copy the link.
+    code = Column(String(64), nullable=False, unique=True, index=True)
+    status = Column(String(20), nullable=False, server_default="available", index=True)  # EntitlementStatus
+    source = Column(String(20), nullable=False, index=True)                               # EntitlementSource
+    # What the entitlement grants. plan_id is required; the two overrides are
+    # optional custom limits (NULL => the plan's own defaults apply).
+    plan_id = Column(String(50), nullable=False)
+    max_guests = Column(Integer, nullable=True)
+    campaign_rounds = Column(Integer, nullable=True)
+    # Optional expiry. A past expiry is treated as unredeemable even before the
+    # status column is swept to 'expired'.
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    # Redemption record (all NULL until consumed).
+    redeemed_at = Column(DateTime(timezone=True), nullable=True)
+    redeemed_by_user_id = Column(PG_UUID(as_uuid=True), nullable=True, index=True)
+    redeemed_event_id = Column(PG_UUID(as_uuid=True), ForeignKey("events.id", ondelete="SET NULL"),
+                               nullable=True, unique=True)
+    # Provenance. created_by is the issuing user (admin / venue member) or NULL
+    # for system/payment auto-issue. account_id ties an entitlement to a venue
+    # POOL so the venue dashboard can list its own available/redeemed grants.
+    created_by = Column(PG_UUID(as_uuid=True), nullable=True, index=True)
+    account_id = Column(PG_UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"),
+                        nullable=True, index=True)
+    # The aub order that funded a payment-sourced entitlement (audit + dedupe);
+    # NULL for every non-payment source.
+    order_id = Column(String(64), nullable=True, index=True)
+    entitlement_metadata = Column("metadata", JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
 class Event(Base):
     __tablename__ = "events"
 
@@ -46,6 +94,33 @@ class Event(Base):
     # 'pending' (awaiting payment), 'unpaid' (legacy/unknown). Set to 'paid' by
     # the aub-service provisioning path and 'free' on free-plan creation.
     payment_status = Column(String(20), nullable=False, server_default='unpaid')
+    # aub order that provisioned this event. UNIQUE - this is the idempotency key
+    # that makes duplicate IPN deliveries (or a retry after a mid-provision crash)
+    # resolve to the SAME event instead of creating a second one. Null for
+    # self-service events, which are never the product of a payment.
+    provisioning_order_id = Column(String(64), nullable=True, unique=True, index=True)
+    # The entitlement this event consumed. Every event has exactly one; the FK is
+    # UNIQUE so an entitlement can never be redeemed twice. This is the permanent
+    # link back to WHY the event was allowed to exist (payment / venue / beta /...).
+    # use_alter breaks the events<->entitlements FK cycle: SQLAlchemy emits this
+    # constraint as a post-create ALTER so create_all can order the two tables.
+    entitlement_id = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("entitlements.id", ondelete="RESTRICT", use_alter=True,
+                   name="fk_events_entitlement_id"),
+        nullable=True, unique=True, index=True,
+    )
+    # Per-event limit overrides captured from the entitlement at redemption. NULL
+    # means "use the plan's default" (plans.json guest cap / rounds.py included
+    # rounds). Set only by entitlements that carry a custom bundle (e.g. a promo
+    # granting Pro rounds but a 100-guest cap). Enforcement reads override-or-default.
+    max_guests_override = Column(Integer, nullable=True)
+    included_rounds_override = Column(Integer, nullable=True)
+    # Most recent PLAN-CHANGE (upgrade) order applied to this event. Separate from
+    # provisioning_order_id so an upgrade never overwrites the creation key - see
+    # app/provisioning.py::change_plan. Not unique: an order id appears once here,
+    # but the column is only an idempotency marker, not an identity.
+    last_plan_order_id = Column(String(64), nullable=True, index=True)
     # V2 tenancy: nullable during migration; new events are bound to an account.
     # Legacy events keep ownership via the `owners` JSON array until backfilled.
     account_id = Column(PG_UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=True, index=True)
@@ -107,6 +182,12 @@ class Guest(Base):
     table_number = Column(Integer, nullable=True)
     notes = Column(Text, nullable=True)
     last_response = Column(DateTime(timezone=True), nullable=True)
+    # WhatsApp opt-out (STOP/UNSUBSCRIBE). NULL = subscribed. Set, never deleted,
+    # so the audit history survives; see shared/domain/optout.py for the rule
+    # applied by both audience implementations.
+    opted_out_at = Column(DateTime(timezone=True), nullable=True)
+    opted_out_reason = Column(Text, nullable=True)
+    opted_out_source = Column(String(30), nullable=True)  # whatsapp_stop | manual | admin
 
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 

@@ -7,10 +7,12 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential libpq-dev && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./
+COPY aub-service/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app ./app
+COPY aub-service/app ./app
+# Shared ops helpers (heartbeat/error capture). Build context is the repo root.
+COPY shared ./shared
 
 EXPOSE ${PORT}
 

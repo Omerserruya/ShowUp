@@ -267,6 +267,12 @@ def main():
     if not JWT_SECRET:
         raise RuntimeError("JWT_SECRET is required")
 
+    try:
+        from shared.obs import bootstrap
+        bootstrap("assistant-worker")
+    except Exception:
+        pass
+
     conn = db.connect()
     r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
     rabbit = mq.connect()
@@ -276,7 +282,17 @@ def main():
 
     def callback(ch, method, properties, body):
         try:
+            from shared.obs import clear_context, adopt_from, set_flow
+            clear_context()
+        except Exception:
+            pass
+        try:
             msg = json.loads(body)
+            try:
+                adopt_from(msg)
+                set_flow(worker="assistant-worker", flow="assistant")
+            except Exception:
+                pass
             handle_message(conn, ch, r, msg)
             ch.basic_ack(delivery_tag=method.delivery_tag)
         except json.JSONDecodeError as e:
@@ -285,6 +301,12 @@ def main():
         except Exception as e:
             log_json(logging.ERROR, "Failed handling assistant message", error=str(e))
             logger.exception("handler error")
+            # Unexpected assistant failure -> Sentry (correlation already bound).
+            try:
+                from shared.obs import capture
+                capture(e, operation="handle_message", flow="assistant", worker="assistant-worker")
+            except Exception:
+                pass
             # Ack anyway: a poison message must not wedge the owner's chat.
             ch.basic_ack(delivery_tag=method.delivery_tag)
 

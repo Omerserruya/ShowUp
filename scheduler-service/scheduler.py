@@ -18,6 +18,8 @@ from db import (
 from mq import connect as mq_connect, publish_campaign, is_connection_healthy, reconnect_rabbitmq, send_heartbeat
 from daily_summary import ensure_daily_summary_table, run_daily_summary_check
 from notifications import ensure_owner_notifications_table, dispatch_owner_notifications
+from payment_reconciliation import run_payment_reconciliation
+from campaign_finalizer import finalize_campaigns
 
 
 def configure_logging():
@@ -46,6 +48,11 @@ def run_loop():
     outpost_queue = os.getenv("OUTPOST_QUEUE_NAME", os.getenv("OUTPOST_QUEUE", "outpost_queue"))
 
     log_json(logger, logging.INFO, "Scheduler started", interval=check_interval, queue=queue_name)
+    try:
+        from shared.obs import bootstrap
+        bootstrap("scheduler")
+    except Exception:
+        pass
     conn = db_connect()
     ensure_daily_summary_table(conn)
     ensure_owner_notifications_table(conn)
@@ -158,6 +165,11 @@ def run_loop():
                     log_json(logger, logging.INFO, "Daily summaries dispatched", events=summarized)
             except Exception as e:
                 log_json(logger, logging.ERROR, "Daily summary cycle failed", error=str(e))
+                try:
+                    from shared.obs import capture
+                    capture(e, operation="daily_summary", flow="scheduler", worker="scheduler")
+                except Exception:
+                    pass
 
             # Owner-notification outbox (team invites, assistant intro, ...):
             # rows inserted by core/aub, published here through outpost.
@@ -170,6 +182,50 @@ def run_loop():
                 )
             except Exception as e:
                 log_json(logger, logging.ERROR, "Owner notifications cycle failed", error=str(e))
+                try:
+                    from shared.obs import capture
+                    capture(e, operation="owner_notifications", flow="scheduler", worker="scheduler")
+                except Exception:
+                    pass
+
+            # Resolve campaigns from real delivery outcomes: 'sending' becomes
+            # 'sent' only if Meta accepted at least one message, else 'failed'.
+            try:
+                finalized = finalize_campaigns(conn)
+                if finalized.get("finalized_failed"):
+                    log_json(logger, logging.ERROR, "Campaigns finished with NO successful deliveries",
+                             count=finalized["finalized_failed"])
+                    try:
+                        from shared.ops.errors import record_error, SEVERITY_WARNING
+                        record_error("campaign-worker",
+                                     f"{finalized['finalized_failed']} campaign(s) delivered zero messages",
+                                     severity=SEVERITY_WARNING, error_type="campaign_all_failed",
+                                     context={"count": finalized["finalized_failed"]})
+                    except Exception:
+                        pass
+            except Exception as e:
+                log_json(logger, logging.ERROR, "Campaign finalization cycle failed", error=str(e))
+                try:
+                    from shared.obs import capture
+                    capture(e, operation="campaign_finalization", flow="scheduler", worker="scheduler")
+                except Exception:
+                    pass
+
+            # Payment reconciliation: recover orders whose iCount IPN was lost,
+            # so a charged customer is never left without an event. Self-throttled
+            # to its own interval; a no-op on most cycles.
+            try:
+                summary = run_payment_reconciliation()
+                if summary and summary.get("provisioned"):
+                    log_json(logger, logging.WARNING, "Reconciled unprovisioned paid orders",
+                             orders=summary["provisioned"])
+            except Exception as e:
+                log_json(logger, logging.ERROR, "Payment reconciliation cycle failed", error=str(e))
+                try:
+                    from shared.obs import capture
+                    capture(e, operation="payment_reconciliation", flow="scheduler", worker="scheduler")
+                except Exception:
+                    pass
 
             time.sleep(check_interval)
     finally:

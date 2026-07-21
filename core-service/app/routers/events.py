@@ -14,9 +14,11 @@ from app.utils import paginate_params
 from shared.auth.deps import get_current_user_id
 from shared.domain.roles import Action
 from shared.domain.enums import EventState, TemplateState
-from shared.domain.lifecycle import can_transition_event, is_live
+from shared.domain.lifecycle import can_transition_event, derive_active
 from app.authz import ensure_personal_account, require_event_permission
 from app.models.models import WaTemplate
+from app import entitlement_service, provisioning
+from shared.domain.enums import EntitlementSource
 
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -54,14 +56,24 @@ def get_event(event_id: uuid.UUID, db: Session = Depends(get_db), user_id: uuid.
 
 @router.post("", response_model=EventOut, status_code=201)
 def create_event(payload: EventCreate, db: Session = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
-    # Force owners to current user only on creation
-    payload.owners = [user_id]
-    event = event_crud.create_event(db, payload)
-    # V2 tenancy: bind the new event to the creator's account (OWNER membership).
-    event.account_id = ensure_personal_account(db, user_id)
-    db.add(event)
-    db.commit()
-    db.refresh(event)
+    """Self-service event creation.
+
+    Even a free event consumes an entitlement - the system auto-issues a SYSTEM
+    starter entitlement and redeems it in one step, so the invariant "every event
+    consumes exactly one entitlement" holds without putting a redemption link in
+    front of a user making a free event. The plan is fixed to the free starter
+    tier; a paid tier only ever arrives through a PAYMENT (or admin/venue/beta)
+    entitlement, never from this payload.
+    """
+    account_id = ensure_personal_account(db, user_id)
+    event, _ = entitlement_service.issue_and_redeem(
+        db,
+        source=EntitlementSource.SYSTEM,
+        plan_id=provisioning.DEFAULT_SELF_SERVICE_PLAN,
+        owner_user_id=user_id,
+        account_id=account_id,
+        event_fields=payload.model_dump(exclude_none=True),
+    )
     event_crud.annotate_venue(db, [event])
     return event
 
@@ -92,7 +104,10 @@ def transition_event(event_id: uuid.UUID, payload: EventTransitionIn, db: Sessio
         raise HTTPException(status_code=409, detail=f"illegal event transition '{event.state}' -> '{payload.to.value}'")
 
     event.state = payload.to.value
-    event.active = is_live(payload.to)
+    # `active` is derived, never assigned: a settled event going live becomes
+    # active, but an unsettled one stays inactive no matter which lifecycle
+    # transition is requested.
+    event.active = derive_active(payload.to, getattr(event, "payment_status", None))
 
     # Archive the event's live templates when the event is completed or archived.
     if payload.to in (EventState.COMPLETED, EventState.ARCHIVED):
@@ -125,9 +140,17 @@ def _slugify(value: str) -> str:
     return value or "event"
 
 
-def _unique_slug(db: Session, base: str, current_event_id) -> str:
+def _unique_slug(db: Session, base: str, current_event_id, *, add_entropy: bool = False) -> str:
+    """A free slug for this event.
+
+    `add_entropy` appends a random suffix for AUTO-derived slugs. Deriving the
+    slug purely from the event name made every invitation URL guessable from the
+    couple's names, turning the public invite into an enumerable directory of
+    upcoming events. An explicitly chosen slug is respected as typed - the guest
+    data behind it is protected by per-guest tokens, not by URL obscurity.
+    """
     base = _slugify(base)
-    candidate = base
+    candidate = f"{base}-{_uuid.uuid4().hex[:6]}" if add_entropy else base
     for _ in range(50):
         existing = event_crud.get_event_by_slug(db, candidate)
         if existing is None or str(existing.id) == str(current_event_id):
@@ -174,8 +197,12 @@ def publish_invitation(
     require_event_permission(db, event, user_id, Action.EVENT_WRITE)
 
     if payload.published:
+        # Keep an existing slug stable (links already shared must keep working),
+        # honour an explicitly chosen one, and add entropy only when deriving a
+        # brand-new slug from the event name.
         desired = payload.slug or event.public_slug or event.name
-        event.public_slug = _unique_slug(db, desired, event.id)
+        auto_derived = not payload.slug and not event.public_slug
+        event.public_slug = _unique_slug(db, desired, event.id, add_entropy=auto_derived)
         event.invitation_published = True
     else:
         event.invitation_published = False

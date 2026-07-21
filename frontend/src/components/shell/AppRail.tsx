@@ -9,10 +9,13 @@ import EventRoundedIcon from '@mui/icons-material/EventRounded';
 import ReceiptLongRoundedIcon from '@mui/icons-material/ReceiptLongRounded';
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded';
 import LocalOfferRoundedIcon from '@mui/icons-material/LocalOfferRounded';
+import CardGiftcardRoundedIcon from '@mui/icons-material/CardGiftcardRounded';
 import FlagRoundedIcon from '@mui/icons-material/FlagRounded';
 import MonitorHeartRoundedIcon from '@mui/icons-material/MonitorHeartRounded';
+import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import { primaryNav, accountNav, NavItem } from './navConfig';
+import ViewModeSwitcher, { ViewMode, VIEW_MODE_META } from './ViewModeSwitcher';
 import EventSwitcher from './EventSwitcher';
 import UserAvatar from '../UserAvatar';
 import OptionsMenu from '../OptionsMenu';
@@ -25,6 +28,14 @@ const BRAND = '#888cee';
 const DEEP = '#6f74e0';
 const COLLAPSED = 76;
 const EXPANDED = 264;
+
+/** Shared style for a nav group's section label (collapses to a thin gap). */
+const GROUP_LABEL = (expanded: boolean) => ({
+  px: '14px', pt: 2.5, pb: 0.75, fontSize: '0.64rem', fontWeight: 800,
+  letterSpacing: '0.1em', color: 'text.disabled', whiteSpace: 'nowrap',
+  opacity: expanded ? 1 : 0, transition: 'opacity .18s ease',
+  height: expanded ? 'auto' : 8,
+} as const);
 
 /**
  * A glass rail that floats above the page (not a Drawer). Collapsed shows icons;
@@ -41,30 +52,50 @@ export default function AppRail() {
   const { isVenueAdmin } = useVenueAdmin();
   const [expanded, setExpanded] = useState(false);
 
-  // Venue admins get links to their venue dashboard + settings in the account group.
-  const accountItems: NavItem[] = isVenueAdmin
-    ? [
-        { label: 'ניהול האולם', path: '/venue', icon: <StorefrontRoundedIcon /> },
-        { label: 'הגדרות האולם', path: '/venue/settings', icon: <TuneRoundedIcon /> },
-        ...accountNav,
-      ]
-    : accountNav;
+  // Which contexts this user can work in. A regular owner has only 'owner' and
+  // never sees the switcher; power users switch between them so each view is clean.
+  const availableModes: ViewMode[] = React.useMemo(() => {
+    const m: ViewMode[] = ['owner'];
+    if (isAdmin) m.push('admin');
+    if (isVenueAdmin) m.push('venue');
+    return m;
+  }, [isAdmin, isVenueAdmin]);
+
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const saved = (localStorage.getItem('showup_view_mode') || 'owner') as ViewMode;
+    return saved;
+  });
+  // Never leave the user in a mode they no longer have access to.
+  const mode: ViewMode = availableModes.includes(viewMode) ? viewMode : 'owner';
+
+  const switchMode = (m: ViewMode) => {
+    setViewMode(m);
+    try { localStorage.setItem('showup_view_mode', m); } catch { /* private mode */ }
+    navigate(VIEW_MODE_META[m].home);   // jump to that context's home
+  };
+
+  // Venue management items (shown in venue mode).
+  const venueItems: NavItem[] = [
+    { label: 'ניהול האולם', path: '/venue', icon: <StorefrontRoundedIcon /> },
+    { label: 'הגדרות האולם', path: '/venue/settings', icon: <TuneRoundedIcon /> },
+  ];
 
   // System admins get the ops console group (gated on the admin role).
   const adminItems: NavItem[] = [
     { label: 'לוח בקרה', path: '/admin', icon: <SpaceDashboardRoundedIcon /> },
+    { label: 'מרכז תפעול', path: '/admin/operations', icon: <InsightsRoundedIcon /> },
     { label: 'אולמות', path: '/admin/venues', icon: <StorefrontRoundedIcon /> },
     { label: 'משתמשים', path: '/admin/users', icon: <PeopleRoundedIcon /> },
     { label: 'אירועים', path: '/admin/events', icon: <EventRoundedIcon /> },
     { label: 'מנויים', path: '/admin/subscriptions', icon: <ReceiptLongRoundedIcon /> },
     { label: 'חבילות', path: '/admin/plans', icon: <LayersRoundedIcon /> },
     { label: 'קופונים', path: '/admin/coupons', icon: <LocalOfferRoundedIcon /> },
+    { label: 'הזמנות למימוש', path: '/admin/entitlements', icon: <CardGiftcardRoundedIcon /> },
     { label: 'דגלי מערכת', path: '/admin/feature-flags', icon: <FlagRoundedIcon /> },
     { label: 'ניטור', path: '/admin/monitoring', icon: <MonitorHeartRoundedIcon /> },
     { label: 'יומן ביקורת', path: '/admin/audit-log', icon: <HistoryRoundedIcon /> },
   ];
 
-  const items = primaryNav;
 
   const Row = ({ item }: { item: NavItem }) => {
     // Sub-routes (e.g. /guests/imported) must keep their section lit.
@@ -139,8 +170,16 @@ export default function AppRail() {
           : `0 10px 30px ${alpha('#0f172a', isDark ? 0.45 : 0.08)}`,
       }}
     >
-      {/* Event switcher */}
-      <EventSwitcher expanded={expanded} />
+      {/* View-mode switcher: power users flip between owner / admin / venue so
+          each context stays uncluttered. Hidden for regular owners. */}
+      {availableModes.length > 1 && (
+        <Box sx={{ mb: 1 }}>
+          <ViewModeSwitcher modes={availableModes} value={mode} onChange={switchMode} expanded={expanded} />
+        </Box>
+      )}
+
+      {/* Event switcher - only relevant while working on your own event. */}
+      {mode === 'owner' && <EventSwitcher expanded={expanded} />}
 
       {/* Scrollable nav region - EventSwitcher (above) and the user footer
           (below) stay pinned; the nav groups scroll when they overflow (e.g. the
@@ -159,30 +198,36 @@ export default function AppRail() {
           '&::-webkit-scrollbar-track': { bgcolor: 'transparent' },
         }}
       >
-        {/* Primary nav */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.4, mt: 2 }}>
-          {items.map((item) => <Row key={item.path} item={item} />)}
-        </Box>
+        {/* One context at a time - only the active mode's group renders. */}
+        {mode === 'owner' && (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.4, mt: 2 }}>
+            {primaryNav.map((item) => <Row key={item.path} item={item} />)}
+          </Box>
+        )}
 
-        {/* Account group */}
-        <Typography sx={{ px: '14px', pt: 2.5, pb: 0.75, fontSize: '0.64rem', fontWeight: 800, letterSpacing: '0.1em', color: 'text.disabled', whiteSpace: 'nowrap', opacity: expanded ? 1 : 0, transition: 'opacity .18s ease', height: expanded ? 'auto' : 8 }}>
-          החשבון
-        </Typography>
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.4 }}>
-          {accountItems.map((item) => <Row key={item.path} item={item} />)}
-        </Box>
-
-        {/* System admin console (role-gated) */}
-        {isAdmin && (
+        {mode === 'admin' && (
           <>
-            <Typography sx={{ px: '14px', pt: 2.5, pb: 0.75, fontSize: '0.64rem', fontWeight: 800, letterSpacing: '0.1em', color: 'text.disabled', whiteSpace: 'nowrap', opacity: expanded ? 1 : 0, transition: 'opacity .18s ease', height: expanded ? 'auto' : 8 }}>
-              ניהול מערכת
-            </Typography>
+            <Typography sx={GROUP_LABEL(expanded)}>ניהול מערכת</Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.4 }}>
               {adminItems.map((item) => <Row key={item.path} item={item} />)}
             </Box>
           </>
         )}
+
+        {mode === 'venue' && (
+          <>
+            <Typography sx={GROUP_LABEL(expanded)}>ניהול האולם</Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.4 }}>
+              {venueItems.map((item) => <Row key={item.path} item={item} />)}
+            </Box>
+          </>
+        )}
+
+        {/* Account group - shared across every mode. */}
+        <Typography sx={GROUP_LABEL(expanded)}>החשבון</Typography>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.4 }}>
+          {accountNav.map((item) => <Row key={item.path} item={item} />)}
+        </Box>
       </Box>
 
       {/* User */}

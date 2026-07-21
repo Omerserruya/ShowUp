@@ -5,3 +5,6 @@ uvicorn[standard]==0.30.6
 tenacity==8.5.0
 tzdata==2024.1
 PyYAML==6.0.2
+# Payment reconciliation calls aub's internal endpoint (payment_reconciliation.py).
+requests==2.32.3
+sentry-sdk==2.20.0

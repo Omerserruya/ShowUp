@@ -6,18 +6,28 @@ prefix) that power the shareable web invitation:
 - GET  /public/invite/{slug}        -> safe, public view of the invitation design
                                        + event details (NO guest list, owners, or
                                        plan internals).
-- POST /public/invite/{slug}/rsvp   -> open-form RSVP. Any visitor submits
-                                       name + phone + party size; we upsert a guest
-                                       by phone within the event.
+- POST /public/invite/{slug}/rsvp/lookup -> the requesting guest's OWN RSVP,
+                                       authorised by a signed per-guest token.
+- POST /public/invite/{slug}/rsvp   -> RSVP submission. With a token it updates
+                                       that guest; without one it may only create
+                                       a new guest (walk-ins, forwarded invites).
 
-Both require the event's invitation to be *published* (the web invitation is
-included in every plan). Writes are intentionally minimal-trust: deduped by phone,
-capacity-checked against the plan's guest limit, and bounded by schema validation. (Rate limiting
-at the edge is a tracked follow-up, consistent with the rest of the service.)
+All require the event's invitation to be *published* (the web invitation is
+included in every plan).
+
+AUTHORISATION MODEL: possession of the invite link is the credential, like a
+password-reset link. The link carries `?g=<token>`, an HMAC over
+(event_id, guest_id) - see `shared/domain/invite_token.py`. A phone number is
+NOT a credential: it is public knowledge, and treating it as one made this
+endpoint both an enumeration oracle over the invitee list and a way to overwrite
+any guest's RSVP. Rate limiting is enforced at the edge (nginx `limit_req` on
+/api/public) as defence in depth against brute force and mass-RSVP abuse.
 """
 from __future__ import annotations
 
 import datetime as dt
+
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -29,12 +39,20 @@ from app.schemas.schemas import GuestCreate, PublicRsvpIn
 from app.utils import normalize_phone
 from app.models.models import Guest
 from shared.domain.enums import GuestStatus
+from shared.domain.invite_token import verify_guest_token
 
 router = APIRouter(prefix="/public/invite", tags=["public-invite"])
 
 
 class RsvpLookupIn(BaseModel):
-    phone: str = Field(..., min_length=4, max_length=32)
+    """Lookup credential.
+
+    `token` is the per-guest signed token from the invite link. `phone` is
+    accepted for backwards compatibility with already-delivered links but is NO
+    LONGER a credential on its own - see `lookup_public_rsvp`.
+    """
+    token: Optional[str] = Field(None, max_length=256)
+    phone: Optional[str] = Field(None, min_length=4, max_length=32)
 
 
 def _require_published_event(db: Session, slug: str):
@@ -65,14 +83,22 @@ def get_public_invitation(slug: str, db: Session = Depends(get_db)):
 
 @router.post("/{slug}/rsvp/lookup")
 def lookup_public_rsvp(slug: str, payload: RsvpLookupIn, db: Session = Depends(get_db)):
-    """Return a returning guest's existing RSVP (by phone) so the invitation page
-    can pre-fill and let them UPDATE instead of creating a duplicate. Scoped to the
-    event; returns only that guest's own fields (no other guests are exposed)."""
+    """Return the requesting guest's OWN existing RSVP so the page can pre-fill.
+
+    Requires the signed per-guest token from the invite link. A phone number is
+    NOT a credential: it is public knowledge, so accepting one here let anybody
+    read a named guest's RSVP status and private notes, and enumerate an entire
+    invitee list by iterating the Israeli mobile range. A missing or invalid
+    token returns `found: false` - identical to a genuinely unknown guest - so
+    the endpoint cannot be used to test whether a phone or token exists.
+    """
     event = _require_published_event(db, slug)
-    phone_norm = normalize_phone(payload.phone)
+    guest_id = verify_guest_token(payload.token, event.id)
+    if not guest_id:
+        return {"found": False}
     g = (
         db.query(Guest)
-        .filter(Guest.event_id == str(event.id), Guest.phone == phone_norm)
+        .filter(Guest.event_id == str(event.id), Guest.id == guest_id)
         .first()
     )
     if not g:
@@ -105,11 +131,26 @@ def submit_public_rsvp(slug: str, payload: PublicRsvpIn, db: Session = Depends(g
     # once can't both exceed the limit, and a double-submit from the same phone
     # updates one row instead of creating a duplicate.
     guest_crud.lock_event_capacity(db, event.id)
-    existing = (
-        db.query(Guest)
-        .filter(Guest.event_id == str(event.id), Guest.phone == phone_norm)
-        .first()
-    )
+
+    # Who is this submission allowed to modify?
+    #
+    # WITH a valid token: exactly the guest it was issued for. The token - not
+    # the submitted phone - decides, so a tokened guest cannot overwrite someone
+    # else by typing their number.
+    #
+    # WITHOUT a token: nobody. An untokened visitor may only CREATE. Matching on
+    # phone alone previously let anyone who knew a number overwrite that guest's
+    # RSVP (flip a confirmation to declined; the owner saw a legitimate decline
+    # and the guest was never told). If the phone already exists we return the
+    # same 409 as any duplicate rather than silently updating it.
+    token_guest_id = verify_guest_token(payload.token, event.id)
+    existing = None
+    if token_guest_id:
+        existing = (
+            db.query(Guest)
+            .filter(Guest.event_id == str(event.id), Guest.id == token_guest_id)
+            .first()
+        )
 
     if existing:
         # Returning guest: only an INCREASE in party size consumes new capacity.

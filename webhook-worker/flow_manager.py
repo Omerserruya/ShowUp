@@ -1,15 +1,18 @@
 import json
 import logging
 import os
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple, Type
 
 import aio_pika
-from sqlalchemy import select, insert, update
+from sqlalchemy import select, insert, update, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.session import get_session
 from db.models import Conversation, MessageLog
 from shared.domain.rsvp import resolve_rsvp_action
+from shared.domain.delivery import MessageDeliveryStatus, status_rank
+from shared.domain.optout import is_opt_in_text, is_opt_out_text
 from states.base_state import BaseState
 from utils.phone import normalize_phone
 from states.rsvp_invite import RsvpInviteState
@@ -492,6 +495,27 @@ class FlowManager:
             logger.warning("Missing guest_phone; skipping")
             return
 
+        # Opt-out is checked BEFORE the RSVP state machine. A guest replying STOP
+        # is making a compliance request, not an RSVP - routing it through the
+        # flow would parse it as an unrecognised answer and keep messaging them.
+        if is_opt_out_text(text):
+            await self._apply_opt_out(guest_phone, opted_out=True, reason=str(text)[:200])
+            await self.publish_outgoing({
+                "platform": "WA",
+                "message_type": "free_text",
+                "recipient": guest_phone,
+                "text": "הוסרת מרשימת התפוצה ולא יישלחו אליך הודעות נוספות. "
+                        "כדי לחזור לקבל עדכונים, השב/י 'התחל'.",
+                "state": "opted_out",
+                "source": "opt_out_ack",
+            })
+            return
+
+        # A previously opted-out guest asking to resume.
+        if is_opt_in_text(text):
+            await self._apply_opt_out(guest_phone, opted_out=False, reason=str(text)[:200])
+            # Fall through: treat the rest of the conversation normally.
+
         # Resolve the SEMANTIC action once, centrally, with the required priority:
         # Meta payload -> button id -> legacy display text. States consume this
         # action and never the label. UNKNOWN => states fall back to text matching.
@@ -662,6 +686,93 @@ class FlowManager:
                 )
                 await self.publish_outgoing(outgoing)
 
+    async def _apply_opt_out(self, guest_phone: str, *, opted_out: bool, reason: str) -> None:
+        """Set/clear the opt-out flag for every guest row with this phone.
+
+        Applied across ALL of the phone's events on purpose: a person who says
+        STOP is opting out of being messaged by us, not out of one guest list.
+        The row is flagged, never deleted, so the owner keeps the history and can
+        re-enable the guest if they later ask to be added back.
+        """
+        normalized = normalize_phone(guest_phone)
+        if not normalized:
+            return
+        try:
+            async for session in get_session():
+                await session.execute(
+                    text(
+                        """
+                        UPDATE guests
+                        SET opted_out_at = :ts,
+                            opted_out_reason = :reason,
+                            opted_out_source = :source
+                        WHERE regexp_replace(phone, '[^0-9]', '', 'g')
+                              LIKE '%' || :suffix
+                        """
+                    ),
+                    {
+                        "ts": None if not opted_out else datetime.now(timezone.utc),
+                        "reason": reason if opted_out else None,
+                        "source": "whatsapp_stop" if opted_out else None,
+                        # Match on the national-significant suffix so stored
+                        # variants (0501234567 / +972501234567 / 972501234567)
+                        # all resolve to the same person.
+                        "suffix": normalized[-9:],
+                    },
+                )
+                await session.commit()
+                logger.info(
+                    "Guest opt-out %s", "set" if opted_out else "cleared",
+                    extra={"phone_suffix": normalized[-4:]},
+                )
+                break
+        except Exception as exc:
+            logger.error("Failed to apply opt-out for guest: %s", exc)
+
+    async def _record_delivery_receipt(
+        self, wa_message_id: str, status_value: str, status_payload: Dict[str, Any]
+    ) -> None:
+        """Advance a campaign message's delivery state from a Meta receipt.
+
+        Meta reports a terminal 'failed' here for messages it accepted but could
+        not deliver (blocked number, invalid recipient). Without this the message
+        would sit at ACCEPTED forever and the owner would believe it arrived.
+        """
+        error = (status_payload.get("errors") or [{}])[0] if status_payload.get("errors") else {}
+        try:
+            async for session in get_session():
+                await session.execute(
+                    text(
+                        """
+                        UPDATE messages_sent
+                        SET status = :new_status,
+                            error_code = COALESCE(:error_code, error_code),
+                            error_detail = COALESCE(:error_detail, error_detail),
+                            updated_at = NOW()
+                        WHERE wa_message_id = :wamid
+                          AND :new_rank > CASE status
+                                WHEN 'queued' THEN 0
+                                WHEN 'failed' THEN 1
+                                WHEN 'accepted' THEN 2
+                                WHEN 'delivered' THEN 3
+                                WHEN 'read' THEN 4
+                                ELSE -1 END
+                        """
+                    ),
+                    {
+                        "new_status": status_value,
+                        "new_rank": status_rank(status_value),
+                        "wamid": wa_message_id,
+                        "error_code": str(error.get("code"))[:100] if error.get("code") else None,
+                        "error_detail": str(error.get("title") or error.get("message") or "")[:500] or None,
+                    },
+                )
+                await session.commit()
+                break
+        except Exception as exc:
+            # Receipts are supplementary - never let one break inbound processing.
+            logger.warning("Could not record delivery receipt for %s: %s", wa_message_id, exc)
+
     async def handle_status_update(
         self,
         *,
@@ -679,6 +790,17 @@ class FlowManager:
         """
         status_value = status_payload.get("status")
         status_wa_id = status_payload.get("id") or wa_message_id
+
+        # Promote the campaign message's delivery state from Meta's receipt, so
+        # campaign stats reflect actual delivery rather than only acceptance.
+        # Rank-guarded: Meta can deliver 'delivered' and 'read' out of order, and
+        # a receipt must never move a message backwards.
+        if status_wa_id and status_value in (
+            MessageDeliveryStatus.DELIVERED.value,
+            MessageDeliveryStatus.READ.value,
+            MessageDeliveryStatus.FAILED.value,
+        ):
+            await self._record_delivery_receipt(status_wa_id, status_value, status_payload)
 
         async for session in get_session():
             conversation: Optional[Conversation] = None

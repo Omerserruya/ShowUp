@@ -19,7 +19,9 @@ from app.audit import record_audit
 from app.authz import ensure_personal_account
 from shared.auth.admin import get_admin_user_id
 from shared.domain.roles import Role
-from shared.domain.enums import ActorType
+from shared.domain.enums import ActorType, EntitlementSource, PaymentStatus
+from app.provisioning import DEFAULT_SELF_SERVICE_PLAN, apply_entitlement
+from app import entitlement_service
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -214,9 +216,14 @@ class AdminEventCreate(BaseModel):
     event_type: Optional[str] = None
     event_date: Optional[dt.datetime] = None
     location: Optional[str] = None
-    # paid=True marks the event as paid (skips the payment flow); either way the
-    # event is created fully entitled (plan_id stays NULL => all features).
+    # paid=True comps the event (skips the payment flow) by marking it settled.
+    # paid=False leaves it PENDING, which - because `active` is derived from
+    # settlement - means the event is created inactive until it is paid for.
     paid: bool = True
+    # Plan the comped event runs on. Defaults to the free starter tier; an
+    # explicit paid plan is how an admin grants a higher guest cap / round count.
+    # Never leave this NULL: an unset plan is treated as unmetered downstream.
+    plan_id: Optional[str] = None
     # Event OWNER (the customer). Give a phone to create/resolve that user and make
     # them the owner. Falls back to owner_user_id, then the acting admin.
     owner_phone: Optional[str] = None
@@ -250,23 +257,30 @@ def admin_create_event(
         owner_id = uuid.UUID(str(owner["user_id"]))
     else:
         owner_id = payload.owner_user_id or admin_id
-    event = Event(
-        name=payload.name,
-        event_type=payload.event_type,
-        event_date=payload.event_date,
-        location=payload.location,
-        owners=[str(owner_id)],
-        state="active",
-        active=True,
-        payment_status="paid" if payload.paid else "unpaid",
-        account_id=ensure_personal_account(db, owner_id),
+    # An admin creating an event directly is an ADMIN entitlement issuer: the
+    # event is GRANTED, so it is settled (active) on the chosen plan. This routes
+    # through the same issue+redeem path as every other source - there is no
+    # admin-only event-creation code. (The `paid` flag is retained for API
+    # compatibility but an admin-granted event is settled by definition.)
+    account_id = ensure_personal_account(db, owner_id)
+    event, _ = entitlement_service.issue_and_redeem(
+        db,
+        source=EntitlementSource.ADMIN,
+        plan_id=(payload.plan_id or DEFAULT_SELF_SERVICE_PLAN),
+        owner_user_id=owner_id,
+        account_id=account_id,
+        created_by=admin_id,
+        event_fields={
+            "name": payload.name,
+            "event_type": payload.event_type,
+            "event_date": payload.event_date,
+            "location": payload.location,
+        },
+        metadata={"created_via": "admin_direct"},
     )
-    db.add(event)
-    db.commit()
-    db.refresh(event)
     record_audit(db, actor_type=ActorType.USER, actor_id=admin_id, account_id=event.account_id,
                  action="admin.event_created", entity_type="event", entity_id=event.id,
-                 data={"paid": payload.paid, "owner_user_id": str(owner_id)})
+                 data={"owner_user_id": str(owner_id), "entitlement_id": str(event.entitlement_id)})
     return _event_to_dict(event)
 
 

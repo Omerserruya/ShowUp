@@ -35,6 +35,13 @@ function coupleNames(data: InvitationData): string {
 /** Public, unauthenticated web invitation + open-form RSVP. Route: /i/:slug */
 export default function PublicInvitation() {
   const { slug } = useParams<{ slug: string }>();
+  // Signed per-guest token from the invite link (/i/:slug?g=...). It is what
+  // authorises reading and updating THIS guest's RSVP; without it the form can
+  // only create a new one. Absent for forwarded links and walk-ins, which is fine.
+  const inviteToken = React.useMemo(
+    () => new URLSearchParams(window.location.search).get('g') || '',
+    [],
+  );
   const [data, setData] = useState<InvitationData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -81,7 +88,7 @@ export default function PublicInvitation() {
   })();
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: t.bg }}>
-      <InvitationView data={data} rsvpSlot={<RsvpForm slug={slug!} theme={t} layout={layout} />} />
+      <InvitationView data={data} rsvpSlot={<RsvpForm slug={slug!} inviteToken={inviteToken} theme={t} layout={layout} />} />
       {data.invitation?.envelope?.enabled && !alreadyOpened && (
         <EnvelopeIntro
           config={data.invitation}
@@ -101,7 +108,7 @@ function Centered({ children }: { children: React.ReactNode }) {
   );
 }
 
-function RsvpForm({ slug, theme, layout }: { slug: string; theme: ReturnType<typeof resolveTheme>; layout?: LayoutSpec }) {
+function RsvpForm({ slug, inviteToken, theme, layout }: { slug: string; inviteToken: string; theme: ReturnType<typeof resolveTheme>; layout?: LayoutSpec }) {
   const EDITORIAL = formStyles(theme, layout);
   const saved = React.useMemo(() => loadSavedRsvp(slug), [slug]);
   const [name, setName] = useState(saved?.name || '');
@@ -117,15 +124,15 @@ function RsvpForm({ slug, theme, layout }: { slug: string; theme: ReturnType<typ
   const touchedStatus = React.useRef(false);
   const touchedPartySize = React.useRef(false);
 
-  // Returning guest (any device): look up an existing RSVP by phone and pre-fill,
-  // so they update it rather than create a duplicate.
+  // Returning guest: pre-fill from their existing RSVP so they update it rather
+  // than create a duplicate. Authorised by the link's signed token - a phone
+  // number is not a credential, so without a token there is nothing to look up.
   const lookupExisting = async () => {
-    const p = phone.trim();
-    if (p.length < 5) return;
+    if (!inviteToken) return;
     try {
       const res = await fetch(`/api/public/invite/${encodeURIComponent(slug)}/rsvp/lookup`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: p }),
+        body: JSON.stringify({ token: inviteToken }),
       });
       if (!res.ok) return;
       const b = await res.json().catch(() => ({} as any));
@@ -137,6 +144,10 @@ function RsvpForm({ slug, theme, layout }: { slug: string; theme: ReturnType<typ
       }
     } catch { /* ignore lookup failures - the form still works */ }
   };
+
+  // Pre-fill as soon as the page opens: the token identifies the guest, so we no
+  // longer wait for them to finish typing a phone number.
+  React.useEffect(() => { lookupExisting(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [inviteToken]);
 
   const submit = async () => {
     setError(null);
@@ -150,6 +161,7 @@ function RsvpForm({ slug, theme, layout }: { slug: string; theme: ReturnType<typ
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          token: inviteToken || undefined,
           name: name.trim(),
           phone: phone.trim(),
           partySize: status === 'confirmed' ? partySize : 1,
@@ -216,7 +228,7 @@ function RsvpForm({ slug, theme, layout }: { slug: string; theme: ReturnType<typ
         </ToggleButtonGroup>
 
         <TextField variant="standard" label="שם מלא" value={name} onChange={(e) => setName(e.target.value)} fullWidth sx={EDITORIAL.field} />
-        <TextField variant="standard" label="טלפון" value={phone} onChange={(e) => setPhone(e.target.value)} onBlur={lookupExisting} fullWidth inputMode="tel" sx={EDITORIAL.field} />
+        <TextField variant="standard" label="טלפון" value={phone} onChange={(e) => setPhone(e.target.value)} fullWidth inputMode="tel" sx={EDITORIAL.field} />
         {wasUpdate && !done && (
           <Typography sx={{ ...EDITORIAL.sans, color: EDITORIAL.muted, fontSize: 13 }}>
             כבר אישרתם הגעה - שליחה תעדכן את התשובה הקיימת.

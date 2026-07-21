@@ -26,6 +26,7 @@ import Payment from './pages/Payment';
 import Invitation from './pages/Invitation';
 import PublicInvitation from './pages/PublicInvitation';
 import DemoInvite from './pages/DemoInvite';
+import Redeem from './pages/Redeem';
 import WhatsAppRedirect from './pages/WhatsAppRedirect';
 import AdminRoute from './components/AdminRoute';
 import AdminUsers from './pages/admin/Users';
@@ -35,8 +36,10 @@ import AdminVenues from './pages/admin/Venues';
 import AdminSubscriptions from './pages/admin/Subscriptions';
 import AdminCoupons from './pages/admin/Coupons';
 import AdminPlans from './pages/admin/Plans';
+import AdminEntitlements from './pages/admin/Entitlements';
 import AdminFeatureFlags from './pages/admin/FeatureFlags';
 import AdminMonitoring from './pages/admin/Monitoring';
+import AdminOperations from './pages/admin/Operations';
 import AdminAuditLog from './pages/admin/AuditLog';
 import VenueRoute from './components/VenueRoute';
 import VenueDashboard from './pages/venue/VenueDashboard';
@@ -55,6 +58,15 @@ function App() {
         <Route path="/i/:slug" element={<PublicInvitation />} />
         {/* Public no-auth demo invitation (landing-page demo CTA target) */}
         <Route path="/demo/invite" element={<DemoInvite />} />
+        {/* Public entitlement redemption link (works logged-out) */}
+        <Route
+          path="/redeem/:code"
+          element={
+            <UserProvider>
+              <Redeem />
+            </UserProvider>
+          }
+        />
         <Route path="/go/whatsapp" element={<WhatsAppRedirect />} />
         <Route 
           path="/wizard" 
@@ -127,9 +139,11 @@ function App() {
           <Route path="/admin/events" element={<AdminRoute><AdminEvents /></AdminRoute>} />
           <Route path="/admin/subscriptions" element={<AdminRoute><AdminSubscriptions /></AdminRoute>} />
           <Route path="/admin/plans" element={<AdminRoute><AdminPlans /></AdminRoute>} />
+          <Route path="/admin/entitlements" element={<AdminRoute><AdminEntitlements /></AdminRoute>} />
           <Route path="/admin/coupons" element={<AdminRoute><AdminCoupons /></AdminRoute>} />
           <Route path="/admin/feature-flags" element={<AdminRoute><AdminFeatureFlags /></AdminRoute>} />
           <Route path="/admin/monitoring" element={<AdminRoute><AdminMonitoring /></AdminRoute>} />
+          <Route path="/admin/operations" element={<AdminRoute><AdminOperations /></AdminRoute>} />
           <Route path="/admin/audit-log" element={<AdminRoute><AdminAuditLog /></AdminRoute>} />
         </Route>
         </Routes>

@@ -53,6 +53,7 @@ def connect() -> pika.BlockingConnection:
 def publish_campaign(channel: pika.adapters.blocking_connection.BlockingChannel, queue_name: str, message: dict):
     try:
         channel.queue_declare(queue=queue_name, durable=True)
+        _inject_correlation(message)
         body = json.dumps(message).encode("utf-8")
         channel.basic_publish(exchange="", routing_key=queue_name, body=body, properties=pika.BasicProperties(delivery_mode=2))
     except Exception as e:
@@ -96,3 +97,10 @@ def send_heartbeat(conn: pika.BlockingConnection) -> bool:
     return False
 
 
+def _inject_correlation(message: dict) -> None:
+    """Stamp the current correlation id onto an outgoing message (best-effort)."""
+    try:
+        from shared.obs import inject_into
+        inject_into(message)
+    except Exception:
+        pass

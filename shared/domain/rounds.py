@@ -14,9 +14,17 @@ import math
 import os
 from typing import Dict, List, Optional, Tuple
 
-# Rounds included with each plan (== len(plan.campaigns) in plans.json). Plans not
-# listed (or None) fall back to a large number == effectively unmetered, so a
-# missing/unknown plan never wrongly blocks a send.
+_UNMETERED = 9999
+
+# Plans that are intentionally unmetered. `legacy` is the explicit grandfather
+# clause for events created before billing was enforced: they used to carry
+# plan_id NULL, which the old code treated as unmetered by ACCIDENT. The
+# provisioning migration backfills those rows to `legacy` so the exemption is
+# named, greppable and auditable rather than being an insecure default that any
+# new NULL-plan code path silently inherits.
+UNMETERED_PLAN_IDS = {"legacy"}
+
+# Rounds included with each plan (== len(plan.campaigns) in plans.json).
 INCLUDED_ROUNDS: Dict[str, int] = {
     "free": 0,
     "starter": 0,
@@ -24,15 +32,23 @@ INCLUDED_ROUNDS: Dict[str, int] = {
     "basic": 2,
     "plus": 4,
     "pro": 4,
+    "legacy": _UNMETERED,
 }
-
-_UNMETERED = 9999
 
 
 def included_rounds(plan_id: Optional[str]) -> int:
-    if plan_id is None:
-        return _UNMETERED
-    return INCLUDED_ROUNDS.get(str(plan_id).strip().lower(), _UNMETERED)
+    """Rounds included with a plan. Unknown plans fail CLOSED (0 included).
+
+    This used to return `_UNMETERED` for None/unknown, which meant an event with
+    no plan - a clone, an admin-created event, or anything that skipped the
+    provisioning path - got unlimited free rounds. Denying is the safe failure:
+    a plan added to plans.json but not here blocks sends (visible, fixable)
+    rather than giving them away (invisible, unrecoverable).
+    """
+    key = (str(plan_id).strip().lower() if plan_id is not None else "")
+    if not key:
+        return 0
+    return INCLUDED_ROUNDS.get(key, 0)
 
 
 # Tiered extra-round price by recipient count. Each band is (max_recipients,

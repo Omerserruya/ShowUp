@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { setUserContext } from '../observability';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 
 export interface User {
@@ -35,6 +36,8 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } else {
       localStorage.removeItem('user_id');
     }
+    // Bind (or clear) the Sentry user context - id + role only, never email/secrets.
+    setUserContext(userData ? { id: userData._id, role: userData.role } : null);
   };
 
   // Helper function to decode JWT token and extract user_id

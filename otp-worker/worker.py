@@ -172,6 +172,12 @@ class OTPWorker:
 
 def main():
     """Main entry point."""
+    try:
+        from shared.obs import bootstrap
+        bootstrap("otp-worker")
+    except Exception:
+        pass
+
     worker = OTPWorker()
     
     # Setup signal handlers for graceful shutdown

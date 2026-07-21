@@ -13,3 +13,5 @@ openpyxl==3.1.5
 PyYAML==6.0.2
 openai==1.99.6
 
+psutil==5.9.8
+sentry-sdk==2.20.0

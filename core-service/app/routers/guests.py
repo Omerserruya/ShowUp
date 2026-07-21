@@ -858,6 +858,36 @@ def update_guest(guest_id: uuid.UUID, payload: GuestUpdate, db: Session = Depend
     return guest
 
 
+@router.post("/{guest_id}/opt-out", response_model=GuestOut)
+def set_guest_opt_out(
+    guest_id: uuid.UUID,
+    opted_out: bool = Query(True, description="True suppresses messages; False re-enables."),
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Manually suppress or re-enable messaging for a guest.
+
+    Guests opt out themselves by replying STOP (handled in webhook-worker); this
+    is the owner-side control - both for honouring a request made off-channel and
+    for re-enabling someone who asks to be added back. Every change is written to
+    the guest timeline, so the opt-out history is auditable rather than a flag
+    that silently flips.
+    """
+    guest = _authorize_guest(db, guest_id, user_id, Action.GUEST_WRITE)
+    guest.opted_out_at = dt.datetime.now(dt.timezone.utc) if opted_out else None
+    guest.opted_out_reason = "manual owner action" if opted_out else None
+    guest.opted_out_source = "manual" if opted_out else None
+    db.add(guest)
+    db.commit()
+    db.refresh(guest)
+    record_guest_event(
+        db, guest_id=guest.id, event_id=guest.event_id,
+        type=GuestEventType.MANUAL_OVERRIDE, actor_type=ActorType.USER, actor_id=user_id,
+        data={"opted_out": opted_out, "via": "manual"},
+    )
+    return guest
+
+
 @router.delete("/{guest_id}", status_code=204)
 def delete_guest(guest_id: uuid.UUID, db: Session = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
     guest = _authorize_guest(db, guest_id, user_id, Action.GUEST_DELETE)

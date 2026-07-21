@@ -38,6 +38,11 @@ except ImportError:
 logger = logging.getLogger("db_utils")
 
 
+# Delivery-status vocabulary is shared with campaign-worker so the two ends of
+# the pipeline can never disagree about what a status means.
+from shared.domain.delivery import MessageDeliveryStatus
+
+
 class ConversationDB:
     """Manages conversations and message logging in the webhook-worker database."""
     
@@ -291,6 +296,57 @@ class ConversationDB:
         except Exception as e:
             self.logger.warning(f"Failed to get conversation state: {e}", exc_info=True)
             return None
+
+    def record_delivery_outcome(
+        self,
+        campaign_id: Optional[str],
+        guest_id: Optional[str],
+        status: str,
+        wa_message_id: Optional[str] = None,
+        error_code: Optional[str] = None,
+        error_detail: Optional[str] = None,
+    ) -> bool:
+        """Record what Meta actually did with a campaign message.
+
+        This is the step that makes "sent" mean sent. campaign-worker claims a
+        row in `messages_sent` as QUEUED and hands the message to us; only here,
+        after the Graph API call, do we know whether Meta accepted it. Previously
+        a Meta rejection was logged and the AMQP message acked, so a wholly
+        failed campaign was indistinguishable from a delivered one.
+
+        No-ops for non-campaign traffic (RSVP bot replies, OTPs), which carries
+        no campaign_id/guest_id and has no row to resolve.
+        """
+        if not campaign_id or not guest_id:
+            return False
+        if not self._ensure_connection():
+            self.logger.warning("Postgres unavailable, cannot record delivery outcome")
+            return False
+        try:
+            with self.pg_conn.cursor() as cur:
+                # Guarded by status rank so an out-of-order webhook (Meta may send
+                # 'delivered' before we store 'accepted') cannot move a message
+                # backwards. Only advances from QUEUED here.
+                cur.execute(
+                    """
+                    UPDATE messages_sent
+                    SET status = %s,
+                        wa_message_id = COALESCE(%s, wa_message_id),
+                        error_code = %s,
+                        error_detail = %s,
+                        updated_at = NOW()
+                    WHERE campaign_id = %s::uuid AND guest_id = %s::uuid
+                      AND status = %s
+                    """,
+                    (status, wa_message_id,
+                     (str(error_code)[:100] if error_code else None),
+                     (str(error_detail)[:500] if error_detail else None),
+                     campaign_id, guest_id, MessageDeliveryStatus.QUEUED.value),
+                )
+                return cur.rowcount > 0
+        except Exception as e:
+            self.logger.error(f"Failed to record delivery outcome: {e}", exc_info=True)
+            return False
 
     def log_outgoing_message(
         self,

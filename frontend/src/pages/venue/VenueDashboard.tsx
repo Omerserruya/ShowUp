@@ -10,6 +10,7 @@ import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { useVenueAdmin, VenueSummary } from '../../hooks/useVenueAdmin';
 import { useCatalog } from '../../hooks/useCatalog';
+import VenueEntitlements from '../../components/venue/VenueEntitlements';
 import { eventTypeLabel } from '../../config/messaging';
 
 const BRAND = '#888cee';
@@ -219,6 +220,9 @@ export default function VenueDashboard() {
           ))}
         </Stack>
       )}
+
+      {/* Redemption-link pool for this venue */}
+      {venueId && <VenueEntitlements venueId={venueId} />}
 
       {venueId && (
         <CreateEventDialog

@@ -40,6 +40,26 @@ def record_usage(
     return entry
 
 
+def event_usage_total(db: Session, event_id, metric: UsageMetric) -> int:
+    """Total metered usage of one metric for ONE event.
+
+    This is the immutable counterpart to counting live rows. Round entitlement
+    used to be `COUNT(campaigns)`, which meant deleting a campaign handed the
+    paid round back - billing usage that could be un-spent. The ledger is
+    append-only, so consumption here behaves like metered billing: once a round
+    is launched it stays consumed, whatever later happens to the campaign row.
+    """
+    if event_id is None:
+        return 0
+    m = metric.value if isinstance(metric, UsageMetric) else str(metric)
+    total = (
+        db.query(func.coalesce(func.sum(UsageEvent.quantity), 0))
+        .filter(UsageEvent.event_id == event_id, UsageEvent.metric == m)
+        .scalar()
+    )
+    return int(total or 0)
+
+
 def usage_total(db: Session, account_id, metric: UsageMetric) -> int:
     if account_id is None:
         return 0

@@ -284,10 +284,21 @@ def handle_finalize(conn, channel, r, message: Dict[str, Any]):
         return
 
     buffered = json.loads(raw)
+    try:
+        from shared.obs import set_event, log_event
+        set_event(event_id=event["id"], event_name=event.get("name"))
+        log_event("import.started", contacts=len(buffered))
+    except Exception:
+        pass
     created = import_batch(conn, str(event["id"]), buffered)
     r.delete(PENDING_KEY.format(phone=phone))
     if created:
         send_owner_text(channel, phone, success_message(created, event["name"]))
+    try:
+        from shared.obs import log_event
+        log_event("import.completed", created=created, contacts=len(buffered))
+    except Exception:
+        pass
     log_json(logger, logging.INFO, "Finalized contact import",
              phone=phone, event_id=str(event["id"]), created=created)
 
@@ -366,6 +377,13 @@ def flusher_loop(r):
             log_json(logger, logging.ERROR, "Flusher iteration failed", error=str(e))
             logger.exception("flusher error")
             try:
+                from shared.obs import capture, log_event
+                log_event("import.failed", level="error", reason=str(e))
+                capture(e, operation="contact_import", flow="import",
+                        worker="contact-import-worker")
+            except Exception:
+                pass
+            try:
                 if rabbit.is_closed:
                     reconnect_mq()
             except Exception:
@@ -387,6 +405,12 @@ def main():
     """Main worker entry point."""
     configure_logging()
     logger = logging.getLogger("worker")
+
+    try:
+        from shared.obs import bootstrap
+        bootstrap("contact-import-worker")
+    except Exception:
+        pass
 
     conn = db_connect()
 

@@ -23,16 +23,25 @@ router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 # Paid extra rounds
 # ---------------------------------------------------------------------------
 
-def _count_event_campaigns(db: Session, event_id) -> int:
-    from app.models.models import Campaign
-    return int(db.query(Campaign).filter(Campaign.event_id == str(event_id)).count())
+def _rounds_used(db: Session, event_id) -> int:
+    """Rounds this event has CONSUMED, from the append-only usage ledger.
+
+    Deliberately not `COUNT(campaigns)`: that made consumption reversible, so
+    "create a round, send it, delete it" refunded a paid round indefinitely.
+    Round usage is billing usage - it only ever goes up.
+    """
+    from app.usage import event_usage_total
+    from shared.domain.enums import UsageMetric
+    return event_usage_total(db, event_id, UsageMetric.ROUND_LAUNCHED)
 
 
 def _rounds_status(db: Session, event) -> dict:
     """included / used / allowance / whether the next round is free."""
-    from shared.domain.rounds import included_rounds
-    used = _count_event_campaigns(db, event.id)
-    included = included_rounds(getattr(event, "plan_id", None))
+    from app.entitlement_service import effective_included_rounds
+    used = _rounds_used(db, event.id)
+    # Honour a per-event override from the entitlement (e.g. a promo bundle),
+    # else the plan's included rounds.
+    included = effective_included_rounds(event)
     allowance = int(getattr(event, "extra_rounds_allowance", 0) or 0)
     free_total = included + allowance
     return {
@@ -40,8 +49,41 @@ def _rounds_status(db: Session, event) -> dict:
         "allowance": allowance,
         "used": used,
         "free_total": free_total,
+        "remaining": max(0, free_total - used),
         "next_round_free": used < free_total,
     }
+
+
+def _require_rounds_available(db: Session, event, event_id, requested: int, items) -> None:
+    """Reject a create that would consume more rounds than the event has left.
+
+    Applies to EVERY create path. The old gate ran only when exactly one campaign
+    was being created, so posting a two-element `items` array skipped it entirely
+    and produced unlimited free rounds. Provisioning is not a special case: a
+    plan's included rounds are, by definition, within its own entitlement.
+    """
+    status = _rounds_status(db, event)
+    if requested <= status["remaining"]:
+        return
+    from shared.domain.rounds import extra_round_price
+    from app.plans_client import plan_extra_round_bands
+    from app.audience import count_audience
+    first = items[0] if items else None
+    recipients = count_audience(
+        db, event_id,
+        getattr(first, "audience", "everyone") if first else "everyone",
+        getattr(first, "audience_filter", None) if first else None,
+    )
+    price = extra_round_price(recipients, plan_extra_round_bands(getattr(event, "plan_id", None)))
+    raise HTTPException(status_code=402, detail={
+        "code": "extra_round_required",
+        "message": "הסבב הזה הוא מעבר למה שכלול בחבילה - יש לרכוש אותו לפני היצירה.",
+        "requested": requested,
+        "recipients": recipients,
+        "price_gross": price["price_gross"],
+        "band_label": price["band_label"],
+        **status,
+    })
 
 
 def _wa_template_row(db: Session, ref: str) -> Optional[dict]:
@@ -227,29 +269,9 @@ def create_campaigns(
     from shared.domain.enums import UsageMetric
     account_id = getattr(event, "account_id", None)
 
-    # Paid-rounds gate - only the MANUAL single-round path (the Messages "new
-    # round" dialog). Bulk creates (wizard / provisioning of the plan's included
-    # rounds) are exempt so event setup is never blocked. When the event has used
-    # up its included + paid rounds, creating another requires a paid extra-round
-    # order first (the frontend buys one, which bumps extra_rounds_allowance).
-    if len(to_create) == 1:
-        status = _rounds_status(db, event)
-        if not status["next_round_free"]:
-            from shared.domain.rounds import extra_round_price
-            from app.plans_client import plan_extra_round_bands
-            from app.audience import count_audience
-            recipients = count_audience(
-                db, normalized_event_id, to_create[0].audience, to_create[0].audience_filter,
-            )
-            price = extra_round_price(recipients, plan_extra_round_bands(getattr(event, "plan_id", None)))
-            raise HTTPException(status_code=402, detail={
-                "code": "extra_round_required",
-                "message": "הסבב הזה הוא מעבר למה שכלול בחבילה - יש לרכוש אותו לפני היצירה.",
-                "recipients": recipients,
-                "price_gross": price["price_gross"],
-                "band_label": price["band_label"],
-                **status,
-            })
+    # Paid-rounds gate. Applies to EVERY create path, single or bulk: the batch
+    # must fit within the event's remaining (included + purchased) rounds.
+    _require_rounds_available(db, event, normalized_event_id, len(to_create), to_create)
 
     if len(to_create) == 1:
         try:

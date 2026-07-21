@@ -1,6 +1,7 @@
 """
 Auth API endpoints
 """
+import hmac
 import os
 import json
 import httpx
@@ -95,7 +96,9 @@ def _check_internal_secret(x_internal_secret):
             "until this env var is configured."
         )
         raise HTTPException(status_code=503, detail="internal auth not configured")
-    if x_internal_secret != expected:
+    # Constant-time: the secret is a fixed value reused across many calls, so a
+    # naive != leaks it byte-by-byte to a timing attacker.
+    if not hmac.compare_digest(str(x_internal_secret or ""), str(expected)):
         raise HTTPException(status_code=403, detail="forbidden")
 
 

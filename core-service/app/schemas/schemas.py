@@ -66,7 +66,13 @@ class InvitationConfig(BaseModel):
 
 
 class PublicRsvpIn(BaseModel):
-    """Open-form RSVP submitted from the public invitation page (no auth)."""
+    """RSVP submitted from the public invitation page (no auth).
+
+    `token` is the signed per-guest token carried in the invite link. It is the
+    ONLY thing that authorises updating an existing RSVP; without it a
+    submission may create a new guest but never modify someone else's.
+    """
+    token: Optional[str] = Field(None, max_length=256)
     name: str = Field(..., min_length=1, max_length=100)
     phone: str = Field(..., min_length=5, max_length=20)
     party_size: int = Field(1, ge=1, le=50, validation_alias="partySize", serialization_alias="partySize")
@@ -78,6 +84,15 @@ class PublicRsvpIn(BaseModel):
 
 
 # Event Schemas
+#
+# NOTE on the split below: `EventBase` holds ONLY client-writable fields. The
+# entitlement fields (`plan_id`, `payment_status`, `active`) and the publish
+# fields (`public_slug`, `invitation_published`) are backend-owned and therefore
+# live on `EventOut` alone - they are returned to clients but can never be set by
+# one. `plan_id`/`payment_status` are written exclusively by `app/provisioning.py`
+# after aub verifies a payment; slug/published only by the publish endpoint.
+# Do not move them back onto EventBase: that is exactly the privilege-escalation
+# hole this split closes (a client could POST {"plan_id":"pro"} for a free Pro).
 class EventBase(BaseModel):
     owners: List[uuid.UUID] = Field(default_factory=list)
     inviters: List[Inviter] = Field(default_factory=list)
@@ -86,20 +101,14 @@ class EventBase(BaseModel):
     event_date: Optional[dt.datetime] = None
     # Stored as free-form text (often JSON string from places autocomplete)
     location: Optional[str] = None
-    active: bool = True
     # Event type (wedding, brit, ...) - drives adaptive timeline + template recommendations.
     event_type: Optional[str] = Field(None, serialization_alias="eventType", validation_alias="eventType")
     # Event-type-specific subjects (bride/groom/parents/baby/celebrant/company).
     subjects: Optional[dict] = None
-    # Payment dimension (paid | free | pending | unpaid), independent of `state`.
-    payment_status: Optional[str] = Field(None, serialization_alias="paymentStatus", validation_alias="paymentStatus")
-    plan_id: Optional[str] = Field(None, serialization_alias="planId")  # Plan id from aub plans.json (serialized as planId)
     seating_layout: Optional[dict] = Field(None, serialization_alias="seatingLayout", validation_alias="seatingLayout")  # { tables: [...] }
-    public_slug: Optional[str] = Field(None, serialization_alias="publicSlug", validation_alias="publicSlug")
     # WhatsApp cover image (default header for image-header WA templates).
     wa_image_url: Optional[str] = Field(None, serialization_alias="waImageUrl", validation_alias="waImageUrl")
     invitation: Optional[dict] = None  # InvitationConfig design (see schemas.InvitationConfig)
-    invitation_published: Optional[bool] = Field(False, serialization_alias="invitationPublished", validation_alias="invitationPublished")
 
     class Config:
         populate_by_name = True  # Allow both plan_id and planId when parsing
@@ -111,13 +120,16 @@ class EventCreate(EventBase):
 
 
 class EventUpdate(BaseModel):
-    owners: Optional[List[uuid.UUID]] = None
+    # `owners` is intentionally NOT updatable. It was applied verbatim, so an
+    # owner could PUT {"owners": []} and permanently orphan the event (no
+    # endpoint restores it), or silently transfer it to another user - bypassing
+    # the deliberate `cannot_modify_owner` guards in the members API, which is
+    # the only surface allowed to change who controls an event.
     inviters: Optional[List[Inviter]] = None
     name: Optional[str] = Field(default=None, max_length=100)
     description: Optional[str] = None
     event_date: Optional[dt.datetime] = None
     location: Optional[str] = None
-    plan_id: Optional[str] = None
     wa_image_url: Optional[str] = Field(None, serialization_alias="waImageUrl", validation_alias="waImageUrl")
     seating_layout: Optional[dict] = Field(None, serialization_alias="seatingLayout", validation_alias="seatingLayout")
 
@@ -125,6 +137,13 @@ class EventUpdate(BaseModel):
 class EventOut(EventBase):
     id: uuid.UUID
     state: Optional[str] = None
+    # ---- backend-owned, read-only (see the note above EventBase) ----
+    active: bool = True
+    # Payment dimension (paid | free | pending | unpaid), independent of `state`.
+    payment_status: Optional[str] = Field(None, serialization_alias="paymentStatus", validation_alias="paymentStatus")
+    plan_id: Optional[str] = Field(None, serialization_alias="planId")  # Plan id from aub plans.json (serialized as planId)
+    public_slug: Optional[str] = Field(None, serialization_alias="publicSlug", validation_alias="publicSlug")
+    invitation_published: Optional[bool] = Field(False, serialization_alias="invitationPublished", validation_alias="invitationPublished")
     created_at: dt.datetime
     updated_at: dt.datetime
     # Venue Edition identity (derived, not a column): when the event belongs to a
@@ -190,9 +209,14 @@ class GuestUpdate(BaseModel):
 class GuestOut(GuestBase):
     id: uuid.UUID
     created_at: dt.datetime
+    # WhatsApp opt-out. Read-only: set by the STOP handler or the explicit
+    # opt-in/opt-out endpoints, never by a guest PATCH.
+    opted_out_at: Optional[dt.datetime] = Field(None, serialization_alias="optedOutAt", validation_alias="optedOutAt")
+    opted_out_source: Optional[str] = Field(None, serialization_alias="optedOutSource", validation_alias="optedOutSource")
 
     class Config:
         from_attributes = True
+        populate_by_name = True
 
 
 # Campaign Schemas
