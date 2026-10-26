@@ -25,13 +25,20 @@ from typing import Optional
 # Latin and Hebrew stop words. Matched on the WHOLE normalized message: a guest
 # writing "stop asking me to bring a plus one" is making conversation, not
 # opting out, and silently suppressing them would lose a real RSVP.
+#
+# Only UNAMBIGUOUS removal requests belong here. Words that are also natural RSVP
+# answers ("ביטול", "די", "cancel", "end", "לא מעוניין/ת") were removed: a guest
+# answering an invitation with "ביטול" means "we're not coming" (it is resolved
+# as a DECLINE by shared/domain/rsvp.py), and treating it as an opt-out silently
+# suppressed them while their RSVP stayed "confirmed".
 _OPT_OUT_WORDS = {
     # English / international (Meta's documented conventions)
-    "stop", "unsubscribe", "cancel", "end", "quit", "stopall", "optout", "opt out",
+    "stop", "unsubscribe", "stopall", "quit", "optout", "opt out", "opt-out",
     # Hebrew
-    "הסר", "הסרה", "הפסק", "הפסיקו", "תפסיקו", "הסר אותי", "הסירו אותי",
-    "לא מעוניין", "לא מעוניינת", "ביטול", "תסירו אותי", "אל תשלחו", "אל תשלחו לי",
-    "די", "עצור",
+    "הסר", "הסרה", "הסר אותי", "הסירו אותי", "תסירו אותי", "תסיר אותי",
+    "הסירו אותי מהרשימה", "הסר אותי מהרשימה", "תסירו אותי מהרשימה",
+    "אל תשלחו", "אל תשלחו לי", "אל תשלחו לי הודעות", "תפסיקו לשלוח", "תפסיקו לשלוח לי",
+    "הפסיקו לשלוח", "הפסיקו לשלוח לי", "תפסיקו", "הפסיקו",
 }
 
 _OPT_IN_WORDS = {
@@ -40,13 +47,23 @@ _OPT_IN_WORDS = {
 }
 
 
+_NIQQUD = "".join(chr(c) for c in range(0x0591, 0x05C8))
+
+
 def _normalize(text: Optional[str]) -> str:
-    """Lowercase, trim, and drop trailing punctuation/emoji-ish noise."""
+    """Lowercase, trim, drop niqqud and surrounding punctuation/emoji noise, and
+    collapse inner whitespace, so "STOP!", " stop. " and "הסירו  אותי 🙏" match."""
     if not text:
         return ""
-    cleaned = str(text).strip().lower()
-    # Strip common trailing punctuation so "STOP!" and "stop." both match.
-    return cleaned.strip(" \t\r\n.!?,;:־-־\"'()[]")
+    cleaned = "".join(ch for ch in str(text) if ch not in _NIQQUD).strip().lower()
+    # Strip leading/trailing characters that are not letters/digits (punctuation,
+    # emoji, quotes) so a trailing "!" or "🙏" does not defeat the match.
+    start, end = 0, len(cleaned)
+    while start < end and not cleaned[start].isalnum():
+        start += 1
+    while end > start and not cleaned[end - 1].isalnum():
+        end -= 1
+    return " ".join(cleaned[start:end].split())
 
 
 def is_opt_out_text(text: Optional[str]) -> bool:

@@ -65,13 +65,43 @@ list strategies:  planner.available_strategies()
 | `META_TIER` / `META_QUALITY_RATING` | informational, surfaced in monitoring | - |
 | `PLANNER_SAFETY_MARGIN_PERCENT` | reserved spare capacity | 15 |
 | `MAX_EARLY_SEND_DAYS` / `MAX_LATE_SEND_DAYS` | generic window | 5 / 2 |
-| `PLANNER_INTERVAL_SECONDS` | replan cadence | 60 |
+| `PLANNER_INTERVAL_SECONDS` | full replan cadence | 20 (compose still passes 60) |
+| `PLANNER_FAST_POLL_SECONDS` | probe for due "send now" campaigns with no batch yet; replans immediately | 5 |
+| `PLANNER_CARRY_FORWARD_DAYS` | carry-forward past the preferred window when the event date is unknown | 0 |
+| `PLANNER_RUN_SNAPSHOT_SECONDS` / `PLANNER_RUNS_RETENTION_DAYS` | planner_runs throttle / retention | 60 / 7 |
+| `WA_API_B`, `CAMPAIGN_WA_PHONE_ID` (or `WA_PHONE_ID`), `META_GRAPH_VERSION`, `META_TIER_REFRESH_SECONDS` | hourly read of Meta `messaging_limit_tier` + `quality_rating`; cap = min(env, tier) | -, -, v22.0, 3600 |
+| `SEND_WINDOW` / `SEND_WINDOW_TZ` | same spec as scheduler-service; release_at is placed inside it | sun-thu 09-21, fri 09-14, sat 20-21 |
 | `PLANNER_STRATEGY` | active strategy | deterministic |
 | `PLANNER_HORIZON_DAYS` | how far ahead to plan | 60 |
 | `PLANNER_FLEXIBILITY_JSON` | per-type window override | - |
 
-Usable capacity/day = `raw_daily_capacity × (1 − margin)`. The margin is reserved
-for retries, manual sends and last-minute load.
+Usable capacity/day = `raw_daily_capacity × (1 − margin)`, where the WhatsApp
+conversation cap is `min(META_NEW_CONVERSATIONS_PER_24H, Meta tier)`. The margin
+is reserved for retries, manual sends and last-minute load. The effective numbers
+are stored in `planner_state` (id=1) - the scheduler's rolling-24h release guard
+reads the same capacity.
+
+### Capacity safety (2026-10)
+
+* **Prefill**: each replan packs on top of what is already used today =
+  max(releases queued/sent today, distinct campaign recipients in the last 24h +
+  in-flight batches). Replans no longer start each day at 0.
+* **Live volume**: campaigns are sized from the live remaining audience (same
+  semantics as campaign-worker/audience.py, minus messages_sent claims), not
+  `recipient_count`. Started campaigns are re-planned for their remainder.
+* **Carry-forward + deadline**: overflow moves to the next open day up to the
+  event-based deadline (pre-event stages: event−1; final reminder: event-day
+  morning; never after the event except thank-you). What still does not fit is
+  reported: `campaigns.status_reason='capacity_unplaced'` + an `ops_errors` row
+  (once per transition). Past the deadline the campaign is failed
+  (`deadline_passed`) or handed to the finalizer if it already sent some.
+* **Final batch**: the last batch of a fully-placed campaign has
+  `campaign_releases.is_final=true`; the worker sends ALL remaining guests on it.
+* **Send window**: release_at is moved inside the open window; days where the
+  window never opens (or today after its last close) are skipped.
+* **Scheduler guard**: WhatsApp campaigns never use the scheduler's legacy
+  unlimited path; each due batch is checked against the rolling 24h count and
+  deferred (`SCHEDULER_CAPACITY_DEFER_MINUTES`, default 30) when over.
 
 ## Monitoring
 
@@ -93,5 +123,10 @@ entry - the planning algorithm is untouched.
 Pure-stdlib core, no DB/broker needed:
 
 ```
-python3 tests/stress_test.py     # invariants + concurrent-event stress
+python3 tests/stress_test.py              # invariants + concurrent-event stress
+python3 tests/test_capacity_spreading.py  # prefill, carry-forward, event caps, tie-break, window
+python3 tests/test_release_instant.py     # local release time (needs psycopg2)
 ```
+
+DB integration (throwaway Postgres, see the file header):
+`INTEGRATION_OK=1 PYTHONPATH=<repo> python planner-service/tests/integration_pg.py`

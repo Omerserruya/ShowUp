@@ -73,8 +73,17 @@ def planner_status():
                 "FROM campaign_releases GROUP BY status"
             )
             queue = {r["status"]: {"releases": r["c"], "messages": int(r["vol"])} for r in cur.fetchall()}
+            state = None
+            try:
+                cur.execute("SELECT meta_tier, meta_tier_limit, meta_quality, meta_checked_at, meta_error, "
+                            "env_cap, raw_capacity, planner_capacity, updated_at FROM planner_state WHERE id = 1")
+                state = cur.fetchone()
+            except Exception:
+                conn.rollback()
     return {
         "last_run": run,
+        # Effective capacity in use (min(env, Meta tier) minus margin) + last Meta read.
+        "capacity_state": state,
         "queue": queue,                                   # pending/queued/sent depth
         "pending_messages": queue.get("pending", {}).get("messages", 0),
     }

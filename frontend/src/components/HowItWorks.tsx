@@ -11,8 +11,8 @@ import CelebrationRoundedIcon from '@mui/icons-material/CelebrationRounded';
 import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded';
 
 // Soft pastel brand - understated periwinkle, not a loud "AI" gradient.
-const BRAND = '#888cee';
-const PINK = '#aab0f4';
+const BRAND = '#9D83E0';
+const PINK = '#C9B8F3';
 const WA = '#25D366';
 
 /* ------------------------------------------------------------------ *
@@ -368,7 +368,6 @@ function SceneRow({ scene, flip }: { scene: Scene; flip: boolean }) {
             bgcolor: isDark ? alpha('#ffffff', 0.04) : '#ffffff',
             border: `1px solid ${isDark ? alpha('#fff', 0.1) : alpha(scene.tint, 0.18)}`,
             boxShadow: isDark ? `0 24px 60px ${alpha('#000', 0.4)}` : `0 34px 90px ${alpha(scene.tint, 0.24)}`,
-            transform: { md: flip ? 'rotate(0.6deg)' : 'rotate(-0.6deg)' },
           }}
         >
           {scene.visual}
@@ -431,14 +430,14 @@ export default function HowItWorks() {
     <Box
       id="how-it-works"
       sx={{
-        py: { xs: 8, sm: 14 },
+        py: { xs: 8, sm: 12 },
         bgcolor: theme.palette.mode === 'dark' ? 'background.default' : '#ffffff',
         color: 'text.primary',
         overflow: 'hidden',
       }}
     >
-      <Container maxWidth="lg">
-        <Box sx={{ textAlign: 'center', maxWidth: 680, mx: 'auto', mb: { xs: 7, sm: 11 }, direction: 'rtl' }}>
+      <Container maxWidth="lg" sx={{ px: { xs: 2.5, md: 4 } }}>
+        <Box sx={{ textAlign: 'center', maxWidth: 680, mx: 'auto', mb: { xs: 6, sm: 9 }, direction: 'rtl' }}>
           <Typography variant="overline" sx={{ color: BRAND, fontWeight: 700, letterSpacing: 1.5 }}>
             הכול קורה בוואטסאפ
           </Typography>
@@ -450,7 +449,7 @@ export default function HowItWorks() {
           </Typography>
         </Box>
 
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 9, sm: 16 } }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: { xs: 8, sm: 13 } }}>
           {scenes.map((s, i) => (
             <SceneRow key={s.num} scene={s} flip={i % 2 === 1} />
           ))}

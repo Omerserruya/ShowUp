@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 
 from app.models.models import Entitlement, Event
 from app.plans_client import plan_count_limit
+from app.notifications import queue_assistant_intro
 from app.provisioning import apply_entitlement, find_provisioned_event
 from shared.domain.enums import EntitlementSource, EntitlementStatus, EventState, PaymentStatus
 from shared.domain.rounds import included_rounds
@@ -248,6 +249,13 @@ def redeem(
     db.refresh(event)
     logger.info("entitlement %s redeemed -> event %s (plan=%s)",
                 claim["id"], event.id, claim["plan_id"])
+
+    # Every event is born here, so this is the one place that can promise the
+    # owner meets the WhatsApp AI assistant no matter HOW the event was created -
+    # paid checkout, free self-service, a redemption/gift link, a clone, or an
+    # admin/venue direct-create. After the commit and best-effort by design: an
+    # unsent intro must never undo a redeemed entitlement.
+    queue_assistant_intro(db, event=event, owner_user_id=owner_user_id)
     return event
 
 

@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from typing import List, Optional, Tuple
+import re
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 from sqlalchemy.orm import Session
@@ -16,6 +17,85 @@ from app.utils import normalize_phone
 from shared.domain.enums import GuestStatus
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Phone canonicalization
+# ---------------------------------------------------------------------------
+# Guests used to be stored in whatever format they arrived in (0501234567 /
+# +972501234567 / 972-50-...), so the same person could be added twice and
+# duplicate detection depended on how the number was typed. Every write path
+# here stores E.164 (+972... for Israeli local numbers) and every duplicate
+# check compares canonical digits on BOTH sides (shared canonical_phone_sql),
+# so rows written before this change still match.
+
+def canonical_phone(phone: Any) -> Optional[str]:
+    """E.164 form of `phone`, or None when it is not a plausible phone number.
+
+    0501234567 / 050-123-4567 / 501234567 / 972501234567 / +972 50 123 4567 /
+    00972501234567 -> +972501234567. Other international numbers keep their
+    digits (+14155550100). Excel cells arrive as int/float (leading 0 lost,
+    '.0' suffix) - both handled.
+    """
+    if phone is None:
+        return None
+    if isinstance(phone, float):
+        if phone != phone or not phone.is_integer():  # NaN / fractional
+            return None
+        phone = int(phone)
+    text_val = str(phone).strip()
+    if not text_val:
+        return None
+    if re.fullmatch(r"\d+\.0+", text_val):
+        text_val = text_val.split(".", 1)[0]
+    has_plus = text_val.startswith("+")
+    d = re.sub(r"\D", "", text_val)
+    if not d:
+        return None
+    if d.startswith("00"):
+        d = d[2:]
+    elif d.startswith("0"):
+        d = "972" + d[1:]
+    elif not has_plus and len(d) == 9 and d[0] in "5":
+        d = "972" + d
+    elif not has_plus and len(d) == 8 and d[0] in "234689":
+        d = "972" + d  # landline whose leading 0 Excel dropped
+    if d.startswith("9720"):
+        d = "972" + d[4:]
+    if d.startswith("972"):
+        if len(d) - 3 not in (8, 9):
+            return None
+    elif not (8 <= len(d) <= 15):
+        return None
+    return f"+{d}"
+
+
+def _canonical_digits_sql() -> str:
+    from shared.domain.delivery import canonical_phone_sql
+    return canonical_phone_sql("phone")
+
+
+def existing_canonical_phones(db: Session, event_id) -> set:
+    """Canonical digits (no '+') of every guest phone already in the event."""
+    rows = db.execute(
+        text(f"SELECT {_canonical_digits_sql()} FROM guests WHERE event_id = CAST(:e AS uuid)"),
+        {"e": str(event_id)},
+    ).fetchall()
+    return {r[0] for r in rows if r[0]}
+
+
+def phone_exists_in_event(db: Session, event_id, phone_e164: str, exclude_guest_id=None) -> bool:
+    digits = (phone_e164 or "").lstrip("+")
+    sql = f"SELECT 1 FROM guests WHERE event_id = CAST(:e AS uuid) AND {_canonical_digits_sql()} = :d"
+    params: Dict[str, Any] = {"e": str(event_id), "d": digits}
+    if exclude_guest_id is not None:
+        sql += " AND id <> CAST(:x AS uuid)"
+        params["x"] = str(exclude_guest_id)
+    return db.execute(text(sql + " LIMIT 1"), params).first() is not None
+
+
+class DuplicatePhoneError(ValueError):
+    """The phone already belongs to a guest of this event."""
 
 
 def list_guests(
@@ -128,11 +208,12 @@ def create_guest(db: Session, data: GuestCreate) -> Guest:
     lock_event_capacity(db, data.event_id)
     check_capacity_limit(db, event, data.import_count or 1)
 
-    phone_norm = normalize_phone(data.phone)
-    # ensure no duplicate phone within same event
-    existing = db.query(Guest).filter(Guest.event_id == str(data.event_id), Guest.phone == phone_norm).first()
-    if existing:
-        raise ValueError("guest phone already exists for this event")
+    # E.164 when recognisable; legacy normalization otherwise so no caller that
+    # used to succeed starts failing on an odd format.
+    phone_norm = canonical_phone(data.phone) or normalize_phone(data.phone)
+    # ensure no duplicate phone within same event - format-insensitive
+    if phone_exists_in_event(db, data.event_id, phone_norm):
+        raise DuplicatePhoneError("guest phone already exists for this event")
 
     guest = Guest(
         event_id=str(data.event_id),
@@ -208,10 +289,9 @@ def update_guest(db: Session, guest: Guest, data: GuestUpdate) -> Guest:
     if data.name is not None:
         guest.name = data.name
     if data.phone is not None:
-        phone_norm = normalize_phone(data.phone)
-        dup = db.query(Guest).filter(Guest.event_id == guest.event_id, Guest.phone == phone_norm, Guest.id != guest.id).first()
-        if dup:
-            raise ValueError("guest phone already exists for this event")
+        phone_norm = canonical_phone(data.phone) or normalize_phone(data.phone)
+        if phone_exists_in_event(db, guest.event_id, phone_norm, exclude_guest_id=guest.id):
+            raise DuplicatePhoneError("guest phone already exists for this event")
         guest.phone = phone_norm
     if data.email is not None:
         guest.email = data.email
@@ -259,12 +339,14 @@ def create_guests_bulk(db: Session, event_id: uuid.UUID, items: List[GuestCreate
 
     created: List[Guest] = []
     seen_phones: set[str] = set()
+    existing_phones = existing_canonical_phones(db, event_id)
     for data in items:
-        phone_norm_val = normalize_phone(data.phone)
-        # skip duplicates within the same request payload
-        if phone_norm_val in seen_phones:
+        phone_norm_val = canonical_phone(data.phone) or normalize_phone(data.phone)
+        # skip duplicates within the same request payload / already in the event
+        digits = phone_norm_val.lstrip("+")
+        if digits in seen_phones or digits in existing_phones:
             continue
-        seen_phones.add(phone_norm_val)
+        seen_phones.add(digits)
         g = Guest(
             event_id=str(event_id),
             name=data.name,
@@ -278,16 +360,156 @@ def create_guests_bulk(db: Session, event_id: uuid.UUID, items: List[GuestCreate
             notes=data.notes,
             last_response=data.last_response,
         )
-        # skip duplicates within event
-        dup = db.query(Guest).filter(Guest.event_id == str(event_id), Guest.phone == g.phone).first()
-        if dup:
-            continue
         db.add(g)
         created.append(g)
     db.commit()
     for g in created:
         db.refresh(g)
     return created
+
+
+def _clean_str(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    out = str(value).strip()
+    return out or None
+
+
+def _positive_int(value: Any) -> Optional[int]:
+    if value in (None, ""):
+        return None
+    try:
+        n = int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return None
+    return n if n >= 1 else None
+
+
+def import_guest_rows(db: Session, event: Event, rows: List[Tuple[int, Dict[str, Any]]],
+                      *, dry_run: bool = False) -> Dict[str, Any]:
+    """File import that never aborts on one bad row.
+
+    `rows` = [(row_number, {name, phone, email?, group?, import_count?,
+    table_number?})]. Each row is either created or reported:
+      * skipped_invalid     - missing name / unusable phone / bad field
+      * skipped_duplicates  - phone already in the event or repeated in the file
+      * capacity_reached    - the plan's guest cap was hit; rows from there on
+                              are not imported (`skipped_capacity` counts them)
+    All created guests are committed together under the event capacity lock.
+    `dry_run` runs the exact same checks and writes nothing (import preview);
+    `guests` then holds {row, name, phone} of the rows that WOULD be created.
+    """
+    from app.entitlement_service import effective_max_guests
+
+    lock_event_capacity(db, event.id)
+    limit = effective_max_guests(event)
+    used = db.query(func.sum(Guest.import_count)).filter(Guest.event_id == str(event.id)).scalar() or 0
+    remaining = None if limit is None else max(0, int(limit) - int(used))
+
+    existing = existing_canonical_phones(db, event.id)
+    seen: Dict[str, int] = {}
+    created: List[Guest] = []
+    would_create: List[Dict[str, Any]] = []
+    skipped_duplicates: List[Dict[str, Any]] = []
+    skipped_invalid: List[Dict[str, Any]] = []
+    capacity_reached = False
+    skipped_capacity = 0
+
+    for row_no, raw in rows:
+        name = _clean_str(raw.get("name"))
+        phone_raw = _clean_str(raw.get("phone"))
+        if not name and not phone_raw:
+            continue  # blank line - not worth reporting
+        if not name:
+            skipped_invalid.append({"row": row_no, "phone": phone_raw, "reason": "חסר שם"})
+            continue
+        if not phone_raw:
+            skipped_invalid.append({"row": row_no, "name": name, "reason": "חסר מספר טלפון"})
+            continue
+        phone = canonical_phone(raw.get("phone"))
+        if not phone:
+            skipped_invalid.append({"row": row_no, "name": name, "phone": phone_raw,
+                                    "reason": "מספר טלפון לא תקין"})
+            continue
+        digits = phone.lstrip("+")
+        if digits in existing:
+            skipped_duplicates.append({"row": row_no, "name": name, "phone": phone,
+                                       "reason": "already_in_event"})
+            continue
+        if digits in seen:
+            skipped_duplicates.append({"row": row_no, "name": name, "phone": phone,
+                                       "reason": "repeated_in_file", "first_row": seen[digits]})
+            continue
+        if capacity_reached:
+            skipped_capacity += 1
+            continue
+        seats = _positive_int(raw.get("import_count")) or 1
+        if remaining is not None and seats > remaining:
+            capacity_reached = True
+            skipped_capacity += 1
+            continue
+        email = _clean_str(raw.get("email"))
+        group = _clean_str(raw.get("group"))
+        table = _positive_int(raw.get("table_number"))
+        if table is not None and table > 128:
+            table = None
+        try:
+            data = GuestCreate(event_id=event.id, name=name[:100], phone=phone, email=email,
+                               group=group[:100] if group else None, import_count=seats,
+                               table_number=table)
+        except Exception:
+            # Almost always a malformed email - keep the guest, drop that field.
+            try:
+                data = GuestCreate(event_id=event.id, name=name[:100], phone=phone,
+                                   group=group[:100] if group else None, import_count=seats,
+                                   table_number=table)
+            except Exception as e:  # pragma: no cover - defensive
+                skipped_invalid.append({"row": row_no, "name": name, "phone": phone_raw,
+                                        "reason": f"שורה לא תקינה ({str(e)[:80]})"})
+                continue
+        seen[digits] = row_no
+        if remaining is not None:
+            remaining -= seats
+        if dry_run:
+            would_create.append({"row": row_no, "name": data.name, "phone": phone,
+                                 "group": data.group, "import_count": seats})
+            continue
+        g = Guest(
+            event_id=str(event.id), name=data.name, phone=phone, email=data.email,
+            status=data.status, group=data.group, import_count=data.import_count,
+            table_number=data.table_number,
+        )
+        db.add(g)
+        created.append(g)
+
+    report_tail = {
+        "skipped_duplicates": skipped_duplicates,
+        "skipped_invalid": skipped_invalid,
+        "capacity_reached": capacity_reached,
+        "skipped_capacity": skipped_capacity,
+        "capacity_limit": limit,
+    }
+    if dry_run:
+        db.rollback()  # releases the advisory lock; nothing was added
+        return {"created": len(would_create), "dry_run": True, **report_tail, "guests": would_create}
+
+    db.commit()
+    for g in created:
+        db.refresh(g)
+    if created:
+        _maybe_queue_capacity_warning(db, event)
+    return {
+        "created": len(created),
+        "skipped_duplicates": skipped_duplicates,
+        "skipped_invalid": skipped_invalid,
+        "capacity_reached": capacity_reached,
+        "skipped_capacity": skipped_capacity,
+        "capacity_limit": limit,
+        "dry_run": False,
+        "guests": created,
+    }
 
 
 def delete_guests_by_event(db: Session, event_id: uuid.UUID) -> int:

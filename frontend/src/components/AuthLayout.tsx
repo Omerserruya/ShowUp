@@ -9,9 +9,9 @@ import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 import NotificationsActiveRoundedIcon from '@mui/icons-material/NotificationsActiveRounded';
 import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded';
 
-const BRAND = '#888cee';
-const SOFT = '#aab0f4';
-const DEEP = '#6f74e0';
+const BRAND = '#9D83E0';
+const SOFT = '#C9B8F3';
+const DEEP = '#5A3DA6';
 
 // Shared, premium field style for the auth forms - generous, modern, accessible.
 export const authFieldSx = (theme: Theme) => ({
@@ -36,11 +36,11 @@ export const authButtonSx = {
   fontSize: '1.05rem',
   fontWeight: 700,
   textTransform: 'none' as const,
-  color: '#fff',
+  color: '#16150F',
   boxShadow: 'none',
-  background: `linear-gradient(90deg, ${BRAND}, ${SOFT})`,
-  '&:hover': { background: `linear-gradient(90deg, ${DEEP}, ${BRAND})`, boxShadow: `0 12px 28px ${alpha(BRAND, 0.32)}` },
-  '&.Mui-disabled': { background: alpha(BRAND, 0.45), color: '#fff' },
+  background: '#C9B8F3',
+  '&:hover': { background: '#BBA6EE', boxShadow: 'none' },
+  '&.Mui-disabled': { background: '#E6E2DA', color: '#6B6660' },
 };
 
 /**
@@ -59,7 +59,7 @@ export function AuthPanel({ children }: { children: React.ReactNode }) {
         p: 6,
         color: '#fff',
         overflow: 'hidden',
-        background: `linear-gradient(160deg, ${DEEP} 0%, ${BRAND} 55%, ${SOFT} 100%)`,
+        background: DEEP,
       }}
     >
       {/* soft texture + glow */}

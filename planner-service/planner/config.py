@@ -79,6 +79,25 @@ class PlannerConfig:
     channels: Dict[str, ChannelLimits] = field(default_factory=dict)
     # Optional per-campaign-type window override, as {type: [earliest_offset, latest_offset]}.
     flexibility_overrides: Dict[str, list] = field(default_factory=dict)
+    # PLANNER_CARRY_FORWARD_DAYS: how far past the preferred window unplaced
+    # volume may carry when the event date is unknown (with an event date the
+    # cap is event-based, see windows.resolve_window).
+    carry_forward_days: int = 0
+
+    def with_channel_cap(self, channel: str, new_conversations_per_24h: int,
+                         tier: str = "", quality_rating: str = "") -> "PlannerConfig":
+        """Copy with a channel's conversation cap replaced (e.g. by the tier
+        read from Meta). Never raises the cap above the env-configured one -
+        the caller passes min(env, meta)."""
+        from dataclasses import replace
+        lim = self.channel_limits(channel)
+        if lim is None:
+            return self
+        new_lim = replace(lim, new_conversations_per_24h=int(new_conversations_per_24h),
+                          tier=tier or lim.tier, quality_rating=quality_rating or lim.quality_rating)
+        channels = dict(self.channels)
+        channels[lim.channel] = new_lim
+        return replace(self, channels=channels)
 
     # ---- capacity helpers --------------------------------------------------
     def channel_limits(self, channel: str) -> Optional[ChannelLimits]:
@@ -133,9 +152,12 @@ def load_config() -> PlannerConfig:
         safety_margin_percent=_float("PLANNER_SAFETY_MARGIN_PERCENT", 15.0),
         max_early_send_days=_int("MAX_EARLY_SEND_DAYS", 5),
         max_late_send_days=_int("MAX_LATE_SEND_DAYS", 2),
-        interval_seconds=_int("PLANNER_INTERVAL_SECONDS", 60),
+        # 20s: a "send now" campaign has no releases until the planner plans it
+        # (the scheduler no longer sends whatsapp campaigns without releases).
+        interval_seconds=_int("PLANNER_INTERVAL_SECONDS", 20),
         strategy=_str("PLANNER_STRATEGY", "deterministic"),
         horizon_days=_int("PLANNER_HORIZON_DAYS", 60),
         channels=_load_channels(),
         flexibility_overrides=_load_flexibility_overrides(),
+        carry_forward_days=_int("PLANNER_CARRY_FORWARD_DAYS", 0),
     )

@@ -110,18 +110,24 @@ export const inputsCustomizations: InputComponents = {
             // Brand purple - the default contained button across the whole app
             // (was a black/gray gradient). Checkout keeps its own dark CTA via
             // an explicit sx where needed.
+            // Design v6: primary buttons are lavender with ink text.
             style: {
-              color: 'white',
-              backgroundColor: brand[400],
+              color: gray[800],
+              fontWeight: 600,
+              backgroundColor: brand[300],
               backgroundImage: 'none',
               boxShadow: 'none',
               '&:hover': {
                 backgroundImage: 'none',
-                backgroundColor: brand[500],
+                backgroundColor: '#BBA6EE',
                 boxShadow: 'none',
               },
               '&:active': {
-                backgroundColor: brand[600],
+                backgroundColor: '#AE97EA',
+              },
+              '&.Mui-disabled': {
+                color: gray[400],
+                backgroundColor: gray[200],
               },
             },
           },
@@ -153,11 +159,11 @@ export const inputsCustomizations: InputComponents = {
             style: {
               color: (theme.vars || theme).palette.text.primary,
               border: '1px solid',
-              borderColor: gray[200],
-              backgroundColor: alpha(gray[50], 0.3),
+              borderColor: gray[300],
+              backgroundColor: '#FFFFFF',
               '&:hover': {
-                backgroundColor: gray[100],
-                borderColor: gray[300],
+                backgroundColor: '#FFFFFF',
+                borderColor: gray[800],
               },
               '&:active': {
                 backgroundColor: gray[200],

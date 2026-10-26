@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,6 +33,7 @@ from app.routers.internal_provisioning import router as internal_provisioning_ro
 from app.routers.redeem import router as redeem_router, public_router as redeem_public_router
 from app.routers.entitlements_admin import router as entitlements_admin_router
 from app.routers.ops import router as ops_router
+from app.routers.support import router as support_router
 from app.plans_client import PlanLookupUnavailable
 
 
@@ -42,9 +44,14 @@ def create_app() -> FastAPI:
         json_encoders={},  # Use Pydantic's default serialization
     )
 
+    # Explicit origin allow-list: a wildcard together with credentials lets any
+    # site drive authenticated requests from a victim's browser.
+    cors_origins = [o.strip() for o in (os.getenv("CORS_ORIGINS") or
+                                        "https://showup-rsvp.com,http://localhost:3000").split(",")
+                    if o.strip()]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -72,7 +79,10 @@ def create_app() -> FastAPI:
             Base.metadata.create_all(bind=engine, checkfirst=True)
         else:
             logger.info("All tables already exist, skipping creation")
-        apply_schema_patches(engine)
+        failed_patches = apply_schema_patches(engine)
+        if failed_patches:
+            logger.error("STARTUP: %d schema patch(es) failed: %s - see ops_errors",
+                         len(failed_patches), ", ".join(failed_patches))
     except Exception as e:
         # Log error but don't crash - tables might already exist or there might be schema conflicts
         # This can happen if there's a type conflict (e.g., composite type with same name as table)
@@ -83,7 +93,15 @@ def create_app() -> FastAPI:
                 f"Assuming tables are already created. Error: {error_msg}"
             )
         else:
-            logger.warning(f"Could not create all tables (they may already exist): {e}")
+            # Loud, but never crash startup: the service keeps serving whatever
+            # schema exists, and the failure is visible on the ops dashboard.
+            logger.error("STARTUP: schema creation/patching failed: %s", e, exc_info=True)
+            try:
+                from shared.ops.errors import record_error
+                record_error("core", f"startup schema creation failed: {e}", severity="critical",
+                             error_type=type(e).__name__)
+            except Exception:
+                pass
 
     app.include_router(events_router)
     app.include_router(guests_router)
@@ -109,6 +127,9 @@ def create_app() -> FastAPI:
     app.include_router(redeem_router)
     app.include_router(entitlements_admin_router)
     app.include_router(ops_router)
+    app.include_router(support_router)
+    from app.routers.admin_flows import router as admin_flows_router; app.include_router(admin_flows_router)  # noqa: E702
+    from app.routers.test_send import router as test_send_router; app.include_router(test_send_router)  # noqa: E702
 
     @app.exception_handler(PlanLookupUnavailable)
     async def _plan_lookup_unavailable(request, exc: PlanLookupUnavailable):

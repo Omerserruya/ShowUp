@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
-from shared.domain.enums import CampaignAudience
+from shared.domain.enums import CampaignAudience, GuestStatus
 from .stages import FlowStage, canonical_stage
 from .catalog import (
     BUILTIN_CATALOG, Template,
@@ -52,6 +52,8 @@ class AudienceRule(str, Enum):
     PENDING_RSVP = "pending_rsvp"
     CONFIRMED = "confirmed"
     DECLINED = "declined"
+    # Everyone who has NOT declined: confirmed + not-yet-answered + maybe.
+    NOT_DECLINED = "not_declined"
     WITHOUT_TABLE = "without_table"
     WITH_TABLE = "with_table"
     VIP = "vip"
@@ -81,20 +83,34 @@ class FlowStep(str, Enum):
 
 
 # --- Audience rule resolution ------------------------------------------------
-# Maps a stage's audience rule to the (CampaignAudience, filter) the EXISTING
-# worker audience resolver understands. Default stage rules map to the plain
-# CampaignAudience values already in use - so behavior is unchanged. The richer
-# rules map to custom filters (some need a worker filter extension when first
-# actually used; documented, not silently broken).
+# Maps a stage's audience rule to the (CampaignAudience, filter) BOTH audience
+# resolvers understand (core app/audience.py and campaign-worker/audience.py).
+# Custom filters may only use keys both support: status (list), group (str),
+# tag_id (uuid), table ('none' | 'any'). An unsupported key is ignored by the
+# resolvers, which silently WIDENS the audience - so it must never appear here.
+#
+# Which rules are applied AUTOMATICALLY when a campaign is created without an
+# explicit audience: see AUTO_APPLICABLE_RULES. The group-based rules
+# (VIP/FAMILY/BRIDE/GROOM) depend on owner-chosen free-text group names, so they
+# are never auto-applied; their mapping is deliberately narrow (a group filter
+# that matches nobody rather than everyone).
+
+_NOT_DECLINED_STATUSES = sorted(
+    GuestStatus.confirmed_values() | GuestStatus.pending_values() | GuestStatus.maybe_values()
+)
+_CONFIRMED_STATUSES = sorted(GuestStatus.confirmed_values())
 
 _AUDIENCE_RULE_MAP: Dict[AudienceRule, Tuple[CampaignAudience, Optional[dict]]] = {
     AudienceRule.EVERYONE: (CampaignAudience.EVERYONE, None),
     AudienceRule.PENDING_RSVP: (CampaignAudience.NO_RESPONSE, None),
     AudienceRule.CONFIRMED: (CampaignAudience.CONFIRMED, None),
     AudienceRule.DECLINED: (CampaignAudience.DECLINED, None),
-    AudienceRule.WITHOUT_TABLE: (CampaignAudience.CUSTOM, {"status": ["attending", "confirmed"], "table": "none"}),
-    AudienceRule.WITH_TABLE: (CampaignAudience.CUSTOM, {"status": ["attending", "confirmed"], "table": "any"}),
-    AudienceRule.VIP: (CampaignAudience.CUSTOM, {"tag": "vip"}),
+    AudienceRule.NOT_DECLINED: (CampaignAudience.CUSTOM, {"status": _NOT_DECLINED_STATUSES}),
+    AudienceRule.WITHOUT_TABLE: (CampaignAudience.CUSTOM, {"status": _CONFIRMED_STATUSES, "table": "none"}),
+    AudienceRule.WITH_TABLE: (CampaignAudience.CUSTOM, {"status": _CONFIRMED_STATUSES, "table": "any"}),
+    # Tags are addressed by tag_id (uuid), not name - a "vip" tag cannot be
+    # expressed statically. Narrow fallback: a group literally named "vip".
+    AudienceRule.VIP: (CampaignAudience.CUSTOM, {"group": "vip"}),
     AudienceRule.FAMILY: (CampaignAudience.CUSTOM, {"group": "family"}),
     AudienceRule.BRIDE_SIDE: (CampaignAudience.CUSTOM, {"group": "bride"}),
     AudienceRule.GROOM_SIDE: (CampaignAudience.CUSTOM, {"group": "groom"}),
@@ -102,10 +118,28 @@ _AUDIENCE_RULE_MAP: Dict[AudienceRule, Tuple[CampaignAudience, Optional[dict]]] 
 }
 
 
+# Rules safe to apply automatically (no owner-specific naming involved).
+AUTO_APPLICABLE_RULES = frozenset({
+    AudienceRule.EVERYONE, AudienceRule.PENDING_RSVP, AudienceRule.CONFIRMED,
+    AudienceRule.DECLINED, AudienceRule.NOT_DECLINED,
+    AudienceRule.WITHOUT_TABLE, AudienceRule.WITH_TABLE,
+})
+
+
 def resolve_audience_rule(rule: AudienceRule) -> Tuple[str, Optional[dict]]:
     """(campaign_audience_value, audience_filter) for a stage audience rule."""
     aud, flt = _AUDIENCE_RULE_MAP.get(rule, (CampaignAudience.EVERYONE, None))
-    return aud.value, flt
+    return aud.value, (dict(flt) if flt else None)
+
+
+def default_audience_for_stage(stage_id) -> Optional[Tuple[str, Optional[dict]]]:
+    """The (audience, audience_filter) a campaign of this stage gets when the
+    creator did not choose one explicitly - or None when the stage is unknown or
+    its rule must not be applied automatically (caller keeps its own default)."""
+    sd = stage_by_id(stage_id)
+    if sd is None or sd.audience_rule not in AUTO_APPLICABLE_RULES:
+        return None
+    return resolve_audience_rule(sd.audience_rule)
 
 
 # --- Variant / channel model -------------------------------------------------
@@ -221,8 +255,9 @@ def _build_variants(stage: FlowStage) -> Tuple[Variant, ...]:
 
 # --- the stage definitions ---------------------------------------------------
 # The WORKFLOW behavior (trigger/audience/completion/flow/next) lives here - it is
-# planner/worker logic, not copy, and is deliberately unchanged (existing
-# campaigns keep their stored audience, so nothing changes at runtime). The stage
+# planner/worker logic, not copy. The audience_rule is APPLIED by core when a
+# campaign is created without an explicit audience (default_audience_for_stage);
+# existing campaigns keep their stored audience. The stage
 # TITLE/DESCRIPTION are copy and now come from the content SSOT (STAGE_COPY).
 # Variants are derived from the catalog.
 
@@ -249,7 +284,10 @@ _STAGE_META = {
         next_stages=(FlowStage.FINAL_REMINDER.value,),
     ),
     FlowStage.FINAL_REMINDER: dict(
-        trigger=Trigger.SCHEDULED, audience_rule=AudienceRule.EVERYONE,
+        # The day-before message: its copy speaks to BOTH confirmed guests
+        # ("see you tomorrow", navigation) and non-responders ("last chance to
+        # RSVP") - but never to guests who already declined.
+        trigger=Trigger.SCHEDULED, audience_rule=AudienceRule.NOT_DECLINED,
         completion_rule=CompletionRule.TIMEOUT_REACHED,
         flow_steps=(FlowStep.SEND_MESSAGE, FlowStep.COMPLETE),
         next_stages=(FlowStage.TABLE_ASSIGNMENT.value, FlowStage.THANK_YOU.value),

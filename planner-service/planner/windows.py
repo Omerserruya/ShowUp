@@ -47,6 +47,19 @@ DEFAULT_PRIORITY: Dict[CampaignType, int] = {
 }
 
 
+# Flow-stage ids (campaigns.stage_id / campaign_type, shared FlowStage values)
+# that are not literally a CampaignType value.
+_STAGE_TYPES: Dict[str, CampaignType] = {
+    "final_reminder": CampaignType.LAST_REMINDER,
+    "last_reminder": CampaignType.LAST_REMINDER,
+    "rsvp": CampaignType.INVITATION,
+    "rsvp_reminder": CampaignType.REMINDER,
+    "nudge_reminder": CampaignType.REMINDER,
+    "event_remind": CampaignType.REMINDER,
+    "table_assignment": CampaignType.GENERIC,
+}
+
+
 def default_priority(campaign_type: CampaignType) -> int:
     return DEFAULT_PRIORITY.get(campaign_type, 50)
 
@@ -58,8 +71,11 @@ def classify(name: str, template: str = "", explicit: Optional[str] = None) -> C
     name/template label (the labels the wizard/plans use: RSVP, rsvp_reminder,
     nudge_reminder, event_remind, thank_you, save_the_date, …)."""
     if explicit:
+        key = explicit.strip().lower()
+        if key in _STAGE_TYPES:
+            return _STAGE_TYPES[key]
         try:
-            return CampaignType(explicit.strip().lower())
+            return CampaignType(key)
         except ValueError:
             pass
     text = f"{name or ''} {template or ''}".lower()
@@ -98,15 +114,44 @@ def resolve_window(
     campaign_type: CampaignType,
     config: PlannerConfig,
     now: date,
+    event_date: Optional[date] = None,
+    original_target: Optional[date] = None,
 ) -> DeliveryWindow:
     """Concrete, past-safe delivery window for a campaign.
 
-    The type flexibility gives the raw range around the target; we then clamp the
-    earliest bound so the planner never schedules in the past (a campaign whose
-    window has already started can still send today, just not yesterday)."""
+    The type flexibility gives the raw (preferred) range around the target; we
+    then clamp the earliest bound so the planner never schedules in the past (a
+    campaign whose window has already started can still send today, just not
+    yesterday).
+
+    Event-date rules (when the event date is known):
+      * pre-event stages (save-the-date, invitation, reminder, generic) never go
+        out on/after the event day: hard cap = event_date - 1;
+      * the last/final reminder may use the event day itself (morning release -
+        see runtime.release_instant): hard cap = event_date;
+      * an owner who explicitly targeted the event day keeps that day (the cap
+        is never below min(original target, event day));
+      * nothing but the thank-you is ever planned after the event day.
+    Volume that does not fit in the preferred window is CARRIED FORWARD up to
+    that cap (`deadline`). Without an event date the carry-forward is
+    PLANNER_CARRY_FORWARD_DAYS past the preferred window (default 0).
+
+    `original_target` is the owner's day before an overdue target was
+    collapsed to today - it decides the event-day exception, so an invitation
+    that missed event_date-1 is not pushed onto the event day.
+    """
     early_off, late_off = flexibility_offsets(campaign_type, config)
     earliest = target + timedelta(days=early_off)
     latest = target + timedelta(days=late_off)
     if earliest < now:
         earliest = now
-    return DeliveryWindow(earliest=earliest, target=target, latest=latest).clamp()
+
+    carry = max(0, int(getattr(config, "carry_forward_days", 0) or 0))
+    deadline = latest + timedelta(days=carry)
+    if event_date is not None and campaign_type != CampaignType.THANK_YOU:
+        cap = event_date if campaign_type == CampaignType.LAST_REMINDER else event_date - timedelta(days=1)
+        owner_day = min(original_target or target, event_date)
+        cap = max(cap, owner_day)
+        latest = min(latest, cap)
+        deadline = cap
+    return DeliveryWindow(earliest=earliest, target=target, latest=latest, deadline=deadline).clamp()

@@ -2,7 +2,8 @@
 """
 Outpost Service - WhatsApp Message Sender
 
-This service connects to RabbitMQ, listens for messages on the outpost_queue,
+This service connects to RabbitMQ, consumes the campaign queue
+(OUTPOST_QUEUE_NAME) and the interactive priority queue (OUTPOST_PRIORITY_QUEUE),
 and sends them via WhatsApp Business Cloud API.
 """
 
@@ -22,6 +23,11 @@ class OutpostService:
     
     def __init__(self):
         self.logger = setup_logger("outpost")
+        # The consumer, sender and DB helpers log through their own named
+        # loggers; give them the same JSON handler so their INFO lines ("Message
+        # accepted by Meta", retries, breaker) are not silently dropped.
+        for _name in ("rabbit_consumer", "whatsapp_sender", "db_utils", "breaker", "throttle", "meta_errors"):
+            setup_logger(_name)
         self.consumer = None
         self.running = False
         
@@ -50,7 +56,6 @@ class OutpostService:
             sys.exit(1)
             
         self.logger.info(f"Using WhatsApp Phone ID: {wa_phone_id}")
-        self.logger.info(f"Using WhatsApp API Token: {wa_api_b[:10]}...")
         
         
         # Initialize RabbitMQ consumer
@@ -61,7 +66,11 @@ class OutpostService:
         signal.signal(signal.SIGTERM, self._signal_handler)
         
         self.running = True
-        self.logger.info("📡 Outpost Service started - listening on queue: outpost_queue")
+        self.logger.info(
+            "📡 Outpost Service started",
+            extra={"campaign_queue": self.consumer.campaign.queue_name,
+                   "priority_queue": self.consumer.priority.queue_name},
+        )
         
         try:
             await self.consumer.start_consuming()

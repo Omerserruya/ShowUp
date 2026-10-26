@@ -66,8 +66,8 @@ import { useEvent } from '../contexts/EventContext';
 import { getPlan } from '../config/plans';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { countryOptions, normalizePhoneNumber } from '../utils/countryOptions';
-import { ImportedGuestsSection } from '../components/ImportedGuestsSection';
-import { ImportedGuestsWidget } from '../components/ImportedGuestsWidget';
+import PendingImportsPanel from '../components/v6/PendingImportsPanel';
+import { useSnapshot } from '../contexts/SnapshotContext';
 
 import ResponsiveDialog from '../components/ResponsiveDialog';
 import GuestTimeline from '../components/GuestTimeline';
@@ -75,6 +75,45 @@ import BulkActionsBar from '../components/BulkActionsBar';
 import TagPickerDialog, { Tag } from '../components/TagPickerDialog';
 import CopyGuestsDialog from '../components/CopyGuestsDialog';
 import GuestsSummary from '../components/GuestsSummary';
+
+// POST /api/guests/bulk result (core GuestImportReport). One bad row never
+// aborts the import: duplicates / invalid rows are skipped and reported.
+interface ImportSkippedRow { row: number; reason: string; name?: string | null; phone?: string | null; first_row?: number | null }
+interface ImportReport {
+  created: number;
+  skipped_duplicates: ImportSkippedRow[];
+  skipped_invalid: ImportSkippedRow[];
+  capacity_reached: boolean;
+  skipped_capacity: number;
+  capacity_limit?: number | null;
+  dry_run?: boolean;
+  guests: Array<Record<string, any>>;
+}
+
+const DUP_REASON: Record<string, string> = {
+  already_in_event: 'כבר ברשימה',
+  repeated_in_file: 'מופיע פעמיים בקובץ',
+};
+
+// The Hebrew message a refused guests request carries (detail.message), or a fallback.
+async function guestApiError(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = await res.json();
+    const d = body?.detail;
+    if (d && typeof d === 'object' && typeof d.message === 'string') return d.message;
+  } catch {
+    // non-JSON body
+  }
+  return fallback;
+}
+
+function importSummaryLine(r: ImportReport): string {
+  const parts = [`יובאו ${r.created} מוזמנים`];
+  if (r.skipped_duplicates.length) parts.push(`${r.skipped_duplicates.length} כפולים דולגו`);
+  if (r.skipped_invalid.length) parts.push(`${r.skipped_invalid.length} שורות לא תקינות`);
+  if (r.capacity_reached) parts.push(`${r.skipped_capacity} לא נכנסו (הגעתם למכסת החבילה)`);
+  return parts.join(' · ');
+}
 // Types
 interface Guest {
   _id: string;
@@ -120,17 +159,17 @@ function mapGuestFromAPI(apiGuest: any): Guest {
 
 // Status colors - brand-aligned, dark enough for chip text on a 10% tint.
 const statusColors = {
-  pending: '#d97706',
-  confirmed: '#15803d',
-  declined: '#dc2626',
-  maybe: '#6f74e0'
+  pending: '#7E5410',
+  confirmed: '#3F6323',
+  declined: '#8E3418',
+  maybe: '#7E5410'
 } as const;
 
 // Status labels
 const statusLabels = {
-  pending: 'ממתין',
-  confirmed: 'מאשר הגעה',
-  declined: 'לא מגיע',
+  pending: 'לא ענו',
+  confirmed: 'אישרו',
+  declined: 'לא יגיעו',
   maybe: 'אולי'
 } as const;
 
@@ -144,6 +183,7 @@ function Guests() {
   const location = useLocation();
   const navigate = useNavigate();
   const tableRef = useRef<HTMLDivElement>(null);
+  const { refresh: refreshSnapshot } = useSnapshot();
   
   // Initialize statusFilter from URL query parameter
   const getInitialStatusFilter = () => {
@@ -160,13 +200,14 @@ function Guests() {
   const [guestModalOpen, setGuestModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
-  const [searchQuery, setSearchQuery] = useState('');
+  // The header search (AppHeader) lands here as /guests?search=...
+  const [searchQuery, setSearchQuery] = useState(() => new URLSearchParams(location.search).get('search') || '');
   const [statusFilter, setStatusFilter] = useState(getInitialStatusFilter);
   const [groupFilter, setGroupFilter] = useState('all');
   const [page, setPage] = useState(0);
   const [rowsPerPage] = useState(25);
   const [expandedGuests, setExpandedGuests] = useState<Set<string>>(new Set());
-  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({ open: false, message: '', severity: 'success' });
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'warning' }>({ open: false, message: '', severity: 'success' });
   const [guestNotes, setGuestNotes] = useState<Record<string, string>>({});
   const [refreshKey, setRefreshKey] = useState(0);
   const [statsRefreshKey, setStatsRefreshKey] = useState(0);
@@ -214,7 +255,12 @@ function Guests() {
   const [importPreview, setImportPreview] = useState<null | {
     rows: { name: string; phone: string; valid: boolean; issue?: string }[];
     total: number; validCount: number; invalidCount: number; duplicateCount: number;
+    capacityReached?: boolean; skippedCapacity?: number;
   }>(null);
+  const [importPreviewLoading, setImportPreviewLoading] = useState(false);
+  const [importPreviewError, setImportPreviewError] = useState<string | null>(null);
+  const [importReport, setImportReport] = useState<ImportReport | null>(null);
+  const [importReportDetails, setImportReportDetails] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importTab, setImportTab] = useState<'whatsapp' | 'upload'>('whatsapp');
   const [importDragOver, setImportDragOver] = useState(false);
@@ -617,12 +663,57 @@ function Guests() {
     return { rows, total: rows.length, validCount, invalidCount, duplicateCount };
   };
 
-  const handleImportFile = useCallback((file: File | null) => {
+  // Server dry-run report -> the preview list (same rules the real import uses).
+  const previewFromReport = (r: ImportReport) => {
+    const rows = [
+      ...r.guests.map((g) => ({ row: Number(g.row) || 0, name: String(g.name || ''), phone: String(g.phone || ''), valid: true as boolean, issue: undefined as string | undefined })),
+      ...r.skipped_duplicates.map((d) => ({ row: d.row, name: d.name || '', phone: d.phone || '', valid: false, issue: 'כפילות' })),
+      ...r.skipped_invalid.map((d) => ({ row: d.row, name: d.name || '', phone: d.phone || '', valid: false, issue: d.reason })),
+    ].sort((a, b) => a.row - b.row);
+    return {
+      rows,
+      total: rows.length,
+      validCount: r.created,
+      invalidCount: r.skipped_invalid.length,
+      duplicateCount: r.skipped_duplicates.length,
+      capacityReached: r.capacity_reached,
+      skippedCapacity: r.skipped_capacity,
+    };
+  };
+
+  const handleImportFile = useCallback(async (file: File | null) => {
     setImportFile(file);
     setImportPreview(null);
+    setImportPreviewError(null);
     if (!file) return;
     const isCsv = file.name.toLowerCase().endsWith('.csv') || file.type === 'text/csv';
-    if (!isCsv) return; // Excel files are parsed server-side; preview is CSV-only.
+    // Preview = the server's dry run, so CSV and Excel get the exact same
+    // validation, duplicate detection (incl. guests already on the list) and
+    // capacity check the real import applies.
+    if (selectedEvent?.id) {
+      setImportPreviewLoading(true);
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetchWithAuth(`/api/guests/bulk?event_id=${selectedEvent.id}&dry_run=true`, {
+          method: 'POST',
+          body: formData,
+        });
+        if (res.ok) {
+          setImportPreview(previewFromReport(await res.json()));
+          return;
+        }
+        if (res.status === 400) {
+          setImportPreviewError(await guestApiError(res, 'לא הצלחנו לקרוא את הקובץ'));
+          return;
+        }
+      } catch {
+        // fall through to the local CSV preview
+      } finally {
+        setImportPreviewLoading(false);
+      }
+    }
+    if (!isCsv) return;
     const reader = new FileReader();
     reader.onload = () => {
       try {
@@ -632,10 +723,13 @@ function Guests() {
       }
     };
     reader.readAsText(file);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEvent?.id]);
 
   const handleImportFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     handleImportFile(event.target.files?.[0] || null);
+    // allow re-selecting the same file after fixing it
+    event.target.value = '';
   }, [handleImportFile]);
 
   const handleImportGuests = useCallback(async () => {
@@ -656,15 +750,23 @@ function Guests() {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Import error response:', errorText);
-        throw new Error(`Failed to import guests: ${response.status} ${errorText}`);
+        setSnackbar({ open: true, message: await guestApiError(response, 'שגיאה בייבוא האורחים'), severity: 'error' });
+        return;
       }
 
-      setSnackbar({ open: true, message: 'האורחים יובאו בהצלחה', severity: 'success' });
+      const body = await response.json();
+      // Older core builds returned a bare list of created guests.
+      const report: ImportReport = Array.isArray(body)
+        ? { created: body.length, skipped_duplicates: [], skipped_invalid: [], capacity_reached: false, skipped_capacity: 0, guests: body }
+        : body;
+      setSnackbar({ open: true, message: importSummaryLine(report), severity: report.created > 0 ? 'success' : 'warning' });
       setImportModalOpen(false);
       setImportFile(null);
       setImportPreview(null);
+      if (report.skipped_duplicates.length || report.skipped_invalid.length || report.capacity_reached || report.created === 0) {
+        setImportReportDetails(false);
+        setImportReport(report);
+      }
       setRefreshKey(prev => prev + 1);
       setStatsRefreshKey(prev => prev + 1);
     } catch (error) {
@@ -676,7 +778,9 @@ function Guests() {
   }, [importFile, selectedEvent?.id]);
 
   // Get WhatsApp number from environment variable
-  const whatsappNumber = process.env.REACT_APP_WHATSAPP_NUMBER || '+972-50-1234567';
+  // Contacts must be shared to the ASSISTANT number - that's the number whose inbound
+  // contacts are routed to contact-import (not the sales/support number).
+  const whatsappNumber = process.env.REACT_APP_ASSISTANT_WHATSAPP_NUMBER || '+972-559859579';
   
   // Copy phone number to clipboard
   const handleCopyPhone = useCallback(async () => {
@@ -787,7 +891,8 @@ function Guests() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to create guest');
+        setSnackbar({ open: true, message: await guestApiError(response, 'שגיאה בהוספת האורח'), severity: 'error' });
+        return;
       }
 
       setSnackbar({ open: true, message: 'האורח נוסף בהצלחה', severity: 'success' });
@@ -836,7 +941,8 @@ function Guests() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to update guest');
+        setSnackbar({ open: true, message: await guestApiError(response, 'שגיאה בעדכון האורח'), severity: 'error' });
+        return;
       }
 
       setSnackbar({ open: true, message: 'האורח עודכן בהצלחה', severity: 'success' });
@@ -887,7 +993,8 @@ function Guests() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to update guest');
+        setSnackbar({ open: true, message: await guestApiError(response, 'שגיאה בעדכון האורח'), severity: 'error' });
+        return;
       }
 
       setSnackbar({ open: true, message: 'האורח עודכן בהצלחה', severity: 'success' });
@@ -1080,28 +1187,24 @@ function Guests() {
       </ResponsiveDialog>
 
       {/* Content Section */}
-      <Box sx={{ p: { xs: 2, sm: 3 } }}>
+      <Box>
         {/* Imported Guests Section - Desktop */}
-        {!isMobile && (
-          <ImportedGuestsSection 
-            onRefresh={() => setRefreshKey(prev => prev + 1)} 
-            uniqueGroups={uniqueGroups}
-            hasTableNumbers={hasTableNumbers}
-          />
-        )}
+        <Box sx={{ mb: 2.25 }}>
+          <PendingImportsPanel groups={uniqueGroups} onChanged={() => { setRefreshKey(prev => prev + 1); refreshSnapshot(); }} />
+        </Box>
 
         {/* Desktop Table View */}
         {!isMobile ? (
         <Paper 
+          elevation={0}
           sx={{ 
-            borderRadius: 2,
-            backgroundColor: 'white',
-            boxShadow: 'none',
+            borderRadius: 4,
+            backgroundColor: 'background.paper',
+            boxShadow: '0 6px 24px rgba(16,24,40,0.05)',
             border: '1px solid',
-            borderColor: 'divider',
-            borderWidth: '1px',
+            borderColor: alpha('#2E3A4A', 0.08),
             overflow: 'hidden',
-            p: 3
+            p: { sm: 2.5, md: 3 }
           }}
         >
           {/* Quick Filter Buttons */}
@@ -1112,17 +1215,18 @@ function Guests() {
                 setPage(0);
               }}
               sx={{ 
-                borderRadius: 3,
-                minWidth: 80,
-                px: 2,
-                py: 1,
+                borderRadius: 999,
+                minWidth: 0,
+                px: 1.75,
+                py: 0.6,
+                fontSize: '0.875rem',
                 textTransform: 'none',
-                backgroundColor: statusFilter === 'all' ? '#6f74e0' : '#F2F3F5',
-                color: statusFilter === 'all' ? 'white' : '#363B4D',
+                backgroundColor: statusFilter === 'all' ? '#F3EFFC' : 'transparent',
+                color: statusFilter === 'all' ? '#432C85' : 'text.secondary',
+                boxShadow: statusFilter === 'all' ? 'inset 0 0 0 1.5px #DCD0F4' : 'none',
                 fontWeight: 500,
-                boxShadow: 'none',
-                '&:hover': {
-                  backgroundColor: statusFilter === 'all' ? '#6f74e0' : '#E5E7EB',
+                                '&:hover': {
+                  backgroundColor: statusFilter === 'all' ? '#EEE8FB' : alpha('#2E3A4A', 0.06),
                   boxShadow: 'none'
                 }
               }}
@@ -1135,17 +1239,18 @@ function Guests() {
                 setPage(0);
               }}
               sx={{ 
-                borderRadius: 3,
-                minWidth: 80,
-                px: 2,
-                py: 1,
+                borderRadius: 999,
+                minWidth: 0,
+                px: 1.75,
+                py: 0.6,
+                fontSize: '0.875rem',
                 textTransform: 'none',
-                backgroundColor: statusFilter === 'confirmed' ? '#6f74e0' : '#F2F3F5',
-                color: statusFilter === 'confirmed' ? 'white' : '#363B4D',
+                backgroundColor: statusFilter === 'confirmed' ? '#F3EFFC' : 'transparent',
+                color: statusFilter === 'confirmed' ? '#432C85' : 'text.secondary',
+                boxShadow: statusFilter === 'confirmed' ? 'inset 0 0 0 1.5px #DCD0F4' : 'none',
                 fontWeight: 500,
-                boxShadow: 'none',
-                '&:hover': {
-                  backgroundColor: statusFilter === 'confirmed' ? '#6f74e0' : '#E5E7EB',
+                                '&:hover': {
+                  backgroundColor: statusFilter === 'confirmed' ? '#EEE8FB' : alpha('#2E3A4A', 0.06),
                   boxShadow: 'none'
                 }
               }}
@@ -1158,17 +1263,18 @@ function Guests() {
                 setPage(0);
               }}
               sx={{ 
-                borderRadius: 3,
-                minWidth: 80,
-                px: 2,
-                py: 1,
+                borderRadius: 999,
+                minWidth: 0,
+                px: 1.75,
+                py: 0.6,
+                fontSize: '0.875rem',
                 textTransform: 'none',
-                backgroundColor: statusFilter === 'pending' ? '#6f74e0' : '#F2F3F5',
-                color: statusFilter === 'pending' ? 'white' : '#363B4D',
+                backgroundColor: statusFilter === 'pending' ? '#F3EFFC' : 'transparent',
+                color: statusFilter === 'pending' ? '#432C85' : 'text.secondary',
+                boxShadow: statusFilter === 'pending' ? 'inset 0 0 0 1.5px #DCD0F4' : 'none',
                 fontWeight: 500,
-                boxShadow: 'none',
-                '&:hover': {
-                  backgroundColor: statusFilter === 'pending' ? '#6f74e0' : '#E5E7EB',
+                                '&:hover': {
+                  backgroundColor: statusFilter === 'pending' ? '#EEE8FB' : alpha('#2E3A4A', 0.06),
                   boxShadow: 'none'
                 }
               }}
@@ -1181,17 +1287,18 @@ function Guests() {
                 setPage(0);
               }}
               sx={{ 
-                borderRadius: 3,
-                minWidth: 80,
-                px: 2,
-                py: 1,
+                borderRadius: 999,
+                minWidth: 0,
+                px: 1.75,
+                py: 0.6,
+                fontSize: '0.875rem',
                 textTransform: 'none',
-                backgroundColor: statusFilter === 'declined' ? '#6f74e0' : '#F2F3F5',
-                color: statusFilter === 'declined' ? 'white' : '#363B4D',
+                backgroundColor: statusFilter === 'declined' ? '#F3EFFC' : 'transparent',
+                color: statusFilter === 'declined' ? '#432C85' : 'text.secondary',
+                boxShadow: statusFilter === 'declined' ? 'inset 0 0 0 1.5px #DCD0F4' : 'none',
                 fontWeight: 500,
-                boxShadow: 'none',
-                '&:hover': {
-                  backgroundColor: statusFilter === 'declined' ? '#6f74e0' : '#E5E7EB',
+                                '&:hover': {
+                  backgroundColor: statusFilter === 'declined' ? '#EEE8FB' : alpha('#2E3A4A', 0.06),
                   boxShadow: 'none'
                 }
               }}
@@ -1204,17 +1311,18 @@ function Guests() {
                 setPage(0);
               }}
               sx={{
-                borderRadius: 3,
-                minWidth: 80,
-                px: 2,
-                py: 1,
+                borderRadius: 999,
+                minWidth: 0,
+                px: 1.75,
+                py: 0.6,
+                fontSize: '0.875rem',
                 textTransform: 'none',
-                backgroundColor: statusFilter === 'maybe' ? '#6f74e0' : '#F2F3F5',
-                color: statusFilter === 'maybe' ? 'white' : '#363B4D',
+                backgroundColor: statusFilter === 'maybe' ? '#F3EFFC' : 'transparent',
+                color: statusFilter === 'maybe' ? '#432C85' : 'text.secondary',
+                boxShadow: statusFilter === 'maybe' ? 'inset 0 0 0 1.5px #DCD0F4' : 'none',
                 fontWeight: 500,
-                boxShadow: 'none',
-                '&:hover': {
-                  backgroundColor: statusFilter === 'maybe' ? '#6f74e0' : '#E5E7EB',
+                                '&:hover': {
+                  backgroundColor: statusFilter === 'maybe' ? '#EEE8FB' : alpha('#2E3A4A', 0.06),
                   boxShadow: 'none'
                 }
               }}
@@ -1232,12 +1340,12 @@ function Guests() {
                 px: 2,
                 py: 1,
                 textTransform: 'none',
-                backgroundColor: statusFilter === 'withNotes' ? '#6f74e0' : '#F2F3F5',
-                color: statusFilter === 'withNotes' ? 'white' : '#363B4D',
+                backgroundColor: statusFilter === 'withNotes' ? '#F3EFFC' : 'transparent',
+                color: statusFilter === 'withNotes' ? '#432C85' : 'text.secondary',
+                boxShadow: statusFilter === 'withNotes' ? 'inset 0 0 0 1.5px #DCD0F4' : 'none',
                 fontWeight: 500,
-                boxShadow: 'none',
-                '&:hover': {
-                  backgroundColor: statusFilter === 'withNotes' ? '#6f74e0' : '#E5E7EB',
+                                '&:hover': {
+                  backgroundColor: statusFilter === 'withNotes' ? '#EEE8FB' : alpha('#2E3A4A', 0.06),
                   boxShadow: 'none'
                 }
               }}
@@ -1306,9 +1414,13 @@ function Guests() {
           }}
           size="small"
             sx={{
-              mb: 3,
+              mb: 2.5,
               '& .MuiOutlinedInput-root': {
-                borderRadius: 3,
+                borderRadius: 999,
+                bgcolor: alpha('#2E3A4A', 0.03),
+                '& fieldset': { borderColor: 'transparent' },
+                '&:hover fieldset': { borderColor: alpha('#2E3A4A', 0.15) },
+                '&.Mui-focused fieldset': { borderColor: '#5A3DA6' },
               }
             }}
           />
@@ -1317,14 +1429,14 @@ function Guests() {
             sx={{
               position: 'relative',
               border: '1px solid',
-              borderColor: 'divider',
-              borderRadius: 2,
+              borderColor: alpha('#2E3A4A', 0.08),
+              borderRadius: 3,
               overflow: 'hidden'
             }}
           >
             {/* In-place loader: refetch keeps the rows visible, just shows a bar */}
             {guestsLoading && filteredGuests.length > 0 && (
-              <LinearProgress sx={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 2, height: 3, bgcolor: 'transparent', '& .MuiLinearProgress-bar': { backgroundColor: '#6f74e0' } }} />
+              <LinearProgress sx={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 2, height: 3, bgcolor: 'transparent', '& .MuiLinearProgress-bar': { backgroundColor: '#5A3DA6' } }} />
             )}
             <Table
               sx={{ 
@@ -1334,7 +1446,7 @@ function Guests() {
             >
               <TableHead>
                 <TableRow>
-                  <TableCell padding="checkbox" sx={{ backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>
+                  <TableCell padding="checkbox" sx={{ backgroundColor: '#fafafd', borderBottom: '1px solid', borderBottomColor: alpha('#2E3A4A', 0.08) }}>
                     <Checkbox
                       size="small"
                       checked={filteredGuests.length > 0 && filteredGuests.every(g => selectedIds.has(g._id))}
@@ -1342,17 +1454,17 @@ function Guests() {
                       onChange={() => toggleSelectAll(filteredGuests.map(g => g._id))}
                     />
                   </TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>שם מלא</TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>טלפון</TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>קבוצה</TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>סטטוס</TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>כמות אורחים צפויה</TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>כמות אורחים שאושרה</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700, fontSize: '0.8rem', color: 'text.secondary', backgroundColor: '#fafafd', borderBottom: '1px solid', borderBottomColor: alpha('#2E3A4A', 0.08), whiteSpace: 'nowrap' }}>שם מלא</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 700, fontSize: '0.8rem', color: 'text.secondary', backgroundColor: '#fafafd', borderBottom: '1px solid', borderBottomColor: alpha('#2E3A4A', 0.08), whiteSpace: 'nowrap' }}>טלפון</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 700, fontSize: '0.8rem', color: 'text.secondary', backgroundColor: '#fafafd', borderBottom: '1px solid', borderBottomColor: alpha('#2E3A4A', 0.08), whiteSpace: 'nowrap' }}>קבוצה</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 700, fontSize: '0.8rem', color: 'text.secondary', backgroundColor: '#fafafd', borderBottom: '1px solid', borderBottomColor: alpha('#2E3A4A', 0.08), whiteSpace: 'nowrap' }}>סטטוס</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 700, fontSize: '0.8rem', color: 'text.secondary', backgroundColor: '#fafafd', borderBottom: '1px solid', borderBottomColor: alpha('#2E3A4A', 0.08), whiteSpace: 'nowrap' }}>כמות אורחים צפויה</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 700, fontSize: '0.8rem', color: 'text.secondary', backgroundColor: '#fafafd', borderBottom: '1px solid', borderBottomColor: alpha('#2E3A4A', 0.08), whiteSpace: 'nowrap' }}>כמות אורחים שאושרה</TableCell>
                   {hasTableNumbers && (
-                    <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>מספר שולחן</TableCell>
+                    <TableCell align="center" sx={{ fontWeight: 700, fontSize: '0.8rem', color: 'text.secondary', backgroundColor: '#fafafd', borderBottom: '1px solid', borderBottomColor: alpha('#2E3A4A', 0.08), whiteSpace: 'nowrap' }}>מספר שולחן</TableCell>
                   )}
-                  <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>הערות</TableCell>
-                  <TableCell align="center" sx={{ fontWeight: 600, backgroundColor: 'background.default', borderBottom: '1px solid', borderBottomColor: 'divider' }}>פעולות</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 700, fontSize: '0.8rem', color: 'text.secondary', backgroundColor: '#fafafd', borderBottom: '1px solid', borderBottomColor: alpha('#2E3A4A', 0.08), whiteSpace: 'nowrap' }}>הערות</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 700, fontSize: '0.8rem', color: 'text.secondary', backgroundColor: '#fafafd', borderBottom: '1px solid', borderBottomColor: alpha('#2E3A4A', 0.08), whiteSpace: 'nowrap' }}>פעולות</TableCell>
                 </TableRow>
               </TableHead>
           <TableBody sx={{ opacity: guestsLoading && filteredGuests.length > 0 ? 0.5 : 1, transition: 'opacity .2s ease' }}>
@@ -1377,13 +1489,13 @@ function Guests() {
                     </Typography>
                     {!searchQuery && filtersActive && (
                       <Button onClick={clearFilters} variant="outlined"
-                        sx={{ mt: 1.5, borderRadius: 2.5, px: 3, py: 1, fontWeight: 700, textTransform: 'none', color: '#6f74e0', borderColor: '#6f74e0', '&:hover': { borderColor: '#5f64d6', bgcolor: alpha('#6f74e0', 0.04) } }}>
+                        sx={{ mt: 1.5, borderRadius: 2.5, px: 3, py: 1, fontWeight: 700, textTransform: 'none', color: '#5A3DA6', borderColor: '#5A3DA6', '&:hover': { borderColor: '#5A3DA6', bgcolor: alpha('#5A3DA6', 0.04) } }}>
                         ניקוי סינון
                       </Button>
                     )}
                     {!searchQuery && !filtersActive && (
                       <Button onClick={() => setGuestModalOpen(true)} startIcon={<AddIcon />} variant="contained" disableElevation
-                        sx={{ mt: 1.5, borderRadius: 2.5, px: 3, py: 1, fontWeight: 700, textTransform: 'none', bgcolor: '#6f74e0', '&:hover': { bgcolor: '#5f64d6' } }}>
+                        sx={{ mt: 1.5, borderRadius: 2.5, px: 3, py: 1, fontWeight: 700, textTransform: 'none', bgcolor: '#C9B8F3', color: '#16150F', '&:hover': { bgcolor: '#BBA6EE' } }}>
                         הוספת אורחים
                       </Button>
                     )}
@@ -1398,6 +1510,7 @@ function Guests() {
                       hover 
                     sx={{ 
                         backgroundColor: 'white',
+                        '&:hover .row-actions, &:focus-within .row-actions': { opacity: 1 },
                         borderBottom: index < Math.min(rowsPerPage, filteredGuests.length - page * rowsPerPage) - 1 ? '1px solid' : 'none',
                         borderBottomColor: 'divider'
                       }}
@@ -1457,7 +1570,9 @@ function Guests() {
                               sx={{
                                 width: 32,
                                 height: 32,
-                                bgcolor: statusColors[guest.status],
+                                bgcolor: alpha('#5A3DA6', 0.12),
+                                color: '#5A3DA6',
+                                fontWeight: 700,
                                 fontSize: '0.875rem'
                               }}
                             >
@@ -1783,9 +1898,10 @@ function Guests() {
                         </Typography>
                       </TableCell>
                       <TableCell align="center" sx={{ backgroundColor: 'white' }}>
-                        <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
+                        <Box className="row-actions" sx={{ display: 'flex', gap: 0.25, justifyContent: 'center', opacity: 0.45, transition: 'opacity .15s ease' }}>
                           <IconButton 
                             size="small"
+                            aria-label="עריכת אורח"
                             onClick={() => {
                               setEditingGuestData(guest);
                               setEditModalOpen(true);
@@ -1795,7 +1911,8 @@ function Guests() {
                       </IconButton>
                           <IconButton 
                             size="small" 
-                            sx={{ color: 'error.main' }}
+                            aria-label="מחיקת אורח"
+                            sx={{ '&:hover': { color: 'error.main' } }}
                             onClick={() => setDeleteConfirmGuestId(guest._id)}
                           >
                         <DeleteIcon fontSize="small" />
@@ -1852,9 +1969,7 @@ function Guests() {
         /* Mobile Card View */
         <>
           {/* Imported Guests Widget - Mobile */}
-          {isMobile && (
-            <ImportedGuestsWidget onClick={() => navigate('/guests/imported')} />
-          )}
+
 
           {/* Filters and Search Widget */}
           <Paper 
@@ -1940,13 +2055,13 @@ function Guests() {
                     px: 2,
                     py: 1,
                     textTransform: 'none',
-                    backgroundColor: statusFilter === 'all' ? '#6f74e0' : '#F2F3F5',
-                    color: statusFilter === 'all' ? 'white' : '#363B4D',
+                    backgroundColor: statusFilter === 'all' ? '#F3EFFC' : 'transparent',
+                    color: statusFilter === 'all' ? '#432C85' : 'text.secondary',
+                    boxShadow: statusFilter === 'all' ? 'inset 0 0 0 1.5px #DCD0F4' : 'none',
                     fontWeight: 500,
-                    boxShadow: 'none',
-                    flexShrink: 0,
+                                        flexShrink: 0,
                     '&:hover': {
-                      backgroundColor: statusFilter === 'all' ? '#6f74e0' : '#E5E7EB',
+                      backgroundColor: statusFilter === 'all' ? '#EEE8FB' : alpha('#2E3A4A', 0.06),
                       boxShadow: 'none'
                     }
                   }}
@@ -1964,13 +2079,13 @@ function Guests() {
                     px: 2,
                     py: 1,
                     textTransform: 'none',
-                    backgroundColor: statusFilter === 'confirmed' ? '#6f74e0' : '#F2F3F5',
-                    color: statusFilter === 'confirmed' ? 'white' : '#363B4D',
+                    backgroundColor: statusFilter === 'confirmed' ? '#F3EFFC' : 'transparent',
+                    color: statusFilter === 'confirmed' ? '#432C85' : 'text.secondary',
+                    boxShadow: statusFilter === 'confirmed' ? 'inset 0 0 0 1.5px #DCD0F4' : 'none',
                     fontWeight: 500,
-                    boxShadow: 'none',
-                    flexShrink: 0,
+                                        flexShrink: 0,
                     '&:hover': {
-                      backgroundColor: statusFilter === 'confirmed' ? '#6f74e0' : '#E5E7EB',
+                      backgroundColor: statusFilter === 'confirmed' ? '#EEE8FB' : alpha('#2E3A4A', 0.06),
                       boxShadow: 'none'
                     }
                   }}
@@ -1988,13 +2103,13 @@ function Guests() {
                     px: 2,
                     py: 1,
                     textTransform: 'none',
-                    backgroundColor: statusFilter === 'pending' ? '#6f74e0' : '#F2F3F5',
-                    color: statusFilter === 'pending' ? 'white' : '#363B4D',
+                    backgroundColor: statusFilter === 'pending' ? '#F3EFFC' : 'transparent',
+                    color: statusFilter === 'pending' ? '#432C85' : 'text.secondary',
+                    boxShadow: statusFilter === 'pending' ? 'inset 0 0 0 1.5px #DCD0F4' : 'none',
                     fontWeight: 500,
-                    boxShadow: 'none',
-                    flexShrink: 0,
+                                        flexShrink: 0,
                     '&:hover': {
-                      backgroundColor: statusFilter === 'pending' ? '#6f74e0' : '#E5E7EB',
+                      backgroundColor: statusFilter === 'pending' ? '#EEE8FB' : alpha('#2E3A4A', 0.06),
                       boxShadow: 'none'
                     }
                   }}
@@ -2012,13 +2127,13 @@ function Guests() {
                     px: 2,
                     py: 1,
                     textTransform: 'none',
-                    backgroundColor: statusFilter === 'declined' ? '#6f74e0' : '#F2F3F5',
-                    color: statusFilter === 'declined' ? 'white' : '#363B4D',
+                    backgroundColor: statusFilter === 'declined' ? '#F3EFFC' : 'transparent',
+                    color: statusFilter === 'declined' ? '#432C85' : 'text.secondary',
+                    boxShadow: statusFilter === 'declined' ? 'inset 0 0 0 1.5px #DCD0F4' : 'none',
                     fontWeight: 500,
-                    boxShadow: 'none',
-                    flexShrink: 0,
+                                        flexShrink: 0,
                     '&:hover': {
-                      backgroundColor: statusFilter === 'declined' ? '#6f74e0' : '#E5E7EB',
+                      backgroundColor: statusFilter === 'declined' ? '#EEE8FB' : alpha('#2E3A4A', 0.06),
                       boxShadow: 'none'
                     }
                   }}
@@ -2036,13 +2151,13 @@ function Guests() {
                     px: 2,
                     py: 1,
                     textTransform: 'none',
-                    backgroundColor: statusFilter === 'maybe' ? '#6f74e0' : '#F2F3F5',
-                    color: statusFilter === 'maybe' ? 'white' : '#363B4D',
+                    backgroundColor: statusFilter === 'maybe' ? '#F3EFFC' : 'transparent',
+                    color: statusFilter === 'maybe' ? '#432C85' : 'text.secondary',
+                    boxShadow: statusFilter === 'maybe' ? 'inset 0 0 0 1.5px #DCD0F4' : 'none',
                     fontWeight: 500,
-                    boxShadow: 'none',
-                    flexShrink: 0,
+                                        flexShrink: 0,
                     '&:hover': {
-                      backgroundColor: statusFilter === 'maybe' ? '#6f74e0' : '#E5E7EB',
+                      backgroundColor: statusFilter === 'maybe' ? '#EEE8FB' : alpha('#2E3A4A', 0.06),
                       boxShadow: 'none'
                     }
                   }}
@@ -2060,13 +2175,13 @@ function Guests() {
                     px: 2,
                     py: 1,
                     textTransform: 'none',
-                    backgroundColor: statusFilter === 'withNotes' ? '#6f74e0' : '#F2F3F5',
-                    color: statusFilter === 'withNotes' ? 'white' : '#363B4D',
+                    backgroundColor: statusFilter === 'withNotes' ? '#F3EFFC' : 'transparent',
+                    color: statusFilter === 'withNotes' ? '#432C85' : 'text.secondary',
+                    boxShadow: statusFilter === 'withNotes' ? 'inset 0 0 0 1.5px #DCD0F4' : 'none',
                     fontWeight: 500,
-                    boxShadow: 'none',
-                    flexShrink: 0,
+                                        flexShrink: 0,
                     '&:hover': {
-                      backgroundColor: statusFilter === 'withNotes' ? '#6f74e0' : '#E5E7EB',
+                      backgroundColor: statusFilter === 'withNotes' ? '#EEE8FB' : alpha('#2E3A4A', 0.06),
                       boxShadow: 'none'
                     }
                   }}
@@ -2104,7 +2219,7 @@ function Guests() {
 
           {/* Guest Cards without widget */}
           {guestsLoading && filteredGuests.length > 0 && (
-            <LinearProgress sx={{ mb: 2, height: 3, borderRadius: 2, bgcolor: 'transparent', '& .MuiLinearProgress-bar': { backgroundColor: '#6f74e0' } }} />
+            <LinearProgress sx={{ mb: 2, height: 3, borderRadius: 2, bgcolor: 'transparent', '& .MuiLinearProgress-bar': { backgroundColor: '#5A3DA6' } }} />
           )}
           <Grid container spacing={2} ref={tableRef} sx={{ opacity: guestsLoading && filteredGuests.length > 0 ? 0.5 : 1, transition: 'opacity .2s ease' }}>
             {guestsLoading && filteredGuests.length === 0 ? (
@@ -2125,13 +2240,13 @@ function Guests() {
                   </Typography>
                   {!searchQuery && filtersActive && (
                     <Button onClick={clearFilters} variant="outlined"
-                      sx={{ mt: 1.5, borderRadius: 2.5, px: 3, py: 1, fontWeight: 700, textTransform: 'none', color: '#6f74e0', borderColor: '#6f74e0', '&:hover': { borderColor: '#5f64d6', bgcolor: alpha('#6f74e0', 0.04) } }}>
+                      sx={{ mt: 1.5, borderRadius: 2.5, px: 3, py: 1, fontWeight: 700, textTransform: 'none', color: '#5A3DA6', borderColor: '#5A3DA6', '&:hover': { borderColor: '#5A3DA6', bgcolor: alpha('#5A3DA6', 0.04) } }}>
                       ניקוי סינון
                     </Button>
                   )}
                   {!searchQuery && !filtersActive && (
                     <Button onClick={() => setGuestModalOpen(true)} startIcon={<AddIcon />} variant="contained" disableElevation
-                      sx={{ mt: 1.5, borderRadius: 2.5, px: 3, py: 1, fontWeight: 700, textTransform: 'none', bgcolor: '#6f74e0', '&:hover': { bgcolor: '#5f64d6' } }}>
+                      sx={{ mt: 1.5, borderRadius: 2.5, px: 3, py: 1, fontWeight: 700, textTransform: 'none', bgcolor: '#C9B8F3', color: '#16150F', '&:hover': { bgcolor: '#BBA6EE' } }}>
                       הוספת אורחים
                     </Button>
                   )}
@@ -2849,7 +2964,7 @@ function Guests() {
                           borderColor: '#d1d5db',
                         },
                         '&.Mui-focused fieldset': {
-                          borderColor: '#6f74e0',
+                          borderColor: '#5A3DA6',
                           boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
                         },
                         '& .MuiSelect-select': {
@@ -2894,7 +3009,7 @@ function Guests() {
                           borderColor: '#d1d5db',
                         },
                         '&.Mui-focused fieldset': {
-                          borderColor: '#6f74e0',
+                          borderColor: '#5A3DA6',
                           boxShadow: '0 0 0 1px rgba(59,130,246,0.45)',
                         },
                       },
@@ -3025,7 +3140,7 @@ function Guests() {
         </DialogTitle>
         <DialogContent sx={{ px: 3, pt: 3, pb: 1 }}>
           {/* segmented control */}
-          <Box sx={{ display: 'flex', gap: 0.5, p: '4px', bgcolor: alpha('#6f74e0', 0.07), borderRadius: 2.5, mb: 3 }}>
+          <Box sx={{ display: 'flex', gap: 0.5, p: '4px', bgcolor: alpha('#5A3DA6', 0.07), borderRadius: 2.5, mb: 3 }}>
             {([
               { key: 'whatsapp' as const, label: 'וואטסאפ' },
               { key: 'upload' as const, label: 'קובץ' },
@@ -3034,7 +3149,7 @@ function Guests() {
               return (
                 <Box key={t.key} onClick={() => setImportTab(t.key)}
                   sx={{ flex: 1, textAlign: 'center', py: 0.85, borderRadius: 2, cursor: 'pointer', fontWeight: 700, fontSize: '0.9rem',
-                    color: active ? '#5f64d6' : 'text.secondary', bgcolor: active ? '#fff' : 'transparent',
+                    color: active ? '#5A3DA6' : 'text.secondary', bgcolor: active ? '#fff' : 'transparent',
                     boxShadow: active ? '0 1px 3px rgba(16,24,40,0.12)' : 'none', transition: 'all .15s ease' }}>
                   {t.label}
                 </Box>
@@ -3064,7 +3179,7 @@ function Guests() {
 
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
                 <Button fullWidth variant="outlined" startIcon={<ContentCopyIcon sx={{ fontSize: 18 }} />} onClick={handleCopyPhone}
-                  sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600, color: 'text.primary', borderColor: 'divider', '&:hover': { borderColor: '#6f74e0', bgcolor: alpha('#6f74e0', 0.04) } }}>
+                  sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 600, color: 'text.primary', borderColor: 'divider', '&:hover': { borderColor: '#5A3DA6', bgcolor: alpha('#5A3DA6', 0.04) } }}>
                   {copiedPhone ? 'הועתק ✓' : whatsappNumber}
                 </Button>
                 <Button fullWidth variant="contained" disableElevation startIcon={<WhatsAppIcon sx={{ fontSize: 20 }} />}
@@ -3081,7 +3196,7 @@ function Guests() {
               {events.filter((e) => e.id !== selectedEvent?.id).length > 0 && (
                 <Box sx={{ textAlign: 'center' }}>
                   <Button variant="text" startIcon={<ContentCopyIcon sx={{ fontSize: 16 }} />} onClick={() => setCopyGuestsOpen(true)}
-                    sx={{ textTransform: 'none', color: '#6f74e0', fontWeight: 600, fontSize: '0.85rem' }}>
+                    sx={{ textTransform: 'none', color: '#5A3DA6', fontWeight: 600, fontSize: '0.85rem' }}>
                     או העתקה מאירוע קודם
                   </Button>
                 </Box>
@@ -3104,8 +3219,8 @@ function Guests() {
                 onDragLeave={() => setImportDragOver(false)}
                 onDrop={(e) => { e.preventDefault(); setImportDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) handleImportFile(f); }}
                 onClick={() => document.getElementById('excel-upload')?.click()}
-                sx={{ cursor: 'pointer', borderRadius: 3, py: 5, px: 3, textAlign: 'center', border: '1.5px dashed', borderColor: importDragOver ? '#6f74e0' : alpha('#6f74e0', 0.28), bgcolor: importDragOver ? alpha('#6f74e0', 0.06) : alpha('#6f74e0', 0.02), transition: 'all .15s ease' }}>
-                <UploadIcon sx={{ fontSize: 36, color: '#6f74e0', mb: 1 }} />
+                sx={{ cursor: 'pointer', borderRadius: 3, py: 5, px: 3, textAlign: 'center', border: '1.5px dashed', borderColor: importDragOver ? '#5A3DA6' : alpha('#5A3DA6', 0.28), bgcolor: importDragOver ? alpha('#5A3DA6', 0.06) : alpha('#5A3DA6', 0.02), transition: 'all .15s ease' }}>
+                <UploadIcon sx={{ fontSize: 36, color: '#5A3DA6', mb: 1 }} />
                 <Typography sx={{ fontWeight: 700, fontSize: '1rem' }}>{importFile ? importFile.name : 'גררו קובץ לכאן'}</Typography>
                 {!importFile && <Typography sx={{ fontSize: '0.85rem', color: 'text.secondary', mt: 0.25 }}>או לחצו לבחירת קובץ</Typography>}
                 <input accept=".xlsx,.xls,.csv" style={{ display: 'none' }} id="excel-upload" type="file" onChange={handleImportFileChange} />
@@ -3116,14 +3231,28 @@ function Guests() {
                 <Typography sx={{ fontSize: '0.82rem' }}>שדות חובה: שם מלא, טלפון</Typography>
               </Stack>
 
+              {importPreviewLoading && (
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ color: 'text.secondary' }}>
+                  <CircularProgress size={16} />
+                  <Typography sx={{ fontSize: '0.85rem' }}>בודקים את הקובץ...</Typography>
+                </Stack>
+              )}
+              {importPreviewError && (
+                <Alert severity="error" sx={{ borderRadius: 2 }}>{importPreviewError}</Alert>
+              )}
               {importPreview && (
                 <Box>
+                  {importPreview.capacityReached && (
+                    <Alert severity="warning" sx={{ mb: 1.5, borderRadius: 2 }}>
+                      {`${importPreview.skippedCapacity || 0} שורות לא ייובאו - הרשימה תגיע למכסת המוזמנים של החבילה.`}
+                    </Alert>
+                  )}
                   <Stack direction="row" spacing={1} sx={{ mb: 1.5, flexWrap: 'wrap', gap: 1 }}>
                     <Chip size="small" color="success" label={`${importPreview.validCount} תקינים`} />
                     {importPreview.duplicateCount > 0 && <Chip size="small" color="warning" label={`${importPreview.duplicateCount} כפילויות`} />}
                     {importPreview.invalidCount > 0 && <Chip size="small" color="error" label={`${importPreview.invalidCount} שגויים`} />}
                   </Stack>
-                  <Box sx={{ maxHeight: 180, overflowY: 'auto', borderRadius: 2, bgcolor: alpha('#6f74e0', 0.03) }}>
+                  <Box sx={{ maxHeight: 180, overflowY: 'auto', borderRadius: 2, bgcolor: alpha('#5A3DA6', 0.03) }}>
                     {importPreview.rows.slice(0, 50).map((r, i) => (
                       <Box key={i} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1.5, py: 0.75 }}>
                         <Box sx={{ display: 'flex', gap: 2, minWidth: 0 }}>
@@ -3135,7 +3264,12 @@ function Guests() {
                     ))}
                   </Box>
                   {importPreview.validCount === 0 && (
-                    <Alert severity="error" sx={{ mt: 1.5, borderRadius: 2 }}>לא נמצאו שורות תקינות. ודאו שהקובץ כולל עמודות ״שם״ ו״טלפון״.</Alert>
+                    <Alert severity="error" sx={{ mt: 1.5, borderRadius: 2 }}>אין שורות חדשות לייבוא. ודאו שהקובץ כולל עמודות ״שם״ ו״טלפון״ ושהמוזמנים לא נמצאים כבר ברשימה.</Alert>
+                  )}
+                  {importPreview.validCount > 0 && (importPreview.duplicateCount > 0 || importPreview.invalidCount > 0) && (
+                    <Typography sx={{ mt: 1, fontSize: '0.8rem', color: 'text.secondary' }}>
+                      שורות כפולות או לא תקינות ידולגו - כל השאר ייובאו.
+                    </Typography>
                   )}
                 </Box>
               )}
@@ -3145,12 +3279,59 @@ function Guests() {
         <DialogActions sx={{ px: 3, pb: 3, pt: 1.5, justifyContent: 'space-between' }}>
           {importTab === 'upload' ? (
             <Button variant="contained" disableElevation onClick={handleImportGuests}
-              disabled={importing || !importFile || (importPreview !== null && importPreview.validCount === 0)}
-              sx={{ borderRadius: 2, px: 3, fontWeight: 700, textTransform: 'none', bgcolor: '#6f74e0', '&:hover': { bgcolor: '#5f64d6' } }}>
+              disabled={importing || importPreviewLoading || !importFile || !!importPreviewError || (importPreview !== null && importPreview.validCount === 0)}
+              sx={{ borderRadius: 2, px: 3, fontWeight: 700, textTransform: 'none', bgcolor: '#C9B8F3', color: '#16150F', '&:hover': { bgcolor: '#BBA6EE' } }}>
               {importing ? 'מייבא...' : importPreview ? `ייבוא ${importPreview.validCount} אורחים` : 'ייבוא'}
             </Button>
           ) : <Box />}
           <Button variant="text" onClick={() => setImportModalOpen(false)} sx={{ color: 'text.secondary', fontWeight: 600, textTransform: 'none' }}>ביטול</Button>
+        </DialogActions>
+      </ResponsiveDialog>
+
+      {/* Import report - what was skipped and why */}
+      <ResponsiveDialog open={importReport !== null} onClose={() => setImportReport(null)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>סיכום הייבוא</DialogTitle>
+        <DialogContent>
+          {importReport && (
+            <Stack spacing={1.5} sx={{ mt: 0.5 }}>
+              <Typography sx={{ fontWeight: 600 }}>{importSummaryLine(importReport)}</Typography>
+              {importReport.capacity_reached && (
+                <Alert severity="warning" sx={{ borderRadius: 2 }}>
+                  {`הגעתם למכסת המוזמנים של החבילה${importReport.capacity_limit ? ` (${importReport.capacity_limit})` : ''} - ${importReport.skipped_capacity} שורות לא יובאו. אפשר לשדרג חבילה ולייבא שוב את אותו קובץ: מי שכבר ברשימה ידולג.`}
+                </Alert>
+              )}
+              {(importReport.skipped_duplicates.length > 0 || importReport.skipped_invalid.length > 0) && (
+                <Box>
+                  <Button size="small" variant="text" onClick={() => setImportReportDetails((v) => !v)} sx={{ textTransform: 'none', fontWeight: 600, color: '#5A3DA6', px: 0 }}>
+                    {importReportDetails ? 'הסתרת פירוט' : 'הצגת השורות שדולגו'}
+                  </Button>
+                  {importReportDetails && (
+                    <Box sx={{ maxHeight: 260, overflowY: 'auto', borderRadius: 2, bgcolor: alpha('#5A3DA6', 0.03), mt: 1 }}>
+                      {[
+                        ...importReport.skipped_invalid.map((r) => ({ ...r, label: r.reason, tone: 'error' as const })),
+                        ...importReport.skipped_duplicates.map((r) => ({ ...r, label: DUP_REASON[r.reason] || 'כפילות', tone: 'warning' as const })),
+                      ].sort((a, b) => a.row - b.row).map((r, i) => (
+                        <Box key={i} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, px: 1.5, py: 0.75 }}>
+                          <Box sx={{ display: 'flex', gap: 1.5, minWidth: 0 }}>
+                            <Typography variant="body2" color="text.secondary" sx={{ flexShrink: 0 }}>{`שורה ${r.row}`}</Typography>
+                            <Typography variant="body2" sx={{ fontWeight: 500 }} noWrap>{r.name || '-'}</Typography>
+                            <Typography variant="body2" color="text.secondary" noWrap>{r.phone || ''}</Typography>
+                          </Box>
+                          <Chip size="small" color={r.tone} label={r.label} />
+                        </Box>
+                      ))}
+                    </Box>
+                  )}
+                </Box>
+              )}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button variant="contained" disableElevation onClick={() => setImportReport(null)}
+            sx={{ borderRadius: 2, px: 3, fontWeight: 700, textTransform: 'none', bgcolor: '#C9B8F3', color: '#16150F', '&:hover': { bgcolor: '#BBA6EE' } }}>
+            הבנתי
+          </Button>
         </DialogActions>
       </ResponsiveDialog>
 

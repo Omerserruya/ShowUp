@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.models.models import Account, Membership, Event
 from app.crud import event as event_crud
+from app import support
 from shared.domain.roles import Role, Action, can
 
 
@@ -47,12 +48,38 @@ def resolve_role(db: Session, event: Optional[Event], user_id: uuid.UUID) -> Opt
         # for pre-tenancy single-owner events.
         if event_crud.is_owner(event, user_id):
             return Role.OWNER
-        return None
+        return _support_role(db, event, user_id)
 
     # Legacy bridge: pre-tenancy events use the owners JSON array.
     if event_crud.is_owner(event, user_id):
         return Role.OWNER
+    return _support_role(db, event, user_id)
+
+
+def _support_role(db: Session, event: Event, user_id: uuid.UUID) -> Optional[Role]:
+    """MANAGER when a platform admin has an ACTIVE support session on this event.
+
+    Checked last, so an ordinary user's request never pays for the lookup. The
+    role is MANAGER rather than OWNER on purpose: support may see everything and
+    fix things for the owner, but not delete the event or touch billing.
+    """
+    if support.has_support_access(db, event, user_id):
+        return Role.MANAGER
     return None
+
+
+def is_owner_or_support(db: Session, event: Optional[Event], user_id: uuid.UUID) -> bool:
+    """Owner-level access to THIS event, including an admin in a support session.
+
+    The owner-only endpoints (the ones that never adopted the role matrix) call
+    this instead of `event_crud.is_owner` so support access reaches them too,
+    without widening them to team members.
+    """
+    if event is None:
+        return False
+    if event_crud.is_owner(event, user_id):
+        return True
+    return support.has_support_access(db, event, user_id)
 
 
 def require_event_permission(

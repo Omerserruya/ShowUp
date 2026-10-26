@@ -29,10 +29,94 @@ def connect() -> psycopg2.extensions.connection:
     return conn
 
 
+def is_alive(conn) -> bool:
+    """Cheap liveness probe so a connection killed while idle is replaced
+    before the next campaign instead of failing it."""
+    if conn is None or conn.closed:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+        return True
+    except Exception:
+        return False
+
+
+# Campaign processing bookkeeping - also ensured by scheduler-service (whichever
+# boots first). `status_reason` explains every terminal status this worker sets.
+CAMPAIGN_PROCESSING_DDL = (
+    "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS status_reason TEXT",
+    "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS processing_started_at TIMESTAMPTZ",
+    "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS processing_attempts INTEGER NOT NULL DEFAULT 0",
+)
+
+
 def ensure_schema(conn: psycopg2.extensions.connection):
-    """Ensure the per-message delivery table exists (schema owned by shared)."""
+    """Ensure the per-message delivery table (schema owned by shared) and the
+    campaign bookkeeping columns exist."""
     with conn.cursor() as cur:
         ensure_messages_sent_schema(cur)
+        for stmt in CAMPAIGN_PROCESSING_DDL:
+            try:
+                cur.execute(stmt)
+            except Exception as exc:  # pragma: no cover - table owned by core
+                logger.warning("schema patch skipped: %s (%s)", stmt, exc)
+
+
+def finish_campaign(conn, campaign_id: str, status: str, reason: Optional[str],
+                    recipient_count: Optional[int] = None, only_if: Optional[Sequence[str]] = None) -> None:
+    """Write a terminal (or hand-back) status WITH a reason. Every early exit of
+    the worker goes through here so no campaign is ever left in 'processing'."""
+    sets = ["status = %s", "status_reason = %s", "processing_started_at = NULL"]
+    params: list = [status, (reason or None) and str(reason)[:500]]
+    if recipient_count is not None:
+        sets.append("recipient_count = %s")
+        params.append(int(recipient_count))
+    where = "id = %s"
+    params.append(campaign_id)
+    if only_if:
+        where += " AND status = ANY(%s)"
+        params.append(list(only_if))
+    with conn.cursor() as cur:
+        cur.execute(f"UPDATE campaigns SET {', '.join(sets)} WHERE {where}", params)
+
+
+def fail_open_releases(conn, campaign_id: str) -> None:
+    """Cancel a terminally-failed campaign's remaining planner batches."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE campaign_releases SET status='failed', updated_at=NOW() "
+                "WHERE campaign_id=%s AND status IN ('pending', 'queued')",
+                (campaign_id,),
+            )
+    except Exception:
+        pass
+
+
+def revert_release(conn, release_id: str) -> None:
+    """Hand a release back to the scheduler (e.g. campaign paused / event inactive)."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE campaign_releases SET status='pending', updated_at=NOW() WHERE id=%s",
+                        (release_id,))
+    except Exception:
+        pass
+
+
+def guest_still_sendable(conn, guest_id: str) -> bool:
+    """Re-check at send time: the guest may have opted out (or been deleted)
+    after audience selection."""
+    from shared.domain.optout import OPT_OUT_SQL_PREDICATE
+    with conn.cursor() as cur:
+        cur.execute(f"SELECT 1 FROM guests g WHERE g.id = %s AND {OPT_OUT_SQL_PREDICATE}", (guest_id,))
+        return cur.fetchone() is not None
+
+
+def campaign_has_messages(conn, campaign_id: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM messages_sent WHERE campaign_id=%s LIMIT 1", (campaign_id,))
+        return cur.fetchone() is not None
 
 
 def fetch_campaign_by_id(conn: psycopg2.extensions.connection, campaign_id: str) -> Optional[dict]:
@@ -219,10 +303,15 @@ def record_message_usage(conn, account_id, event_id: str, quantity: int, ref_id:
         pass
 
 
-def create_follow_up_campaign(conn, parent: dict, hours: int, audience: str) -> Optional[str]:
+def create_follow_up_campaign(conn, parent: dict, hours: int, audience: str,
+                              recipient_count: int = 0) -> Optional[str]:
     """Create ONE follow-up round (no sequence engine): a new pending campaign
-    scheduled `hours` from now, targeting `audience`, reusing the parent's template.
-    follow-up fields are left NULL to prevent chaining. Idempotent on (event, name).
+    scheduled `hours` from now, targeting `audience`, reusing the parent's
+    message - template AND custom_message / header image / stage + variant, so
+    the follow-up is the same message (previously a custom-text or image round
+    followed up with the bare template). `recipient_count` is the current audience
+    size so the planner sizes it. Follow-up fields are left NULL to prevent
+    chaining. Idempotent on (event, name).
     Returns the new campaign id, or None if a matching pending follow-up exists.
     """
     import uuid as _uuid
@@ -231,7 +320,9 @@ def create_follow_up_campaign(conn, parent: dict, hours: int, audience: str) -> 
     follow_name = (parent.get("name") or "Round") + " (follow-up)"
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT 1 FROM campaigns WHERE event_id=%s AND name=%s AND status='pending' LIMIT 1",
+            # Any status: a follow-up that already went out must not be re-created
+            # when the parent is re-processed (stuck-sweeper re-run, redelivery).
+            "SELECT 1 FROM campaigns WHERE event_id=%s AND name=%s LIMIT 1",
             (parent["event_id"], follow_name),
         )
         if cur.fetchone():
@@ -241,10 +332,15 @@ def create_follow_up_campaign(conn, parent: dict, hours: int, audience: str) -> 
         sched = datetime.now(timezone.utc) + timedelta(hours=int(hours))
         cur.execute(
             """
-            INSERT INTO campaigns (id, event_id, name, template, channel, schedule_time, status, recipient_count, audience)
-            VALUES (%s, %s, %s, %s, %s, %s, 'pending', 0, %s)
+            INSERT INTO campaigns (id, event_id, name, template, template_key, stage_id, variant_id,
+                                   custom_message, header_image_url, campaign_type,
+                                   channel, schedule_time, status, recipient_count, audience)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s)
             """,
-            (new_id, parent["event_id"], follow_name, parent["template"], parent["channel"], sched, audience),
+            (new_id, parent["event_id"], follow_name, parent["template"], parent.get("template_key"),
+             parent.get("stage_id"), parent.get("variant_id"), parent.get("custom_message"),
+             parent.get("header_image_url"), parent.get("campaign_type"),
+             parent["channel"], sched, int(recipient_count or 0), audience),
         )
         return new_id
 
@@ -268,17 +364,56 @@ def mark_release_sent(conn, release_id: str, sent_count: int) -> None:
 
 
 def campaign_has_open_releases(conn, campaign_id: str) -> bool:
-    """True if the campaign still has un-sent planner batches (pending/queued)."""
+    """True if the campaign still has un-sent planner batches (pending/queued).
+    'failed' batches (swept by the scheduler) are not open."""
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT 1 FROM campaign_releases WHERE campaign_id=%s AND status <> 'sent' LIMIT 1",
+                "SELECT 1 FROM campaign_releases WHERE campaign_id=%s "
+                "AND status NOT IN ('sent', 'failed') LIMIT 1",
                 (campaign_id,),
             )
             return cur.fetchone() is not None
     except Exception:
         conn.rollback()
         return False
+
+
+def release_is_final(conn, release_id: str) -> bool:
+    """True when the planner marked this batch as the campaign's LAST one with
+    nothing left unplaced - the worker then sends ALL remaining eligible guests
+    (the planned count may be stale). False if the column/row is missing."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT is_final FROM campaign_releases WHERE id = %s", (release_id,))
+            row = cur.fetchone()
+            return bool(row and row[0])
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def park_campaign_no_guests(conn, campaign_id: str) -> None:
+    """0-guest guard: an invitation / save-the-date that resolves to nobody is
+    NOT a sent round (the owner most likely has not imported guests yet). Back
+    to 'draft' (schedule_time kept) with status_reason='no_guests', and its
+    planner batches removed so nothing re-fires until the owner re-schedules."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE campaigns SET status = 'draft', status_reason = 'no_guests', "
+            "processing_started_at = NULL WHERE id = %s",
+            (campaign_id,),
+        )
+        try:
+            cur.execute(
+                "DELETE FROM campaign_releases WHERE campaign_id = %s AND status IN ('pending', 'queued')",
+                (campaign_id,),
+            )
+        except Exception:
+            pass
 
 
 def mark_campaign_status(conn, campaign_id: str, status: str) -> None:

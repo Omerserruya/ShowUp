@@ -174,7 +174,7 @@ export function buildAdaptiveTimeline(params: BuildTimelineParams): ResolvedCamp
   // resolving concrete send times. Guarding isValid() here prevents an Invalid Date
   // from reaching israelTimeToISOUTC, which would throw on toISOString().
   if (!eventDate || !eventDate.isValid()) {
-    return specs.map((s) => ({
+    return capToIncludedRounds(specs.map((s) => ({
       enabled: s.stage === 'thank_you' ? tier >= 2 : true,
       label: s.label,
       title: s.title,
@@ -183,7 +183,7 @@ export function buildAdaptiveTimeline(params: BuildTimelineParams): ResolvedCamp
       priority: s.priority,
       offsetDays: s.preferredOffsetDays,
       time: s.time,
-    }));
+    })), planId);
   }
 
   const eventAt = atTime(eventDate, eventTime || '18:00');
@@ -252,7 +252,23 @@ export function buildAdaptiveTimeline(params: BuildTimelineParams): ResolvedCamp
   }
 
   // Chronological: earliest offset (largest "days before") first.
-  return resolved.sort((a, b) => b.offsetDays - a.offsetDays);
+  return capToIncludedRounds(resolved.sort((a, b) => b.offsetDays - a.offsetDays), planId);
+}
+
+/** Rounds included per plan - mirrors shared/domain/rounds.py INCLUDED_ROUNDS.
+ *  The server rejects a batch that exceeds it (402), so the wizard must never
+ *  propose more enabled rounds than the plan includes. */
+export const INCLUDED_ROUNDS: Record<string, number> = { free: 0, starter: 0, venue: 0, basic: 2, plus: 4, pro: 4 };
+
+function capToIncludedRounds<T extends { enabled: boolean; priority?: number }>(list: T[], planId: string | null | undefined): T[] {
+  const cap = planId && planId in INCLUDED_ROUNDS ? INCLUDED_ROUNDS[planId] : Infinity;
+  const enabled = list.filter((c) => c.enabled);
+  if (enabled.length <= cap) return list;
+  // Drop the least important (highest priority number) until within the cap.
+  const drop = new Set(
+    [...enabled].sort((a, b) => (b.priority ?? 9) - (a.priority ?? 9)).slice(0, enabled.length - cap),
+  );
+  return list.map((c) => (drop.has(c) ? { ...c, enabled: false } : c));
 }
 
 function maxDate(a: Dayjs, b: Dayjs): Dayjs {

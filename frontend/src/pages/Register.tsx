@@ -6,13 +6,12 @@ import {
   Typography,
   Link,
   CircularProgress,
-  MenuItem,
   Checkbox,
   FormControlLabel,
 } from '@mui/material';
 import { useNavigate, useLocation, Link as RouterLink } from 'react-router-dom';
 import { useUser } from '../contexts/UserContext';
-import { countryOptions, normalizePhoneNumber } from '../utils/countryOptions';
+import { toAccountPhone, isValidAccountPhone, ACCOUNT_PHONE_ERROR, ACCOUNT_COUNTRY_CODE } from '../utils/countryOptions';
 import OtpVerification from '../components/OtpVerification';
 import AuthLayout, { authFieldSx, authButtonSx } from '../components/AuthLayout';
 
@@ -36,10 +35,10 @@ const Register = () => {
   const location = useLocation();
   // Where to go after a successful OTP verification (e.g. continue to payment).
   const nextPath = (location.state as any)?.next || '/overview';
-  const { setUser } = useUser();
+  const { setUser, refreshUserDetails } = useUser();
   const [formData, setFormData] = useState<RegisterFormData>({
     phone: '',
-    countryCode: '+972',
+    countryCode: ACCOUNT_COUNTRY_CODE,
     firstName: '',
     lastName: '',
     email: '',
@@ -61,6 +60,19 @@ const Register = () => {
     const t = setTimeout(() => setResendCooldown((s) => s - 1), 1000);
     return () => clearTimeout(t);
   }, [resendCooldown]);
+
+  // Prefill the phone when we arrived from Login's "user not found" hand-off
+  // (e.g. a new friend redeeming a gift link), so they don't retype it.
+  useEffect(() => {
+    const st = location.state as any;
+    if (st?.phone) {
+      setFormData((f) => ({
+        ...f,
+        phone: String(st.phone).replace(/\D/g, ''),
+        countryCode: st.countryCode || f.countryCode,
+      }));
+    }
+  }, [location.state]);
 
   const handleResendOtp = async () => {
     if (resendCooldown > 0 || !phoneNumber) return;
@@ -86,7 +98,7 @@ const Register = () => {
         // Put the cursor back where typing starts - autoFocus only fires on mount.
         setTimeout(() => document.getElementById('otp-input-0')?.focus(), 50);
       } else {
-        setOtpError(data.error || 'שליחת הקוד נכשלה. נסו שוב');
+        setOtpError(data.message || data.error || 'שליחת הקוד נכשלה. נסו שוב');
       }
     } catch (error) {
       setOtpError('אירעה שגיאה בשליחת הקוד');
@@ -99,8 +111,8 @@ const Register = () => {
     const newErrors: FormErrors = {};
     if (!formData.phone) {
       newErrors.phone = 'מספר טלפון הוא שדה חובה';
-    } else if (!/^\d{7,15}$/.test(formData.phone.replace(/\s/g, ''))) {
-      newErrors.phone = 'מספר הטלפון אינו תקין';
+    } else if (!isValidAccountPhone(formData.phone)) {
+      newErrors.phone = ACCOUNT_PHONE_ERROR;
     }
     if (!formData.firstName) {
       newErrors.firstName = 'שם פרטי הוא שדה חובה';
@@ -126,7 +138,7 @@ const Register = () => {
 
     setLoading(true);
     try {
-      const fullPhoneNumber = normalizePhoneNumber(formData.phone, formData.countryCode);
+      const fullPhoneNumber = toAccountPhone(formData.phone);
       const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: {
@@ -153,7 +165,7 @@ const Register = () => {
         setFormError(
           data.error === 'user_exists'
             ? 'מספר טלפון זה כבר רשום במערכת. אנא התחבר במקום'
-            : data.error || 'ההרשמה נכשלה'
+            : data.message || data.error || 'ההרשמה נכשלה'
         );
       }
     } catch (error) {
@@ -233,6 +245,9 @@ const Register = () => {
         }
 
         setOtpError('');
+        // Load the real role/details before navigating, mirroring Login, so any
+        // downstream guard sees the resolved role rather than the hardcoded 'user'.
+        try { await refreshUserDetails(); } catch { /* keep going with hardcoded role */ }
         navigate(nextPath);
       } else {
         if (data.error === 'too_many_attempts') {
@@ -244,7 +259,7 @@ const Register = () => {
           const remaining = typeof data.attempts === 'number' ? Math.max(0, 5 - data.attempts) : null;
           setOtpError(remaining !== null ? `קוד שגוי. נותרו ${remaining} ניסיונות` : 'קוד שגוי, נסו שוב');
         } else {
-          setOtpError(data.error || 'קוד OTP שגוי');
+          setOtpError(data.message || data.error || 'קוד OTP שגוי');
         }
       }
     } catch (error) {
@@ -354,7 +369,7 @@ const Register = () => {
     <AuthLayout>
       <Box component="form" onSubmit={handleSubmit} sx={{ direction: 'rtl', textAlign: 'right' }}>
         <Typography component="h1" sx={{ fontWeight: 800, fontSize: { xs: '2rem', md: '2.4rem' }, lineHeight: 1.15 }}>
-          יאללה, בואו נתחיל 🎉
+          יאללה, בואו נתחיל
         </Typography>
         <Typography sx={{ color: 'text.secondary', mt: 1.5, mb: 4, fontSize: '1.05rem', lineHeight: 1.6 }}>
           כמה פרטים קצרים, ואתם מוכנים לארגן את האירוע בלי כאב ראש.
@@ -368,20 +383,6 @@ const Register = () => {
 
         {/* Phone */}
         <Box sx={{ display: 'flex', flexDirection: 'row-reverse', gap: 1.5, mb: 2.5 }}>
-          <TextField
-            select
-            value={formData.countryCode}
-            onChange={(e) => setFormData({ ...formData, countryCode: e.target.value as string })}
-            sx={[authFieldSx, { width: 120, flexShrink: 0 }]}
-            SelectProps={{ renderValue: (value) => (value as string) || '+972' }}
-            inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
-          >
-            {countryOptions.map((option) => (
-              <MenuItem key={option.code + option.dialCode} value={option.dialCode}>
-                {option.flag} {option.name} ({option.dialCode})
-              </MenuItem>
-            ))}
-          </TextField>
           <TextField
             fullWidth
             type="tel"
@@ -460,7 +461,7 @@ const Register = () => {
                 setAgreedToTerms(e.target.checked);
                 setFormError('');
               }}
-              sx={{ pt: 0.25, '&.Mui-checked': { color: '#888cee' } }}
+              sx={{ pt: 0.25, '&.Mui-checked': { color: '#9D83E0' } }}
             />
           }
           label={
@@ -484,7 +485,7 @@ const Register = () => {
 
         <Typography sx={{ textAlign: 'center', mt: 3.5, color: 'text.secondary' }}>
           כבר יש לכם חשבון?{' '}
-          <Link component={RouterLink} to="/login" sx={{ fontWeight: 700 }}>
+          <Link component={RouterLink} to="/login" state={{ next: nextPath }} sx={{ fontWeight: 700 }}>
             להתחברות
           </Link>
         </Typography>

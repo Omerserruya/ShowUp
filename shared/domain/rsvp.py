@@ -12,6 +12,8 @@ guest status).
 """
 from __future__ import annotations
 
+import re as _re
+import unicodedata as _ud
 from typing import Optional
 
 from shared.domain.enums import RsvpAction
@@ -88,23 +90,146 @@ def _catalog_label_actions() -> dict:
 
 
 # Conservative free-text understanding for typed replies ("אגיע בשמחה", "לא נגיע",
-# "אולי"). Order matters: maybe -> negation/decline -> confirm, so "אולי אגיע" is
-# MAYBE and "לא אגיע" is DECLINED even though both contain a confirm keyword.
-_MAYBE_HINTS = ("אולי", "מתלבט", "מתלבטת", "לא בטוח", "לא בטוחה", "עוד לא יודע", "עוד לא יודעת")
-_DECLINE_HINTS = ("לא אגיע", "לא נגיע", "לא מגיע", "לא מגיעה", "לא מגיעים", "לא אוכל", "לא נוכל", "לא אהיה", "לא נהיה", "מצטער", "מצטערת")
-_CONFIRM_HINTS = ("אגיע", "נגיע", "מגיע", "מגיעה", "מגיעים", "בשמחה", "אהיה שם", "נהיה שם", "אשמח להגיע", "נשמח להגיע", "בא", "באים", "באה")
+# "אולי"). Matching is on WHOLE TOKENS (and token sequences), never substrings:
+# substring matching made "בא" fire inside "הבא"/"הבאה", so "נעדכן בשבוע הבא"
+# was recorded as a confirmation, and "לא באים" (missing from the decline list)
+# matched the confirm word "באים". Order matters: maybe -> decline -> confirm, so
+# "אולי אגיע" is MAYBE and "לא אגיע" is DECLINED although both contain a confirm
+# word.
+
+# Hebrew points/cantillation (niqqud, U+0591-U+05C7) carry no meaning here.
+_NIQQUD_RE = _re.compile(r"[\u0591-\u05C7]")
+# Anything that is not a letter/digit (emoji, punctuation, maqaf) separates tokens.
+_SPLIT_RE = _re.compile(r"[^\w]+", _re.UNICODE)
+
+# Verbs that, preceded by a negation, mean "not coming".
+_COMING_VERBS = (
+    "אגיע", "נגיע", "מגיע", "מגיעה", "מגיעים", "מגיעות", "להגיע",
+    "בא", "באה", "באים", "באות", "נבוא", "אבוא", "לבוא",
+    "אוכל", "נוכל", "יכול", "יכולה", "יכולים",
+    "אהיה", "נהיה", "אצליח", "נצליח", "מצליח", "מצליחה", "מצליחים",
+)
+_NEGATIONS = ("לא", "לצערי לא", "כנראה שלא", "כנראה לא")
+
+_MAYBE_PHRASES = (
+    ("אולי",), ("מתלבט",), ("מתלבטת",), ("מתלבטים",),
+    ("לא", "בטוח"), ("לא", "בטוחה"), ("לא", "בטוחים"),
+    ("לא", "יודע"), ("לא", "יודעת"), ("לא", "יודעים"),
+    ("עדיין", "לא", "יודע"), ("נשתדל",), ("אשתדל",),
+    ("maybe",), ("not", "sure"), ("perhaps",),
+)
+_DECLINE_PHRASES = tuple(
+    tuple(neg.split()) + (verb,) for neg in _NEGATIONS for verb in _COMING_VERBS
+) + (
+    ("לצערי",), ("מצטער",), ("מצטערת",), ("מצטערים",),
+    # In an RSVP conversation "cancel" means "we're not coming" - it is NOT an
+    # opt-out request (see shared/domain/optout.py).
+    ("ביטול",), ("מבטל",), ("מבטלת",), ("מבטלים",), ("נבצר",),
+    ("לא", "רלוונטי"), ("לא", "נראה", "לי"),
+    ("no",), ("nope",), ("not", "coming"), ("cant", "make", "it"), ("cancel",),
+)
+_CONFIRM_PHRASES = tuple((v,) for v in (
+    "אגיע", "נגיע", "מגיע", "מגיעה", "מגיעים", "מגיעות",
+    "בא", "באה", "באים", "באות", "נבוא", "אבוא",
+    "בשמחה", "כן", "בטח", "ברור", "מאשר", "מאשרת", "מאשרים",
+    "yes", "yep", "yeah", "coming", "attending",
+)) + (
+    ("אהיה", "שם"), ("נהיה", "שם"), ("אשמח", "להגיע"), ("נשמח", "להגיע"),
+)
+
+# A reply this long is conversation, not an RSVP answer.
+_MAX_HEURISTIC_CHARS = 60
+_MAX_HEURISTIC_TOKENS = 8
+
+
+def tokenize_reply(text: Optional[str]) -> list:
+    """Lowercased word tokens of a reply, without niqqud, emoji or punctuation."""
+    if not text:
+        return []
+    t = _ud.normalize("NFC", str(text))
+    t = _NIQQUD_RE.sub("", t)
+    # Geresh/apostrophes/quotes join a word ("can't" -> "cant") rather than split it.
+    t = _re.sub(r"[\'\u2019\u05F3\u05F4\"]", "", t)
+    return [tok for tok in _SPLIT_RE.split(t.lower()) if tok and tok != "_"]
+
+
+def _has_phrase(tokens: list, phrases) -> bool:
+    n = len(tokens)
+    for ph in phrases:
+        k = len(ph)
+        if k > n:
+            continue
+        for i in range(n - k + 1):
+            if tuple(tokens[i:i + k]) == ph:
+                return True
+    return False
 
 
 def _heuristic_text_action(t: str) -> RsvpAction:
-    if len(t) > 60:  # long messages are conversation, not an RSVP answer
+    if len(t) > _MAX_HEURISTIC_CHARS:
         return RsvpAction.UNKNOWN
-    if any(h in t for h in _MAYBE_HINTS):
+    tokens = tokenize_reply(t)
+    if not tokens or len(tokens) > _MAX_HEURISTIC_TOKENS:
+        return RsvpAction.UNKNOWN
+    if _has_phrase(tokens, _MAYBE_PHRASES):
         return RsvpAction.MAYBE
-    if any(h in t for h in _DECLINE_HINTS) or t == "לא":
+    if _has_phrase(tokens, _DECLINE_PHRASES):
         return RsvpAction.DECLINED
-    if any(h in t for h in _CONFIRM_HINTS) or t == "כן":
+    # A bare "לא" ("לא", "לא תודה", "לא לא") is a decline.
+    if tokens[0] == "לא" and len(tokens) <= 2:
+        return RsvpAction.DECLINED
+    if _has_phrase(tokens, _CONFIRM_PHRASES):
         return RsvpAction.CONFIRMED
     return RsvpAction.UNKNOWN
+
+
+# --- party size ("כמה תהיו?") -----------------------------------------------
+
+GUEST_COUNT_MIN = 1
+GUEST_COUNT_MAX = 50
+
+_COUNT_WORDS = {
+    "אחד": 1, "אחת": 1, "לבד": 1, "רק אני": 1, "אני": 1,
+    "שניים": 2, "שתיים": 2, "שנים": 2, "שתים": 2, "שנינו": 2, "זוג": 2, "שתינו": 2,
+    "שלושה": 3, "שלוש": 3, "שלושתנו": 3,
+    "ארבעה": 4, "ארבע": 4, "ארבעתנו": 4,
+    "חמישה": 5, "חמש": 5, "שישה": 6, "שש": 6, "שבעה": 7, "שבע": 7,
+    "שמונה": 8, "תשעה": 9, "תשע": 9, "עשרה": 10, "עשר": 10,
+}
+
+
+def parse_guest_count(text: Optional[str]) -> Optional[int]:
+    """Read a party size out of a short reply: "3", "3 אנשים", "אנחנו 4", "שניים".
+
+    Returns the number (which may be out of range - the caller validates against
+    GUEST_COUNT_MIN..GUEST_COUNT_MAX so it can re-ask kindly), or None when the
+    reply carries no single clear number.
+    """
+    if not text:
+        return None
+    raw = str(text).strip()
+    if _re.fullmatch(r"\d{1,12}", raw):
+        return int(raw)
+    tokens = tokenize_reply(raw)
+    if not tokens or len(tokens) > 4:
+        return None
+    numbers = [tok for tok in tokens if tok.isdigit()]
+    if len(numbers) == 1:
+        return int(numbers[0])
+    if numbers:
+        return None
+    joined = " ".join(tokens)
+    if joined in _COUNT_WORDS:
+        return _COUNT_WORDS[joined]
+    found = {_COUNT_WORDS[tok] for tok in tokens if tok in _COUNT_WORDS and tok != "אני"}
+    if len(found) == 1:
+        return found.pop()
+    return None
+
+
+def is_valid_guest_count(n: Optional[int], max_count: int = GUEST_COUNT_MAX,
+                         min_count: int = GUEST_COUNT_MIN) -> bool:
+    return n is not None and min_count <= n <= max_count
 
 
 def resolve_rsvp_action(

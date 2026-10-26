@@ -19,4 +19,5 @@ class DidntUnderstandState(RsvpInviteState):
     }
 
     async def send(self, session: AsyncSession, conversation: Any) -> Dict[str, Any]:
-        return await self.build_text(session, conversation, "לא כל כך הבנו את התשובה 😅 נסו לבחור אחת מהאפשרויות בהודעה למעלה")
+        return await self.build_text(
+            session, conversation, await self.cfg_text(session, conversation, "didnt_understand.text"))

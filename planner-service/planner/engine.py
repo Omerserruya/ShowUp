@@ -10,7 +10,7 @@ from datetime import date
 from typing import List, Optional
 
 from .config import PlannerConfig, load_config
-from .models import CampaignRequest, PlanResult
+from .models import CampaignRequest, PlanContext, PlanResult
 from .strategy import get_strategy
 
 
@@ -24,32 +24,43 @@ class Planner:
     def __init__(self, config: Optional[PlannerConfig] = None):
         self.config = config or load_config()
 
-    def plan(self, requests: List[CampaignRequest], now: date, strategy: Optional[str] = None) -> PlanResult:
+    def plan(self, requests: List[CampaignRequest], now: date, strategy: Optional[str] = None,
+             context: Optional[PlanContext] = None) -> PlanResult:
         strat = get_strategy(strategy or self.config.strategy)
-        result = self.plan_with(strat.name, requests, now)
+        result = self.plan_with(strat.name, requests, now, context)
         return result
 
-    def plan_with(self, strategy_name: str, requests: List[CampaignRequest], now: date) -> PlanResult:
+    def plan_with(self, strategy_name: str, requests: List[CampaignRequest], now: date,
+                  context: Optional[PlanContext] = None) -> PlanResult:
         strat = get_strategy(strategy_name)
-        result = strat.plan(requests, self.config, now)
-        self._validate(result, requests)
+        result = strat.plan(requests, self.config, now, context)
+        self._validate(result, requests, context)
         return result
 
     # ------------------------------------------------------------------ checks
-    def _validate(self, result: PlanResult, requests: List[CampaignRequest]) -> None:
+    def _validate(self, result: PlanResult, requests: List[CampaignRequest],
+                  context: Optional[PlanContext] = None) -> None:
         """Enforce the two hard guarantees on any strategy's output. These are the
         promises the whole system depends on, so we verify them every run instead
         of trusting the strategy."""
-        # 1. No channel/day exceeds usable capacity.
-        for channel, days in result.day_load.items():
+        closed = (context.closed_days if context else None) or set()
+        # 1. No channel/day exceeds usable capacity. Prefill (already-used
+        #    volume) may itself be over capacity (e.g. a manual blast) - then the
+        #    plan must add NOTHING to that day.
+        for channel in set(result.day_load) | {a.channel for a in result.allocations}:
             cap = self.config.planner_daily_capacity(channel)
-            for day, used in days.items():
-                if used > cap:
-                    raise PlanInvariantError(
-                        f"capacity exceeded on {channel} {day}: {used} > {cap}"
-                    )
-                if used < 0:
+            pre = (result.prefill or {}).get(channel, {})
+            planned = result.planned_load(channel)
+            for day, add in planned.items():
+                used = pre.get(day, 0) + add
+                if add < 0 or used < 0:
                     raise PlanInvariantError(f"negative load on {channel} {day}: {used}")
+                if add > 0 and used > cap:
+                    raise PlanInvariantError(
+                        f"capacity exceeded on {channel} {day}: {used} > {cap} (prefill {pre.get(day, 0)})"
+                    )
+                if add > 0 and day in closed:
+                    raise PlanInvariantError(f"volume placed on closed day {channel} {day}")
 
         # 2. Every placement is inside the campaign's window, and no campaign is
         #    over-allocated beyond its own volume.
@@ -64,8 +75,8 @@ class Planner:
                     f"placed={alloc.placed} unplaced={alloc.unplaced} volume={req.volume}"
                 )
             for day in alloc.by_day:
-                if not req.window.contains(day):
+                if not req.window.allows(day):
                     raise PlanInvariantError(
                         f"{alloc.campaign_id} placed on {day} outside window "
-                        f"[{req.window.earliest}..{req.window.latest}]"
+                        f"[{req.window.earliest}..{req.window.hard_latest}]"
                     )

@@ -12,7 +12,7 @@ export default function VenueRoute({ children }: { children: React.ReactNode }) 
   if (userLoading || loading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
-        <CircularProgress sx={{ color: '#888cee' }} />
+        <CircularProgress sx={{ color: '#9D83E0' }} />
       </Box>
     );
   }

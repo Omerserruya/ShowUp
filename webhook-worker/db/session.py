@@ -20,7 +20,17 @@ def _database_url() -> str:
     return f"postgresql+asyncpg://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
 
 
-engine: AsyncEngine = create_async_engine(_database_url(), pool_pre_ping=True, future=True)
+# Sized for prefetch: each in-flight inbound message holds one connection for its
+# per-guest advisory lock plus one for its work session (see flow_manager).
+engine: AsyncEngine = create_async_engine(
+    _database_url(),
+    pool_pre_ping=True,
+    future=True,
+    pool_size=int(os.getenv("DB_POOL_SIZE", "10")),
+    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")),
+    pool_timeout=30,
+    pool_recycle=1800,
+)
 
 AsyncSessionLocal = sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
 

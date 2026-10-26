@@ -15,29 +15,34 @@ import {
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import CloseIcon from '@mui/icons-material/Close';
 import SendIcon from '@mui/icons-material/Send';
-import { useNavigate } from 'react-router-dom';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useEvent } from '../contexts/EventContext';
 
 interface Msg { from: 'bot' | 'user'; text: string }
 
 // Action-shortcut starters - each one actually does something useful today.
-const STARTERS: { label: string; path?: string; reply: string }[] = [
-  { label: 'מי עוד לא הגיב?', path: '/guests?filter=pending', reply: 'מעביר אותך לרשימת האורחים שעדיין לא הגיבו 👇' },
-  { label: 'כמה אישרו הגעה?', path: '/overview', reply: 'הנה הסיכום בלוח הבקרה - מספר המאשרים מופיע למעלה ✅' },
-  { label: 'שלח תזכורת לאורחים', path: '/messages', reply: 'פותח את ניהול הקמפיינים כדי לשלוח סבב תזכורת ⏰' },
-  { label: 'הוסף אורחים חדשים', path: '/guests', reply: 'פותח את רשימת האורחים - אפשר להוסיף ידנית או לייבא קובץ 📋' },
-];
+// Starters are real questions sent to the assistant (not canned navigation).
+const STARTERS: string[] = ['כמה אישרו עד עכשיו?', 'מי עוד לא ענה?', 'מי ביקש מנה מיוחדת?', 'מי ראה את ההודעה ולא ענה?'];
+
+const GREETING: Msg = { from: 'bot', text: 'היי! אני העוזרת של האירוע. אפשר לשאול אותי כמה אישרו, מי עוד לא ענה, או לבקש להוסיף אורח.' };
+
+/** Honest error text per failure (was a single "coming soon" for everything). */
+function errorText(status: number | null, detail?: string): string {
+  if (status === 401) return 'צריך להתחבר מחדש כדי להמשיך.';
+  if (status === 403 || status === 404) return 'אין לך הרשאה לאירוע הזה.';
+  if (status === 422) return 'צריך לבחור אירוע לפני ששואלים.';
+  if (status === 429) return detail || 'הגעתם למגבלת השאלות לעכשיו. נסו שוב בעוד כמה דקות.';
+  if (status === 503) return 'העוזרת לא זמינה כרגע. נסו שוב בעוד רגע.';
+  if (status === 504 || status === 502) return 'לקח יותר מדי זמן. ייתכן שהפעולה לא הושלמה, בדקו לפני שמנסים שוב.';
+  return 'משהו השתבש. נסו שוב בעוד רגע.';
+}
 
 export default function AssistantWidget() {
   const theme = useTheme();
-  const navigate = useNavigate();
   const { selectedEvent } = useEvent();
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<Msg[]>([
-    { from: 'bot', text: 'היי! אני העוזר האישי של ShowUp 🎉 אשמח לעזור לך לנהל את האירוע. במה אפשר לעזור?' },
-  ]);
+  const [messages, setMessages] = useState<Msg[]>([GREETING]);
   const [sending, setSending] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
 
@@ -45,26 +50,24 @@ export default function AssistantWidget() {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, open]);
 
-  const runStarter = (s: typeof STARTERS[number]) => {
-    setMessages((m) => [...m, { from: 'user', text: s.label }, { from: 'bot', text: s.reply }]);
-    if (s.path) {
-      setTimeout(() => {
-        setOpen(false);
-        navigate(s.path!);
-      }, 600);
-    }
-  };
+  // A conversation belongs to one event: switching events starts a fresh one,
+  // so one event's transcript is never sent as context for another.
+  useEffect(() => { setMessages([GREETING]); }, [selectedEvent?.id]);
 
-  const handleSend = async () => {
-    const text = input.trim();
-    if (!text) return;
-    setInput('');
+  const handleSend = async (preset?: string) => {
+    const text = (preset ?? input).trim();
+    if (!text || sending) return;
+    if (!selectedEvent?.id) {
+      setMessages((m) => [...m, { from: 'user', text }, { from: 'bot', text: errorText(422) }]);
+      return;
+    }
+    if (!preset) setInput('');
     setMessages((m) => [...m, { from: 'user', text }]);
     setSending(true);
     try {
       // Multi-turn context: send the recent transcript (minus the canned greeting).
       const history = messages
-        .slice(1)
+        .filter((m) => m !== GREETING)
         .slice(-20)
         .map((m) => ({ role: m.from === 'user' ? 'user' : 'assistant', content: m.text }));
       const res = await fetchWithAuth('/api/assistant', {
@@ -74,15 +77,14 @@ export default function AssistantWidget() {
       });
       if (res.ok) {
         const data = await res.json();
-        setMessages((m) => [...m, { from: 'bot', text: data.reply || data.message || 'קיבלתי!' }]);
+        setMessages((m) => [...m, { from: 'bot', text: data.reply || data.message || 'קיבלתי.' }]);
       } else {
-        throw new Error('unavailable');
+        let detail: string | undefined;
+        try { const j = await res.json(); detail = typeof j?.detail === 'string' && /[\u0590-\u05FF]/.test(j.detail) ? j.detail : undefined; } catch { /* non-JSON */ }
+        setMessages((m) => [...m, { from: 'bot', text: errorText(res.status, detail) }]);
       }
     } catch {
-      setMessages((m) => [
-        ...m,
-        { from: 'bot', text: 'העוזר החכם בדרך אליך בקרוב 💜 בינתיים אפשר להשתמש בקיצורים למעלה - הם יקפיצו אותך בדיוק למקום הנכון.' },
-      ]);
+      setMessages((m) => [...m, { from: 'bot', text: errorText(null) }]);
     } finally {
       setSending(false);
     }
@@ -97,8 +99,9 @@ export default function AssistantWidget() {
           aria-label="עוזר חכם"
           onClick={() => setOpen(true)}
           sx={{
-            background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-            '&:hover': { background: `linear-gradient(135deg, ${theme.palette.primary.dark}, ${theme.palette.secondary.dark})` },
+            bgcolor: 'primary.main',
+            boxShadow: '0 10px 26px rgba(90,61,166,0.30)',
+            '&:hover': { bgcolor: 'primary.dark' },
           }}
         >
           <AutoAwesomeIcon />
@@ -112,11 +115,11 @@ export default function AssistantWidget() {
         PaperProps={{ sx: { width: { xs: '100%', sm: 400 }, direction: 'rtl', display: 'flex', flexDirection: 'column' } }}
       >
         {/* Header */}
-        <Box sx={{ p: 2, color: '#fff', background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <Box sx={{ p: 2, color: '#fff', bgcolor: 'primary.main', display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Avatar sx={{ bgcolor: alpha('#fff', 0.25) }}><AutoAwesomeIcon /></Avatar>
           <Box sx={{ flexGrow: 1 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>העוזר של ShowUp</Typography>
-            <Typography variant="caption" sx={{ opacity: 0.9 }}>כאן כדי לעזור עם האירוע שלך</Typography>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }}>העוזרת של האירוע</Typography>
+            <Typography variant="caption" sx={{ opacity: 0.9 }}>שאלות ופעולות על האירוע. פעולות שליחה ומחיקה דורשות אישור שלך</Typography>
           </Box>
           <IconButton onClick={() => setOpen(false)} sx={{ color: '#fff' }}><CloseIcon /></IconButton>
         </Box>
@@ -146,8 +149,8 @@ export default function AssistantWidget() {
         {/* Starters */}
         <Box sx={{ px: 2, pt: 1.5 }}>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-            {STARTERS.map((s) => (
-              <Chip key={s.label} label={s.label} variant="outlined" color="primary" onClick={() => runStarter(s)} sx={{ cursor: 'pointer' }} />
+            {STARTERS.map((q) => (
+              <Chip key={q} label={q} variant="outlined" color="primary" onClick={() => handleSend(q)} disabled={sending} sx={{ cursor: 'pointer' }} />
             ))}
           </Box>
         </Box>
@@ -162,7 +165,7 @@ export default function AssistantWidget() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
           />
-          <IconButton color="primary" onClick={handleSend} disabled={sending || !input.trim()}>
+          <IconButton color="primary" onClick={() => handleSend()} disabled={sending || !input.trim()} aria-label="שליחה">
             <SendIcon />
           </IconButton>
         </Box>

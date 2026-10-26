@@ -382,7 +382,7 @@ export function ImportedGuestsReviewScreen() {
           sx={{
             mb: 1.5,
             borderRadius: 3,
-            backgroundColor: '#6f74e0',
+            backgroundColor: '#5A3DA6',
             color: 'white',
             boxShadow: 'none',
           }}
@@ -439,14 +439,14 @@ export function ImportedGuestsReviewScreen() {
             size="small"
             sx={{
               borderRadius: 3,
-              backgroundColor: '#6f74e0',
+              backgroundColor: '#5A3DA6',
               color: 'white',
               textTransform: 'none',
               py: 0.75,
               gap: 1,
               flexDirection: 'row-reverse',
               '&:hover': {
-                backgroundColor: '#5f64d6',
+                backgroundColor: '#5A3DA6',
               },
               '& .MuiButton-endIcon': {
                 marginLeft: 0,
@@ -760,14 +760,14 @@ export function ImportedGuestsReviewScreen() {
                       size="small"
                       sx={{
                         borderRadius: 2,
-                        backgroundColor: '#6f74e0',
+                        backgroundColor: '#5A3DA6',
                         color: 'white',
                         textTransform: 'none',
                         px: 2.5,
                         py: 0.75,
                         flexDirection: 'row-reverse',
                         '&:hover': {
-                          backgroundColor: '#5f64d6',
+                          backgroundColor: '#5A3DA6',
                         },
                         '& .MuiButton-endIcon': {
                           marginLeft: 0,
@@ -832,7 +832,7 @@ export function ImportedGuestsReviewScreen() {
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setApproveAllDialogOpen(false)} sx={{ color: '#6f74e0' }}>
+          <Button onClick={() => setApproveAllDialogOpen(false)} sx={{ color: '#5A3DA6' }}>
             הבנתי
           </Button>
         </DialogActions>

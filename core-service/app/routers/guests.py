@@ -15,12 +15,12 @@ from sqlalchemy import func, case
 
 from app.db import get_db
 from app.crud import guest as guest_crud, event as event_crud
-from app.schemas.schemas import GuestCreate, GuestOut, GuestUpdate, GuestStatsOut, DailyResponsesOut, DailyResponseData, MilestoneData, PaginatedResponse
+from app.schemas.schemas import GuestCreate, GuestOut, GuestUpdate, GuestStatsOut, DailyResponsesOut, DailyResponseData, MilestoneData, PaginatedResponse, GuestImportReport
 from app.utils import paginate_params, validate_phone
 from shared.auth.deps import get_current_user_id
 from shared.domain.enums import GuestStatus
 from shared.domain.roles import Action
-from app.authz import require_event_permission
+from app.authz import is_owner_or_support, require_event_permission
 from app.models.models import Guest, Campaign, Event
 
 
@@ -53,62 +53,9 @@ class ExportFormat(str, Enum):
 
 
 def normalize_phone_for_import(phone: str) -> str:
-    """
-    Normalize phone number for import.
-    If it's an Israeli number (starts with 0, or 9 digits, or starts with 972),
-    automatically add +972 prefix.
-    Otherwise, keep as is (assuming it's already international format).
-    """
-    import re
-    phone_str = str(phone).strip()
-    
-    # Remove all non-digit characters except +
-    cleaned = re.sub(r"[^\d+]", "", phone_str)
-    
-    # If already starts with +, check if it's valid international format
-    if cleaned.startswith("+"):
-        # Already international format, validate and return
-        digits_only = cleaned[1:]
-        if len(digits_only) >= 7 and len(digits_only) <= 15:
-            return cleaned
-        # If invalid, try to fix as Israeli
-        if digits_only.startswith("972"):
-            return f"+{digits_only}"
-        # Try to treat as Israeli without country code
-        if len(digits_only) == 9 or (len(digits_only) == 10 and digits_only.startswith("0")):
-            if digits_only.startswith("0"):
-                digits_only = digits_only[1:]
-            return f"+972{digits_only}"
-    
-    # No + prefix - check if it's Israeli number
-    digits_only = cleaned
-    
-    # Israeli number patterns:
-    # - 10 digits starting with 0 (e.g., 0501234567)
-    # - 9 digits (e.g., 501234567)
-    # - 12 digits starting with 972 (e.g., 972501234567)
-    
-    if len(digits_only) == 10 and digits_only.startswith("0"):
-        # Remove leading 0 and add +972
-        return f"+972{digits_only[1:]}"
-    elif len(digits_only) == 9:
-        # 9 digits - assume Israeli mobile number
-        return f"+972{digits_only}"
-    elif len(digits_only) == 12 and digits_only.startswith("972"):
-        # Already has 972 prefix, just add +
-        return f"+{digits_only}"
-    elif len(digits_only) >= 7 and len(digits_only) <= 15:
-        # Looks like international number without +, return as is
-        # (validation will catch if invalid)
-        return f"+{digits_only}"
-    else:
-        # Default: assume Israeli if unclear
-        if digits_only.startswith("0"):
-            digits_only = digits_only[1:]
-        if len(digits_only) == 9:
-            return f"+972{digits_only}"
-        # Return as is, validation will catch if invalid
-        return f"+{digits_only}" if not digits_only.startswith("+") else digits_only
+    """Legacy name kept for importers: E.164 via guest_crud.canonical_phone
+    (+972 for IL local numbers), or the digits as-is when unrecognisable."""
+    return guest_crud.canonical_phone(phone) or str(phone or "").strip()
 
 
 # Hebrew weekday mapping (0=Monday, 6=Sunday)
@@ -254,7 +201,7 @@ def get_daily_responses(
 ):
     """Get daily response statistics for an event."""
     event = event_crud.get_event(db, event_id)
-    if not event or not event_crud.is_owner(event, user_id):
+    if not is_owner_or_support(db, event, user_id):
         raise HTTPException(status_code=404, detail="Event not found or not permitted")
     
     # Calculate date range based on period
@@ -410,7 +357,9 @@ def download_import_template(
         writer = csv.writer(output)
         writer.writerow(headers)
         csv_text = output.getvalue()
-        csv_bytes = ("\ufeff" + csv_text).encode("utf-8-sig")
+        # ONE BOM (utf-8-sig adds it). A second one stuck to the first header
+        # ("\ufeffשם מלא") and made re-importing the file drop the name column.
+        csv_bytes = csv_text.encode("utf-8-sig")
         return Response(
             content=csv_bytes,
             media_type="text/csv; charset=utf-8",
@@ -467,7 +416,7 @@ def export_guests(
         raise HTTPException(status_code=422, detail=f"Invalid export_format: {export_format}. Must be 'csv' or 'xlsx'")
     
     event = event_crud.get_event(db, event_id)
-    if not event or not event_crud.is_owner(event, user_id):
+    if not is_owner_or_support(db, event, user_id):
         raise HTTPException(status_code=404, detail="Event not found or not permitted")
 
     # Fetch all guests for this event (no pagination)
@@ -528,7 +477,9 @@ def export_guests(
 
         csv_text = output.getvalue()
         # Prefix BOM so Excel recognizes UTF-8 Hebrew properly
-        csv_bytes = ("\ufeff" + csv_text).encode("utf-8-sig")
+        # ONE BOM (utf-8-sig adds it). A second one stuck to the first header
+        # ("\ufeffשם מלא") and made re-importing the file drop the name column.
+        csv_bytes = csv_text.encode("utf-8-sig")
 
         return Response(
             content=csv_bytes,
@@ -636,23 +587,40 @@ def create_guests(
     # AuthZ check once per request
     event = _authorize_event(db, event_id, user_id, Action.GUEST_WRITE)
 
-    # Build GuestCreate list with validation
+    single = isinstance(payload, dict) and "items" not in payload
+
+    # Build GuestCreate list with validation. Phones are canonicalised to E.164
+    # (+972 for local IL numbers) so 050-1234567 and +972501234567 are the
+    # same guest everywhere.
     valid_items: List[GuestCreate] = []
     for raw in items_raw:
         raw = dict(raw or {})
         raw["event_id"] = str(event_id)
-        phone = str(raw.get("phone", ""))
-        if not validate_phone(phone):
+        phone = guest_crud.canonical_phone(raw.get("phone"))
+        if not phone:
+            if single:
+                raise HTTPException(status_code=400, detail={
+                    "code": "invalid_phone", "message": "מספר הטלפון לא תקין"})
             continue
+        raw["phone"] = phone
         raw = _normalize_import_counts(raw)
         try:
             item = GuestCreate(**raw)
             valid_items.append(item)
         except ValidationError:
+            if single:
+                raise HTTPException(status_code=422, detail={
+                    "code": "invalid_guest", "message": "פרטי המוזמן לא תקינים"})
             continue
 
     if not valid_items:
         return []
+
+    # A manual add of a number that is already on the list must SAY so - the
+    # bulk path below skips duplicates silently, which read as "added".
+    if single and guest_crud.phone_exists_in_event(db, event_id, valid_items[0].phone):
+        raise HTTPException(status_code=409, detail={
+            "code": "duplicate_phone", "message": "מוזמן עם מספר הטלפון הזה כבר קיים ברשימה"})
 
     try:
         created = guest_crud.create_guests_bulk(db, event_id=event_id, items=valid_items)
@@ -669,151 +637,193 @@ def create_guests(
     return created
 
 
-@router.post("/bulk", response_model=list[GuestOut])
+# Header aliases for file imports, matched after normalisation (lower-case,
+# no BOM / quotes, collapsed spaces). Exact aliases first, then substring hints.
+_HEADER_ALIASES = {
+    "name": ["name", "full name", "fullname", "שם מלא", "שם", "שם המוזמן", "שם האורח", "שם אורח", "מוזמן"],
+    "first_name": ["first name", "firstname", "שם פרטי"],
+    "last_name": ["last name", "lastname", "surname", "שם משפחה"],
+    "phone": ["phone", "phone number", "mobile", "cell", "tel", "telephone", "טלפון", "נייד",
+              "טלפון נייד", "מספר טלפון", "מס טלפון", "מספר נייד", "פלאפון", "סלולרי"],
+    "email": ["email", "e-mail", "mail", "אימייל", "מייל", "דואל", "דוא\"ל", "דואר אלקטרוני"],
+    "group": ["group", "side", "קבוצה", "צד", "שיוך"],
+    "import_count": ["import_count", "import count", "importcount", "guest_count", "guest count",
+                     "guestcount", "count", "guests", "כמות", "כמות מוזמנים", "כמות מוזמנים (import)",
+                     "מספר מוזמנים", "כמות אורחים", "מספר אורחים", "סה\"כ"],
+    "table_number": ["table_number", "table number", "tablenumber", "table", "מספר שולחן", "שולחן"],
+}
+_HEADER_HINTS = {
+    "phone": ["טלפון", "נייד", "phone", "mobile", "פלאפון"],
+    "name": ["שם", "name"],
+    "import_count": ["כמות", "count"],
+    "table_number": ["שולחן", "table"],
+    "email": ["מייל", "mail"],
+    "group": ["קבוצה", "group"],
+}
+
+
+def _norm_header(h: Any) -> str:
+    import re as _re
+    text_h = str(h or "").replace("﻿", "").strip().strip('"').strip("'").lower()
+    return _re.sub(r"\s+", " ", text_h)
+
+
+def _map_headers(headers: List[str]) -> dict:
+    """field -> column index, from a header row. Unrecognised columns ignored."""
+    normed = [_norm_header(h) for h in headers]
+    out: dict = {}
+    for field, aliases in _HEADER_ALIASES.items():
+        for alias in aliases:
+            if alias in normed and normed.index(alias) not in out.values():
+                out[field] = normed.index(alias)
+                break
+    for field, hints in _HEADER_HINTS.items():
+        if field in out:
+            continue
+        if field == "name" and ("first_name" in out or "last_name" in out):
+            continue
+        for i, h in enumerate(normed):
+            if i in out.values() or not h:
+                continue
+            if field == "name" and ("משפחה" in h or "פרטי" in h):
+                continue
+            if any(hint in h for hint in hints):
+                out[field] = i
+                break
+    return out
+
+
+def _rows_from_table(table: List[List[Any]]) -> List[tuple]:
+    """[(row_number, {name, phone, ...})] from a sheet (first row = header).
+
+    When the header names neither a name nor a phone column the file is taken
+    as header-less (column A = name, column B = phone), like the UI preview."""
+    if not table:
+        return []
+    header = [("" if c is None else str(c)) for c in table[0]]
+    cols = _map_headers(header)
+    first_data = 1
+    if "phone" not in cols and "name" not in cols and "first_name" not in cols:
+        cols = {"name": 0, "phone": 1}
+        first_data = 0
+    out = []
+    for i in range(first_data, len(table)):
+        cells = table[i]
+
+        def cell(field):
+            idx = cols.get(field)
+            if idx is None or idx >= len(cells):
+                return None
+            v = cells[idx]
+            return None if (v is None or (isinstance(v, str) and not v.strip())) else v
+
+        name = cell("name")
+        if name is None and (cell("first_name") is not None or cell("last_name") is not None):
+            name = " ".join(str(x).strip() for x in (cell("first_name"), cell("last_name")) if x is not None)
+        row = {
+            "name": name, "phone": cell("phone"), "email": cell("email"), "group": cell("group"),
+            "import_count": cell("import_count"), "table_number": cell("table_number"),
+        }
+        if all(v is None for v in row.values()):
+            continue
+        out.append((i + 1, row))  # spreadsheet row number (header = 1)
+    return out
+
+
+def _decode_csv(content: bytes) -> str:
+    """UTF-8 (with/without BOM) first; Hebrew Excel on Windows saves CSV as
+    windows-1255, which used to blow up the whole import."""
+    for enc in ("utf-8-sig", "cp1255"):
+        try:
+            return content.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return content.decode("utf-8", errors="replace")
+
+
+def _csv_table(text: str) -> List[List[Any]]:
+    text = text.lstrip("﻿")
+    try:
+        delim = csv.Sniffer().sniff(text[:4096], delimiters=",;\t").delimiter
+    except csv.Error:
+        delim = ","
+    return [row for row in csv.reader(io.StringIO(text), delimiter=delim)]
+
+
+def _xlsx_table(content: bytes) -> List[List[Any]]:
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        raise HTTPException(status_code=500, detail="openpyxl is not installed on server")
+    try:
+        wb = load_workbook(io.BytesIO(content), data_only=True, read_only=True)
+        ws = wb.active
+        table = [list(r) for r in ws.iter_rows(values_only=True)]
+    except Exception:
+        raise HTTPException(status_code=400, detail={
+            "code": "unreadable_file",
+            "message": "לא הצלחנו לקרוא את קובץ האקסל. שמרו אותו כ-xlsx או כ-CSV ונסו שוב."})
+    # Skip leading blank rows (a title above the header is common).
+    while table and all(c is None or str(c).strip() == "" for c in table[0]):
+        table.pop(0)
+    return table
+
+
+@router.post("/bulk", response_model=GuestImportReport)
 async def bulk_import(
     event_id: uuid.UUID = Query(...),
+    dry_run: bool = Query(False, description="Validate + report without creating anything (import preview)"),
     file: UploadFile | None = File(None),
     body: List[GuestCreate] | None = None,
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """
-    Bulk import guests from CSV or XLSX file, or from JSON body.
+    Bulk import guests from a CSV / XLSX file, or from a JSON body.
 
-    - If `file` is provided:
-        * Supports UTF-8 CSV
-        * Supports XLSX/XLS (first sheet, first row as headers)
-    - If `body` is provided:
-        * Expects a list[GuestCreate]
+    Never aborts on a bad row: duplicates (already in the event, or repeated in
+    the file) and invalid rows (no name / unusable phone) are skipped and
+    reported; the plan's guest cap stops the import at the cap with
+    `capacity_reached`. Phones are stored as E.164 (+972 for IL local numbers).
+    `dry_run=true` runs the same checks and creates nothing (import preview).
+
+    Returns a GuestImportReport: {created, skipped_duplicates, skipped_invalid,
+    capacity_reached, skipped_capacity, capacity_limit, dry_run, guests}.
+    (Before 2026-10 this returned a bare list of guests.)
     """
-    _authorize_event(db, event_id, user_id, Action.GUEST_WRITE)
+    event = _authorize_event(db, event_id, user_id, Action.GUEST_WRITE)
 
-    guests_to_create: List[GuestCreate] = []
-
-    # Helper to build GuestCreate from a generic row dict
-    def build_guest_from_row(row: dict) -> GuestCreate | None:
-        # Normalize possible header names (English / Hebrew / variations)
-        name = (
-            row.get("name")
-            or row.get("Name")
-            or row.get("שם מלא")
-            or row.get("שם")
-        )
-        phone = (
-            row.get("phone")
-            or row.get("Phone")
-            or row.get("טלפון")
-        )
-        email = row.get("email") or row.get("Email") or row.get("אימייל")
-        group = row.get("group") or row.get("Group") or row.get("קבוצה")
-
-        table_number_raw = (
-            row.get("table_number")
-            or row.get("Table Number")
-            or row.get("tableNumber")
-            or row.get("מספר שולחן")
-        )
-        raw_import_count = (
-            row.get("import_count")
-            or row.get("Import Count")
-            or row.get("importCount")
-            or row.get("guest_count")
-            or row.get("Guest Count")
-            or row.get("guestCount")
-            or row.get("כמות מוזמנים (Import)")
-        )
-
-        if not name or not phone:
-            return None
-        
-        # Normalize phone number (add +972 for Israeli numbers if needed)
-        phone_normalized = normalize_phone_for_import(str(phone))
-        
-        if not validate_phone(phone_normalized):
-            return None
-
-        normalized_payload = _normalize_import_counts(
-            {
-                "event_id": event_id,
-                "name": name,
-                "phone": phone_normalized,
-                "email": email,
-                "group": group,
-                "import_count": raw_import_count,
-            }
-        )
-        # Safely parse table_number if provided
-        if table_number_raw not in (None, ""):
-            try:
-                normalized_payload["table_number"] = int(table_number_raw)
-            except (ValueError, TypeError):
-                pass
-
-        return GuestCreate(**normalized_payload)
-
+    rows: List[tuple] = []
     if file is not None:
         content = await file.read()
         filename = (file.filename or "").lower()
-
-        # XLSX / XLS import
-        if filename.endswith((".xlsx", ".xls")):
-            try:
-                from openpyxl import load_workbook
-            except ImportError:
-                raise HTTPException(status_code=500, detail="openpyxl is not installed on server")
-
-            wb = load_workbook(io.BytesIO(content), data_only=True)
-            ws = wb.active
-
-            # Assume first row is header
-            rows_iter = ws.iter_rows(values_only=True)
-            try:
-                header_row = next(rows_iter)
-            except StopIteration:
-                header_row = None
-
-            if not header_row:
-                raise HTTPException(status_code=400, detail="Empty Excel file")
-
-            headers = [str(h).strip() if h is not None else "" for h in header_row]
-
-            for data_row in rows_iter:
-                row_dict = {}
-                for idx, value in enumerate(data_row):
-                    if idx < len(headers):
-                        key = headers[idx]
-                        if key:
-                            row_dict[key] = value
-                guest = build_guest_from_row(row_dict)
-                if guest is not None:
-                    guests_to_create.append(guest)
-
-        # CSV import (default)
+        if filename.endswith(".xls"):
+            raise HTTPException(status_code=400, detail={
+                "code": "xls_not_supported",
+                "message": "קבצי xls ישנים לא נתמכים - שמרו את הקובץ כ-xlsx או כ-CSV ונסו שוב."})
+        if filename.endswith(".xlsx"):
+            table = _xlsx_table(content)
         else:
-            text = content.decode("utf-8-sig")  # handle BOM if present
-            reader = csv.DictReader(io.StringIO(text))
-            for row in reader:
-                guest = build_guest_from_row(row)
-                if guest is not None:
-                    guests_to_create.append(guest)
-
+            table = _csv_table(_decode_csv(content))
+        if not table:
+            raise HTTPException(status_code=400, detail={"code": "empty_file", "message": "הקובץ ריק"})
+        rows = _rows_from_table(table)
     elif body is not None:
-        for g in body:
-            if validate_phone(g.phone):
-                payload = g.model_dump()
-                payload = _normalize_import_counts(payload)
-                guests_to_create.append(GuestCreate(**payload))
+        for i, g in enumerate(body):
+            rows.append((i + 1, _normalize_import_counts(g.model_dump())))
     else:
         raise HTTPException(status_code=400, detail="Provide CSV/XLSX file or JSON body")
 
-    created = []
-    for g in guests_to_create:
-        try:
-            created.append(guest_crud.create_guest(db, g))
-        except ValueError as e:
-            # Handle capacity limit or other validation errors
-            raise HTTPException(status_code=400, detail=str(e))
-    return created
+    report = guest_crud.import_guest_rows(db, event, rows, dry_run=dry_run)
+    if not dry_run:
+        report["guests"] = [GuestOut.model_validate(g).model_dump(mode="json", by_alias=True)
+                            for g in report["guests"]]
+        if report["created"]:
+            from app.usage import record_usage
+            from shared.domain.enums import UsageMetric
+            record_usage(db, account_id=getattr(event, "account_id", None), event_id=event_id,
+                         metric=UsageMetric.GUEST_ADDED, quantity=report["created"])
+    return report
 
 
 # (removed bulk-json; bulk now supported on POST /guests with array body and event_id in query)
@@ -833,9 +843,18 @@ def delete_guests_by_event(
 @router.put("/{guest_id}", response_model=GuestOut)
 def update_guest(guest_id: uuid.UUID, payload: GuestUpdate, db: Session = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
     guest = _authorize_guest(db, guest_id, user_id, Action.GUEST_WRITE)
-    if payload.phone is not None and not validate_phone(payload.phone):
-        raise HTTPException(status_code=422, detail="Invalid phone format")
-    guest = guest_crud.update_guest(db, guest, payload)
+    if payload.phone is not None:
+        canon = guest_crud.canonical_phone(payload.phone)
+        if not canon:
+            raise HTTPException(status_code=422, detail={"code": "invalid_phone", "message": "מספר הטלפון לא תקין"})
+        payload = payload.model_copy(update={"phone": canon})
+    try:
+        guest = guest_crud.update_guest(db, guest, payload)
+    except guest_crud.DuplicatePhoneError:
+        raise HTTPException(status_code=409, detail={
+            "code": "duplicate_phone", "message": "מוזמן עם מספר הטלפון הזה כבר קיים ברשימה"})
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     # Phase 9: record the manual edit on the guest timeline.
     from app.timeline import record_guest_event

@@ -36,8 +36,8 @@ const TYPE_META: Record<string, { label: string; Icon: React.ElementType; color:
   count_updated: { label: 'עודכן מספר אורחים', Icon: GroupsRoundedIcon, color: '#6D28D9' },
   manual_override: { label: 'עודכן ידנית', Icon: EditRoundedIcon, color: '#6B7280' },
   staff_edit: { label: 'נערך על ידי הצוות', Icon: EditRoundedIcon, color: '#6B7280' },
-  ai_action: { label: 'פעולת עוזר חכם', Icon: AutoAwesomeRoundedIcon, color: '#EC4899' },
-  tagged: { label: 'תויג/ה', Icon: LocalOfferRoundedIcon, color: '#EC4899' },
+  ai_action: { label: 'פעולת עוזר חכם', Icon: AutoAwesomeRoundedIcon, color: '#9D83E0' },
+  tagged: { label: 'תויג/ה', Icon: LocalOfferRoundedIcon, color: '#9D83E0' },
   imported: { label: 'נוסף/ה לרשימה', Icon: PersonAddRoundedIcon, color: '#6D28D9' },
 };
 

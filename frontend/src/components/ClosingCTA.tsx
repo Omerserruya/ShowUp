@@ -21,8 +21,8 @@ export default function ClosingCTA() {
           py: { xs: 6, sm: 9 },
           textAlign: 'center',
           color: '#fff',
-          backgroundImage: 'linear-gradient(120deg, #6f74e0 0%, #888cee 55%, #aab0f4 100%)',
-          boxShadow: '0 24px 60px rgba(136, 140, 238, 0.35)',
+          bgcolor: '#5A3DA6',
+          boxShadow: '0 24px 60px rgba(95, 100, 214, 0.28)',
         }}
       >
         <Typography variant="h3" sx={{ fontWeight: 800, mb: 1.5 }}>
@@ -47,7 +47,7 @@ export default function ClosingCTA() {
             onClick={() => navigate('/wizard')}
             sx={{
               bgcolor: '#fff',
-              color: '#7378e4',
+              color: '#5A3DA6',
               fontWeight: 700,
               px: 4,
               py: 1.25,

@@ -172,7 +172,7 @@ export default function Billing({ embedded = false }: { embedded?: boolean } = {
               <Alert severity="warning" sx={{ mb: 2 }}>אתם מתקרבים למכסת האורחים. כדאי לשדרג כדי להוסיף עוד.</Alert>
             )}
 
-            <Button fullWidth variant="contained" disableElevation startIcon={<UpgradeIcon />} onClick={() => setPickerOpen(true)} sx={{ borderRadius: 1.5, py: 1.25, boxShadow: 'none', bgcolor: 'primary.main', '&:hover': { bgcolor: 'primary.dark' } }}>
+            <Button fullWidth variant="contained" disableElevation startIcon={<UpgradeIcon />} onClick={() => setPickerOpen(true)} sx={{ borderRadius: 1.5, py: 1.25, boxShadow: 'none', bgcolor: '#C9B8F3', color: '#16150F', '&:hover': { bgcolor: '#BBA6EE' } }}>
               שינוי חבילה
             </Button>
           </Box>
@@ -247,7 +247,7 @@ export default function Billing({ embedded = false }: { embedded?: boolean } = {
                     </Button>
                   ) : isUpgrade ? (
                     <Button fullWidth variant="contained" disableElevation disabled={!!submitting} onClick={() => startPlanChange(p.id)}
-                      sx={{ borderRadius: 1.5, textTransform: 'none', fontWeight: 600, boxShadow: 'none', bgcolor: 'primary.main', '&:hover': { bgcolor: 'primary.dark', boxShadow: 'none' } }}>
+                      sx={{ borderRadius: 1.5, textTransform: 'none', fontWeight: 600, boxShadow: 'none', bgcolor: '#C9B8F3', color: '#16150F', '&:hover': { bgcolor: '#BBA6EE', boxShadow: 'none' } }}>
                       {busy ? <CircularProgress size={20} color="inherit" /> : showDelta ? `שדרוג · ₪${delta}` : `מעבר ל-${p.title} · ${p.price}`}
                     </Button>
                   ) : (

@@ -63,6 +63,9 @@ def log_json(logger: logging.Logger, level: int, message: str, **fields):
 
 
 OUTPOST_QUEUE = os.getenv("OUTPOST_QUEUE_NAME", "outpost_queue")
+# Owner-facing replies (import confirmations, event picker) go to outpost's
+# PRIORITY queue so they are never stuck behind a bulk campaign send.
+OUTPOST_PRIORITY_QUEUE = os.getenv("OUTPOST_PRIORITY_QUEUE", "outpost_priority_queue")
 CONTACT_IMPORT_QUEUE = os.getenv("CONTACT_IMPORT_QUEUE", "contact_import_queue")
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 # Debounce window: extra contact messages from the same sender within this
@@ -74,10 +77,16 @@ PENDING_SELECTION_TTL_SECONDS = int(os.getenv("PENDING_SELECTION_TTL_SECONDS", "
 BUF_KEY = "ci:buf:{phone}"
 DUE_KEY = "ci:due:{phone}"
 PENDING_KEY = "ci:pending:{phone}"
+ATTEMPTS_KEY = "ci:attempts:{phone}"
+# A batch whose processing keeps failing is re-buffered and retried with this
+# delay, up to MAX_BATCH_ATTEMPTS, instead of being silently dropped.
+BATCH_RETRY_DELAY_SECONDS = float(os.getenv("CONTACT_BATCH_RETRY_DELAY_SECONDS", "15"))
+MAX_BATCH_ATTEMPTS = int(os.getenv("CONTACT_BATCH_MAX_ATTEMPTS", "20"))
 
 # Hebrew owner-facing messages
 NO_ACTIVE_EVENT_MESSAGE = "נראה שאין לך אירוע פעיל כרגע, אז אין לנו מה לעשות עם אנשי הקשר ששלחת 😅"
 NO_PENDING_MESSAGE = "לא מצאתי אנשי קשר שממתינים להעלאה. אפשר לשלוח אותם שוב 🙂"
+NO_PHONE_MESSAGE = "לאנשי הקשר ששלחת אין מספר טלפון, אז לא היה אפשר להוסיף אותם כאורחים 🙂"
 PICKER_PROMPT = "יש לך כמה אירועים פעילים 🙂 לאיזה אירוע להעלות את {count} אנשי הקשר?"
 
 
@@ -125,7 +134,7 @@ def send_owner_text(channel, phone: str, text: str):
         "sender": "assistant",
         "source": "contact_import_worker",
     }
-    publish_outpost(channel, OUTPOST_QUEUE, message)
+    publish_outpost(channel, OUTPOST_PRIORITY_QUEUE, message)
 
 
 def send_event_picker(channel, phone: str, events: List[Dict[str, Any]], contact_count: int):
@@ -159,7 +168,7 @@ def send_event_picker(channel, phone: str, events: List[Dict[str, Any]], contact
                 }],
             },
         }
-    publish_outpost(channel, OUTPOST_QUEUE, {
+    publish_outpost(channel, OUTPOST_PRIORITY_QUEUE, {
         "platform": "WA",
         "recipient": phone,
         "message_type": "interactive",
@@ -173,7 +182,9 @@ def import_batch(conn, event_id: str, buffered: List[Dict[str, Any]]) -> int:
     """Create import + contact records for a batch of buffered WA messages.
 
     One guest_imports row per original WhatsApp message (message_id keeps its
-    unique/idempotency semantics). Returns the number of contacts created.
+    unique/idempotency semantics). Returns the number of contacts WITH A PHONE
+    created - a contact without a phone can never be invited, so it must not
+    inflate the "N guests imported" confirmation.
     """
     logger = logging.getLogger("worker")
     created_count = 0
@@ -209,7 +220,8 @@ def import_batch(conn, event_id: str, buffered: List[Dict[str, Any]]) -> int:
                     phone=contact_data["phone"],
                     email=contact_data["email"],
                 )
-                created_count += 1
+                if (contact_data.get("phone") or "").strip():
+                    created_count += 1
             except Exception as e:
                 log_json(logger, logging.ERROR, "Failed to create import contact",
                          import_id=import_id, contact=contact, error=str(e))
@@ -221,6 +233,34 @@ def import_batch(conn, event_id: str, buffered: List[Dict[str, Any]]) -> int:
     return created_count
 
 
+def count_phone_contacts(buffered: List[Dict[str, Any]]) -> int:
+    """Contacts across buffered messages that actually carry a phone number."""
+    total = 0
+    for m in buffered:
+        for c in extract_contacts_from_message(m.get("raw_message") or {}):
+            if (extract_contact_data(c).get("phone") or "").strip():
+                total += 1
+    return total
+
+
+def merge_pending(existing: List[Dict[str, Any]], new: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Append a new batch to one already waiting for event selection.
+
+    Dedupes by WhatsApp message_id so a redelivered message is not parked twice
+    (import_batch is idempotent per message_id anyway; this keeps counts honest).
+    """
+    seen = {m.get("message_id") for m in existing if m.get("message_id")}
+    merged = list(existing)
+    for m in new:
+        mid = m.get("message_id")
+        if mid and mid in seen:
+            continue
+        if mid:
+            seen.add(mid)
+        merged.append(m)
+    return merged
+
+
 def process_batch(conn, channel, r, phone: str, buffered: List[Dict[str, Any]]):
     """A sender's debounce window closed - import or ask which event."""
     logger = logging.getLogger("worker")
@@ -229,6 +269,10 @@ def process_batch(conn, channel, r, phone: str, buffered: List[Dict[str, Any]]):
                          for m in buffered)
     if total_contacts == 0:
         log_json(logger, logging.WARNING, "Batch with no contacts", phone=phone)
+        return
+    if count_phone_contacts(buffered) == 0:
+        log_json(logger, logging.INFO, "Batch has contacts but none with a phone", phone=phone)
+        send_owner_text(channel, phone, NO_PHONE_MESSAGE)
         return
 
     normalized_phone = normalize_phone(phone)
@@ -252,13 +296,26 @@ def process_batch(conn, channel, r, phone: str, buffered: List[Dict[str, Any]]):
                  phone=phone, event_id=str(event["id"]), created=created)
         return
 
-    # Several active events: park the batch and let the owner pick.
-    r.set(PENDING_KEY.format(phone=phone),
-          json.dumps(buffered, ensure_ascii=False),
-          ex=PENDING_SELECTION_TTL_SECONDS)
-    send_event_picker(channel, phone, events, total_contacts)
+    # Several active events: park the batch and let the owner pick. A batch
+    # already waiting for a choice is APPENDED to, never overwritten - the
+    # owner who shares contacts twice before tapping must not lose the first set.
+    pending_key = PENDING_KEY.format(phone=phone)
+    existing: List[Dict[str, Any]] = []
+    raw_existing = r.get(pending_key)
+    if raw_existing:
+        try:
+            parsed = json.loads(raw_existing)
+            if isinstance(parsed, list):
+                existing = parsed
+        except json.JSONDecodeError:
+            existing = []
+    merged = merge_pending(existing, buffered)
+    r.set(pending_key, json.dumps(merged, ensure_ascii=False), ex=PENDING_SELECTION_TTL_SECONDS)
+    phone_contacts = count_phone_contacts(merged)
+    send_event_picker(channel, phone, events, phone_contacts)
     log_json(logger, logging.INFO, "Waiting for event selection",
-             phone=phone, events=len(events), contacts=total_contacts)
+             phone=phone, events=len(events), contacts=phone_contacts,
+             appended_to_existing=bool(existing))
 
 
 def handle_finalize(conn, channel, r, message: Dict[str, Any]):
@@ -313,6 +370,40 @@ def buffer_contact_message(r, message: Dict[str, Any]):
     pipe.execute()
 
 
+def requeue_batch(r, phone: str, raw_items: List[str], error: str) -> None:
+    """Return a failed batch to the sender's buffer for a delayed retry.
+
+    Bounded by MAX_BATCH_ATTEMPTS so a permanently poisonous batch cannot spin
+    forever; the give-up is logged at ERROR (and to Sentry) rather than silent.
+    """
+    logger = logging.getLogger("flusher")
+    attempts_key = ATTEMPTS_KEY.format(phone=phone)
+    attempts = int(r.incr(attempts_key))
+    r.expire(attempts_key, 6 * 3600)
+    if attempts >= MAX_BATCH_ATTEMPTS:
+        r.delete(attempts_key)
+        log_json(logger, logging.ERROR, "Contact batch dropped after max attempts",
+                 phone=phone, attempts=attempts, messages=len(raw_items), error=error)
+        try:
+            from shared.obs import log_event
+            log_event("import.failed", level="error", reason=f"dropped after {attempts} attempts: {error}")
+        except Exception:
+            pass
+        return
+    buf_key = BUF_KEY.format(phone=phone)
+    pipe = r.pipeline()
+    # LPUSH in reverse keeps the original order ahead of anything that arrived
+    # meanwhile.
+    for item in reversed(raw_items):
+        pipe.lpush(buf_key, item)
+    pipe.expire(buf_key, 3600)
+    pipe.set(DUE_KEY.format(phone=phone),
+             str(time.time() + BATCH_RETRY_DELAY_SECONDS * min(attempts, 8)), ex=3600)
+    pipe.execute()
+    log_json(logger, logging.WARNING, "Contact batch re-queued for retry",
+             phone=phone, attempts=attempts, messages=len(raw_items), error=error)
+
+
 def flusher_loop(r):
     """Background thread: flush sender buffers whose debounce window closed.
 
@@ -364,15 +455,22 @@ def flusher_loop(r):
                     process_batch(conn, channel, r, phone, buffered)
                 except Exception as e:
                     # A dead AMQP connection surfaces here on first publish.
-                    # Reconnect and retry once so the batch isn't dropped
-                    # (import_batch is idempotent per message_id, so a retry
-                    # can't double-import).
+                    # Reconnect and retry once (import_batch is idempotent per
+                    # message_id, so a retry can't double-import).
                     log_json(logger, logging.WARNING, "Batch failed, retrying once",
                              phone=phone, error=str(e))
-                    reconnect_mq()
-                    if conn.closed:
-                        conn = db_connect()
-                    process_batch(conn, channel, r, phone, buffered)
+                    try:
+                        reconnect_mq()
+                        if conn.closed:
+                            conn = db_connect()
+                        process_batch(conn, channel, r, phone, buffered)
+                    except Exception as e2:
+                        # Still failing: KEEP the batch. Put it back in the
+                        # buffer and re-arm the timer so a later iteration
+                        # retries, instead of dropping the owner's contacts.
+                        requeue_batch(r, phone, items, str(e2))
+                        continue
+                r.delete(ATTEMPTS_KEY.format(phone=phone))
         except Exception as e:
             log_json(logger, logging.ERROR, "Flusher iteration failed", error=str(e))
             logger.exception("flusher error")

@@ -89,6 +89,10 @@ def redeem_entitlement(
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """Consume the entitlement and create its event, owned by the caller."""
+    try:
+        event_crud.validate_future_event_date(payload.event_date)
+    except event_crud.EventDateError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     account_id = ensure_personal_account(db, user_id)
     event_fields = payload.model_dump(exclude_none=True, by_alias=False)
     # Inviters arrive as pydantic models; store as plain dicts.

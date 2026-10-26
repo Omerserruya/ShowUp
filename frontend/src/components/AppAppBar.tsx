@@ -13,7 +13,6 @@ import MenuIcon from '@mui/icons-material/Menu';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import PersonIcon from '@mui/icons-material/Person';
 import { useNavigate } from 'react-router-dom';
-import { useColorScheme } from '@mui/material/styles';
 import ColorModeIconDropdown from '../components/ColorModeIconDropdown';
 import Logo from './Logo';
 import Typography from '@mui/material/Typography';
@@ -24,13 +23,13 @@ const StyledToolbar = styled(Toolbar)(({ theme }: { theme: Theme & { vars?: any 
   justifyContent: 'space-between',
   flexShrink: 0,
   borderRadius: `calc(${theme.shape.borderRadius}px + 8px)`,
-  backdropFilter: 'blur(24px)',
+  backdropFilter: 'blur(18px)',
   border: '1px solid',
   borderColor: (theme.vars || theme).palette.divider,
   backgroundColor: theme.vars
-    ? `rgba(${theme.vars.palette.background.defaultChannel} / 0.4)`
-    : alpha(theme.palette.background.default, 0.4),
-  boxShadow: (theme.vars || theme).shadows[1],
+    ? `rgba(${theme.vars.palette.background.defaultChannel} / 0.72)`
+    : alpha(theme.palette.background.default, 0.72),
+  boxShadow: '0 6px 24px rgba(15,23,42,0.06)',
   padding: '8px 12px',
   [theme.breakpoints.down('md')]: {
     padding: '8px 16px',
@@ -39,6 +38,8 @@ const StyledToolbar = styled(Toolbar)(({ theme }: { theme: Theme & { vars?: any 
 
 const menuItems = [
   { title: 'מה מקבלים', href: '#what-you-get' },
+  { title: 'איך זה עובד', href: '#how-it-works' },
+  { title: 'העוזר', href: '#assistant' },
   { title: 'תעריפים', href: '#pricing' },
   { title: 'שאלות נפוצות', href: '#faq' },
 ];
@@ -46,7 +47,6 @@ const menuItems = [
 export default function AppAppBar() {
   const [open, setOpen] = React.useState(false);
   const navigate = useNavigate();
-  const { mode, setMode } = useColorScheme();
 
   const toggleDrawer = (newOpen: boolean) => () => {
     setOpen(newOpen);
@@ -68,8 +68,7 @@ export default function AppAppBar() {
         boxShadow: 0,
         bgcolor: 'transparent',
         backgroundImage: 'none',
-        mt: 'calc(var(--template-frame-height, 0px) + 28px)',
-
+        mt: 'calc(var(--template-frame-height, 0px) + 16px)',
         width: '100%',
       }}
     >
@@ -107,30 +106,26 @@ export default function AppAppBar() {
               ))}
             </Box>
           </Box>
-          <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 1 }}>
-            <Button 
-              color="primary" 
-              variant="outlined" 
+          <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 1.5 }}>
+            <Button
+              color="primary"
+              variant="text"
               size="small"
               onClick={handleLoginClick}
-              sx={{
-                borderWidth: 2,
-                '&:hover': {
-                  borderWidth: 2,
-                },
-              }}
+              sx={{ color: 'text.primary', fontWeight: 600, px: 1.5 }}
             >
               התחברות
             </Button>
-            <Button 
-              color="primary" 
-              variant="contained" 
+            <Button
+              color="primary"
+              variant="contained"
               size="small"
+              disableElevation
               onClick={handleRegisterClick}
+              sx={{ borderRadius: 999, px: 2.25, fontWeight: 700 }}
             >
-              הרשמה
+              יוצאים לדרך
             </Button>
-            <ColorModeIconDropdown size="small" />
           </Box>
           <Box 
             sx={{ 
@@ -224,9 +219,10 @@ export default function AppAppBar() {
                     color="primary" 
                     variant="contained" 
                     fullWidth
+                    disableElevation
                     onClick={handleRegisterClick}
                   >
-                    הרשמה
+                    יוצאים לדרך
                   </Button>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>

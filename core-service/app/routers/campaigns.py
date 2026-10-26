@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.crud import campaign as campaign_crud, event as event_crud
-from app.schemas.schemas import CampaignCreate, CampaignOut, CampaignUpdate
+from app.schemas.schemas import CampaignCreate, CampaignOut, CampaignStats, CampaignUpdate
 from app.utils import paginate_params
 from shared.auth.deps import get_current_user_id
 from shared.domain.roles import Action
@@ -69,11 +69,10 @@ def _require_rounds_available(db: Session, event, event_id, requested: int, item
     from app.plans_client import plan_extra_round_bands
     from app.audience import count_audience
     first = items[0] if items else None
-    recipients = count_audience(
-        db, event_id,
-        getattr(first, "audience", "everyone") if first else "everyone",
-        getattr(first, "audience_filter", None) if first else None,
-    )
+    # Quote the round for the audience it will ACTUALLY get (stage-derived
+    # when the client did not choose one).
+    aud, aud_filter = campaign_crud.derive_audience(db, first) if first else ("everyone", None)
+    recipients = count_audience(db, event_id, aud, aud_filter)
     price = extra_round_price(recipients, plan_extra_round_bands(getattr(event, "plan_id", None)))
     raise HTTPException(status_code=402, detail={
         "code": "extra_round_required",
@@ -185,12 +184,23 @@ def list_campaigns(
     # For unsent campaigns show the per-campaign audience size; for sent, use the
     # recorded recipient_count.
     from app.audience import count_audience
+    # One grouped query for the whole page: every campaign carries its funnel
+    # (received / seen / answered) inline, so the UI never fires a request per
+    # campaign and never has a campaign without stats.
+    stats_by_id = campaign_crud.get_campaign_stats_bulk(db, [c.id for c in items])
+    # Keep the PERSISTED recipient_count of not-yet-sent campaigns current with
+    # the guest list (the planner sizes releases from the stored value).
+    try:
+        if campaign_crud.refresh_recipient_counts(db, event_id, items):
+            db.commit()
+    except Exception:
+        db.rollback()
     result = []
     for c in items:
-        out = CampaignOut.model_validate(c)
+        update = {"stats": CampaignStats(**(stats_by_id.get(str(c.id)) or {}))}
         if c.status != "sent":
-            out = out.model_copy(update={"recipient_count": count_audience(db, event_id, c.audience, c.audience_filter)})
-        result.append(out)
+            update["recipient_count"] = count_audience(db, event_id, c.audience, c.audience_filter)
+        result.append(CampaignOut.model_validate(c).model_copy(update=update))
     return result
 
 
@@ -201,10 +211,11 @@ def get_campaign(campaign_id: uuid.UUID, db: Session = Depends(get_db), user_id:
         raise HTTPException(status_code=404, detail="Campaign not found")
     require_event_permission(db, event_crud.get_event(db, campaign.event_id), user_id, Action.CAMPAIGN_READ)
     out = CampaignOut.model_validate(campaign)
+    update = {"stats": CampaignStats(**campaign_crud.get_campaign_stats(db, campaign.id))}
     if campaign.status != "sent":
         from app.audience import count_audience
-        out = out.model_copy(update={"recipient_count": count_audience(db, campaign.event_id, campaign.audience, campaign.audience_filter)})
-    return out
+        update["recipient_count"] = count_audience(db, campaign.event_id, campaign.audience, campaign.audience_filter)
+    return out.model_copy(update=update)
 
 
 @router.post("", response_model=Union[CampaignOut, List[CampaignOut]], status_code=201)
@@ -260,6 +271,10 @@ def create_campaigns(
             item.event_id = normalized_event_id
         except ValidationError as e:
             raise HTTPException(status_code=422, detail=e.errors())
+        # Free-text bodies are rejected by Meta on a first contact - drop them
+        # (unless ALLOW_CUSTOM_MESSAGE_CAMPAIGNS) BEFORE the deliverability
+        # gate, so the template itself must be deliverable.
+        item.custom_message = campaign_crud.strip_custom_message(item.custom_message, context=item.name)
         # Block campaigns whose template can't actually be delivered (no Meta mapping).
         _require_deliverable_template(db, item.template, item.custom_message,
                                       event_type=getattr(event, "event_type", None))
@@ -309,14 +324,25 @@ def update_campaign(
     # A free-text campaign (existing custom_message) sends as plain text regardless.
     if payload.template is not None and payload.template != campaign.template:
         _event = event_crud.get_event(db, campaign.event_id)
-        _require_deliverable_template(db, payload.template, campaign.custom_message,
+        _custom = campaign.custom_message if campaign_crud.custom_messages_allowed() else None
+        _require_deliverable_template(db, payload.template, _custom,
+                                      event_type=getattr(_event, "event_type", None))
+
+    # "Send now" goes out with the CURRENT template - it must be deliverable too
+    # (a draft is often a draft precisely because its template was not).
+    if payload.send_now and (payload.template is None or payload.template == campaign.template):
+        _event = event_crud.get_event(db, campaign.event_id)
+        _custom = campaign.custom_message if campaign_crud.custom_messages_allowed() else None
+        _require_deliverable_template(db, campaign.template, _custom,
                                       event_type=getattr(_event, "event_type", None))
 
     try:
         campaign = campaign_crud.update_campaign(db, campaign, payload)
+    except (campaign_crud.NoRecipientsError, campaign_crud.SendNowRefused) as e:
+        raise HTTPException(status_code=400, detail={"code": e.code, "message": e.message})
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    
+
     return campaign
 
 
@@ -347,7 +373,10 @@ def get_campaign_stats(
     db: Session = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    """Get campaign statistics: sent_count and read_count."""
+    """One campaign's funnel: received (`delivered_count`), seen (`read_count`)
+    and answered (`replied_count`). The same block is embedded in every campaign
+    response; this endpoint stays for callers that want to refresh just the
+    numbers."""
     campaign = campaign_crud.get_campaign(db, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")

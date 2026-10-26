@@ -219,6 +219,27 @@ class GuestOut(GuestBase):
         populate_by_name = True
 
 
+class GuestImportSkippedRow(BaseModel):
+    row: int                       # spreadsheet row number (header = row 1)
+    reason: str                    # Hebrew text (invalid) / code (duplicates)
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    first_row: Optional[int] = None  # repeated_in_file: where it first appeared
+
+
+class GuestImportReport(BaseModel):
+    """POST /guests/bulk result. One bad row never aborts the import."""
+    created: int
+    skipped_duplicates: List[GuestImportSkippedRow] = []
+    skipped_invalid: List[GuestImportSkippedRow] = []
+    capacity_reached: bool = False
+    skipped_capacity: int = 0      # rows not imported because the cap was hit
+    capacity_limit: Optional[int] = None
+    dry_run: bool = False
+    # Created guests (GuestOut shape), or {row, name, phone, ...} on dry_run.
+    guests: List[dict] = []
+
+
 # Campaign Schemas
 class CampaignBase(BaseModel):
     event_id: uuid.UUID
@@ -255,12 +276,39 @@ class CampaignUpdate(BaseModel):
     follow_up_after_hours: Optional[int] = Field(default=None, ge=1)
     follow_up_audience: Optional[CampaignAudience] = None
     header_image_url: Optional[str] = None
+    # "Send now": the server stamps schedule_time=now, moves a draft/paused round
+    # to 'pending', skips the min-gap spacing and refuses an empty audience
+    # (400 code 'no_recipients'). Never persisted.
+    send_now: Optional[bool] = None
+
+
+class CampaignStats(BaseModel):
+    """A round's delivery + engagement funnel, as the owner reads it:
+    how many RECEIVED it, how many SAW it, how many ANSWERED.
+
+    `read_count` undercounts whenever a guest turned WhatsApp read receipts off,
+    which is also why `replied_count` is not bounded by it - people answer
+    messages they never "read" as far as Meta is concerned.
+    """
+    sent_count: int = 0        # accepted by Meta (the honest "sent")
+    delivered_count: int = 0   # reached the device
+    read_count: int = 0        # opened
+    replied_count: int = 0     # answered the round
+    failed_count: int = 0
+    queued_count: int = 0
+    attempted_count: int = 0
 
 
 class CampaignOut(CampaignBase):
     id: uuid.UUID
     created_at: dt.datetime
     updated_at: dt.datetime
+    # Always present, from the moment the campaign exists - zeros before it
+    # sends - so no caller has to make a second request or handle "unknown".
+    stats: CampaignStats = CampaignStats()
+    # Why the round is in its status (worker-written: 'empty audience',
+    # 'event date has passed', ...). None while nothing went wrong.
+    status_reason: Optional[str] = None
 
     class Config:
         from_attributes = True

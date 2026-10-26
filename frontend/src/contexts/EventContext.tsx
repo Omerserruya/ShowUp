@@ -8,7 +8,10 @@ export interface Event {
   date: string; // ISO string
   location: string;
   organizerId: string;
-  type?: 'wedding' | 'birthday' | 'corporate' | 'custom';
+  /** Canonical catalog event type (wedding, brit, bar, bat, birthday, corporate,
+   *  other). Free-form on purpose - the catalog owns the vocabulary, and pinning
+   *  a union here silently excluded the types it grew. */
+  type?: string;
   imageUrl?: string;
   rsvpDeadline?: string;
   active?: boolean;
@@ -31,6 +34,9 @@ interface EventContextType {
   selectedEvent: Event | null;
   events: Event[];
   setSelectedEvent: (event: Event | null) => void;
+  /** Select by id when the full Event object isn't in hand yet (admin support
+   *  entry): records the desired id so the next fetch resolves it. */
+  selectEventById: (eventId: string) => void;
   addEvent: (event: Event) => void;
   updateEvent: (event: Event) => void;
   deleteEvent: (eventId: string) => Promise<void>;
@@ -63,6 +69,15 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
     } else {
       localStorage.removeItem('selected_event_id');
     }
+  };
+
+  // Select by id: the reconciliation effect below resolves it to a full Event
+  // once the list arrives, so callers can select an event they haven't fetched.
+  const selectEventById = (eventId: string) => {
+    desiredEventIdRef.current = eventId;
+    localStorage.setItem('selected_event_id', eventId);
+    const known = events.find((e) => e.id === eventId);
+    if (known) setSelectedEventState(known);
   };
 
   useEffect(() => {
@@ -108,6 +123,11 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
       const mappedData = data.map((event: any) => ({
         ...event,
         planId: event.planId || event.plan_id || null,
+        // The API serializes this as `eventType`; without this mapping
+        // `selectedEvent.type` was always undefined and every event silently
+        // behaved like a wedding - which hid the right templates from every
+        // brit / bar / bat / birthday owner.
+        type: event.type ?? event.eventType ?? event.event_type ?? undefined,
         paymentStatus: event.paymentStatus ?? event.payment_status ?? undefined,
         state: event.state ?? undefined,
         isVenue: event.isVenue ?? event.is_venue ?? undefined,
@@ -185,6 +205,7 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
         selectedEvent,
         events,
         setSelectedEvent,
+        selectEventById,
         addEvent,
         updateEvent,
         deleteEvent,

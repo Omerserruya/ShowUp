@@ -1,12 +1,88 @@
 from __future__ import annotations
 
+import datetime as dt
+import logging
 import uuid
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
 from app.models.models import Event, Account
 from app.schemas.schemas import EventCreate, EventUpdate
+from app import support
+
+logger = logging.getLogger(__name__)
+
+# Small grace so a client clock a few minutes behind, or "today 20:00" typed at
+# 19:58, is not rejected.
+EVENT_DATE_GRACE = dt.timedelta(minutes=10)
+# Campaign statuses that still have a schedule to keep relative to the event.
+_SHIFTABLE_CAMPAIGN_STATUSES = ("pending", "paused", "draft")
+
+
+class EventDateError(ValueError):
+    """event_date rejected (in the past / unparseable)."""
+
+
+def _aware(value: dt.datetime) -> dt.datetime:
+    return value if value.tzinfo else value.replace(tzinfo=dt.timezone.utc)
+
+
+def parse_event_date(value: Any) -> Optional[dt.datetime]:
+    if value is None or value == "":
+        return None
+    if isinstance(value, dt.datetime):
+        return value
+    try:
+        return dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        raise EventDateError("event_date must be an ISO 8601 datetime")
+
+
+def validate_future_event_date(value: Any) -> None:
+    """Reject an event date in the past (create, or an edit that changes it)."""
+    parsed = parse_event_date(value)
+    if parsed is None:
+        return
+    if _aware(parsed) < dt.datetime.now(dt.timezone.utc) - EVENT_DATE_GRACE:
+        raise EventDateError("event_date must be in the future")
+
+
+def shift_pending_campaigns(db: Session, event: Event, old_date: Optional[dt.datetime],
+                            new_date: Optional[dt.datetime]) -> List[dict]:
+    """Move every not-yet-sent campaign by the same delta the event moved, so
+    "reminder 3 days before" stays 3 days before. A campaign that the shift
+    would put in the past is PAUSED (never fired immediately by surprise); the
+    owner reschedules or resumes it explicitly. Caller commits.
+    """
+    if old_date is None or new_date is None:
+        return []
+    delta = _aware(new_date) - _aware(old_date)
+    if not delta:
+        return []
+    from app.models.models import Campaign
+    now = dt.datetime.now(dt.timezone.utc)
+    rows = (
+        db.query(Campaign)
+        .filter(Campaign.event_id == str(event.id),
+                Campaign.status.in_(_SHIFTABLE_CAMPAIGN_STATUSES),
+                Campaign.schedule_time.isnot(None))
+        .all()
+    )
+    moved = []
+    for c in rows:
+        new_time = _aware(c.schedule_time) + delta
+        c.schedule_time = new_time
+        paused = False
+        if new_time <= now and c.status == "pending":
+            c.status = "paused"
+            paused = True
+        db.add(c)
+        moved.append({"id": str(c.id), "name": c.name, "schedule_time": new_time.isoformat(), "paused": paused})
+    if moved:
+        logger.info("event %s moved by %s: shifted %d campaign(s) (%d paused)", event.id, delta,
+                    len(moved), sum(1 for m in moved if m["paused"]))
+    return moved
 
 
 def annotate_venue(db: Session, events: List[Event]) -> List[Event]:
@@ -56,6 +132,18 @@ def list_events_for_user(
     # Fetch and filter by ownership in application layer for portability
     all_candidates = query.order_by(Event.created_at.desc()).all()
     owned = [e for e in all_candidates if is_owner(e, user_id)]
+
+    # A platform admin inside a support session sees that one event alongside
+    # their own, so the dashboard's event switcher can select it like any other.
+    # Nothing else widens this list - admins are NOT shown every event.
+    support_id = support.support_event_id(db, user_id)
+    if support_id is not None and not any(str(e.id) == str(support_id) for e in owned):
+        supported = next((e for e in all_candidates if str(e.id) == str(support_id)), None)
+        if supported is None:
+            supported = db.query(Event).filter(Event.id == str(support_id)).first()
+        if supported is not None:
+            owned = [supported] + owned
+
     total = len(owned)
     start = (page - 1) * page_size
     end = start + page_size
@@ -92,6 +180,12 @@ def update_event(db: Session, event: Event, data: EventUpdate) -> Event:
     if data.description is not None:
         event.description = data.description
     if data.event_date is not None:
+        old_date = event.event_date
+        changed = old_date is None or _aware(data.event_date) != _aware(old_date)
+        if changed:
+            validate_future_event_date(data.event_date)
+            # Re-anchor the campaign plan to the new date (same relative offsets).
+            event.shifted_campaigns = shift_pending_campaigns(db, event, old_date, data.event_date)
         event.event_date = data.event_date
     if data.location is not None:
         event.location = data.location

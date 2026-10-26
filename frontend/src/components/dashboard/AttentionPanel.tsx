@@ -3,12 +3,12 @@ import { Box, Typography, alpha, useTheme } from '@mui/material';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 
-const DEEP = '#6f74e0';
+const DEEP = '#5A3DA6';
 const GREEN = '#22c55e';
 const AMBER = '#f59e0b';
 
 export interface AttentionItem {
-  icon: string;
+  icon: React.ReactNode;
   text: string;
   actionLabel?: string;
   onAction?: () => void;
@@ -56,10 +56,10 @@ export default function AttentionPanel({ items }: { items: AttentionItem[] }) {
         <Indicator count={items.length} />
         <Box>
           <Typography sx={{ fontWeight: 800, fontSize: '1.05rem', color: 'text.primary', lineHeight: 1.2 }}>
-            {calm ? 'הכול דבש 🍯' : 'יאללה, סוגרים פינות'}
+            {calm ? 'הכול מסודר' : 'כמה דברים קטנים'}
           </Typography>
           <Typography sx={{ fontSize: '0.82rem', fontWeight: 600, color: 'text.secondary', mt: 0.2 }}>
-            {calm ? 'שבו בשקט, אנחנו על זה' : `${items.length} ${items.length === 1 ? 'דבר קטן' : 'דברים קטנים'} ואתם משוחררים`}
+            {calm ? 'אנחנו עוקבים, שולחים ומזכירים' : `${items.length === 1 ? 'עוד צעד אחד' : `עוד ${items.length} צעדים`} ואתם משוחררים`}
           </Typography>
         </Box>
       </Box>
@@ -91,7 +91,7 @@ export default function AttentionPanel({ items }: { items: AttentionItem[] }) {
                 '@keyframes itemIn': { from: { opacity: 0, transform: 'translateX(-6px)' }, to: { opacity: 1, transform: 'none' } },
               }}
             >
-              <Box sx={{ fontSize: '1.3rem', flexShrink: 0 }}>{it.icon}</Box>
+              <Box sx={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: AMBER, bgcolor: alpha(AMBER, isDark ? 0.2 : 0.14), '& svg': { fontSize: 18 } }}>{it.icon}</Box>
               <Typography sx={{ flex: 1, fontWeight: 700, fontSize: '0.95rem', color: 'text.primary', lineHeight: 1.4 }}>{it.text}</Typography>
               {it.actionLabel && it.onAction && (
                 <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.3, flexShrink: 0, color: DEEP, fontWeight: 800, fontSize: '0.85rem' }}>

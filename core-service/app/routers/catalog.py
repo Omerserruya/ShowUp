@@ -8,6 +8,8 @@ fetched per-event through the authenticated templates API.
 """
 from __future__ import annotations
 
+from functools import lru_cache
+
 from fastapi import APIRouter
 
 from shared.domain.messaging import (
@@ -43,6 +45,34 @@ def _stage_dto(sd) -> dict:
     }
 
 
+@lru_cache(maxsize=1)
+def _sendable_event_types() -> dict[str, tuple[str, ...]]:
+    """template key -> the event types it can actually be delivered for.
+
+    `sendable` alone cannot answer "may I offer this template?", because what
+    Meta approved is the event-type variant (`<key>__wedding`), not the base
+    template. A base can be globally unsendable while its wedding variant is
+    live - and the reverse. Consumers that know their event type must filter on
+    THIS, or they hide most of the catalog from the user (a wedding really has
+    17 usable templates, not the 6 the global flag reports).
+
+    Computed once: the builtin catalog is static, so this is a pure function of
+    module state and every request would otherwise redo the same resolution.
+    """
+    from shared.domain.messaging import resolve_template
+
+    out: dict[str, tuple[str, ...]] = {}
+    for key in BUILTIN_CATALOG:
+        usable = []
+        for et in EVENT_TYPES:
+            et_key = et.value if hasattr(et, "value") else str(et)
+            resolved = resolve_template(key, event_type=et_key)
+            if resolved is not None and resolved.is_usable:
+                usable.append(et_key)
+        out[key] = tuple(usable)
+    return out
+
+
 def _template_dto(t) -> dict:
     return {
         "id": t.key,
@@ -67,6 +97,10 @@ def _template_dto(t) -> dict:
         # must gate selection on this, not on `lifecycle` alone - an active template
         # with no meta mapping is not sendable.
         "sendable": t.is_usable,
+        # Which event types this template can actually be delivered for. A client
+        # that knows its event MUST filter on this rather than on `sendable`,
+        # which is blind to the event-type variants Meta actually approved.
+        "sendable_event_types": list(_sendable_event_types().get(t.key, ())),
         "variables": list(t.variables),
         "preview": {
             "emoji": t.preview.emoji, "accent": t.preview.accent, "header": t.preview.header,

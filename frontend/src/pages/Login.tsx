@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Button, TextField, Typography, Link, CircularProgress, MenuItem } from '@mui/material';
+import { Box, Button, TextField, Typography, Link, CircularProgress } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useUser } from '../contexts/UserContext';
-import { countryOptions, normalizePhoneNumber } from '../utils/countryOptions';
+import { toAccountPhone, isValidAccountPhone, ACCOUNT_PHONE_ERROR, ACCOUNT_COUNTRY_CODE } from '../utils/countryOptions';
 import OtpVerification from '../components/OtpVerification';
 import AuthLayout, { authFieldSx, authButtonSx } from '../components/AuthLayout';
 
@@ -16,10 +16,10 @@ const Login = () => {
   const location = useLocation();
   // Where to go after a successful OTP verification (e.g. continue to payment).
   const nextPath = (location.state as any)?.next || '/overview';
-  const { setUser } = useUser();
+  const { setUser, refreshUserDetails } = useUser();
   const [formData, setFormData] = useState<LoginFormData>({
     phone: '',
-    countryCode: '+972',
+    countryCode: ACCOUNT_COUNTRY_CODE,
   });
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [showOtpScreen, setShowOtpScreen] = useState(false);
@@ -57,7 +57,7 @@ const Login = () => {
         // Put the cursor back where typing starts - autoFocus only fires on mount.
         setTimeout(() => document.getElementById('otp-input-0')?.focus(), 50);
       } else {
-        setOtpError(data.error || 'שליחת הקוד נכשלה. נסו שוב');
+        setOtpError(data.message || data.error || 'שליחת הקוד נכשלה. נסו שוב');
       }
     } catch (error) {
       setOtpError('אירעה שגיאה בשליחת הקוד');
@@ -107,8 +107,8 @@ const Login = () => {
     const newErrors: Partial<LoginFormData> = {};
     if (!formData.phone) {
       newErrors.phone = 'מספר טלפון הוא שדה חובה';
-    } else if (!/^\d{7,15}$/.test(formData.phone.replace(/\s/g, ''))) {
-      newErrors.phone = 'מספר הטלפון אינו תקין';
+    } else if (!isValidAccountPhone(formData.phone)) {
+      newErrors.phone = ACCOUNT_PHONE_ERROR;
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -120,7 +120,7 @@ const Login = () => {
 
     setLoading(true);
     try {
-      const fullPhoneNumber = normalizePhoneNumber(formData.phone, formData.countryCode);
+      const fullPhoneNumber = toAccountPhone(formData.phone);
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
@@ -138,12 +138,16 @@ const Login = () => {
         setFormError('');
         setOtpSentMessage('שלחנו קוד אימות ל-WhatsApp שלך');
         setResendCooldown(60);
+      } else if (data.error === 'user_not_found') {
+        // Brand-new phone (e.g. a friend opening a gift/redeem link): route them
+        // to registration WITH the return path preserved, so after signing up they
+        // land back where they were headed (e.g. /redeem/:code) instead of /overview.
+        // Prefill the phone they just typed (local digits + country code).
+        navigate('/register', {
+          state: { next: nextPath, phone: formData.phone, countryCode: formData.countryCode },
+        });
       } else {
-        setFormError(
-          data.error === 'user_not_found'
-            ? 'משתמש לא נמצא. אנא הירשם תחילה'
-            : data.error || 'התחברות נכשלה'
-        );
+        setFormError(data.message || data.error || 'התחברות נכשלה');
       }
     } catch (error) {
       console.error('Login error:', error);
@@ -216,6 +220,12 @@ const Login = () => {
         }
 
         setOtpError('');
+        // Resolve the real role/details from /api/auth/me BEFORE navigating, so
+        // guards that depend on isAdmin (Layout's event guard) see the correct
+        // role instead of the hardcoded 'user' set above. Otherwise an admin with
+        // no owned events falls through the admin redirect and gets trapped on a
+        // stale pending-order /payment page. Best-effort: navigate regardless.
+        try { await refreshUserDetails(); } catch { /* keep going with hardcoded role */ }
         navigate(nextPath);
       } else {
         if (data.error === 'too_many_attempts') {
@@ -227,7 +237,7 @@ const Login = () => {
           const remaining = typeof data.attempts === 'number' ? Math.max(0, 5 - data.attempts) : null;
           setOtpError(remaining !== null ? `קוד שגוי. נותרו ${remaining} ניסיונות` : 'קוד שגוי, נסו שוב');
         } else {
-          setOtpError(data.error || 'קוד OTP שגוי');
+          setOtpError(data.message || data.error || 'קוד OTP שגוי');
         }
       }
     } catch (error) {
@@ -347,7 +357,7 @@ const Login = () => {
     <AuthLayout>
       <Box component="form" onSubmit={handleSubmit} sx={{ direction: 'rtl', textAlign: 'right' }}>
         <Typography component="h1" sx={{ fontWeight: 800, fontSize: { xs: '2rem', md: '2.4rem' }, lineHeight: 1.15 }}>
-          טוב לראות אתכם שוב 👋
+          טוב לראות אתכם שוב
         </Typography>
         <Typography sx={{ color: 'text.secondary', mt: 1.5, mb: 4, fontSize: '1.05rem', lineHeight: 1.6 }}>
           רק נוודא שזה אתם. נשלח קוד התחברות מהיר לוואטסאפ, ואתם כבר בפנים.
@@ -363,20 +373,6 @@ const Login = () => {
           מספר הטלפון שלכם
         </Typography>
         <Box sx={{ display: 'flex', flexDirection: 'row-reverse', gap: 1.5, mb: 3.5 }}>
-          <TextField
-            select
-            value={formData.countryCode}
-            onChange={(e) => setFormData({ ...formData, countryCode: e.target.value as string })}
-            sx={[authFieldSx, { width: 120, flexShrink: 0 }]}
-            SelectProps={{ renderValue: (value) => (value as string) || '+972' }}
-            inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
-          >
-            {countryOptions.map((option) => (
-              <MenuItem key={option.code + option.dialCode} value={option.dialCode}>
-                {option.flag} {option.name} ({option.dialCode})
-              </MenuItem>
-            ))}
-          </TextField>
           <TextField
             fullWidth
             id="login-phone"
@@ -407,7 +403,12 @@ const Login = () => {
 
         <Typography sx={{ textAlign: 'center', mt: 3.5, color: 'text.secondary' }}>
           עוד אין לכם חשבון?{' '}
-          <Link href="/register" sx={{ fontWeight: 700 }}>
+          <Link
+            component="button"
+            type="button"
+            onClick={() => navigate('/register', { state: { next: nextPath } })}
+            sx={{ fontWeight: 700 }}
+          >
             בואו נפתח אחד
           </Link>
         </Typography>

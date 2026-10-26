@@ -28,7 +28,7 @@ export default function UserAvatar({
     // Brand-family tints only - a random material palette clashed with the
     // otherwise tightly-branded shell.
     const getBrandColor = (name: string) => {
-        const colors = ['#6f74e0', '#888cee', '#7c74d6', '#a78bfa', '#5f64d6'];
+        const colors = ['#5A3DA6', '#9D83E0', '#7c74d6', '#a78bfa', '#5A3DA6'];
         let hash = 0;
         for (let i = 0; i < name.length; i++) {
             hash = name.charCodeAt(i) + ((hash << 5) - hash);

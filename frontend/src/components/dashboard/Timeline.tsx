@@ -2,8 +2,8 @@ import React from 'react';
 import { Box, Typography, Button, alpha, useTheme } from '@mui/material';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 
-const BRAND = '#888cee';
-const DEEP = '#6f74e0';
+const BRAND = '#9D83E0';
+const DEEP = '#5A3DA6';
 const GREEN = '#16a34a';
 const RED = '#ef4444';
 
@@ -15,7 +15,7 @@ export interface TimelineEntry {
   text: string;
   tone: TimelineTone;
   name?: string;
-  icon?: string;
+  icon?: React.ReactNode;
   onClick?: () => void;
 }
 
@@ -99,8 +99,8 @@ export default function Timeline({ entries, onSeeAll, emptyHint }: { entries: Ti
                       {initials(e.name)}
                     </Box>
                   ) : (
-                    <Box sx={{ position: 'relative', zIndex: 1, width: 36, height: 36, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', bgcolor: alpha(color, isDark ? 0.2 : 0.1), border: `2px solid ${alpha(color, recommend ? 0.4 : 0.25)}` }}>
-                      {e.icon || '•'}
+                    <Box sx={{ position: 'relative', zIndex: 1, width: 36, height: 36, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color, bgcolor: alpha(color, isDark ? 0.2 : 0.1), border: `2px solid ${alpha(color, recommend ? 0.4 : 0.25)}`, '& svg': { fontSize: 18 } }}>
+                      {e.icon || <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: color }} />}
                     </Box>
                   )}
                 </Box>

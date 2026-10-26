@@ -40,8 +40,51 @@ async def _create_conversation_indexes(conn):
         logger.warning(f"Failed to create conversation indexes (they may already exist): {e}")
 
 
+INBOUND_TABLES_DDL = (
+    # One row per processed inbound item. `wamid` is the Meta message id for
+    # guest messages, or "<wamid>:<status>" for delivery receipts. Meta re-sends
+    # webhooks it did not get a 2xx for (and our own handler returns 5xx on a
+    # partial enqueue failure), so the same item can arrive more than once; a
+    # row with done_at set means "already applied - skip". A row with done_at
+    # NULL is an attempt that failed / crashed mid-way and may be retried.
+    """
+    CREATE TABLE IF NOT EXISTS inbound_seen (
+        wamid      text PRIMARY KEY,
+        kind       varchar(16) NOT NULL DEFAULT 'message',
+        attempts   integer NOT NULL DEFAULT 1,
+        seen_at    timestamptz NOT NULL DEFAULT now(),
+        done_at    timestamptz
+    )
+    """,
+    "ALTER TABLE inbound_seen ADD COLUMN IF NOT EXISTS kind varchar(16) NOT NULL DEFAULT 'message'",
+    "ALTER TABLE inbound_seen ADD COLUMN IF NOT EXISTS attempts integer NOT NULL DEFAULT 1",
+    "ALTER TABLE inbound_seen ADD COLUMN IF NOT EXISTS done_at timestamptz",
+    "CREATE INDEX IF NOT EXISTS idx_inbound_seen_seen_at ON inbound_seen (seen_at)",
+    # A guest invited to several events wrote free text we could not attribute;
+    # we asked "which event?" and park the original message here until they pick.
+    """
+    CREATE TABLE IF NOT EXISTS inbound_pending_choice (
+        guest_phone varchar(64) PRIMARY KEY,
+        payload     text NOT NULL,
+        created_at  timestamptz NOT NULL DEFAULT now()
+    )
+    """,
+)
+
+
+async def _create_inbound_tables(conn):
+    for stmt in INBOUND_TABLES_DDL:
+        await conn.execute(text(stmt))
+    logger.info("Ensured inbound_seen / inbound_pending_choice tables")
+
+
 async def init_db() -> None:
     """Create all database tables if they don't exist and apply migrations."""
+    # Inbound idempotency tables go in their OWN transaction first: the worker
+    # cannot process anything safely without them, so an unrelated failure in
+    # the legacy migrations below must not roll them back.
+    async with engine.begin() as conn:
+        await _create_inbound_tables(conn)
     try:
         async with engine.begin() as conn:
             # Enable UUID extension if not already enabled
@@ -82,6 +125,24 @@ async def init_db() -> None:
                     WHERE guest_phone IS NOT NULL
             """))
             
+            # Context/receipt resolution looks messages up by wamid on every
+            # webhook; without this it is a sequential scan of messages_log.
+            await conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_messages_log_wa_message_id
+                    ON messages_log (wa_message_id)
+                    WHERE wa_message_id IS NOT NULL
+            """))
+            # Free-text resolution: a phone's open conversations, and each one's
+            # latest outgoing message.
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_conversations_guest_phone_active "
+                "ON conversations (guest_phone) WHERE active = TRUE"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_messages_log_conversation_created "
+                "ON messages_log (conversation_id, created_at DESC)"
+            ))
+
             # Create indexes and constraints for conversations table
             await _create_conversation_indexes(conn)
             

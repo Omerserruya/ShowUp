@@ -1,0 +1,273 @@
+# /api/* routing - shared by dev.conf and default.conf (envsubst template:
+# only $CORE_SERVICE_URL, $AUB_SERVICE_URL and $WEBHOOK_HANDLER_URL are
+# substituted; every other $variable is left for nginx).
+#
+# Rate-limit tiers (zones defined in nginx.conf, keyed on the real visitor IP):
+#   public_write  OTP issue/verify, RSVP submit, redeem    1 r/s  burst 10
+#   public_read   public invitation reads                  30 r/s burst 60
+#   assistant     AI assistant (LLM cost)                  10 r/m burst 5
+#   api_general   everything else under /api/              50 r/s burst 100
+    # ---- Never routable from the internet ----------------------------------
+    # Service-to-service endpoints authenticate with INTERNAL_API_SECRET; as
+    # defence in depth nothing under these paths is reachable via nginx at all.
+    location ~ ^/api/orders/(internal|webhook)(/|$) {
+        deny all;
+    }
+    location ~ ^/api/auth/internal(/|$) {
+        deny all;
+    }
+
+    # ---- Auth (aub-service) -------------------------------------------------
+    # OTP issue + verify: the brute-force surface. 1 r/s per IP at the edge, plus
+    # per-PHONE budgets in aub (5 codes/h, 10/day, 10 failed verifies/15 min).
+    location ~ ^/api/auth/(login|register|verify-otp|demo/whatsapp)$ {
+        limit_req zone=public_write burst=10 nodelay;
+        limit_conn perip 20;
+        rewrite ^/api(/.*)$ $1 break;
+        proxy_pass $AUB_SERVICE_URL;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    # Rest of /auth (/me etc.) - authenticated, general tier.
+    location /api/auth {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $AUB_SERVICE_URL/auth;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/plans {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $AUB_SERVICE_URL/plans;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/orders {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $AUB_SERVICE_URL/orders;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    # Entitlement redemption (authenticated; creates an event).
+    location /api/redeem {
+        limit_req zone=public_write burst=10 nodelay;
+        proxy_pass $CORE_SERVICE_URL/redeem;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+
+    # ---- Core-service --------------------------------------------------------
+    location /api/events {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/events;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    # AI event assistant - every call is a paid LLM request: 10/min per IP.
+    location /api/assistant {
+        limit_req zone=assistant burst=5 nodelay;
+        limit_conn perip 5;
+        proxy_read_timeout 300s;
+        proxy_pass $CORE_SERVICE_URL/assistant;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/venues {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/venues;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    # Guest list incl. Excel/CSV import (large files).
+    location /api/guests {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        client_max_body_size 15m;
+        proxy_read_timeout 120s;
+        proxy_pass $CORE_SERVICE_URL/guests;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/guest-imports {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        client_max_body_size 15m;
+        proxy_read_timeout 120s;
+        proxy_pass $CORE_SERVICE_URL/guest-imports;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/campaigns {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/campaigns;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    # Presigned S3 upload URLs + finalize (invitation studio).
+    location /api/uploads {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        client_max_body_size 15m;
+        proxy_pass $CORE_SERVICE_URL/uploads;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    # Team / membership management.
+    location /api/members {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/members;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    # Plan -> feature entitlements matrix (public).
+    location /api/catalog {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/catalog;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/entitlements {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/entitlements;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    # Plan usage (guests / rounds used vs limits) - Billing page.
+    location /api/usage {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/usage;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+
+    # ---- Admin (JWT + admin role enforced in the services) ------------------
+    location /api/admin/venues {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/admin/venues;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/admin/events {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/admin/events;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/admin/stats {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/admin/stats;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/admin/audit-log {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/admin/audit-log;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/admin/health {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/admin/health;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/admin/feature-flags {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/admin/feature-flags;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/admin/ops {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/admin/ops;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/admin/support {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/admin/support;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/admin/entitlements {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/admin/entitlements;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/admin/planner {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/admin/planner;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/admin/flows {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/admin/flows;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/admin/messaging {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/admin/messaging;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/admin/users {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $AUB_SERVICE_URL/admin/users;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/admin/user-stats {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $AUB_SERVICE_URL/admin/user-stats;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/admin/orders {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $AUB_SERVICE_URL/admin/orders;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/admin/plans {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $AUB_SERVICE_URL/admin/plans;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+    location /api/admin/coupons {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $AUB_SERVICE_URL/admin/coupons;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+
+    # ---- WhatsApp webhook (Meta -> webhook-hendler) -------------------------
+    # Not rate limited: Meta bursts delivery receipts during campaigns and a
+    # 429 makes it retry (and eventually disable the webhook).
+    location /api/webhook {
+        proxy_pass $WEBHOOK_HANDLER_URL;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+
+    # ---- Public invitation + RSVP (unauthenticated) --------------------------
+    # RSVP submission - the abuse-sensitive write. A real guest submits once.
+    # (core serves /public/invite/..., so strip the /api prefix.)
+    location ~ ^/api/public/invite/[^/]+/rsvp$ {
+        limit_req zone=public_write burst=10 nodelay;
+        limit_conn perip 20;
+        rewrite ^/api(/.*)$ $1 break;
+        proxy_pass $CORE_SERVICE_URL;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+
+    # Public invitation reads, prefill lookup, public redeem preview. Also the
+    # brute-force surface for invite tokens, hence a bounded rate.
+    location /api/public {
+        limit_req zone=public_read burst=60 nodelay;
+        limit_conn perip 20;
+        proxy_pass $CORE_SERVICE_URL/public;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+
+    # Anything else under /api/ is not a real endpoint: answer 404 JSON instead
+    # of falling through to the SPA's index.html (which would return 200 HTML).
+    location /api/ {
+        default_type application/json;
+        return 404 '{"detail":"Not Found"}';
+    }

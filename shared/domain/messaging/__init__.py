@@ -82,6 +82,8 @@ from .stage_definitions import (
     stage_variant_for_template,
     resolve_stage_channel,
     resolve_audience_rule,
+    default_audience_for_stage,
+    AUTO_APPLICABLE_RULES,
 )
 
 __all__ = [
@@ -109,4 +111,5 @@ __all__ = [
     "STAGE_DEFINITIONS", "DEFAULT_VARIANTS", "default_variant_for",
     "stage_by_id", "stage_variant_for_template",
     "resolve_stage_channel", "resolve_audience_rule",
+    "default_audience_for_stage", "AUTO_APPLICABLE_RULES",
 ]

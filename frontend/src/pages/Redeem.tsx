@@ -11,8 +11,8 @@ import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { useCatalog } from '../hooks/useCatalog';
 import { getPlan } from '../config/plans';
 
-const BRAND = '#888cee';
-const DEEP = '#6f74e0';
+const BRAND = '#9D83E0';
+const DEEP = '#5A3DA6';
 
 type RedeemStatus = 'available' | 'redeemed' | 'expired' | 'cancelled';
 
@@ -171,7 +171,7 @@ export default function Redeem() {
         <Typography sx={{ fontWeight: 800, fontSize: 20 }}>{copy.title}</Typography>
         <Typography variant="body2" color="text.secondary">{copy.body}</Typography>
         {badKey === 'redeemed' && !isLoggedIn() && (
-          <Button variant="contained" disableElevation onClick={() => navigate('/login')} sx={{ mt: 1, borderRadius: 2, fontWeight: 700, bgcolor: BRAND, '&:hover': { bgcolor: DEEP } }}>
+          <Button variant="contained" disableElevation onClick={() => navigate('/login')} sx={{ mt: 1, borderRadius: 2, fontWeight: 700, bgcolor: '#C9B8F3', color: '#16150F', '&:hover': { bgcolor: '#BBA6EE' } }}>
             התחברות
           </Button>
         )}
@@ -223,7 +223,7 @@ export default function Redeem() {
           <Button
             fullWidth variant="contained" disableElevation
             onClick={() => navigate('/login', { state: { next: `/redeem/${code}` } })}
-            sx={{ borderRadius: 2, fontWeight: 700, bgcolor: BRAND, '&:hover': { bgcolor: DEEP }, py: 1.1 }}
+            sx={{ borderRadius: 2, fontWeight: 700, bgcolor: '#C9B8F3', color: '#16150F', '&:hover': { bgcolor: '#BBA6EE' }, py: 1.1 }}
           >
             התחברות כדי לממש
           </Button>
@@ -250,7 +250,7 @@ export default function Redeem() {
             fullWidth variant="contained" disableElevation onClick={submit}
             disabled={!name.trim() || submitting}
             startIcon={!submitting ? <CelebrationRoundedIcon /> : undefined}
-            sx={{ borderRadius: 2, fontWeight: 700, bgcolor: BRAND, '&:hover': { bgcolor: DEEP }, py: 1.1 }}
+            sx={{ borderRadius: 2, fontWeight: 700, bgcolor: '#C9B8F3', color: '#16150F', '&:hover': { bgcolor: '#BBA6EE' }, py: 1.1 }}
           >
             {submitting ? <CircularProgress size={22} sx={{ color: '#fff' }} /> : 'הפעילו את האירוע'}
           </Button>

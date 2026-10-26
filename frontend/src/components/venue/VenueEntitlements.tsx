@@ -12,8 +12,8 @@ import CardGiftcardRoundedIcon from '@mui/icons-material/CardGiftcardRounded';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { plans, getPlan } from '../../config/plans';
 
-const BRAND = '#888cee';
-const DEEP = '#6f74e0';
+const BRAND = '#9D83E0';
+const DEEP = '#5A3DA6';
 
 interface VenueEntitlement {
   id: string;
@@ -183,7 +183,7 @@ export default function VenueEntitlements({ venueId }: { venueId: string }) {
             <Button
               variant="contained" disableElevation onClick={generate} disabled={generating}
               startIcon={!generating ? <AddLinkRoundedIcon /> : undefined}
-              sx={{ borderRadius: 2, fontWeight: 700, bgcolor: BRAND, '&:hover': { bgcolor: DEEP }, minWidth: 120 }}
+              sx={{ borderRadius: 2, fontWeight: 700, bgcolor: '#C9B8F3', color: '#16150F', '&:hover': { bgcolor: '#BBA6EE' }, minWidth: 120 }}
             >
               {generating ? <CircularProgress size={20} sx={{ color: '#fff' }} /> : 'יצירה'}
             </Button>

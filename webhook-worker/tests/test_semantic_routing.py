@@ -52,7 +52,7 @@ check("CONFIRMED -> rsvp_count", route(action=RsvpAction.CONFIRMED) == "rsvp_cou
 check("CONFIRMED wins over contradictory/garbage text",
       route(action=RsvpAction.CONFIRMED, text="???anything???") == "rsvp_count")
 check("DECLINED -> rsvp_decline", route(action=RsvpAction.DECLINED) == "rsvp_decline")
-check("MAYBE -> rsvp_decline", route(action=RsvpAction.MAYBE) == "rsvp_decline")
+check("MAYBE -> rsvp_maybe (own state, not the decline copy)", route(action=RsvpAction.MAYBE) == "rsvp_maybe")
 
 print("== legacy text is a LAST-RESORT fallback (backward compatible) ==")
 check("UNKNOWN action falls back to legacy title text",

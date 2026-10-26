@@ -2,7 +2,14 @@
 
 Translates a campaign's audience (+ optional custom filter) into a guest query.
 This is the single place audience selection lives - decoupled from templates.
-Custom filter supported keys: status (list), group (str), tag_id (uuid).
+Custom filter supported keys: status (list), group (str), tag_id (uuid),
+table ('none' -> no table assigned, 'any' -> has a table). campaign-worker's
+audience.py must understand exactly the same keys with the same semantics - a
+key only one side knows silently widens the send.
+
+Guests without a phone are excluded, exactly like the worker's selection: this
+count is quoted to the owner and persisted as the campaign's recipient_count
+(the planner sizes its releases from it), so it must equal what will be sent.
 """
 from __future__ import annotations
 
@@ -26,6 +33,7 @@ def apply_audience(query: Query, audience, audience_filter: Optional[dict]) -> Q
     # is what the owner is quoted for an extra round, so it must match what
     # campaign-worker will actually send.
     query = query.filter(Guest.opted_out_at.is_(None))
+    query = query.filter(Guest.phone.isnot(None), Guest.phone != "")
     if a == CampaignAudience.EVERYONE.value:
         return query
     if a == CampaignAudience.CONFIRMED.value:
@@ -51,7 +59,17 @@ def _apply_custom(query: Query, f: dict) -> Query:
     tag_id = f.get("tag_id")
     if tag_id:
         query = query.join(GuestTag, GuestTag.guest_id == Guest.id).filter(GuestTag.tag_id == tag_id)
+    table = f.get("table")
+    if table == "none":
+        query = query.filter(Guest.table_number.is_(None))
+    elif table == "any":
+        query = query.filter(Guest.table_number.isnot(None))
     return query
+
+
+# Keys both audience resolvers (this module + campaign-worker/audience.py)
+# understand. Anything else in a custom filter is ignored by them.
+SUPPORTED_FILTER_KEYS = frozenset({"status", "group", "tag_id", "table"})
 
 
 def count_audience(db: Session, event_id, audience, audience_filter: Optional[dict] = None) -> int:

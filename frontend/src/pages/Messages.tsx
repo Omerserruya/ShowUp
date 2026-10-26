@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { featureFlags } from '../config/featureFlags';
 import Toast from '../components/Toast';
 import ResponsiveDialog from '../components/ResponsiveDialog';
 import { fireConfetti, fireConfettiOnce } from '../utils/confetti';
@@ -7,6 +8,7 @@ import {
   Typography,
   Paper,
   Button,
+  Drawer,
   DialogTitle,
   DialogContent,
   DialogActions,
@@ -20,13 +22,8 @@ import {
   useMediaQuery,
   alpha,
   CircularProgress,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
   Skeleton,
   LinearProgress,
-  Divider,
 } from '@mui/material';
 import {
   Send as SendIcon,
@@ -38,8 +35,10 @@ import {
   FilterList as FilterListIcon,
   CalendarToday as CalendarIcon,
   People as PeopleIcon,
-  BarChart as BarChartIcon,
   CheckCircle as CheckCircleIcon,
+  Visibility as VisibilityIcon,
+  Reply as ReplyIcon,
+  ErrorOutline as ErrorOutlineIcon,
   Schedule as ClockIcon,
   AutoAwesome as SparklesIcon,
   Add as PlusIcon,
@@ -51,6 +50,7 @@ import {
   ExpandMore as ExpandMoreIcon,
   MailOutline as EmailIcon,
   ImageOutlined as ImageIcon,
+  Close as CloseIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useEvent } from '../contexts/EventContext';
@@ -58,7 +58,7 @@ import { useUser } from '../contexts/UserContext';
 import { saveOrderToken, orderAuthHeaders } from '../utils/orderToken';
 import { useCampaigns, useOverviewStats } from '../hooks/useOverviewData';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
-import { useCatalog } from '../hooks/useCatalog';
+import { useCatalog, isSendableFor } from '../hooks/useCatalog';
 import type { MessagingCatalog, CatalogTemplate } from '../hooks/useCatalog';
 import { renderBody, buildPreviewValues, buildEventValues, parseLocation } from '../config/messaging';
 import type { PreviewCtx } from '../config/messaging';
@@ -237,8 +237,118 @@ const CampaignMessagePreview = ({
   return <WhatsAppBubble template={template} variables={variables} />;
 };
 
+/**
+ * One template in the new-round gallery: a real (truncated) render of the
+ * message, not just its name. Seeing the copy is the whole point - a list of
+ * titles told the owner nothing about what their guests would receive.
+ */
+function TemplateCard({
+  template, variables, selected, disabled, disabledReason, onSelect,
+}: {
+  template: CatalogTemplate;
+  variables: Record<string, string>;
+  selected: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
+  onSelect?: () => void;
+}) {
+  const body = renderBody(template.body, variables).replace(/\n{2,}/g, '\n');
+  const hasImage = template.preview?.header === 'image';
+  return (
+    <Box
+      role={disabled ? undefined : 'button'}
+      tabIndex={disabled ? -1 : 0}
+      aria-pressed={selected}
+      onClick={disabled ? undefined : onSelect}
+      onKeyDown={(e) => {
+        if (disabled) return;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect?.(); }
+      }}
+      sx={{
+        position: 'relative',
+        border: '1.5px solid',
+        borderColor: selected ? 'primary.main' : 'divider',
+        borderRadius: 2,
+        p: 1.5,
+        cursor: disabled ? 'default' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        bgcolor: (t) => (selected ? alpha(t.palette.primary.main, 0.06) : 'background.paper'),
+        transition: 'border-color .15s ease, background-color .15s ease',
+        '&:hover': disabled ? undefined : { borderColor: 'primary.main' },
+        '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
+      }}
+    >
+      <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mb: 0.75, minWidth: 0 }}>
+        <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: 'text.primary', flex: 1, minWidth: 0 }} noWrap>
+          {template.title}
+        </Typography>
+        {hasImage && <ImageIcon sx={{ fontSize: 15, color: 'text.secondary' }} />}
+        {selected && <CheckCircleIcon sx={{ fontSize: 17, color: 'primary.main' }} />}
+      </Stack>
+      <Typography
+        sx={{
+          fontSize: 11.5, lineHeight: 1.55, color: 'text.secondary', whiteSpace: 'pre-wrap',
+          display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+        }}
+      >
+        {body}
+      </Typography>
+      <Stack direction="row" spacing={0.5} sx={{ mt: 1, flexWrap: 'wrap', rowGap: 0.5 }}>
+        {template.is_default && (
+          <Chip label="מומלץ" size="small" sx={{ height: 18, fontSize: '0.65rem', fontWeight: 700 }} color="primary" variant="outlined" />
+        )}
+        {template.description && (
+          <Chip label={template.description} size="small" variant="outlined" sx={{ height: 18, fontSize: '0.65rem', maxWidth: '100%' }} />
+        )}
+      </Stack>
+      {disabled && disabledReason && (
+        <Typography sx={{ mt: 0.75, fontSize: 10.5, color: 'text.disabled', fontWeight: 600 }}>
+          {disabledReason}
+        </Typography>
+      )}
+    </Box>
+  );
+}
+
 // Campaign status types from API (normalized)
-type CampaignStatus = 'sent' | 'pending' | 'paused' | 'scheduled';
+//   draft   - saved, never auto-sends (no time / waiting for the host)
+//   failed  - the worker gave up (see statusReason)
+//   empty   - finalized as 'sent' but reached nobody (empty audience)
+//   sending - processing / sending right now
+type CampaignStatus = 'sent' | 'pending' | 'paused' | 'scheduled' | 'draft' | 'failed' | 'empty' | 'sending';
+
+// Hebrew explanation for a worker/scheduler status_reason (free text or code).
+// Order matters: the first match wins.
+const REASON_TEXT: Array<[RegExp, string]> = [
+  [/no_guests|no_recipients|empty audience/i, 'אין מוזמנים ברשימה שמתאימים לסבב'],
+  [/capacity_unplaced|capacity|unplaced/i, 'לא נכנס למכסת השליחה היומית'],
+  [/invalid_template|template_invalid|did not resolve|template/i, 'התבנית לא תקינה או עדיין לא אושרה לשליחה'],
+  [/event_passed|event date has passed/i, 'מועד האירוע כבר עבר'],
+  [/event_inactive|event inactive/i, 'האירוע עדיין לא פעיל'],
+  [/event not found|event_not_found/i, 'האירוע לא נמצא'],
+  [/image/i, 'חסרה תמונה להודעה'],
+  [/audience selection failed|audience/i, 'שגיאה בבחירת קהל היעד'],
+  [/processing failed|stuck in processing|never completed|requeued/i, 'תקלה טכנית בשליחה - אפשר לנסות שוב'],
+];
+
+function reasonText(reason?: string | null): string | null {
+  if (!reason) return null;
+  const hit = REASON_TEXT.find(([re]) => re.test(reason));
+  return hit ? hit[1] : null;
+}
+
+// Error body of a refused campaign PUT -> a Hebrew message for the toast.
+async function apiErrorMessage(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = await res.json();
+    const d = body?.detail;
+    if (d && typeof d === 'object' && typeof d.message === 'string') return d.message;
+    if (typeof d === 'string' && /[\u0590-\u05FF]/.test(d)) return d;
+  } catch {
+    // non-JSON body
+  }
+  return fallback;
+}
 
 interface CampaignFromAPI {
   id: string;
@@ -249,9 +359,20 @@ interface CampaignFromAPI {
   channel: string;
   created_at: string;
   updated_at: string;
+  status_reason?: string | null;
   // Optional fields that may contain recipients info
   recipient_count?: number;
   recipients?: any[];
+  // Delivery + engagement funnel, embedded in every campaign response.
+  stats?: {
+    sent_count: number;
+    delivered_count: number;
+    read_count: number;
+    replied_count: number;
+    failed_count: number;
+    queued_count: number;
+    attempted_count: number;
+  };
 }
 
 interface Campaign {
@@ -259,6 +380,8 @@ interface Campaign {
   name: string;
   template: string;
   status: CampaignStatus;
+  /** Raw backend status_reason (why it is a draft / failed / empty). */
+  statusReason: string | null;
   scheduleTime: Date | null;
   channel: 'whatsapp' | 'email';
   /**
@@ -266,8 +389,19 @@ interface Campaign {
    * Prefer campaign-specific data from the API; fallback to a general estimate when not available.
    */
   recipientCount: number;
-  sentCount?: number; // Number of recipients sent to (from messages_sent)
-  readCount?: number; // Number of recipients who read the message (from messages_log)
+  /**
+   * The funnel the owner asks about, straight from the campaign payload:
+   * how many RECEIVED it, how many SAW it, how many ANSWERED. Always defined
+   * (zeros before a round sends), so the UI never has an "unknown" state -
+   * `hasSendStats` below distinguishes "nothing sent yet" from "nobody read it".
+   */
+  sentCount: number;      // accepted by Meta
+  deliveredCount: number; // reached the device
+  readCount: number;      // opened (undercounts when read receipts are off)
+  repliedCount: number;   // answered the round
+  failedCount: number;
+  queuedCount: number;
+  attemptedCount: number;
 }
 
 // Resolve the catalog template backing a campaign (by canonical id).
@@ -372,11 +506,22 @@ function Messages() {
   // status normalization (pending+time → scheduled, processing → sent) and the
   // recipient-count fallbacks stay consistent.
   const mapApiCampaign = (apiCampaign: CampaignFromAPI): Campaign => {
-    // Treat "processing" from backend as "sent" in the UI once sending has been triggered
+    // Every backend status maps to its own UI state - a failed or draft round
+    // must never read as sent/scheduled.
+    const raw = (apiCampaign.status || '').toLowerCase();
+    const reason = apiCampaign.status_reason || null;
     let status: CampaignStatus = 'pending';
-    if (apiCampaign.status === 'sent' || apiCampaign.status === 'processing') {
-      status = 'sent';
-    } else if (apiCampaign.status === 'paused') {
+    if (raw === 'sent') {
+      const reachedNobody = /empty audience|no_guests|no_recipients/i.test(reason || '')
+        && !(apiCampaign.stats?.attempted_count);
+      status = reachedNobody ? 'empty' : 'sent';
+    } else if (raw === 'processing' || raw === 'sending') {
+      status = 'sending';
+    } else if (raw === 'failed') {
+      status = 'failed';
+    } else if (raw === 'draft') {
+      status = 'draft';
+    } else if (raw === 'paused') {
       status = 'paused';
     } else if (apiCampaign.schedule_time) {
       status = 'scheduled';
@@ -393,82 +538,85 @@ function Messages() {
         ? apiCampaign.recipients.length
         : (stats?.total_guests || 0);
 
+    const st = apiCampaign.stats ?? ({} as NonNullable<CampaignFromAPI['stats']>);
+
     return {
       id: apiCampaign.id,
       name: apiCampaign.name,
       template: apiCampaign.template,
       status,
+      statusReason: reason,
       scheduleTime: apiCampaign.schedule_time ? new Date(apiCampaign.schedule_time) : null,
       channel: apiCampaign.channel as 'whatsapp' | 'email',
       recipientCount: specificRecipientCount,
-      sentCount: undefined, // Will be loaded separately
-      readCount: undefined, // Will be loaded separately
+      // Stats ride along with the campaign - no second request, and present for
+      // every campaign whatever its status (scheduled, sending, sent, failed).
+      sentCount: st.sent_count ?? 0,
+      deliveredCount: st.delivered_count ?? 0,
+      readCount: st.read_count ?? 0,
+      repliedCount: st.replied_count ?? 0,
+      failedCount: st.failed_count ?? 0,
+      queuedCount: st.queued_count ?? 0,
+      attemptedCount: st.attempted_count ?? 0,
     };
   };
 
-  // Fetch delivery stats for sent campaigns.
-  // Only fetch if we know the endpoint exists (check once and cache result)
-  const fetchCampaignStats = async (list: Campaign[]) => {
-    const sentCampaigns = list.filter(c => c.status === 'sent');
-    if (sentCampaigns.length === 0) return;
-
-    // Try to fetch stats for the first campaign to check if endpoint exists
-    // If it returns 404, we'll skip all subsequent requests to avoid console noise
-    let endpointExists: boolean | null = null;
-
-    for (const campaign of sentCampaigns) {
-      try {
-        const statsRes = await fetchWithAuth(`/api/campaigns/${campaign.id}/stats`);
-
-        if (statsRes.status === 404) {
-          // First 404 means endpoint doesn't exist yet - skip all remaining requests
-          if (endpointExists === null) {
-            endpointExists = false;
-            // Silently skip - endpoint not implemented yet
-            break;
-          }
-          continue;
-        }
-
-        // If we got here, endpoint exists
-        if (endpointExists === null) {
-          endpointExists = true;
-        }
-
-        if (statsRes.ok) {
-          const stats = await statsRes.json();
-          setCampaigns(prev => prev.map(c =>
-            c.id === campaign.id
-              ? { ...c, sentCount: stats.sent_count || 0, readCount: stats.read_count || 0 }
-              : c
-          ));
-        }
-      } catch (error) {
-        // Network errors or other issues - log only if endpoint was confirmed to exist
-        if (endpointExists === true) {
-          console.warn(`Failed to fetch stats for campaign ${campaign.id}:`, error);
-        }
-        // If endpoint doesn't exist, silently skip
-        if (endpointExists === null) {
-          endpointExists = false;
-          break;
-        }
-      }
-    }
-  };
-
-  // Map API campaigns to local format and fetch stats
+  // Map API campaigns to local format. Delivery stats arrive embedded in the
+  // list response, so there is no per-campaign follow-up request to make.
   useEffect(() => {
     if (!apiCampaigns || apiCampaigns.length === 0) {
       setCampaigns([]);
       return;
     }
 
-    const mapped = apiCampaigns.map(mapApiCampaign);
-    setCampaigns(mapped);
-    fetchCampaignStats(mapped);
+    setCampaigns(apiCampaigns.map(mapApiCampaign));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiCampaigns, stats?.total_guests]);
+
+  // Reload the list (and with it every campaign's funnel) from the server.
+  const refreshCampaigns = useCallback(async () => {
+    if (!selectedEvent?.id) return;
+    try {
+      const res = await fetchWithAuth(`/api/campaigns?event_id=${selectedEvent.id}&order_by=schedule_time&page_size=100`);
+      if (!res.ok) return;
+      const data: CampaignFromAPI[] = await res.json();
+      setCampaigns(data.map(mapApiCampaign));
+    } catch {
+      // A failed background refresh just leaves the previous numbers on screen.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEvent?.id, stats?.total_guests]);
+
+  // Delivery, read and reply counts arrive later than the send itself - they are
+  // written by webhooks minutes or hours afterwards. Without this the page would
+  // show whatever was true when it loaded and quietly go stale, so a round that
+  // is still landing refreshes itself. Only while the tab is visible, and only
+  // while something can still change: messages in flight, or a round sent in the
+  // last 24h that can still collect reads and replies.
+  const liveCampaign = campaigns.some(
+    (c) =>
+      c.status === 'sending' ||
+      // just sent-now / due within minutes: poll so the state flips on screen
+      (c.status === 'scheduled' && c.scheduleTime != null &&
+        Math.abs(new Date(c.scheduleTime).getTime() - Date.now()) < 15 * 60 * 1000) ||
+      c.queuedCount > 0 ||
+      (c.attemptedCount > 0 &&
+        c.scheduleTime != null &&
+        Date.now() - new Date(c.scheduleTime).getTime() < 24 * 60 * 60 * 1000),
+  );
+
+  useEffect(() => {
+    if (!liveCampaign) return;
+    const tick = () => {
+      if (document.visibilityState === 'visible') refreshCampaigns();
+    };
+    const id = window.setInterval(tick, 60_000);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [liveCampaign, refreshCampaigns]);
 
   // Helper functions
   const getTimeLabel = (campaign: Campaign): string => {
@@ -505,7 +653,15 @@ function Messages() {
       case 'paused':
         return 'מושהית';
       case 'pending':
-        return 'ממתינה';
+        return 'לא מתוזמנת';
+      case 'draft':
+        return 'טיוטה';
+      case 'failed':
+        return 'נכשל';
+      case 'empty':
+        return 'לא נשלח';
+      case 'sending':
+        return 'יוצא עכשיו';
       default:
         return 'לא ידוע';
     }
@@ -520,12 +676,36 @@ function Messages() {
       case 'paused':
         return { bg: alpha(theme.palette.warning.main, 0.1), color: theme.palette.warning.main };
       case 'pending':
-        return { bg: alpha(theme.palette.text.secondary, 0.1), color: theme.palette.text.secondary };
+        return { bg: alpha(theme.palette.warning.main, 0.1), color: theme.palette.warning.dark };
+      case 'draft':
+      case 'empty':
+        return { bg: alpha(theme.palette.warning.main, 0.12), color: theme.palette.warning.dark };
+      case 'failed':
+        return { bg: alpha(theme.palette.error.main, 0.1), color: theme.palette.error.main };
+      case 'sending':
+        return { bg: alpha(theme.palette.success.main, 0.1), color: theme.palette.success.dark };
       default:
         return { bg: alpha(theme.palette.text.disabled, 0.1), color: theme.palette.text.disabled };
     }
   };
 
+
+  // One sentence explaining a state the owner must act on (null = nothing to say).
+  const getStatusExplanation = (campaign: Campaign): string | null => {
+    const why = reasonText(campaign.statusReason);
+    switch (campaign.status) {
+      case 'draft':
+        return `${why ? `${why} · ` : ''}הסבב שמור כטיוטה ולא יישלח אוטומטית - שלחו עכשיו או קבעו מועד.`;
+      case 'failed':
+        return `השליחה נכשלה: ${why || 'שגיאה לא ידועה'}`;
+      case 'empty':
+        return `הסבב לא יצא לאף אחד: ${why || 'אין מוזמנים ברשימה'}`;
+      case 'pending':
+        return 'אין מועד שליחה - הסבב לא יישלח עד שתקבעו מועד.';
+      default:
+        return null;
+    }
+  };
 
   const isNext = (campaign: Campaign, allCampaigns: Campaign[]): boolean => {
     if (campaign.status !== 'scheduled') return false;
@@ -562,6 +742,14 @@ function Messages() {
   // a body rendered with these (the guest-scope samples are fake).
   const getTemplateVariables = (): Record<string, string> => buildPreviewValues(catalog, eventCtx());
 
+  // The gallery renders ~20 template previews at once, so rebuild these only
+  // when the catalog or the event changes - not once per card, per keystroke.
+  const previewVariables = React.useMemo(
+    () => buildPreviewValues(catalog, eventCtx()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [catalog, selectedEvent?.id, selectedEvent?.name, selectedEvent?.date, selectedEvent?.location],
+  );
+
   // Real event values ONLY (no samples) - safe to bake into a stored custom
   // message: guest-scope tokens ({{guest_name}}, {{rsvp_link}}…) stay intact and
   // are resolved per guest by the worker at send time.
@@ -573,6 +761,8 @@ function Messages() {
     if (filterStatus === 'sent') return campaign.status === 'sent';
     if (filterStatus === 'scheduled') return campaign.status === 'scheduled';
     if (filterStatus === 'paused') return campaign.status === 'paused';
+    if (filterStatus === 'draft') return campaign.status === 'draft' || campaign.status === 'pending';
+    if (filterStatus === 'failed') return campaign.status === 'failed' || campaign.status === 'empty';
     return true;
   });
 
@@ -631,23 +821,24 @@ function Messages() {
 
   const confirmSendNow = async () => {
     if (!sendNowCampaign) return;
-    // Set schedule_time to ~30 seconds from now so the scheduler/worker will send it soon
-    const sendAt = new Date(Date.now() + 30 * 1000);
-    // The scheduler only claims status='pending' rows - a paused campaign must be
-    // resumed in the same PUT or "send now" would silently never send.
-    const payload: { schedule_time: string; status?: string } = { schedule_time: sendAt.toISOString() };
-    if (sendNowCampaign.status === 'paused') payload.status = 'pending';
+    // `send_now` lets the SERVER stamp the send instant, move a draft / paused
+    // round to 'pending' (the scheduler only claims pending rows), retry a round
+    // that failed before sending anything, and refuse an empty audience.
     setUpdating(sendNowCampaign.id);
     try {
       const response = await fetchWithAuth(`/api/campaigns/${sendNowCampaign.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ send_now: true }),
       });
-      if (!response.ok) throw new Error('Failed to schedule campaign for send');
+      if (!response.ok) {
+        showToast(await apiErrorMessage(response, 'שגיאה בשליחת הסבב'), 'error');
+        return;
+      }
+      const sendAt = new Date();
       setCampaigns(prev => prev.map(c =>
         c.id === sendNowCampaign.id
-          ? { ...c, scheduleTime: sendAt, status: 'scheduled' as CampaignStatus }
+          ? { ...c, scheduleTime: sendAt, status: 'scheduled' as CampaignStatus, statusReason: null }
           : c
       ));
       setSendNowDialogOpen(false);
@@ -656,10 +847,11 @@ function Messages() {
       if (!fireConfettiOnce('first_campaign_sent')) {
         fireConfetti();
       }
-      showToast('הקמפיין נשלח! ההודעות בדרך 🎉', 'success');
+      showToast('הסבב בדרך! ההודעות יוצאות בדקות הקרובות', 'success');
+      refreshCampaigns();
     } catch (error) {
       console.error('Error sending campaign:', error);
-      showToast('שגיאה בתזמון השליחה', 'error');
+      showToast('שגיאה בשליחת הסבב', 'error');
     } finally {
       setUpdating(null);
     }
@@ -673,6 +865,11 @@ function Messages() {
       const updateData: any = {
         schedule_time: editedTime ? new Date(editedTime).toISOString() : null,
       };
+      // Picking a time IS the owner's approval: a draft / paused / unscheduled
+      // round must become 'pending' or the scheduler never claims it.
+      if (['draft', 'paused', 'pending'].includes(editingCampaign.status) && editedTime) {
+        updateData.status = 'pending';
+      }
 
       const response = await fetchWithAuth(`/api/campaigns/${editingCampaign.id}`, {
         method: 'PUT',
@@ -680,21 +877,18 @@ function Messages() {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Update campaign error:', errorText);
-        throw new Error(`Failed to update campaign: ${response.status} ${errorText}`);
+        showToast(await apiErrorMessage(response, 'שגיאה בעדכון מועד הסבב'), 'error');
+        return;
       }
 
       await response.json();
 
       // Refresh campaigns list to get updated data - through the shared mapper,
-      // so statuses stay normalized and stats reload.
+      // so statuses stay normalized and the embedded stats come with it.
       const campaignsResponse = await fetchWithAuth(`/api/campaigns?event_id=${selectedEvent?.id}`);
       if (campaignsResponse.ok) {
         const campaignsData: CampaignFromAPI[] = await campaignsResponse.json();
-        const mapped = campaignsData.map(mapApiCampaign);
-        setCampaigns(mapped);
-        fetchCampaignStats(mapped);
+        setCampaigns(campaignsData.map(mapApiCampaign));
       } else {
         // Fallback: update local state
         setCampaigns(prev => prev.map(c =>
@@ -714,26 +908,42 @@ function Messages() {
     }
   };
 
-  // Templates the UI may offer for sending - never suggest one that can't be
-  // delivered (draft lifecycle / no approved Meta mapping); the backend rejects
-  // those with a 400 anyway.
-  const sendableTemplates = catalog.templates.filter((t) => t.sendable);
-
   // Hebrew display name for a template's stage (used as the default round name).
   const stageTitle = (flowStage: string): string =>
     catalog.stages.find((s) => s.id === flowStage)?.title || STAGE_LABELS[flowStage] || 'סבב חדש';
 
   const eventType = (selectedEvent?.type as string) || 'wedding';
 
-  // Stages that actually have a deliverable template for this event, ordered by
-  // the lifecycle (STAGE_ORDER). A new round starts by choosing one of these.
+  // Templates the UI may offer for sending - never suggest one that can't be
+  // delivered; the backend rejects those with a 400 anyway.
+  //
+  // Deliverability is per EVENT TYPE: Meta approves the `<key>__wedding` variant,
+  // not the base template, so the catalog's global `sendable` flag is far too
+  // pessimistic - it reported 6 usable templates for a wedding that really has
+  // 17, which is why most of the catalog was invisible here.
+  const sendableTemplates = catalog.templates.filter((t) => isSendableFor(t, eventType));
+
+  // Stages in lifecycle order that have at least one deliverable template.
   const stagesForCreate = STAGE_ORDER.filter((sid) =>
     sendableTemplates.some((t) => t.flow_stage === sid),
   );
 
-  // Deliverable templates belonging to the chosen stage.
+  // Deliverable templates belonging to a stage, recommended one first.
   const templatesForCreateStage = (stageId: string): CatalogTemplate[] =>
-    sendableTemplates.filter((t) => t.flow_stage === stageId);
+    sendableTemplates
+      .filter((t) => t.flow_stage === stageId)
+      .sort((a, b) => Number(b.is_default) - Number(a.is_default) || a.title.localeCompare(b.title, 'he'));
+
+  // Templates we must NOT offer, kept so the panel can say why they're missing
+  // instead of silently showing a short list.
+  const unavailableForStage = (stageId: string): CatalogTemplate[] =>
+    catalog.templates.filter((t) => t.flow_stage === stageId && !isSendableFor(t, eventType));
+
+  // Every stage that has any template at all - so a stage with nothing available
+  // still appears, explaining itself rather than vanishing.
+  const stagesForPanel = STAGE_ORDER.filter((sid) =>
+    catalog.templates.some((t) => t.flow_stage === sid),
+  );
 
   const createTemplateObj = catalog.templates.find((t) => t.id === createTemplateId);
   const createNeedsImage = createTemplateObj?.preview?.header === 'image';
@@ -761,7 +971,12 @@ function Messages() {
     setCreateTemplateId(templateId);
     setCreateImageUrl('');
     const tpl = catalog.templates.find((t) => t.id === templateId);
-    if (tpl) setCreateName(stageTitle(tpl.flow_stage));
+    if (tpl) {
+      // The gallery selects a template directly, so the stage follows from it
+      // rather than being picked first.
+      setCreateStage(tpl.flow_stage);
+      setCreateName(stageTitle(tpl.flow_stage));
+    }
   };
 
   // Upload a header image for an image-header round. Reuses the invitation
@@ -838,9 +1053,7 @@ function Messages() {
       const listRes = await fetchWithAuth(`/api/campaigns?event_id=${selectedEvent.id}&order_by=schedule_time&page_size=100`);
       if (listRes.ok) {
         const data: CampaignFromAPI[] = await listRes.json();
-        const mapped = data.map(mapApiCampaign);
-        setCampaigns(mapped);
-        fetchCampaignStats(mapped);
+        setCampaigns(data.map(mapApiCampaign));
       }
       setCreateOpen(false);
       showToast(createTime ? 'הסבב נוצר ותוזמן 🎉' : 'הסבב נוצר - אפשר לתזמן אותו מתי שתרצו', 'success');
@@ -990,7 +1203,7 @@ function Messages() {
   // gap + RTL-correct icon spacing so the startIcon never overlaps the label.
   const tlBtnBase = { borderRadius: 1.5, px: 1.75, py: 0.6, fontSize: '0.8125rem', fontWeight: 600, textTransform: 'none' as const, gap: 0.5, '& .MuiButton-startIcon': { marginRight: 0, marginLeft: 0 } };
   const tlBtn = {
-    primary: { ...tlBtnBase, bgcolor: 'primary.main', color: 'white', '&:hover': { bgcolor: 'primary.dark' }, '&:disabled': { bgcolor: 'action.disabled', color: 'white' } },
+    primary: { ...tlBtnBase, bgcolor: '#C9B8F3', color: '#16150F', '&:hover': { bgcolor: '#BBA6EE' }, '&:disabled': { bgcolor: 'action.disabled', color: 'white' } },
     neutral: { ...tlBtnBase, bgcolor: 'action.hover', color: 'text.primary', '&:hover': { bgcolor: 'action.selected' }, '&:disabled': { bgcolor: 'action.disabledBackground', color: 'text.disabled' } },
     warn: { ...tlBtnBase, border: '1px solid', borderColor: 'warning.main', color: 'warning.dark', bgcolor: 'transparent', '&:hover': { bgcolor: alpha(theme.palette.warning.main, 0.1), borderColor: 'warning.dark' } },
     danger: { ...tlBtnBase, border: '1px solid', borderColor: 'error.main', color: 'error.main', bgcolor: 'transparent', '&:hover': { bgcolor: alpha(theme.palette.error.main, 0.08), borderColor: 'error.dark' } },
@@ -1010,25 +1223,36 @@ function Messages() {
     ? Math.round(((stats.approved + stats.declined) / stats.total) * 100)
     : 0;
   
-  // For sent campaigns: read rate = (read_count / recipient_count) - webhook updates read per message
-  const getCampaignReadRate = (campaign: Campaign): number => {
-    if (campaign.status !== 'sent') return 0;
-    const sentCount = campaign.sentCount ?? campaign.recipientCount ?? 0;
-    if (sentCount <= 0) return 0;
-    return Math.round(((campaign.readCount ?? 0) / sentCount) * 100);
-  };
+  // A campaign has real numbers the moment Meta accepted its first message -
+  // not only once the whole round finishes. That is what makes the funnel
+  // available "at any moment", including mid-send.
+  const hasSendStats = (campaign: Campaign): boolean => campaign.attemptedCount > 0;
+
+  // Percentages are OF THE MESSAGES THAT ARRIVED, never of the planned audience:
+  // dividing by an audience we failed to reach would flatter every rate.
+  const rateOf = (part: number, whole: number): number =>
+    whole > 0 ? Math.round((part / whole) * 100) : 0;
+
+  const getCampaignReadRate = (campaign: Campaign): number =>
+    rateOf(campaign.readCount, campaign.deliveredCount || campaign.sentCount);
+
+  const getCampaignReplyRate = (campaign: Campaign): number =>
+    rateOf(campaign.repliedCount, campaign.deliveredCount || campaign.sentCount);
 
   // Summary-strip metrics.
   const sentList = campaigns.filter(c => c.status === 'sent');
   const completed = sentList.length;
   const journeyPct = totalCampaigns > 0 ? Math.round((completed / totalCampaigns) * 100) : 0;
-  const avgReadRate = sentList.length ? Math.round(sentList.reduce((a, c) => a + getCampaignReadRate(c), 0) / sentList.length) : 0;
+  // Average only over rounds that actually have measurements - a round with no
+  // delivery data yet would otherwise drag the average toward zero.
+  const measured = campaigns.filter(hasSendStats);
+  const avgReadRate = measured.length ? Math.round(measured.reduce((a, c) => a + getCampaignReadRate(c), 0) / measured.length) : 0;
   const totalGuests = (stats?.total && stats.total > 0) ? stats.total : Math.max(0, ...campaigns.map(c => c.recipientCount || 0));
   // Count only confirmed deliveries; planned recipients are not "reached".
-  const guestsReached = Math.max(0, ...sentList.map(c => c.sentCount ?? 0));
-  // Only claim measured analytics when at least one sent campaign has real
-  // delivery stats - otherwise the strip must show "-", not a fake 0.
-  const hasAnyDeliveryStats = sentList.some(c => c.sentCount != null);
+  const guestsReached = Math.max(0, ...measured.map(c => c.deliveredCount));
+  // Only claim measured analytics when at least one round has real delivery
+  // stats - otherwise the strip must show "-", not a fake 0.
+  const hasAnyDeliveryStats = measured.length > 0;
 
   const primary = theme.palette.primary.main;
 
@@ -1065,15 +1289,20 @@ function Messages() {
 
   return (
     <Box sx={{ direction: 'rtl', pb: { xs: 20, sm: 0 } }}>
-      {/* Compact action row (no large page title) */}
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'text.primary' }}>קמפיינים</Typography>
+      {/* Page masthead - title on the reading side, the one action on the other */}
+      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" flexWrap="wrap" gap={2} sx={{ mb: { xs: 3, md: 4 } }}>
+        <Box>
+          {/* The page title lives in the app header (design v6). */}
+          <Typography sx={{ fontSize: { xs: '0.95rem', md: '1.05rem' }, color: 'text.secondary', maxWidth: '60ch' }}>
+            כל סבב יוצא לפי לוח השליחה. אפשר לשנות, לעצור או לשלוח עכשיו.
+          </Typography>
+        </Box>
         <Button
           startIcon={<PlusIcon sx={{ fontSize: 18 }} />}
           variant="contained"
           disableElevation
           onClick={openCreate}
-          sx={{ borderRadius: 1.5, px: 2, py: 0.65, fontWeight: 600, fontSize: '0.85rem', textTransform: 'none', boxShadow: 'none', bgcolor: 'primary.main', gap: 0.5, '& .MuiButton-startIcon': { marginRight: 0, marginLeft: 0 }, '&:hover': { bgcolor: 'primary.dark', boxShadow: 'none' } }}
+          sx={{ borderRadius: 999, px: 2.25, py: 0.8, fontWeight: 700, fontSize: '0.9rem', textTransform: 'none', boxShadow: 'none', bgcolor: '#C9B8F3', color: '#16150F', gap: 0.5, mt: { md: 0.5 }, '& .MuiButton-startIcon': { marginRight: 0, marginLeft: 0 }, '&:hover': { bgcolor: '#BBA6EE', boxShadow: 'none' } }}
         >
           סבב חדש
         </Button>
@@ -1136,7 +1365,7 @@ function Messages() {
           <Box>
             <Typography sx={{ fontSize: 18, fontWeight: 700, color: 'text.primary', mb: 0.5 }}>מסע התקשורת שלכם מתחיל כאן</Typography>
             <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>צרו את הסבב הראשון ואנחנו נלווה את האורחים באופן אוטומטי לאורך כל הדרך.</Typography>
-            <Button startIcon={<PlusIcon sx={{ fontSize: 18 }} />} variant="contained" disableElevation onClick={openCreate} sx={{ borderRadius: 1.5, px: 2.25, py: 0.75, fontWeight: 600, textTransform: 'none', boxShadow: 'none', bgcolor: 'primary.main', gap: 0.5, '& .MuiButton-startIcon': { marginRight: 0, marginLeft: 0 }, '&:hover': { bgcolor: 'primary.dark' } }}>צרו סבב ראשון</Button>
+            <Button startIcon={<PlusIcon sx={{ fontSize: 18 }} />} variant="contained" disableElevation onClick={openCreate} sx={{ borderRadius: 1.5, px: 2.25, py: 0.75, fontWeight: 600, textTransform: 'none', boxShadow: 'none', bgcolor: '#C9B8F3', color: '#16150F', gap: 0.5, '& .MuiButton-startIcon': { marginRight: 0, marginLeft: 0 }, '&:hover': { bgcolor: '#BBA6EE' } }}>צרו סבב ראשון</Button>
           </Box>
         </Box>
       ) : (
@@ -1144,19 +1373,26 @@ function Messages() {
           {timelineCampaigns.map((campaign, i) => {
             const active = (hoveredId ?? selectedId) === campaign.id;
             const selected = selectedId === campaign.id;
-            const isSent = campaign.status === 'sent';
+            // "Done" rounds take no actions. A failed / empty round stays
+            // actionable (retry) - the server refuses if anything already went out.
+            const isSent = campaign.status === 'sent' || campaign.status === 'sending';
             const isPaused = campaign.status === 'paused';
+            const isFinishedUnsent = campaign.status === 'failed' || campaign.status === 'empty';
+            const explanation = getStatusExplanation(campaign);
             const isLoading = updating === campaign.id;
             const isLast = i === timelineCampaigns.length - 1;
             const dt = campaign.scheduleTime ? new Date(campaign.scheduleTime) : null;
             const sc = getStatusColor(campaign);
             const readRate = getCampaignReadRate(campaign);
-            // Only claim "delivered" when real delivery stats exist; the planned
-            // recipient count must not masquerade as confirmed deliveries.
-            const hasDeliveryStats = campaign.sentCount != null;
-            const delivered = campaign.sentCount ?? campaign.recipientCount ?? 0;
-            const read = campaign.readCount ?? 0;
-            const unread = Math.max(0, delivered - read);
+            const replyRate = getCampaignReplyRate(campaign);
+            // Only claim delivery numbers once messages actually went out; the
+            // planned recipient count must not masquerade as confirmed delivery.
+            const hasDeliveryStats = hasSendStats(campaign);
+            const delivered = campaign.deliveredCount;
+            const read = campaign.readCount;
+            const replied = campaign.repliedCount;
+            const failed = campaign.failedCount;
+            const inFlight = campaign.queuedCount;
             // Inline template reselect (like the wizard): the alternatives for this round.
             const curTpl = commTemplate(catalog, campaign);
             const isCustomMsg = !!campaign.template && !catalog.templates.find(t => t.id === campaign.template);
@@ -1220,7 +1456,7 @@ function Messages() {
                   {/* Quick actions - top-left corner icons (when selected) */}
                   {selected && !isSent && (
                     <Box onClick={(e) => e.stopPropagation()} sx={{ position: 'absolute', top: -2, left: 0, display: 'flex', gap: 0.25, zIndex: 4 }}>
-                      {isPaused ? (
+                      {isFinishedUnsent ? null : isPaused ? (
                         <Tooltip title="חידוש"><IconButton size="small" onClick={() => handleResume(campaign)} disabled={isLoading} sx={{ color: 'text.secondary' }}><PlayArrowIcon fontSize="small" /></IconButton></Tooltip>
                       ) : (
                         <Tooltip title="השהיה"><IconButton size="small" onClick={() => handlePause(campaign)} disabled={isLoading} sx={{ color: 'text.secondary' }}><PauseIcon fontSize="small" /></IconButton></Tooltip>
@@ -1233,22 +1469,26 @@ function Messages() {
                     <Typography sx={{ fontSize: 16, fontWeight: 700, color: 'text.primary' }} noWrap>{campaign.name}</Typography>
                     <Chip label={getStatusLabel(campaign)} size="small" sx={{ height: 20, fontSize: '0.7rem', fontWeight: 600, bgcolor: alpha(sc.color, 0.12), color: sc.color }} />
                   </Stack>
+                  {explanation && (
+                    <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: sc.color, mb: 0.75, lineHeight: 1.5 }}>
+                      {explanation}
+                    </Typography>
+                  )}
 
-                  {isSent ? (
+                  {hasDeliveryStats ? (
+                    // The three numbers the owner asks about, always in the same
+                    // order: received -> saw -> answered.
                     <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: 'wrap', rowGap: 0.5, mb: 1.25 }}>
-                      {hasDeliveryStats ? (
-                        <>
-                          <Stat icon={<CheckCircleIcon sx={{ fontSize: 15, color: 'success.main' }} />} text={`נמסר ל-${delivered}`} />
-                          <Stat icon={<PeopleIcon sx={{ fontSize: 15, color: 'text.secondary' }} />} text={`נקרא ע"י ${read}`} />
-                          <Stat icon={<BarChartIcon sx={{ fontSize: 15, color: 'text.secondary' }} />} text={`שיעור פתיחה ${readRate}%`} />
-                          {unread > 0 && <Stat icon={<ClockIcon sx={{ fontSize: 15, color: 'text.secondary' }} />} text={`${unread} טרם נקראו`} />}
-                        </>
-                      ) : (
-                        <>
-                          <Stat icon={<CheckCircleIcon sx={{ fontSize: 15, color: 'success.main' }} />} text={`${campaign.recipientCount} נמענים מתוכננים`} />
-                          <Stat icon={<ClockIcon sx={{ fontSize: 15, color: 'text.secondary' }} />} text="נתוני מסירה יתעדכנו בקרוב" />
-                        </>
-                      )}
+                      <Stat icon={<CheckCircleIcon sx={{ fontSize: 15, color: 'success.main' }} />} text={`${delivered} קיבלו`} />
+                      <Stat icon={<VisibilityIcon sx={{ fontSize: 15, color: 'text.secondary' }} />} text={`${read} ראו (${readRate}%)`} />
+                      <Stat icon={<ReplyIcon sx={{ fontSize: 15, color: primary }} />} text={`${replied} ענו (${replyRate}%)`} />
+                      {inFlight > 0 && <Stat icon={<ClockIcon sx={{ fontSize: 15, color: 'text.secondary' }} />} text={`${inFlight} בשליחה`} />}
+                      {failed > 0 && <Stat icon={<ErrorOutlineIcon sx={{ fontSize: 15, color: 'error.main' }} />} text={`${failed} נכשלו`} />}
+                    </Stack>
+                  ) : isSent ? (
+                    <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: 'wrap', rowGap: 0.5, mb: 1.25 }}>
+                      <Stat icon={<CheckCircleIcon sx={{ fontSize: 15, color: 'success.main' }} />} text={`${campaign.recipientCount} נמענים מתוכננים`} />
+                      <Stat icon={<ClockIcon sx={{ fontSize: 15, color: 'text.secondary' }} />} text="נתוני מסירה יתעדכנו בקרוב" />
                     </Stack>
                   ) : (
                     <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: 'wrap', rowGap: 0.5, mb: 1.25 }}>
@@ -1257,9 +1497,15 @@ function Messages() {
                     </Stack>
                   )}
 
-                  {isSent && hasDeliveryStats && delivered > 0 && (
-                    <Box sx={{ maxWidth: 340, height: 5, borderRadius: 99, bgcolor: alpha(theme.palette.divider, 0.7), overflow: 'hidden', mb: 1.25 }}>
-                      <Box sx={{ height: '100%', width: `${readRate}%`, bgcolor: primary, borderRadius: 99, transition: 'width .6s ease' }} />
+                  {hasDeliveryStats && delivered > 0 && (
+                    // Funnel bar: the full track is everyone who RECEIVED it, the
+                    // pale band is who SAW it, the solid band on top is who
+                    // ANSWERED. Both bands start from the same edge because they
+                    // are overlapping groups, not consecutive stages - someone
+                    // with read receipts off answers without ever being "read".
+                    <Box sx={{ position: 'relative', maxWidth: 340, height: 5, borderRadius: 99, bgcolor: alpha(theme.palette.divider, 0.7), overflow: 'hidden', mb: 1.25 }}>
+                      <Box sx={{ position: 'absolute', inset: 0, width: `${readRate}%`, bgcolor: alpha(primary, 0.35), borderRadius: 99, transition: 'width .6s ease' }} />
+                      <Box sx={{ position: 'absolute', inset: 0, width: `${replyRate}%`, bgcolor: primary, borderRadius: 99, transition: 'width .6s ease' }} />
                     </Box>
                   )}
 
@@ -1285,15 +1531,18 @@ function Messages() {
                         {isCustomMsg ? 'הודעה מותאמת אישית' : `${tplList[curTplIdx]?.title || 'תבנית'}${tplList.length > 1 ? ` · ${curTplIdx + 1}/${tplList.length}` : ''}`}
                       </Typography>
                       <IconButton size="small" onClick={() => goTemplate(-1)} disabled={tplList.length < 2} sx={{ color: 'text.secondary' }}><ChevronLeftIcon fontSize="small" /></IconButton>
-                      <Button onClick={() => openCustom(campaign)} startIcon={<EditIcon sx={{ fontSize: 15 }} />} sx={{ ...tlBtn.neutral, flexShrink: 0 }}>מותאם</Button>
+                      {/* Free-text rounds are rejected by Meta (no 24h window) and by core. */}
+                      {featureFlags.customMessages && <Button onClick={() => openCustom(campaign)} startIcon={<EditIcon sx={{ fontSize: 15 }} />} sx={{ ...tlBtn.neutral, flexShrink: 0 }}>מותאם</Button>}
                     </Stack>
                   )}
 
                   {/* Primary actions */}
                   {selected && !isSent && customFor !== campaign.id && (
                     <Stack direction="row" spacing={1} onClick={(e) => e.stopPropagation()} sx={{ flexWrap: 'wrap', gap: 1, mt: 1.5 }}>
-                      <Button onClick={() => handleSendNow(campaign)} disabled={isLoading} startIcon={<SendIcon sx={{ fontSize: 16 }} />} sx={tlBtn.primary}>שליחה עכשיו</Button>
-                      <Button onClick={() => handleEditTime(campaign)} disabled={isLoading} startIcon={<AccessTimeIcon sx={{ fontSize: 16 }} />} sx={tlBtn.neutral}>שינוי מועד</Button>
+                      <Button onClick={() => handleSendNow(campaign)} disabled={isLoading} startIcon={<SendIcon sx={{ fontSize: 16 }} />} sx={tlBtn.primary}>{isFinishedUnsent ? 'ניסיון חוזר עכשיו' : 'שליחה עכשיו'}</Button>
+                      {!isFinishedUnsent && (
+                        <Button onClick={() => handleEditTime(campaign)} disabled={isLoading} startIcon={<AccessTimeIcon sx={{ fontSize: 16 }} />} sx={tlBtn.neutral}>{campaign.scheduleTime && campaign.status !== 'draft' ? 'שינוי מועד' : 'תזמון'}</Button>
+                      )}
                     </Stack>
                   )}
                 </Box>
@@ -1332,9 +1581,9 @@ function Messages() {
               disabled={saving}
               sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 } }}
             />
-            {editingCampaign?.status === 'paused' && (
-              <Alert severity="warning">
-                הסבב מושהה - גם אחרי שינוי המועד הוא לא יישלח עד שתחדשו אותו.
+            {(editingCampaign?.status === 'paused' || editingCampaign?.status === 'draft') && (
+              <Alert severity="info">
+                {editingCampaign?.status === 'paused' ? 'הסבב מושהה' : 'הסבב שמור כטיוטה'} - שמירת המועד תפעיל אותו והוא יישלח במועד שבחרתם.
               </Alert>
             )}
             {editingCampaign && (
@@ -1356,7 +1605,7 @@ function Messages() {
             disableElevation
             onClick={saveEdit}
             disabled={saving || !editedTime}
-            sx={{ borderRadius: 1.5, textTransform: 'none', fontWeight: 600, px: 2.5, bgcolor: 'primary.main', '&:hover': { bgcolor: 'primary.dark' } }}
+            sx={{ borderRadius: 1.5, textTransform: 'none', fontWeight: 600, px: 2.5, bgcolor: '#C9B8F3', color: '#16150F', '&:hover': { bgcolor: '#BBA6EE' } }}
           >
             {saving ? <CircularProgress size={20} /> : 'שמירת המועד'}
           </Button>
@@ -1380,9 +1629,15 @@ function Messages() {
         </DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
-            <Alert severity="info">
-              זמן השליחה של הקמפיין ייעודכן לעוד כחצי דקה, וההודעה תישלח אוטומטית אז.
-            </Alert>
+            {sendNowCampaign && sendNowCampaign.recipientCount === 0 ? (
+              <Alert severity="warning">
+                אין כרגע מוזמנים שמתאימים לסבב הזה - הוסיפו מוזמנים לרשימה לפני השליחה.
+              </Alert>
+            ) : (
+              <Alert severity="info">
+                הסבב יוצא לדרך עכשיו, וההודעות יישלחו בדקות הקרובות.
+              </Alert>
+            )}
             {sendNowCampaign && (
               <>
                 <Typography variant="body1" sx={{ fontWeight: 500 }}>
@@ -1407,9 +1662,9 @@ function Messages() {
                   />
                 </Box>
               <Typography variant="body2" color="text.secondary">
-                  ההודעה תישלח ל-<strong>{sendNowCampaign.recipientCount}</strong> מוזמנים בעוד כחצי דקה.
+                  ההודעה תישלח ל-<strong>{sendNowCampaign.recipientCount}</strong> מוזמנים.
               </Typography>
-                {sendNowCampaign.scheduleTime && (
+                {sendNowCampaign.scheduleTime && sendNowCampaign.status === 'scheduled' && (
               <Typography variant="body2" color="text.secondary">
                     זמן מתוכנן: {new Date(sendNowCampaign.scheduleTime).toLocaleString('he-IL')}
               </Typography>
@@ -1429,11 +1684,12 @@ function Messages() {
             variant="contained"
             onClick={confirmSendNow}
             startIcon={updating ? <CircularProgress size={16} /> : <SendIcon />}
-            disabled={updating !== null}
+            disabled={updating !== null || sendNowCampaign?.recipientCount === 0}
             sx={{
-              backgroundColor: 'primary.main',
+              backgroundColor: '#C9B8F3',
+              color: '#16150F',
               '&:hover': {
-                backgroundColor: 'primary.dark',
+                backgroundColor: '#BBA6EE',
               },
             }}
           >
@@ -1458,61 +1714,161 @@ function Messages() {
         </DialogActions>
       </ResponsiveDialog>
 
-      {/* New round creation */}
-      <ResponsiveDialog open={createOpen} onClose={() => !creating && setCreateOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700 }}>סבב חדש</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2.5} sx={{ mt: 1 }}>
-            {/* Step 1 - pick the STAGE (save-the-date / invitation / reminder / …). */}
-            <FormControl fullWidth size="small">
-              <InputLabel id="create-stage-label">שלב בתקשורת</InputLabel>
-              <Select
-                labelId="create-stage-label"
-                label="שלב בתקשורת"
-                value={createStage}
-                onChange={(e) => applyCreateStage(e.target.value as string)}
-              >
-                {stagesForCreate.map((sid) => (
-                  <MenuItem key={sid} value={sid}>{stageTitle(sid)}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            {/* Step 2 - pick the template within that stage. */}
-            <FormControl fullWidth size="small" disabled={!createStage}>
-              <InputLabel id="create-template-label">תבנית ההודעה</InputLabel>
-              <Select
-                labelId="create-template-label"
-                label="תבנית ההודעה"
-                value={createTemplateId}
-                onChange={(e) => handleCreateTemplateChange(e.target.value as string)}
-              >
-                {/* Only deliverable templates for the chosen stage. */}
-                {templatesForCreateStage(createStage).map((t) => (
-                  <MenuItem key={t.id} value={t.id}>{t.title}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <TextField
-              size="small"
-              fullWidth
-              label="שם הסבב"
-              value={createName}
-              onChange={(e) => setCreateName(e.target.value)}
-            />
-            {/* Image-header templates require an image. */}
-            {createNeedsImage && (
-              <Box>
-                <input
-                  ref={createImageInputRef}
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={(e) => { uploadCreateImage(e.target.files?.[0]); e.target.value = ''; }}
+      {/* New round creation - a side panel, not a modal.
+          The old dialog hid the catalog behind two dropdowns and pushed the
+          message preview below the fold, so the owner picked a round without
+          ever seeing what their guests would receive. Here every template for
+          this event type is on screen as a real (truncated) message, and the
+          full preview is pinned alongside. */}
+      <Drawer
+        anchor="left"
+        open={createOpen}
+        onClose={() => !creating && setCreateOpen(false)}
+        PaperProps={{
+          sx: {
+            width: { xs: '100%', md: 'min(1000px, 94vw)' },
+            direction: 'rtl',
+            display: 'flex',
+            flexDirection: 'column',
+          },
+        }}
+      >
+        {/* Header */}
+        <Stack
+          direction="row"
+          alignItems="center"
+          spacing={1.5}
+          sx={{ px: 2.5, py: 1.75, borderBottom: '1px solid', borderColor: 'divider', flexShrink: 0 }}
+        >
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography sx={{ fontSize: 18, fontWeight: 700 }}>סבב חדש</Typography>
+            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+              בחרו תבנית - כך ההודעה תיראה לאורחים
+            </Typography>
+          </Box>
+          <IconButton onClick={() => !creating && setCreateOpen(false)} size="small">
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </Stack>
+
+        {/* Body: gallery (right, in RTL) + pinned preview and settings (left) */}
+        <Box
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: { xs: 'column', md: 'row' },
+            overflowY: { xs: 'auto', md: 'hidden' },
+          }}
+        >
+          {/* Template gallery - the whole catalog for this event type, at once. */}
+          <Box sx={{ flex: 1, minWidth: 0, overflowY: { md: 'auto' }, px: 2.5, py: 2 }}>
+            {stagesForPanel.map((sid) => {
+              const available = templatesForCreateStage(sid);
+              const unavailable = unavailableForStage(sid);
+              return (
+                <Box key={sid} sx={{ mb: 3 }}>
+                  <Stack direction="row" alignItems="baseline" spacing={1} sx={{ mb: 1.25 }}>
+                    <Typography sx={{ fontSize: 14, fontWeight: 700, color: 'text.primary' }}>
+                      {stageTitle(sid)}
+                    </Typography>
+                    <Typography sx={{ fontSize: 11.5, color: 'text.secondary' }}>
+                      {available.length ? `${available.length} תבניות` : 'אין תבניות זמינות'}
+                    </Typography>
+                  </Stack>
+                  {available.length === 0 && (
+                    <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1 }}>
+                      השלב הזה עדיין לא זמין לסוג האירוע שלכם.
+                    </Typography>
+                  )}
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: { xs: '1fr', sm: 'repeat(auto-fill, minmax(215px, 1fr))' },
+                      gap: 1.25,
+                    }}
+                  >
+                    {available.map((t) => (
+                      <TemplateCard
+                        key={t.id}
+                        template={t}
+                        variables={previewVariables}
+                        selected={createTemplateId === t.id}
+                        onSelect={() => handleCreateTemplateChange(t.id)}
+                      />
+                    ))}
+                    {/* Shown, not hidden: "where are the rest?" is a fair question,
+                        and a silent short list is what made the catalog feel broken. */}
+                    {unavailable.map((t) => (
+                      <TemplateCard
+                        key={t.id}
+                        template={t}
+                        variables={previewVariables}
+                        selected={false}
+                        disabled
+                        disabledReason={t.lifecycle === 'draft' ? 'בהכנה' : 'טרם אושרה לסוג האירוע הזה'}
+                      />
+                    ))}
+                  </Box>
+                </Box>
+              );
+            })}
+          </Box>
+
+          {/* Pinned preview + round settings */}
+          <Box
+            sx={{
+              width: { xs: 'auto', md: 380 },
+              flexShrink: 0,
+              borderInlineStart: { md: '1px solid' },
+              borderTop: { xs: '1px solid', md: 'none' },
+              borderColor: 'divider',
+              overflowY: { md: 'auto' },
+              px: 2.5,
+              py: 2,
+              bgcolor: 'background.default',
+            }}
+          >
+            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
+              כך ההודעה תיראה לאורחים
+            </Typography>
+            <Box sx={{ bgcolor: '#ece5dd', borderRadius: 2, p: 1.25, mb: 2.5, minHeight: 120 }}>
+              {createTemplateObj ? (
+                <WhatsAppBubble
+                  template={createTemplateObj}
+                  variables={previewVariables}
+                  imageUrl={createImageUrl || undefined}
                 />
-                <Stack direction="row" spacing={1.5} alignItems="center">
+              ) : (
+                <Typography sx={{ fontSize: 12.5, color: 'rgba(0,0,0,0.55)', p: 1.5, textAlign: 'center' }}>
+                  בחרו תבנית כדי לראות אותה כאן
+                </Typography>
+              )}
+            </Box>
+
+            <Stack spacing={2}>
+              <TextField
+                size="small"
+                fullWidth
+                label="שם הסבב"
+                value={createName}
+                onChange={(e) => setCreateName(e.target.value)}
+              />
+
+              {/* Image-header templates require an image. */}
+              {createNeedsImage && (
+                <Box>
+                  <input
+                    ref={createImageInputRef}
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(e) => { uploadCreateImage(e.target.files?.[0]); e.target.value = ''; }}
+                  />
                   <Button
                     variant="outlined"
                     size="small"
+                    fullWidth
                     startIcon={<ImageIcon sx={{ fontSize: 18 }} />}
                     onClick={() => createImageInputRef.current?.click()}
                     disabled={uploadingImage}
@@ -1520,42 +1876,49 @@ function Messages() {
                   >
                     {uploadingImage ? 'מעלה…' : createImageUrl ? 'החלפת תמונה' : 'העלאת תמונה'}
                   </Button>
-                  <Typography variant="caption" color={createImageUrl ? 'success.main' : 'text.secondary'}>
+                  <Typography
+                    variant="caption"
+                    sx={{ display: 'block', mt: 0.75 }}
+                    color={createImageUrl ? 'success.main' : 'text.secondary'}
+                  >
                     {createImageUrl ? 'תמונה נבחרה ✓' : 'התבנית הזו כוללת תמונה בראש ההודעה - חובה להעלות אחת.'}
                   </Typography>
-                </Stack>
-              </Box>
-            )}
-            <TextField
-              size="small"
-              fullWidth
-              type="datetime-local"
-              label="מועד שליחה (לא חובה)"
-              InputLabelProps={{ shrink: true }}
-              value={createTime}
-              onChange={(e) => setCreateTime(e.target.value)}
-              helperText="בלי מועד, הסבב יישמר כטיוטה ותוכלו לתזמן או לשלוח אותו מתי שתרצו."
-            />
-            {createTemplateObj ? (
-              <Box>
-                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.75 }}>כך ההודעה תיראה לאורחים:</Typography>
-                <WhatsAppBubble template={createTemplateObj} variables={getTemplateVariables()} imageUrl={createImageUrl || undefined} />
-              </Box>
-            ) : null}
-          </Stack>
-        </DialogContent>
-        <DialogActions>
+                </Box>
+              )}
+
+              <TextField
+                size="small"
+                fullWidth
+                type="datetime-local"
+                label="מועד שליחה (לא חובה)"
+                InputLabelProps={{ shrink: true }}
+                value={createTime}
+                onChange={(e) => setCreateTime(e.target.value)}
+                helperText="בלי מועד, הסבב יישמר כטיוטה ותוכלו לתזמן או לשלוח אותו מתי שתרצו."
+              />
+            </Stack>
+          </Box>
+        </Box>
+
+        {/* Footer */}
+        <Stack
+          direction="row"
+          spacing={1.5}
+          justifyContent="flex-end"
+          sx={{ px: 2.5, py: 1.75, borderTop: '1px solid', borderColor: 'divider', flexShrink: 0 }}
+        >
           <Button onClick={() => setCreateOpen(false)} disabled={creating}>ביטול</Button>
           <Button
             variant="contained"
             onClick={confirmCreate}
             disabled={creating || !createName.trim() || !createTemplateId || (createNeedsImage && !createImageUrl)}
-            sx={{ backgroundColor: 'primary.main', '&:hover': { backgroundColor: 'primary.dark' } }}
+            sx={{ backgroundColor: '#C9B8F3', color: '#16150F', '&:hover': { backgroundColor: '#BBA6EE' } }}
           >
             {creating ? 'יוצר…' : 'יצירת סבב'}
           </Button>
-        </DialogActions>
-      </ResponsiveDialog>
+        </Stack>
+      </Drawer>
+
 
       {/* Paid extra-round purchase */}
       <ResponsiveDialog open={!!purchase} onClose={() => !buying && setPurchase(null)} maxWidth="xs" fullWidth>
@@ -1582,7 +1945,7 @@ function Messages() {
             variant="contained"
             onClick={startExtraRoundPurchase}
             disabled={buying}
-            sx={{ backgroundColor: 'primary.main', '&:hover': { backgroundColor: 'primary.dark' } }}
+            sx={{ backgroundColor: '#C9B8F3', color: '#16150F', '&:hover': { backgroundColor: '#BBA6EE' } }}
           >
             {buying ? 'מעבר לתשלום…' : 'המשך לתשלום'}
           </Button>

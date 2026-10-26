@@ -11,7 +11,7 @@ import PersonAddAlt1RoundedIcon from '@mui/icons-material/PersonAddAlt1Rounded';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
 import { useVenueAdmin } from '../../hooks/useVenueAdmin';
 
-const BRAND = '#888cee';
+const BRAND = '#9D83E0';
 
 interface VenueBranding {
   logo?: string | null;
@@ -341,7 +341,7 @@ export default function VenueSettings() {
               />
               <Button
                 variant="contained" disableElevation onClick={saveCoupon} disabled={savingCoupon}
-                sx={{ borderRadius: 2, fontWeight: 700, bgcolor: BRAND, '&:hover': { bgcolor: '#6f74e0' }, minWidth: 100 }}
+                sx={{ borderRadius: 2, fontWeight: 700, bgcolor: '#C9B8F3', color: '#16150F', '&:hover': { bgcolor: '#BBA6EE' }, minWidth: 100 }}
               >
                 {savingCoupon ? <CircularProgress size={20} sx={{ color: '#fff' }} /> : 'שמירה'}
               </Button>
@@ -365,13 +365,13 @@ export default function VenueSettings() {
                 value={color}
                 onChange={(e) => setColor(e.target.value)}
                 fullWidth
-                placeholder="#888cee"
+                placeholder="#9D83E0"
                 disabled={savingBranding}
               />
               <Box>
                 <Button
                   variant="contained" disableElevation onClick={saveBranding} disabled={savingBranding}
-                  sx={{ borderRadius: 2, fontWeight: 700, bgcolor: BRAND, '&:hover': { bgcolor: '#6f74e0' }, minWidth: 100 }}
+                  sx={{ borderRadius: 2, fontWeight: 700, bgcolor: '#C9B8F3', color: '#16150F', '&:hover': { bgcolor: '#BBA6EE' }, minWidth: 100 }}
                 >
                   {savingBranding ? <CircularProgress size={20} sx={{ color: '#fff' }} /> : 'שמירה'}
                 </Button>
@@ -414,7 +414,7 @@ export default function VenueSettings() {
                 variant="contained" disableElevation onClick={addMember}
                 disabled={addingMember || !newPhone.trim()}
                 startIcon={!addingMember ? <PersonAddAlt1RoundedIcon /> : undefined}
-                sx={{ borderRadius: 2, fontWeight: 700, bgcolor: BRAND, '&:hover': { bgcolor: '#6f74e0' }, minWidth: 110, whiteSpace: 'nowrap' }}
+                sx={{ borderRadius: 2, fontWeight: 700, bgcolor: '#C9B8F3', color: '#16150F', '&:hover': { bgcolor: '#BBA6EE' }, minWidth: 110, whiteSpace: 'nowrap' }}
               >
                 {addingMember ? <CircularProgress size={20} sx={{ color: '#fff' }} /> : 'הוסף'}
               </Button>

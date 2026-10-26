@@ -4,42 +4,115 @@ import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
 import Button from '@mui/material/Button';
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
 import MenuItem from '@mui/material/MenuItem';
 import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
 import WhatsAppIcon from '@mui/icons-material/WhatsApp';
-import { keyframes } from '@mui/system';
 import { useNavigate } from 'react-router-dom';
 import { countryOptions, normalizePhoneNumber } from '../utils/countryOptions';
 
 const LEAD_ENDPOINT_START = '/api/leads/start-now'; // החלף ל-URL הסופי
 const LEAD_ENDPOINT_CONTACT = '/api/leads/contact'; // החלף ל-URL הסופי
 
-const float = keyframes`
-  0% {
-    transform: translateY(24px) scale(0.96);
-    opacity: 0;
-  }
-  15% {
-    transform: translateY(0) scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: translateY(-12px) scale(1);
-    opacity: 1;
-  }
-  85% {
-    transform: translateY(18px) scale(1);
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(40px) scale(0.96);
-    opacity: 0;
-  }
-`;
+
+
+/* A still, composed WhatsApp exchange: the invitation, the one-tap reply, and
+   the day-of reminder. Each bubble rises in once; nothing loops or fades away. */
+const RISE = { from: { opacity: 0, transform: 'translateY(10px)' }, to: { opacity: 1, transform: 'none' } };
+
+function Bubble({ side, delay, children }: { side: 'in' | 'out'; delay: number; children: React.ReactNode }) {
+  const out = side === 'out';
+  return (
+    <Box
+      sx={{
+        alignSelf: out ? 'flex-start' : 'flex-end',
+        maxWidth: out ? '72%' : '86%',
+        px: 2,
+        py: 1.35,
+        borderRadius: '18px',
+        ...(out ? { borderBottomLeftRadius: 6 } : { borderBottomRightRadius: 6 }),
+        bgcolor: out ? '#dcf8c6' : '#ffffff',
+        color: '#111827',
+        boxShadow: '0 1px 2px rgba(15,23,42,0.08), 0 10px 30px rgba(15,23,42,0.06)',
+        fontSize: 14,
+        lineHeight: 1.55,
+        opacity: 0,
+        animation: 'heroBubble .55s cubic-bezier(.2,.8,.2,1) forwards',
+        animationDelay: `${delay}s`,
+        '@keyframes heroBubble': RISE,
+      }}
+    >
+      {children}
+    </Box>
+  );
+}
+
+function ReplyButton({ label, accent }: { label: string; accent?: boolean }) {
+  return (
+    <Box
+      sx={{
+        mt: 0.75,
+        py: 0.7,
+        textAlign: 'center',
+        borderRadius: 1.5,
+        fontSize: 13.5,
+        fontWeight: 600,
+        color: accent ? '#0f7a52' : '#1f2937',
+        bgcolor: accent ? 'rgba(37,211,102,0.12)' : 'rgba(15,23,42,0.05)',
+        border: `1px solid ${accent ? 'rgba(37,211,102,0.35)' : 'rgba(15,23,42,0.08)'}`,
+      }}
+    >
+      {label}
+    </Box>
+  );
+}
+
+function HeroConversation() {
+  return (
+    <Box
+      sx={{
+        width: '100%',
+        maxWidth: 420,
+        p: { xs: 2, md: 2.5 },
+        borderRadius: 5,
+        bgcolor: '#f3f0ff',
+        backgroundImage: 'radial-gradient(rgba(95,100,214,0.10) 1px, transparent 1.2px)',
+        backgroundSize: '18px 18px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1.5,
+        direction: 'rtl',
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, px: 0.5, pb: 0.5 }}>
+        <Box sx={{ width: 34, height: 34, borderRadius: '50%', bgcolor: '#5A3DA6', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14 }}>ד</Box>
+        <Box>
+          <Typography sx={{ fontWeight: 700, fontSize: 14, lineHeight: 1.2, color: '#111827' }}>דנה ויוסי</Typography>
+          <Typography sx={{ fontSize: 12, color: '#6b7280' }}>WhatsApp Business</Typography>
+        </Box>
+      </Box>
+
+      <Bubble side="in" delay={0.15}>
+        <Typography sx={{ fontWeight: 700, fontSize: 14.5 }}>היי, מוזמנים לחתונה של דנה ויוסי</Typography>
+        <Typography sx={{ fontSize: 13.5, color: '#4b5563', mt: 0.5 }}>יום שלישי, 19:30 · אולמי הגן, ראשון לציון</Typography>
+        <ReplyButton label="כן, באים" accent />
+        <ReplyButton label="לא נצליח הפעם" />
+      </Bubble>
+
+      <Bubble side="out" delay={0.75}>
+        <Typography sx={{ fontWeight: 600, fontSize: 14.5 }}>כן, באים 🎉</Typography>
+      </Bubble>
+
+      <Bubble side="in" delay={1.3}>
+        <Typography sx={{ fontSize: 13.5, color: '#374151' }}>
+          מתרגשים לקראת הערב. מזכירים: היום ב‑19:30, אולמי הגן. וכדי שלא תתעכבו בדרך:
+        </Typography>
+        <ReplyButton label="ניווט עם Waze" />
+      </Bubble>
+    </Box>
+  );
+}
 
 export default function Hero() {
   const navigate = useNavigate();
@@ -140,11 +213,11 @@ export default function Hero() {
         display: 'flex',
         alignItems: 'center',
         overflow: 'hidden',
-        py: { xs: 12, md: 12 },
+        py: { xs: 14, md: 12 },
         px: 0,
         background: theme.palette.mode === 'dark'
           ? theme.palette.background.default
-          : 'linear-gradient(180deg, #faf8ff 0%, #ffffff 100%)',
+          : 'linear-gradient(180deg, #F6F2FD 0%, #ffffff 100%)',
         fontFamily: '"Noto Sans Hebrew", Arial, sans-serif',
       })}
     >
@@ -154,7 +227,7 @@ export default function Hero() {
           position: 'absolute',
           inset: 0,
           background:
-            'radial-gradient(900px 620px at 85% -8%, rgba(136,140,238,0.08) 0, transparent 60%), radial-gradient(760px 560px at -5% 105%, rgba(170,176,244,0.06) 0, transparent 55%)',
+            'radial-gradient(900px 620px at 85% -8%, rgba(157,131,224,0.08) 0, transparent 60%), radial-gradient(760px 560px at -5% 105%, rgba(170,176,244,0.06) 0, transparent 55%)',
           pointerEvents: 'none',
         }}
       />
@@ -190,26 +263,16 @@ export default function Hero() {
             <Typography
               component="h1"
               sx={{
-                fontSize: { xs: '2.4rem', md: '3.3rem' },
+                fontSize: { xs: '2.5rem', md: '3.4rem' },
                 fontWeight: 800,
-                lineHeight: 1.12,
+                lineHeight: 1.08,
+                letterSpacing: '-0.02em',
                 color: 'text.primary',
               }}
             >
-              אתם מזמינים.
-              <br />
-              אנחנו דואגים{' '}
-              <Box
-                component="span"
-                sx={{
-                  backgroundImage: 'linear-gradient(90deg,#888cee,#aab0f4)',
-                  color: 'transparent',
-                  WebkitBackgroundClip: 'text',
-                  backgroundClip: 'text',
-                }}
-              >
-                שכולם יגיעו.
-              </Box>
+              <Box component="span" sx={{ display: 'block', whiteSpace: 'nowrap' }}>אתם מזמינים.</Box>
+              <Box component="span" sx={{ display: 'block', whiteSpace: 'nowrap' }}>אנחנו דואגים</Box>
+              <Box component="span" sx={{ display: 'block', whiteSpace: 'nowrap', color: '#5A3DA6' }}>שכולם יגיעו.</Box>
             </Typography>
             <Typography
               variant="h6"
@@ -230,13 +293,13 @@ export default function Hero() {
             sx={(theme) => ({
               bgcolor: theme.palette.mode === 'dark'
                 ? 'rgba(255, 255, 255, 0.05)'
-                : 'rgba(249, 249, 249, 0.31)',
-              borderRadius: 1.5,
+                : '#ffffff',
+              borderRadius: 3,
               boxShadow: theme.palette.mode === 'dark'
                 ? '0 20px 55px rgba(0,0,0,0.3)'
-                : '0 20px 55px rgba(15,23,42,0.10)',
+                : '0 18px 50px rgba(15,23,42,0.08)',
               border: `1px solid ${theme.palette.divider}`,
-              p: { xs: 2, md: 3 },
+              p: { xs: 2.5, md: 3 },
               width: '100%',
             })}
           >
@@ -263,8 +326,8 @@ export default function Hero() {
               sx={(theme) => ({
                 mb: 2,
                 '& .MuiOutlinedInput-root': {
-                  borderRadius: 1.5,
-                  height: 40,
+                  borderRadius: 2,
+                  height: 44,
                   bgcolor: theme.palette.mode === 'dark'
                     ? theme.palette.background.paper
                     : '#f9fafb',
@@ -278,8 +341,8 @@ export default function Hero() {
                       : '#d1d5db',
                   },
                   '&.Mui-focused fieldset': {
-                    borderColor: '#888cee',
-                    boxShadow: '0 0 0 1px rgba(136,140,238,0.32)',
+                    borderColor: '#9D83E0',
+                    boxShadow: '0 0 0 1px rgba(157,131,224,0.32)',
                   },
                 },
               })}
@@ -295,8 +358,8 @@ export default function Hero() {
               sx={(theme) => ({
                 mb: 2,
                 '& .MuiOutlinedInput-root': {
-                  borderRadius: 1.5,
-                  height: 40,
+                  borderRadius: 2,
+                  height: 44,
                   bgcolor: theme.palette.mode === 'dark'
                     ? theme.palette.background.paper
                     : '#f9fafb',
@@ -309,8 +372,8 @@ export default function Hero() {
                       : '#d1d5db',
                   },
                   '&.Mui-focused fieldset': {
-                    borderColor: '#888cee',
-                    boxShadow: '0 0 0 1px rgba(136,140,238,0.32)',
+                    borderColor: '#9D83E0',
+                    boxShadow: '0 0 0 1px rgba(157,131,224,0.32)',
                   },
                 },
               })}
@@ -350,8 +413,8 @@ export default function Hero() {
                 sx={(theme) => ({
                   mb: 2,
                   '& .MuiOutlinedInput-root': {
-                    borderRadius: 1.5,
-                    height: 40,
+                    borderRadius: 2,
+                    height: 44,
                     bgcolor: theme.palette.mode === 'dark'
                       ? theme.palette.background.paper
                       : '#f9fafb',
@@ -365,8 +428,8 @@ export default function Hero() {
                         : '#d1d5db',
                     },
                     '&.Mui-focused fieldset': {
-                      borderColor: '#888cee',
-                      boxShadow: '0 0 0 1px rgba(136,140,238,0.32)',
+                      borderColor: '#9D83E0',
+                      boxShadow: '0 0 0 1px rgba(157,131,224,0.32)',
                     },
                   },
                 })}
@@ -388,8 +451,8 @@ export default function Hero() {
                 sx={(theme) => ({
                   minWidth: 110,
                   '& .MuiOutlinedInput-root': {
-                    borderRadius: 1.5,
-                    height: 40,
+                    borderRadius: 2,
+                    height: 44,
                     bgcolor: theme.palette.mode === 'dark'
                       ? theme.palette.background.paper
                       : '#f9fafb',
@@ -402,8 +465,8 @@ export default function Hero() {
                         : '#d1d5db',
                     },
                     '&.Mui-focused fieldset': {
-                      borderColor: '#888cee',
-                      boxShadow: '0 0 0 1px rgba(136,140,238,0.32)',
+                      borderColor: '#9D83E0',
+                      boxShadow: '0 0 0 1px rgba(157,131,224,0.32)',
                     },
                   },
                 })}
@@ -433,8 +496,8 @@ export default function Hero() {
                 inputProps={{ style: { direction: 'rtl', textAlign: 'right' } }}
                 sx={(theme) => ({
                   '& .MuiOutlinedInput-root': {
-                    borderRadius: 1.5,
-                    height: 40,
+                    borderRadius: 2,
+                    height: 44,
                     bgcolor: theme.palette.mode === 'dark'
                       ? theme.palette.background.paper
                       : '#f9fafb',
@@ -448,8 +511,8 @@ export default function Hero() {
                         : '#d1d5db',
                     },
                     '&.Mui-focused fieldset': {
-                      borderColor: '#888cee',
-                      boxShadow: '0 0 0 1px rgba(136,140,238,0.32)',
+                      borderColor: '#9D83E0',
+                      boxShadow: '0 0 0 1px rgba(157,131,224,0.32)',
                     },
                   },
                 })}
@@ -462,17 +525,17 @@ export default function Hero() {
               variant="contained"
               onClick={handleStartNow}
               sx={{
-                borderRadius: 1.5,
-                py: 1.15,
+                borderRadius: 2,
+                py: 1.25,
                 fontSize: 16,
                 fontWeight: 700,
                 textTransform: 'none',
-                background: 'linear-gradient(90deg,#888cee,#aab0f4)',
-                boxShadow: '0 10px 24px rgba(136,140,238,0.26)',
-                transition: 'transform 0.18s ease, box-shadow 0.18s ease',
+                bgcolor: '#5A3DA6',
+                boxShadow: '0 10px 24px rgba(95,100,214,0.28)',
+                transition: 'transform 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease',
                 '&:hover': {
-                  background: 'linear-gradient(90deg,#7378e4,#9a9ff2)',
-                  boxShadow: '0 14px 30px rgba(136,140,238,0.34)',
+                  bgcolor: '#5257c9',
+                  boxShadow: '0 14px 30px rgba(95,100,214,0.34)',
                   transform: 'translateY(-1px)',
                 },
                 '&:active': { transform: 'scale(0.99)' },
@@ -491,8 +554,8 @@ export default function Hero() {
               sx={(theme) => ({
                 mt: 1.25,
                 mb: 1.5,
-                borderRadius: 1.5,
-                py: 1,
+                borderRadius: 2,
+                py: 1.05,
                 fontSize: 14,
                 fontWeight: 600,
                 textTransform: 'none',
@@ -515,180 +578,20 @@ export default function Hero() {
           </Box>
         </Box>
 
-        {/* Left chat mockup - shown second on mobile */}
+        {/* Left: a real-looking WhatsApp exchange, composed and still - the
+            product is the conversation, so we show it plainly. */}
         <Box
           sx={{
-            position: 'relative',
-            height: { xs: 'auto', md: 380 },
-            mb: 0,
-            direction: 'rtl',
-            zIndex: 1,
             order: { xs: 2, md: 1 },
-            display: { xs: 'flex', md: 'block' },
-            flexDirection: { xs: 'column', md: 'row' },
+            direction: 'rtl',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
           }}
         >
-
-        {/* Message 1 - Top left (white/gray - left aligned) */}
-          <Box
-            sx={(theme) => ({
-              position: 'absolute',
-              top: { xs: 0, md: -8 },
-              left: { xs: '18%', md: '24%' },
-              animation: `${float} 6s ease-in-out infinite`,
-              animationDelay: '0s',
-              opacity: 0,
-              [theme.breakpoints.down('md')]: {
-                position: 'static',
-                opacity: 1,
-                mb: 1.5,
-                alignSelf: 'flex-start',
-                mr: 'auto',
-                ml: 0,
-              },
-            })}
-          >
-            <Box
-              sx={{
-                bgcolor: '#ffffff',
-                borderRadius: '26px',
-                borderTopLeftRadius: 6,
-                boxShadow: '0 18px 45px rgba(15,23,42,0.15)',
-                border: '1px solid rgba(226,232,240,0.9)',
-                px: 3,
-                py: 2,
-                maxWidth: 230,
-              }}
-            >
-              <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#111827' }}>
-                היי! 👋
-              </Typography>
-              <Typography
-                variant="body2"
-                sx={{ mt: 0.5, color: '#6b7280', fontSize: 13.5 }}
-              >
-                מוזמנים לחתונה של דנה ויוסי 💍
-              </Typography>
-              {["כן, באים! 🎉", "לא נצליח הפעם"].map((label) => (
-                <Box
-                  key={label}
-                  sx={{
-                    mt: 0.5,
-                    borderRadius: 1,
-                    px: 1.8,
-                    py: 0.8,
-                    background: 'linear-gradient(90deg,#e0f2fe,#ede9fe)',
-                    fontSize: 13,
-                    fontWeight: 500,
-                    color: '#374151',
-                  }}
-                >
-                  {label}
-                </Box>
-              ))}
-            </Box>
-          </Box>
-
-          {/* Message 2 - User response (green - right aligned) */}
-          <Box
-            sx={(theme) => ({
-              position: 'absolute',
-              top: { xs: 82, md: 190 },
-              right: { xs: '12%', md: '18%' },
-              animation: `${float} 6s ease-in-out infinite`,
-              animationDelay: '1s',
-              opacity: 0,
-              [theme.breakpoints.down('md')]: {
-                position: 'static',
-                opacity: 1,
-                mb: 1.5,
-                alignSelf: 'flex-end',
-                ml: 'auto',
-                mr: 0,
-              },
-            })}
-          >
-            <Box
-              sx={{
-                background: 'linear-gradient(135deg,#22c55e,#059669)',
-                color: '#ffffff',
-                borderRadius: '26px',
-                borderTopRightRadius: 8,
-                px: 3,
-                py: 2,
-                boxShadow: '0 20px 50px rgba(21,128,61,0.45)',
-                maxWidth: 230,
-                fontSize: 14,
-                fontWeight: 600,
-              }}
-            >
-              כן, באים! 🎉
-            </Box>
-          </Box>
-
-
-          {/* Message3 - Top left (white/gray - left aligned) */}
-          <Box
-            sx={(theme) => ({
-              position: 'absolute',
-              top: { xs: 82, md: 230 },
-              left: { xs: '18%', md: '24%' },
-              animation: `${float} 6s ease-in-out infinite`,
-              animationDelay: '2.5s',
-              opacity: 0,
-              [theme.breakpoints.down('md')]: {
-                position: 'static',
-                opacity: 1,
-                mb: 1.5,
-                alignSelf: 'flex-start',
-                mr: 'auto',
-                ml: 0,
-              },
-            })}
-          >
-            <Box
-              sx={{
-                bgcolor: '#ffffff',
-                borderRadius: '26px',
-                borderTopLeftRadius: 6,
-                boxShadow: '0 18px 45px rgba(15,23,42,0.15)',
-                border: '1px solid rgba(226,232,240,0.9)',
-                px: 3,
-                py: 2,
-                maxWidth: 230,
-              }}
-            >
-              <Typography
-                variant="body2"
-                sx={{ mt: 0.5, color: '#6b7280', fontSize: 13.5 }}
-              >
-מתרגשים לקראת הערב, מקווים שגם אתם! 💗
-מזכירים: היום ב‑19:30, אולמי הגן.
-נתראה בשמחה 🥂
-          </Typography>
-          <Typography variant="body2" sx={{ mt: 0.5, color: '#6b7280', fontSize: 13.5 }}>
-            <br />
-          וכדי שלא תתעכבו בדרך, לחצו לניווט עם waze 👇
-          </Typography>
-              <Box
-                  key={"ניווט עם waze"}
-                  sx={{
-                    mt: 0.5,
-                    borderRadius: 1,
-                    px: 1.8,
-                    py: 0.8,
-                    background: 'linear-gradient(90deg,#e0f2fe,#ede9fe)',
-                    fontSize: 13,
-                    fontWeight: 500,
-                    color: '#374151',
-                  }}
-                >
-                    {"ניווט עם waze"}
-                </Box>
-            </Box>
-          </Box>
-
+          <HeroConversation />
         </Box>
+
       </Container>
 
       <Snackbar

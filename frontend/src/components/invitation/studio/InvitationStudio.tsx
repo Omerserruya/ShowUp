@@ -18,7 +18,7 @@ import { resolveTheme, THEME_PRESETS, TITLE_FONTS, BODY_FONTS, DEFAULT_THEME, LA
 import { templatesForEventType, InvitationTemplate } from '../templates';
 import { ensureAllFonts } from '../../../utils/fonts';
 
-const BRAND = '#6f74e0';
+const BRAND = '#5A3DA6';
 const DEVICE_W: Record<string, number | string> = { desktop: '100%', tablet: 834, mobile: 402 };
 
 export interface InvitationStudioProps {
@@ -180,7 +180,7 @@ export default function InvitationStudio({ data, saving, published, publicUrl, o
         </Stack>
         <Stack direction="row" spacing={1.5} alignItems="center">
           <Tooltip title={guestPreview ? 'חזרה לעריכה' : 'תצוגת אורח - בדיוק מה שהאורחים יראו'}>
-            <IconButton size="small" onClick={() => setGuestPreview((v) => !v)} sx={{ color: guestPreview ? '#fff' : BRAND, bgcolor: guestPreview ? BRAND : 'transparent', '&:hover': { bgcolor: guestPreview ? '#5f64d6' : alpha(BRAND, 0.08) } }}>
+            <IconButton size="small" onClick={() => setGuestPreview((v) => !v)} sx={{ color: guestPreview ? '#fff' : BRAND, bgcolor: guestPreview ? BRAND : 'transparent', '&:hover': { bgcolor: guestPreview ? '#5A3DA6' : alpha(BRAND, 0.08) } }}>
               {guestPreview ? <EditRoundedIcon fontSize="small" /> : <VisibilityRoundedIcon fontSize="small" />}
             </IconButton>
           </Tooltip>
@@ -203,7 +203,7 @@ export default function InvitationStudio({ data, saving, published, publicUrl, o
           )}
           <Button variant={dirty ? 'contained' : 'text'} disableElevation disabled={saving || !dirty} onClick={handleSave}
             sx={dirty
-              ? { borderRadius: 99, px: 2.5, fontWeight: 700, bgcolor: BRAND, '&:hover': { bgcolor: '#5f64d6' } }
+              ? { borderRadius: 99, px: 2.5, fontWeight: 700, bgcolor: '#C9B8F3', color: '#16150F', '&:hover': { bgcolor: '#BBA6EE' } }
               : { fontWeight: 700, color: 'text.secondary' }}>
             שמירה
           </Button>
@@ -214,7 +214,7 @@ export default function InvitationStudio({ data, saving, published, publicUrl, o
             </Button>
           ) : (
             <Button variant="contained" disableElevation disabled={saving} onClick={handlePublish}
-              sx={{ borderRadius: 99, px: 3, fontWeight: 700, bgcolor: BRAND, '&:hover': { bgcolor: '#5f64d6' } }}>
+              sx={{ borderRadius: 99, px: 3, fontWeight: 700, bgcolor: '#C9B8F3', color: '#16150F', '&:hover': { bgcolor: '#BBA6EE' } }}>
               פרסום
             </Button>
           )}

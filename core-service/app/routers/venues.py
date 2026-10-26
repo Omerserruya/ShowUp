@@ -435,6 +435,32 @@ def internal_extra_round_quote(
     }
 
 
+# Extra-round grants applied, keyed by the paying order (idempotency ledger).
+# Created lazily, once per process: the table is owned by this endpoint alone, so
+# it needs no coordination with the central migrations. CREATE ... IF NOT EXISTS
+# is idempotent and race-safe enough here (a concurrent duplicate CREATE fails
+# harmlessly and the next call retries).
+_ROUND_GRANTS_DDL = """
+    CREATE TABLE IF NOT EXISTS extra_round_grants (
+        order_id   TEXT PRIMARY KEY,
+        event_id   UUID NOT NULL,
+        delta      INTEGER NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+"""
+_round_grants_ready = False
+
+
+def _ensure_round_grants_table(db: Session) -> None:
+    global _round_grants_ready
+    if _round_grants_ready:
+        return
+    from sqlalchemy import text
+    db.execute(text(_ROUND_GRANTS_DDL))
+    db.commit()
+    _round_grants_ready = True
+
+
 @router.post("/internal/events/{event_id}/rounds-allowance")
 def internal_grant_rounds_allowance(
     event_id: uuid.UUID = Path(...),
@@ -445,8 +471,15 @@ def internal_grant_rounds_allowance(
     """Internal: grant paid extra message-round credits to an event.
 
     Called by aub-service when a paid extra-round order is provisioned. Increments
-    ``events.extra_rounds_allowance`` by ``delta`` (default 1). Idempotency is the
-    caller's responsibility (provision_order runs once per order)."""
+    ``events.extra_rounds_allowance`` by ``delta`` (default 1).
+
+    Idempotent per ``order_id``: the grant is recorded in ``extra_round_grants``
+    in the SAME transaction as the increment, so a replayed order (aub retrying
+    after a failure between the grant and marking the order paid, a duplicate IPN
+    after a released claim, reconciliation) is a no-op returning
+    ``already_applied: true``. Without an ``order_id`` (legacy callers) the grant
+    is applied unconditionally, as before."""
+    from sqlalchemy import text
     _check_internal_secret(x_internal_secret)
     event = event_crud.get_event(db, event_id)
     if not event:
@@ -457,11 +490,39 @@ def internal_grant_rounds_allowance(
         delta = 1
     if delta <= 0:
         delta = 1
-    event.extra_rounds_allowance = int(getattr(event, "extra_rounds_allowance", 0) or 0) + delta
-    db.add(event)
+    order_id = str(payload.get("order_id") or "").strip() or None
+
+    if order_id:
+        _ensure_round_grants_table(db)
+        inserted = db.execute(
+            text(
+                "INSERT INTO extra_round_grants (order_id, event_id, delta) "
+                "VALUES (:oid, :eid, :delta) ON CONFLICT (order_id) DO NOTHING "
+                "RETURNING order_id"
+            ),
+            {"oid": order_id, "eid": str(event_id), "delta": delta},
+        ).first()
+        if inserted is None:
+            db.rollback()
+            db.refresh(event)
+            logger.info("extra-round grant for order %s already applied to event %s", order_id, event_id)
+            return {"event_id": str(event_id),
+                    "extra_rounds_allowance": int(event.extra_rounds_allowance or 0),
+                    "already_applied": True}
+
+    # Atomic increment (no read-modify-write race between concurrent grants).
+    db.execute(
+        text(
+            "UPDATE events SET extra_rounds_allowance = COALESCE(extra_rounds_allowance, 0) + :d "
+            "WHERE id = :eid"
+        ),
+        {"d": delta, "eid": str(event_id)},
+    )
     db.commit()
     db.refresh(event)
-    return {"event_id": str(event_id), "extra_rounds_allowance": event.extra_rounds_allowance}
+    return {"event_id": str(event_id),
+            "extra_rounds_allowance": int(event.extra_rounds_allowance or 0),
+            "already_applied": False}
 
 
 # ==========================================================================

@@ -30,8 +30,16 @@ def _connect(env: Dict[str, Any]):
     )
 
 
+_schema_ready = False
+
+
 def ensure_plan_overrides_table(env: Dict[str, Any]) -> None:
-    """Idempotent DDL. Safe to call on every request (mirrors ensure_orders_table)."""
+    """Idempotent DDL, executed once per process (it used to run on every plan
+    lookup - i.e. several times per orders request). The flag is set only after
+    success, so an unreachable DB is retried on the next call."""
+    global _schema_ready
+    if _schema_ready:
+        return
     ddl = (
         "CREATE TABLE IF NOT EXISTS plan_overrides ("
         "plan_id TEXT PRIMARY KEY,"
@@ -44,6 +52,7 @@ def ensure_plan_overrides_table(env: Dict[str, Any]) -> None:
         conn.autocommit = True
         with conn.cursor() as cur:
             cur.execute(ddl)
+    _schema_ready = True
 
 
 def get_overrides(env: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:

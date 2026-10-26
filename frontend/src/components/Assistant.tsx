@@ -8,8 +8,8 @@ import { useNavigate } from 'react-router-dom';
 
 import WhatsAppIcon from '@mui/icons-material/WhatsApp';
 
-const BRAND = '#888cee';
-const SOFT = '#aab0f4';
+const BRAND = '#9D83E0';
+const SOFT = '#C9B8F3';
 const WA = '#25D366';
 
 // Things you simply say - shown as command chips (intelligence through use).
@@ -90,7 +90,7 @@ export default function Assistant() {
       id="assistant"
       sx={{
         position: 'relative',
-        py: { xs: 9, sm: 15 },
+        py: { xs: 8, sm: 12 },
         bgcolor: isDark ? 'background.default' : '#ffffff',
         color: 'text.primary',
         overflow: 'hidden',
@@ -204,10 +204,10 @@ export default function Assistant() {
                 py: 1.1,
                 fontWeight: 700,
                 textTransform: 'none',
-                background: `linear-gradient(90deg, ${BRAND}, ${SOFT})`,
-                boxShadow: `0 10px 24px ${alpha(BRAND, 0.26)}`,
+                bgcolor: '#5A3DA6',
+                boxShadow: `0 10px 24px ${alpha('#5A3DA6', 0.26)}`,
                 '& .MuiButton-startIcon': { ml: 0.5, mr: -0.25 },
-                '&:hover': { background: `linear-gradient(90deg, #7378e4, #9a9ff2)`, boxShadow: `0 14px 30px ${alpha(BRAND, 0.34)}` },
+                '&:hover': { bgcolor: '#5257c9', boxShadow: `0 14px 30px ${alpha('#5A3DA6', 0.34)}` },
               }}
             >
               בואו תכירו אותו

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { saveOrderToken, orderAuthHeaders } from '../utils/orderToken';
+import { fetchWithAuth } from '../utils/fetchWithAuth';
 import {
   Alert,
   Box,
@@ -28,8 +29,8 @@ import { breakdownFromPrice, PriceBreakdown, TAX_RATE } from '../utils/pricing';
 import { fireConfetti } from '../utils/confetti';
 import { clearWizardDraft } from '../utils/wizardDraft';
 
-const BRAND = '#888cee';
-const DEEP = '#6f74e0';
+const BRAND = '#9D83E0';
+const DEEP = '#5A3DA6';
 
 type OrderOut = {
   order_id: string;
@@ -100,7 +101,9 @@ export default function Payment() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetch(`/api/orders/${encodeURIComponent(orderId)}`, { headers: orderAuthHeaders(orderId) })
+    // Authorize with the per-order token (localStorage/?t=) AND, when signed in,
+    // the Authorization bearer - so an owner who lost the token can still resume.
+    fetchWithAuth(`/api/orders/${encodeURIComponent(orderId)}`, { headers: orderAuthHeaders(orderId) })
       .then(async (res) => {
         if (!res.ok) throw new Error('load-failed');
         return (await res.json()) as OrderOut;
@@ -137,17 +140,16 @@ export default function Payment() {
     const poll = async () => {
       tries += 1;
       try {
-        const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, { headers: orderAuthHeaders(orderId) });
+        const res = await fetchWithAuth(`/api/orders/${encodeURIComponent(orderId)}`, { headers: orderAuthHeaders(orderId) });
         if (res.ok) {
           const data = (await res.json()) as OrderOut;
           if (data.status === 'paid') {
             // Select the newly provisioned event so the dashboard opens it directly.
             if (data.event_id) localStorage.setItem('selected_event_id', String(data.event_id));
             localStorage.removeItem('pending_order_id'); // checkout finished
-            if (!cancelled) {
-              setDone(true);
-              setTimeout(() => navigate('/overview'), 1800);
-            }
+            // No auto-redirect: the success screen names the next step
+            // (adding guests) and lets the host choose.
+            if (!cancelled) setDone(true);
             return;
           }
         }
@@ -172,28 +174,36 @@ export default function Payment() {
     }
   }, [done]);
 
-  // An order that is already paid on load (e.g. resuming via pending_order_id or
-  // refreshing this page) has no polling effect to move it forward - redirect here.
-  useEffect(() => {
-    if (!done || returnedPaid) return;
-    const t = setTimeout(() => navigate('/overview'), 1500);
-    return () => clearTimeout(t);
-  }, [done, returnedPaid, navigate]);
-
   const startPayment = async () => {
     setPayLoading(true);
     setPayError(null);
     try {
-      const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/pay/icount`, { method: 'POST', headers: orderAuthHeaders(orderId) });
+      // fetchWithAuth: a ₪0 settlement (full coupon) needs the signed-in user.
+      const res = await fetchWithAuth(`/api/orders/${encodeURIComponent(orderId)}/pay/icount`, { method: 'POST', headers: orderAuthHeaders(orderId) });
       const body = await res.json().catch(() => ({}));
+      const code = body?.code || body?.detail?.code;
       if (!res.ok) {
+        if (code === 'login_required') {
+          navigate(`/login`, { state: { next: `/payment?orderId=${encodeURIComponent(orderId)}` } });
+          return;
+        }
         throw new Error(
           res.status === 503
-            ? 'תשלומים (iCount) אינם מוגדרים בשרת עדיין.'
-            : body.detail || 'שגיאה בפתיחת התשלום',
+            ? 'התשלום לא זמין כרגע. נסו שוב בעוד כמה דקות.'
+            : code === 'phone_mismatch'
+              ? 'ההזמנה שייכת למספר טלפון אחר. התחברו עם המספר שהזנתם בהזמנה.'
+              : (typeof body.detail === 'string' ? body.detail : body.detail?.message) || 'שגיאה בפתיחת התשלום',
         );
       }
-      if (!body.url) throw new Error('iCount לא החזיר כתובת תשלום');
+      if (body.no_payment_required) {
+        // Nothing to charge (e.g. 100% coupon): the order is already settled.
+        const eid = body?.result?.event_id;
+        if (eid) localStorage.setItem('selected_event_id', eid);
+        localStorage.removeItem('pending_order_id');
+        setDone(true);
+        return;
+      }
+      if (!body.url) throw new Error('לא התקבלה כתובת תשלום. נסו שוב.');
       window.location.href = body.url;
     } catch (e: any) {
       setPayError(e.message);
@@ -219,19 +229,30 @@ export default function Payment() {
           </Typography>
           <Typography color="text.secondary" sx={{ mb: 3, maxWidth: 420 }}>
             {done
-              ? 'הכול מוכן. מעבירים אתכם ללוח הבקרה כדי להתחיל לארגן את האירוע.'
+              ? 'האירוע מוכן. עכשיו מוסיפים את המוזמנים, וההזמנות יוצאות לפי לוח השליחה.'
               : confirmDelayed
               ? 'האישור מחברת הסליקה מתעכב מעט. אפשר להישאר בעמוד - נמשיך לבדוק אוטומטית ונעדכן ברגע שהתשלום יאושר וההקמה תושלם.'
               : 'התשלום התקבל, ואנחנו מאמתים אותו מול חברת הסליקה ומכינים לכם את האירוע… עוד רגע קט.'}
           </Typography>
           {done && (
-            <Button
-              variant="text"
-              onClick={() => navigate('/overview')}
-              sx={{ fontWeight: 700, textTransform: 'none' }}
-            >
-              המשך ללוח הבקרה
-            </Button>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.25, width: '100%', maxWidth: 360 }}>
+              <Button
+                variant="contained"
+                disableElevation
+                fullWidth
+                onClick={() => navigate('/guests')}
+                sx={{ fontWeight: 700, textTransform: 'none', minHeight: 48, borderRadius: '14px' }}
+              >
+                הצעד הבא: מוסיפים אורחים
+              </Button>
+              <Button
+                variant="text"
+                onClick={() => navigate('/overview')}
+                sx={{ fontWeight: 600, textTransform: 'none' }}
+              >
+                ללוח הבקרה
+              </Button>
+            </Box>
           )}
         </Box>
       </Fade>

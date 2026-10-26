@@ -39,6 +39,11 @@ export interface CatalogTemplate {
   // lifecycle AND (for meta_template delivery) a real approved Meta mapping.
   // Gate selection on this, NOT on lifecycle alone.
   sendable: boolean;
+  // Event types this template can actually be delivered for. What Meta approved
+  // is the event-type variant (`<key>__wedding`), so a base template can be
+  // globally unsendable while its wedding variant is live. Anywhere the event
+  // type is known, filter on THIS - `sendable` alone hides most of the catalog.
+  sendable_event_types: string[];
   variables: string[];        // canonical variable names the copy will use
   preview: CatalogPreview;
   meta_template: string | null;
@@ -53,6 +58,20 @@ export interface CatalogTemplate {
  *  global catalog payload doesn't know. `sendable` is a global hint only. */
 export function isUsableTemplate(t: CatalogTemplate): boolean {
   return t.lifecycle === 'active' || t.lifecycle === 'approved';
+}
+
+/**
+ * Can this template actually be sent for an event of this type?
+ *
+ * The precise answer, and the one to use whenever the event is known: a wedding
+ * has 17 deliverable templates where the global `sendable` flag reports 6,
+ * because Meta approves the per-event-type variants, not the base template.
+ * Falls back to `sendable` for a catalog payload predating the field.
+ */
+export function isSendableFor(t: CatalogTemplate, eventType?: string): boolean {
+  if (!t.sendable_event_types) return t.sendable;
+  if (!eventType) return t.sendable || t.sendable_event_types.length > 0;
+  return t.sendable_event_types.includes(eventType);
 }
 
 export interface CatalogEventType {

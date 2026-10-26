@@ -40,10 +40,16 @@ templates:
       נתראה שם! 💜
 
   assistant_intro:
-    # Sent once, right after an event is created + paid (provisioning done).
-    # Introduces the AI Event Assistant on WhatsApp.
+    # Sent once per event, the moment the event exists - from the SINGLE
+    # event-construction path (entitlement redemption in core-service), so paid
+    # checkout, free self-service, a redemption/gift link, a clone and an
+    # admin/venue direct-create all introduce the assistant identically.
+    # v2 adds the explicit "share your WhatsApp contacts here" invitation - that
+    # import flow (contact-import-worker) was supported but never announced.
+    # OPS: `assistant_intro_v2` must be created + APPROVED on the WABA before
+    # this ships. Instant rollback: WA_SYSTEM_TEMPLATE_ASSISTANT_INTRO=assistant_intro
     meta:
-      name: assistant_intro
+      name: assistant_intro_v2
       category: UTILITY
     language: he
     params:
@@ -54,13 +60,15 @@ templates:
 
       תכירו: העוזרת האישית שלכם ל-AI - כן, ממש כאן בוואטסאפ. תחשבו עליה כמו מפיקת אירועים שאף פעם לא ישנה, לא שוכחת כלום, ולא מבקשת קפה ☕
 
-      אפשר פשוט לכתוב לה מה שצריך:
+      📇 הכי קל להתחיל: שתפו איתה כאן אנשי קשר מהוואטסאפ (צרף > איש קשר) - והם ייכנסו ישר לרשימת האורחים. אפשר לשלוח כמה שרוצים, בכל שלב.
+
+      ומכאן פשוט כותבים לה מה שצריך:
       ✅ "כמה אישרו הגעה?"
       📋 "תוסיפי את דודה רחל, 052-1234567"
       ⏰ "תזכירי למי שלא ענה"
       🪑 "מי יושב בשולחן 3?"
 
-      אורחים, קמפיינים, אישורי הגעה, תזכורות, שולחנות והגדרות האירוע - הכול בהודעה אחת.
+      אורחים, קמפיינים, אישורי הגעה, תזכורות, שולחנות והגדרות האירוע - הכול בהודעה אחת. וכל שאלה שיש לכם על האירוע, בכל שעה - פשוט שאלו כאן.
 
       נסו עכשיו - תשאלו אותה משהו 😉
 

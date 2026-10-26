@@ -71,6 +71,10 @@ docker run --rm --network "$NET" \
   -e DATABASE_URL="postgresql+psycopg2://$PGUSER:$PGPASS@$PG:5432/showup_test" \
   -e JWT_SECRET=test-secret \
   -e AUB_SERVICE_URL=http://disabled.invalid \
+  `# Admin auth (shared/auth/admin.py) opens its own psycopg2 connection from the` \
+  `# DB_* parts rather than DATABASE_URL, exactly as compose supplies them.` \
+  -e DB_HOST="$PG" -e DB_PORT=5432 \
+  -e DB_USER="$PGUSER" -e DB_PASSWORD="$PGPASS" -e DB_NAME=showup_test \
   -v "$REPO_ROOT":/work -w /work "$IMG" \
   pytest -q "$@" core-service/tests
 

@@ -7,7 +7,8 @@ import json
 import hmac
 import hashlib
 import secrets
-from datetime import datetime
+import threading
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -15,6 +16,7 @@ import psycopg2
 import psycopg2.extras
 from fastapi import APIRouter, Body, Header, HTTPException, Path, Request
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from app.token_utils import create_jwt, verify_jwt
@@ -65,7 +67,26 @@ def get_env() -> Dict[str, Any]:
   }
 
 
+# DDL runs ONCE per process, not on every request (it used to run on every
+# orders call - including the public IPN - taking ACCESS EXCLUSIVE locks via the
+# ALTER COLUMN statements). The flag is only set after a fully successful pass,
+# so a DB that was unreachable at first use is retried on the next request.
+_schema_ready = False
+_schema_lock = threading.Lock()
+
+
 def ensure_orders_table(env: Dict[str, Any]) -> None:
+  global _schema_ready
+  if _schema_ready:
+    return
+  with _schema_lock:
+    if _schema_ready:
+      return
+    _ensure_orders_table_ddl(env)
+    _schema_ready = True
+
+
+def _ensure_orders_table_ddl(env: Dict[str, Any]) -> None:
   ddl = (
       "CREATE TABLE IF NOT EXISTS orders ("
       "order_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),"
@@ -129,6 +150,24 @@ def ensure_orders_table(env: Dict[str, Any]) -> None:
           # and the VAT-inclusive charge (never derived from a plan for this kind).
           "ALTER TABLE orders ADD COLUMN IF NOT EXISTS round_recipients INTEGER",
           "ALTER TABLE orders ADD COLUMN IF NOT EXISTS round_amount NUMERIC",
+          # The VERIFIED iCount IPN (or sale-info) payload, persisted the moment a
+          # payment is verified. Lets reconciliation re-provision a paid order whose
+          # provisioning failed WITHOUT calling get_sale_info (unavailable on the
+          # paypage API) - the payment evidence is already on the row.
+          "ALTER TABLE orders ADD COLUMN IF NOT EXISTS verified_ipn JSONB",
+          # Amount actually charged (VAT-inclusive, as reported by iCount; falls
+          # back to expected_gross when iCount omits it). Upgrade credit is summed
+          # from THIS, never from list prices.
+          "ALTER TABLE orders ADD COLUMN IF NOT EXISTS amount_paid NUMERIC",
+          # Expected VAT-inclusive charge, frozen when the iCount sale is
+          # generated. The IPN is verified against this, so a coupon/config change
+          # after the PayPage opened can't mark a correct payment underpaid.
+          "ALTER TABLE orders ADD COLUMN IF NOT EXISTS expected_gross NUMERIC",
+          # The hosted PayPage handed to the customer, and when. A repeat "pay"
+          # click while the page is still valid returns THE SAME page instead of
+          # generating a second sale (double-charge risk).
+          "ALTER TABLE orders ADD COLUMN IF NOT EXISTS paypage_url TEXT",
+          "ALTER TABLE orders ADD COLUMN IF NOT EXISTS paypage_created_at TIMESTAMPTZ",
       ]
       for stmt in migration_statements:
         try:
@@ -157,7 +196,8 @@ class OrderCreate(BaseModel):
   # (see create_order). Kept for backward compatibility with older clients; the
   # value sent here is never trusted for pricing.
   prev_plan: Optional[str] = None
-  event_name: Optional[str] = None
+  # Capped to core's Event.name length (String(100)) so provisioning can't fail on it later.
+  event_name: Optional[str] = Field(None, max_length=100)
   event_description: Optional[str] = None
   event_type: Optional[str] = None
   event_date: Optional[datetime] = None
@@ -214,7 +254,11 @@ class OrderOut(BaseModel):
 # granted by a venue's own agreement (₪0, unlimited guests) and `legacy`/`starter`
 # are internal; allowing them to be ordered would hand out an unlimited plan for
 # nothing, since a zero-cost order settles without payment.
-_NON_PURCHASABLE_PLANS = {"venue", "legacy", "starter"}
+#
+# `free` is created directly via POST /api/events (EventWizard.handleCreateFree),
+# never through an order. As an order it settled at ₪0 and provisioned an event -
+# plus a WhatsApp to an arbitrary, unverified phone - with no OTP or rate limit.
+_NON_PURCHASABLE_PLANS = {"venue", "legacy", "starter", "free"}
 
 
 def _require_purchasable_plan(plan_id: Optional[str]) -> None:
@@ -238,6 +282,47 @@ def _caller_user_id(authorization: Optional[str]) -> Optional[str]:
     return None
   uid = claims.get("user_id")
   return str(uid) if uid else None
+
+
+def _digits_only(p: Optional[str]) -> str:
+  """Just the digits of a phone, for format-agnostic comparison."""
+  return "".join(ch for ch in str(p or "") if ch.isdigit())
+
+
+def _caller_phone(authorization: Optional[str]) -> Optional[str]:
+  """The authenticated caller's stored phone (E.164), or None.
+
+  Lets an order's OWNER read their own order via their login JWT when the per-
+  order capability token isn't present (e.g. resuming checkout on another device,
+  or after signing in via OTP - the token lives only in the original browser's
+  localStorage). This never weakens the token requirement for anonymous callers:
+  it is a fallback, only granted when the JWT user's phone matches the order's
+  buyer phone. Best-effort: None on any failure."""
+  uid = _caller_user_id(authorization)
+  if not uid:
+    return None
+  try:
+    auth_env = get_auth_env()
+    with psycopg2.connect(
+        host=auth_env["DB_HOST"],
+        port=auth_env["DB_PORT"],
+        user=auth_env["DB_USER"],
+        password=auth_env["DB_PASSWORD"],
+        dbname=auth_env["DB_NAME"],
+    ) as conn:
+      with conn.cursor() as cur:
+        cur.execute("SELECT phone FROM users WHERE id = %s", (str(uid),))
+        row = cur.fetchone()
+        return row[0] if row else None
+  except Exception:
+    return None
+
+
+def _is_order_owner(order_row: Dict[str, Any], authorization: Optional[str]) -> bool:
+  """True when the JWT caller is the order's buyer (phone match)."""
+  order_phone = _digits_only((order_row or {}).get("phone"))
+  caller_phone = _digits_only(_caller_phone(authorization))
+  return bool(order_phone) and order_phone == caller_phone
 
 
 def _require_event_owner(event_id: str, authorization: Optional[str]) -> None:
@@ -332,6 +417,14 @@ def create_order(
       print(f"[ORDER] could not resolve current plan for event {payload.event_id} "
             "from core; treating as NEW PURCHASE (full price, no credit)")
   is_upgrade = _is_paid_plan(resolved_prev)
+  # A plan change on a PAID event may only move UP. A same-price or cheaper
+  # target used to be accepted: the credit then covered it fully, so it settled
+  # at ₪0 with no payment (and no refund logic exists for the difference).
+  if is_upgrade and _plan_amount(payload.plan) <= _plan_amount(resolved_prev):
+    raise HTTPException(
+        status_code=400,
+        detail="אפשר לעבור רק לחבילה גבוהה יותר מהחבילה הנוכחית",
+    )
 
   # Per-order capability token: the only proof-of-ownership for this pre-auth
   # order. Returned once to the creator; required on every later read/mutate.
@@ -666,18 +759,28 @@ def update_order_identity(
 def get_order(
     order_id: uuid.UUID = Path(..., description="Order ID"),
     x_order_token: Optional[str] = Header(None, alias="X-Order-Token"),
+    authorization: Optional[str] = Header(None),
     token: Optional[str] = None,
 ) -> OrderOut:
   """
   Retrieve an order by order_id.
-  Used for checkout resume / abandonment recovery. Requires the per-order
-  capability token (returned once from create_order) - orders hold buyer PII and
-  are never readable by id alone.
+  Used for checkout resume / abandonment recovery. Authorized by the per-order
+  capability token (returned once from create_order) OR, as a fallback, by the
+  order OWNER's login JWT (the buyer phone on the order matches the JWT user's
+  phone). Orders hold buyer PII and are never readable by id alone.
   """
   env = get_env()
   ensure_orders_table(env)
 
-  row = _fetch_order_authorized(env, order_id, x_order_token or token)
+  row = _fetch_order(env, order_id)
+  tok = x_order_token or token
+  expected = row.get("access_token")
+  token_ok = bool(expected) and bool(tok) and hmac.compare_digest(str(tok), str(expected))
+  # Token is primary; owner-JWT is the fallback for a signed-in buyer who lost the
+  # localStorage token. If neither holds, reuse the standard token check so the
+  # error/status (403) stays identical to before.
+  if not token_ok and not _is_order_owner(row, authorization):
+    _require_order_token(row, tok)
   # Attach the server-side price breakdown (net / VAT / gross, less any coupon)
   # so the checkout can show "before VAT" + discount consistently without ever
   # trusting a client amount.
@@ -718,6 +821,20 @@ def _persist_coupon(env: Dict[str, Any], order_id: uuid.UUID, code: Optional[str
       conn.commit()
 
 
+# Statuses in which the price may still change (coupon add/remove) and a
+# payment may be started. Once a PayPage exists the expected amount is frozen.
+_PRICE_EDITABLE_STATUSES = ("event_confirmed", "identity_added")
+
+
+def _require_price_editable(order: Dict[str, Any]) -> None:
+  status = (order or {}).get("status")
+  if status not in _PRICE_EDITABLE_STATUSES:
+    raise HTTPException(
+        status_code=409,
+        detail="לא ניתן לשנות קופון אחרי שהתשלום נפתח",
+    )
+
+
 @router.post("/{order_id}/coupon", response_model=OrderOut)
 def apply_coupon(
     order_id: uuid.UUID = Path(..., description="Order ID"),
@@ -732,6 +849,7 @@ def apply_coupon(
   ensure_orders_table(env)
   tok = x_order_token or token
   order = _fetch_order_authorized(env, order_id, tok)
+  _require_price_editable(order)
   # UPGRADE orders (existing paying customer) are credit-only - coupons never apply.
   if _is_upgrade(order):
     raise HTTPException(status_code=422, detail="קופונים אינם חלים על שדרוג מנוי")
@@ -741,7 +859,7 @@ def apply_coupon(
   if not coupon:
     raise HTTPException(status_code=422, detail="קוד הקופון אינו תקף")
   _persist_coupon(env, order_id, coupon["code"])
-  return get_order(order_id, x_order_token=tok)
+  return get_order(order_id, x_order_token=tok, authorization=None, token=None)
 
 
 @router.delete("/{order_id}/coupon", response_model=OrderOut)
@@ -754,9 +872,10 @@ def remove_coupon(
   env = get_env()
   ensure_orders_table(env)
   tok = x_order_token or token
-  _fetch_order_authorized(env, order_id, tok)  # 404 if missing, 403 if bad token
+  order = _fetch_order_authorized(env, order_id, tok)  # 404 if missing, 403 if bad token
+  _require_price_editable(order)
   _persist_coupon(env, order_id, None)
-  return get_order(order_id, x_order_token=tok)
+  return get_order(order_id, x_order_token=tok, authorization=None, token=None)
 
 
 class PaymentWebhookPayload(BaseModel):
@@ -792,12 +911,22 @@ def _core_internal_post(path: str, payload: Dict[str, Any], *, timeout: float = 
       return {}
 
 
-def _grant_round_allowance(event_id: str, delta: int = 1) -> None:
-  """Grant paid extra-round credit(s) to an event via core's internal endpoint."""
-  _core_internal_post(
-      f"/internal/events/{event_id}/rounds-allowance", {"delta": delta}, timeout=15.0
+def _grant_round_allowance(event_id: str, delta: int = 1, *, order_id: Optional[str] = None) -> None:
+  """Grant paid extra-round credit(s) to an event via core's internal endpoint.
+
+  `order_id` is the idempotency key: core records each applied order and ignores
+  a replay, so a retried provisioning (failed DB update after the grant, a
+  duplicate IPN after a released claim, reconciliation) never grants twice."""
+  body: Dict[str, Any] = {"delta": delta}
+  if order_id:
+    body["order_id"] = str(order_id)
+  res = _core_internal_post(
+      f"/internal/events/{event_id}/rounds-allowance", body, timeout=15.0
   )
-  print(f"[EXTRA_ROUND] granted {delta} round credit(s) to event {event_id}")
+  if res.get("already_applied"):
+    print(f"[EXTRA_ROUND] order {order_id} already granted on event {event_id}; no-op")
+  else:
+    print(f"[EXTRA_ROUND] granted {delta} round credit(s) to event {event_id}")
 
 
 def _mask_phone(phone) -> str:
@@ -806,17 +935,30 @@ def _mask_phone(phone) -> str:
   return f"***{digits[-4:]}" if digits else "(none)"
 
 
+_owner_notifications_ready = False
+
+
 def _queue_assistant_intro(env, *, event_id: str, phone: str, first_name: str, event_name: str) -> None:
-  """Queue the post-payment AI-assistant intro message (owner_notifications
-  outbox, drained by scheduler-service). Idempotent per event via dedupe_key;
-  best-effort - provisioning never fails because of it."""
+  """Queue the AI-assistant intro for a paid event (owner_notifications outbox,
+  drained by scheduler-service).
+
+  core-service now queues this for EVERY event at entitlement redemption, so
+  this is the payment path's belt-and-braces copy: it shares the same
+  `assistant_intro:<event_id>` dedupe key, so whichever writer gets there first
+  wins and the owner is messaged exactly once. It is worth keeping because aub
+  already holds the owner's phone from the order, so it still fires when core's
+  cross-service user lookup is unavailable. Best-effort - provisioning never
+  fails because of it."""
+  global _owner_notifications_ready
   try:
     with psycopg2.connect(
         host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"],
         password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
     ) as conn:
       with conn.cursor() as cur:
-        cur.execute(
+        # CREATE TABLE once per process (core's migrations own it too).
+        if not _owner_notifications_ready:
+          cur.execute(
             """
             CREATE TABLE IF NOT EXISTS owner_notifications (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -831,7 +973,7 @@ def _queue_assistant_intro(env, *, event_id: str, phone: str, first_name: str, e
                 sent_at TIMESTAMPTZ
             )
             """
-        )
+          )
         cur.execute(
             """
             INSERT INTO owner_notifications (kind, recipient_phone, event_id, params, dedupe_key)
@@ -843,9 +985,253 @@ def _queue_assistant_intro(env, *, event_id: str, phone: str, first_name: str, e
              f"assistant_intro:{event_id}"),
         )
         conn.commit()
+        _owner_notifications_ready = True
     print(f"[PROVISION] Assistant intro queued for event {event_id}")
   except Exception as exc:
     print(f"[PROVISION] WARNING: assistant intro queue failed: {exc}")
+
+
+def _ops_error(message: str, *, severity: str = "error", order_id=None, event_id=None,
+               exc: Optional[BaseException] = None, context: Optional[Dict[str, Any]] = None) -> None:
+  """Best-effort ops-dashboard error (never raises, never blocks payment)."""
+  try:
+    import traceback
+    from shared.ops.errors import record_error
+    ctx = dict(context or {})
+    if order_id:
+      ctx["order_id"] = str(order_id)
+    record_error("aub", message, severity=severity,
+                 error_type=type(exc).__name__ if exc else None,
+                 event_id=event_id,
+                 stack=traceback.format_exc() if exc else None,
+                 context=ctx)
+  except Exception:
+    pass
+
+
+# When a plan includes fewer rounds than the order carries, keep the most
+# important stages: invitation first, then the final reminder, then reminders,
+# then thank-you. Unknown stages go last; ties keep the wizard's order.
+_STAGE_PRIORITY = {
+    "invitation": 0,
+    "final_reminder": 1,
+    "reminder": 2,
+    "thank_you": 3,
+    "save_the_date": 4,
+    "table_assignment": 5,
+}
+
+# A round whose send time is already past (or this close to now) when the order
+# is finally provisioned is created as a DRAFT with no schedule: the scheduler
+# and planner only fire `pending` rows with a schedule_time, so it can never
+# auto-fire at a brand-new event's (still empty) guest list. The host sends or
+# reschedules it from the dashboard.
+_PAST_DUE_GRACE = timedelta(minutes=10)
+_OPENER_STAGES = {"invitation", "save_the_date"}
+_PRE_EVENT_FOLLOWUPS = {"reminder", "final_reminder", "table_assignment"}
+
+
+def _campaign_stage(camp: Dict[str, Any], event_type: Optional[str]) -> Optional[str]:
+  """Canonical flow stage of an order campaign: from its template, else its label."""
+  try:
+    from shared.domain.messaging import resolve_template, canonical_stage
+    stage = None
+    tid = camp.get("template_id")
+    if tid:
+      tmpl = resolve_template(tid, event_type=event_type)
+      if tmpl is not None:
+        stage = getattr(tmpl, "flow_stage", None)
+    if stage is None:
+      stage = canonical_stage(camp.get("stage") or camp.get("label"))
+    if stage is None:
+      return None
+    return str(getattr(stage, "value", stage))
+  except Exception:
+    return None
+
+
+def _parse_schedule(value: Any) -> Optional[datetime]:
+  """An order campaign's scheduled_at as an aware UTC datetime, or None."""
+  if not value:
+    return None
+  dt_val: Optional[datetime] = None
+  if isinstance(value, datetime):
+    dt_val = value
+  elif isinstance(value, str):
+    try:
+      dt_val = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+      print(f"[PROVISION] unparseable scheduled_at {value!r}; creating without a schedule")
+      return None
+  if dt_val is None:
+    return None
+  if dt_val.tzinfo is None:
+    dt_val = dt_val.replace(tzinfo=timezone.utc)
+  return dt_val.astimezone(timezone.utc)
+
+
+def _provision_campaigns(
+    order_row: Dict[str, Any],
+    *,
+    event_id: str,
+    core_service_url: Optional[str],
+    jwt_token: str,
+    order_id: str,
+) -> Dict[str, Any]:
+  """Create the order's rounds on the freshly provisioned event.
+
+  Behaviour (each point closes a way a PAID event used to end up silently
+  round-less):
+
+  * Only as many rounds as the plan INCLUDES are sent (shared.domain.rounds,
+    the same SSOT core's 402 gate reads), keeping the highest-priority stages.
+    The wizard could carry more (e.g. 3 for a brit on basic=2), and the old
+    all-or-nothing batch then 402'd and was swallowed - zero rounds.
+  * One POST per round, so a single undeliverable template (400/422) is dropped
+    and reported instead of sinking the rest.
+  * Retry-safe: rounds that already exist on the event (same name + template,
+    e.g. from a previous attempt that died midway) are skipped.
+  * Past-due rounds become drafts (see _PAST_DUE_GRACE).
+  * Transient failures (network, 5xx, auth) RAISE so provisioning as a whole
+    fails, the claim is released and the IPN retry / reconciliation re-runs it.
+  """
+  campaigns_data = order_row.get("campaigns") or []
+  if isinstance(campaigns_data, str):
+    try:
+      campaigns_data = json.loads(campaigns_data)
+    except Exception as e:
+      print(f"[PROVISION] Failed to parse campaigns JSON string: {e}")
+      campaigns_data = []
+  if not campaigns_data or not isinstance(campaigns_data, list):
+    print("[PROVISION] WARNING: No campaigns data found in order or not a list")
+    return {"created": 0}
+
+  event_type = order_row.get("event_type")
+  candidates = []  # (rank, original index, campaign dict, stage)
+  for idx, camp in enumerate(campaigns_data):
+    if not isinstance(camp, dict):
+      print(f"[PROVISION] Campaign[{idx}] skipped: not a dict")
+      continue
+    if not camp.get("template_id"):
+      print(f"[PROVISION] Campaign[{idx}] skipped: no template_id")
+      continue
+    stage = _campaign_stage(camp, event_type)
+    rank = _STAGE_PRIORITY.get(stage or "", len(_STAGE_PRIORITY))
+    candidates.append((rank, idx, camp, stage))
+  if not candidates:
+    print("[PROVISION] WARNING: No campaign items to create (all skipped or no template_id)")
+    return {"created": 0}
+
+  from shared.domain.rounds import included_rounds
+  included = included_rounds(order_row.get("plan"))
+  by_priority = sorted(candidates, key=lambda c: (c[0], c[1]))
+  selected = sorted(by_priority[:included], key=lambda c: c[1])  # wizard order
+  over_plan = by_priority[included:]
+  if over_plan:
+    names = [str(c[2].get("label") or c[3] or "?") for c in over_plan]
+    print(f"[PROVISION] plan '{order_row.get('plan')}' includes {included} round(s); "
+          f"not creating {len(over_plan)}: {names}")
+    _ops_error(
+        f"order carried {len(candidates)} rounds but plan '{order_row.get('plan')}' "
+        f"includes {included}; dropped {names}",
+        severity="warning", order_id=order_id, event_id=event_id,
+    )
+  if not selected:
+    return {"created": 0}
+
+  if not core_service_url:
+    raise RuntimeError("CORE_SERVICE_URL not set; cannot create campaigns")
+  base = core_service_url.rstrip("/")
+  headers = {"Authorization": f"Bearer {jwt_token}"}
+  created, drafts, rejected = 0, 0, []
+  try:
+    with httpx.Client(timeout=30.0) as client:
+      # Retry idempotency: what a previous attempt already created.
+      r = client.get(f"{base}/campaigns",
+                     params={"event_id": str(event_id), "page_size": 200}, headers=headers)
+      r.raise_for_status()
+      existing = {
+          (c.get("name"), c.get("template"))
+          for c in (r.json() or []) if isinstance(c, dict)
+      }
+      now = datetime.now(timezone.utc)
+      # If the opening round (invitation / save-the-date) is past-due it becomes
+      # a draft the host sends by hand - so every PRE-EVENT follow-up must wait
+      # too, or a reminder could reach guests who were never invited.
+      # thank_you (post-event) keeps its schedule.
+      opener_drafted = any(
+          st in _OPENER_STAGES
+          and (lambda t: t is not None and t <= now + _PAST_DUE_GRACE)(_parse_schedule(c.get("scheduled_at")))
+          for _r, _i, c, st in selected
+      )
+      for _rank, idx, camp, stage in selected:
+        name = str(camp.get("label") or camp.get("name") or "Campaign")[:100]
+        template = camp.get("template_id")
+        if (name, template) in existing:
+          print(f"[PROVISION] Campaign[{idx}] '{name}' already exists; skipping (retry)")
+          continue
+        item: Dict[str, Any] = {
+            "name": name,
+            "template": template,
+            "channel": "whatsapp",
+            "status": "pending",
+        }
+        if camp.get("custom_message"):
+          item["custom_message"] = camp["custom_message"]
+        schedule_time = _parse_schedule(camp.get("scheduled_at"))
+        if opener_drafted and stage in _PRE_EVENT_FOLLOWUPS:
+          item["status"] = "draft"  # waits for the host to send the invitation
+          drafts += 1
+          print(f"[PROVISION] Campaign[{idx}] '{name}' held as draft: opening round is a draft")
+        elif schedule_time is not None and schedule_time <= now + _PAST_DUE_GRACE:
+          item["status"] = "draft"  # no schedule_time -> never auto-fires
+          drafts += 1
+          print(f"[PROVISION] Campaign[{idx}] '{name}' was due {schedule_time.isoformat()} "
+                "(past/imminent at provisioning); creating as unscheduled draft")
+        elif schedule_time is not None:
+          item["schedule_time"] = schedule_time.isoformat()
+
+        resp = client.post(f"{base}/campaigns", params={"event_id": str(event_id)},
+                           json=item, headers=headers)
+        if resp.status_code < 300:
+          created += 1
+          continue
+        body = (resp.text or "")[:300]
+        if resp.status_code in (400, 422):
+          # Permanent for THIS round (e.g. template not deliverable): drop it,
+          # tell ops, keep going - retrying would fail identically forever.
+          rejected.append({"name": name, "stage": stage, "status": resp.status_code})
+          print(f"[PROVISION] Campaign[{idx}] '{name}' rejected {resp.status_code}: {body}")
+          _ops_error(f"provisioning dropped round '{name}' ({resp.status_code}): {body}",
+                     severity="error", order_id=order_id, event_id=event_id,
+                     context={"stage": stage, "template": template})
+          continue
+        if resp.status_code == 402:
+          # Out of rounds despite the plan cap (override / prior usage). Also
+          # permanent - stop, report, and let the event finish provisioning.
+          print(f"[PROVISION] round allowance exhausted at '{name}': {body}")
+          _ops_error(f"provisioning stopped at round '{name}': no rounds left ({body})",
+                     severity="error", order_id=order_id, event_id=event_id)
+          break
+        raise RuntimeError(f"campaign '{name}' create failed ({resp.status_code}): {body}")
+  except httpx.HTTPError as e:
+    raise RuntimeError(f"Failed to create campaigns in core-service: {e}") from e
+
+  print(f"[PROVISION] campaigns: created={created} (drafts={drafts}) rejected={len(rejected)} "
+        f"selected={len(selected)} of {len(candidates)}")
+  return {"created": created, "drafts": drafts, "rejected": rejected}
+
+
+_users_schema_ready = False
+
+
+def _ensure_users_table_once(auth_env: Dict[str, Any]) -> None:
+  """auth.ensure_users_table runs DDL; call it once per process from here."""
+  global _users_schema_ready
+  if _users_schema_ready:
+    return
+  ensure_users_table(auth_env)
+  _users_schema_ready = True
 
 
 def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
@@ -885,7 +1271,7 @@ def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
     if not event_id:
       raise ValueError("extra-round order missing event_id")
     event_id = str(uuid.UUID(str(event_id)))
-    _grant_round_allowance(event_id)
+    _grant_round_allowance(event_id, order_id=str(order_id))
     with psycopg2.connect(
         host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"],
         password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
@@ -912,8 +1298,8 @@ def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
   email = order_row.get("email")
   print(f"[PROVISION] User: phone={_mask_phone(phone)} (name/email redacted)")
   
-  # Ensure users table exists
-  ensure_users_table(auth_env)
+  # Ensure users table exists (once per process - see _ensure_users_table_once)
+  _ensure_users_table_once(auth_env)
   
   # Check if user exists, create if not
   user_id: Optional[uuid.UUID] = None
@@ -1068,100 +1454,18 @@ def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
         pass
     raise RuntimeError(f"Failed to create event in core-service: {e}")
   
-  # Create campaigns from order.campaigns - CREATE ALL CAMPAIGNS
-  campaigns_data = order_row.get("campaigns") or []
-  print(f"[PROVISION] Processing campaigns: raw type={type(campaigns_data)}")
-  if isinstance(campaigns_data, str):
-    try:
-      campaigns_data = json.loads(campaigns_data)
-      print(f"[PROVISION] Parsed campaigns from JSON string")
-    except Exception as e:
-      print(f"[PROVISION] Failed to parse campaigns JSON string: {e}")
-      campaigns_data = []
-  
-  if campaigns_data and isinstance(campaigns_data, list):
-    print(f"[PROVISION] Found {len(campaigns_data)} campaigns in order")
-    campaign_items = []
-    for idx, camp in enumerate(campaigns_data):
-      if not isinstance(camp, dict):
-        print(f"[PROVISION] Campaign[{idx}] skipped: not a dict")
-        continue
-      
-      # Extract campaign fields
-      label = camp.get("label") or camp.get("name") or "Campaign"
-      template_id = camp.get("template_id")
-      scheduled_at = camp.get("scheduled_at")
-      custom_message = camp.get("custom_message")
-      print(f"[PROVISION] Campaign[{idx}]: label={label}, template_id={template_id}, scheduled_at={scheduled_at}, custom={bool(custom_message)}")
-      
-      # Parse scheduled_at if it's a string
-      schedule_time = None
-      if scheduled_at:
-        if isinstance(scheduled_at, str):
-          try:
-            schedule_time = datetime.fromisoformat(scheduled_at.replace("Z", "+00:00"))
-            print(f"[PROVISION] Campaign[{idx}] parsed schedule_time: {schedule_time}")
-          except Exception as e:
-            print(f"[PROVISION] Campaign[{idx}] failed to parse schedule_time: {e}")
-        elif isinstance(scheduled_at, datetime):
-          schedule_time = scheduled_at
-          print(f"[PROVISION] Campaign[{idx}] schedule_time already datetime: {schedule_time}")
-      
-      # Create campaign for ALL items with template_id
-      if template_id:
-        campaign_item = {
-            "name": label,
-            "template": template_id,
-            "channel": "whatsapp",  # Default channel
-            "status": "pending",
-        }
-        # Carry the user-written body so the custom copy is persisted (was dropped).
-        if custom_message:
-          campaign_item["custom_message"] = custom_message
-        # Add schedule_time only if it exists
-        if schedule_time:
-          campaign_item["schedule_time"] = schedule_time.isoformat()
-        campaign_items.append(campaign_item)
-        print(f"[PROVISION] Campaign[{idx}] added to batch: {json.dumps(campaign_item, default=str)}")
-      else:
-        print(f"[PROVISION] Campaign[{idx}] skipped: no template_id")
-    
-    print(f"[PROVISION] Prepared {len(campaign_items)} campaign items to create")
-    
-    # Create campaigns in bulk if we have any
-    if campaign_items:
-      payload = {"items": campaign_items}
-      print(f"[PROVISION] {payload}")
-      try:
-        with httpx.Client(timeout=30.0) as client:
-          response = client.post(
-              f"{core_service_url}/campaigns",
-              params={"event_id": str(event_id)},
-              json=payload,
-              headers={"Authorization": f"Bearer {jwt_token}"},
-          )
-          print(f"[PROVISION] Campaigns creation response: status={response.status_code}")
-          response.raise_for_status()
-          campaigns_result = response.json()
-          print(f"[PROVISION] Campaigns created: result={json.dumps(campaigns_result, default=str)}")
-          if isinstance(campaigns_result, list):
-            print(f"[PROVISION] Successfully created {len(campaigns_result)} campaigns")
-          elif isinstance(campaigns_result, dict) and campaigns_result.get("id"):
-            print(f"[PROVISION] Successfully created 1 campaign (single item response)")
-      except httpx.HTTPError as e:
-        # Log but don't fail - campaigns can be created later
-        print(f"[PROVISION] ERROR: Failed to create campaigns: {e}")
-        if hasattr(e, 'response') and e.response is not None:
-          try:
-            error_body = e.response.text
-            print(f"[PROVISION] Error response body: {error_body}")
-          except:
-            pass
-    else:
-      print(f"[PROVISION] WARNING: No campaign items to create (all skipped or no template_id)")
-  else:
-    print(f"[PROVISION] WARNING: No campaigns data found in order or not a list")
-  
+  # Create the order's campaigns (rounds). Failures that a retry can fix
+  # (core down, 5xx, network) RAISE, so the caller releases the claim and the
+  # IPN retry / reconciliation re-runs provisioning; permanent per-campaign
+  # rejections are dropped + reported instead of looping forever.
+  _provision_campaigns(
+      order_row,
+      event_id=event_id,
+      core_service_url=core_service_url,
+      jwt_token=jwt_token,
+      order_id=str(order_id),
+  )
+
   # Event is live and paid - queue the one-time AI-assistant intro WhatsApp
   # message to the owner (owner_notifications outbox; scheduler-service sends).
   _queue_assistant_intro(env, event_id=event_id, phone=phone,
@@ -1255,7 +1559,7 @@ def _event_paid_total(event_id) -> float:
     ) as conn:
       with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
-            "SELECT plan, coupon_code, prev_plan, kind FROM orders "
+            "SELECT plan, coupon_code, prev_plan, kind, amount_paid FROM orders "
             "WHERE event_id = %s AND status = 'paid' AND COALESCE(kind, 'plan') <> 'extra_round'",
             (str(event_id),),
         )
@@ -1268,9 +1572,15 @@ def _event_paid_total(event_id) -> float:
 
   total = 0.0
   for row in rows:
-    # Value each past order the same way it was charged, so a discounted purchase
-    # credits only what it actually cost.
-    total += float(_order_breakdown_static(dict(row)).get("gross") or 0.0)
+    # The amount ACTUALLY charged, recorded when the payment was verified. Older
+    # orders (before amount_paid existed) fall back to re-pricing them the way
+    # they were charged - which drifts when plan prices / coupons change, hence
+    # the column.
+    paid = row.get("amount_paid")
+    if paid is not None:
+      total += max(float(paid), 0.0)
+    else:
+      total += float(_order_breakdown_static(dict(row)).get("gross") or 0.0)
   return total
 
 
@@ -1321,13 +1631,48 @@ def _order_breakdown(order: Dict[str, Any]) -> Dict[str, Any]:
   return bd
 
 
-def _public_base(request: Request) -> str:
-  """Public origin for building iCount URLs. Prefer PUBLIC_BASE_URL (must be reachable
-  by iCount's servers for the IPN); fall back to the request origin for local-only use."""
+def _public_base(request: Optional[Request] = None) -> str:
+  """Public origin for building iCount URLs (success/cancel/IPN).
+
+  PUBLIC_BASE_URL is REQUIRED. The old fallback built the URLs from the request's
+  Host header - attacker-controlled - which would point the signed IPN URL and
+  the redirect at an arbitrary host. Fail closed instead, loudly."""
   cfg = payments_icount.get_config()
   if cfg["public_base_url"]:
     return cfg["public_base_url"]
-  return str(request.base_url).rstrip("/")
+  print("[PAY] ERROR: PUBLIC_BASE_URL is not set on aub-service; refusing to build "
+        "iCount URLs from the request Host header. Set PUBLIC_BASE_URL.")
+  _ops_error("PUBLIC_BASE_URL not set on aub-service; checkout disabled", severity="critical")
+  raise HTTPException(status_code=500, detail="התשלום אינו זמין כרגע (שגיאת תצורה בשרת)")
+
+
+# How long a generated PayPage is re-offered on a repeat "pay" click instead of
+# generating a new sale. Past this the page is assumed expired and a fresh sale
+# may be generated (the old sale's IPN still maps to this order via orderId).
+_PAYPAGE_REUSE_MINUTES = int(os.getenv("ICOUNT_PAYPAGE_REUSE_MINUTES", "60") or 60)
+
+# Statuses from which a NEW sale may be generated.
+_PAYABLE_STATUSES = _PRICE_EDITABLE_STATUSES  # event_confirmed / identity_added
+
+
+def _paypage_still_valid(order: Dict[str, Any]) -> bool:
+  url = order.get("paypage_url")
+  created = order.get("paypage_created_at")
+  if not url or not created:
+    return False
+  if isinstance(created, datetime) and created.tzinfo is None:
+    created = created.replace(tzinfo=timezone.utc)
+  try:
+    return datetime.now(timezone.utc) - created < timedelta(minutes=_PAYPAGE_REUSE_MINUTES)
+  except TypeError:
+    return False
+
+
+def _login_required_response(message: str, *, code: str = "login_required",
+                             status_code: int = 401) -> JSONResponse:
+  # `detail` stays a STRING (Payment.tsx renders body.detail); `code` is the
+  # machine-readable reason for the client to branch on.
+  return JSONResponse(status_code=status_code, content={"detail": message, "code": code})
 
 
 @router.post("/{order_id}/pay/icount", response_model=Dict[str, Any])
@@ -1335,6 +1680,7 @@ def pay_with_icount(
     order_id: uuid.UUID = Path(...),
     request: Request = None,
     x_order_token: Optional[str] = Header(None, alias="X-Order-Token"),
+    authorization: Optional[str] = Header(None),
     token: Optional[str] = None,
 ) -> Dict[str, Any]:
   """Generate an iCount PayPage for the order and return the hosted-page `url`
@@ -1343,6 +1689,13 @@ def pay_with_icount(
   Persists the iCount sale id on the order so the async IPN can verify and
   provision. Requires buyer identity (set via PATCH /identity) and a positive amount.
   The charge amount is loaded server-side from the plan config - never from the client.
+
+  State rules (double-charge protection):
+    * a new sale is generated only from 'event_confirmed' / 'identity_added';
+    * 'payment_pending' with a still-valid PayPage returns THAT page (no new
+      sale); with an expired/missing page a fresh sale is generated;
+    * anything else (paid, provisioning, underpaid, expired) is refused (409) and
+      the order is never moved back to 'payment_pending'.
   """
   if not payments_icount.is_configured():
     raise HTTPException(status_code=503, detail="iCount payments are not configured on the server")
@@ -1350,6 +1703,21 @@ def pay_with_icount(
   env = get_env()
   ensure_orders_table(env)
   order = _fetch_order_authorized(env, order_id, x_order_token or token)
+  status = order.get("status")
+
+  if order.get("verified_ipn") is not None and status != "paid":
+    # Payment already verified; provisioning is being retried (IPN retry /
+    # reconciliation). A new sale here would charge the customer twice.
+    raise HTTPException(status_code=409, detail="התשלום התקבל וההזמנה בהקמה - נסו לרענן בעוד מספר דקות")
+  if status == "payment_pending":
+    if _paypage_still_valid(order):
+      print(f"[PAY] order {order_id} already has a live PayPage; returning it (no new sale)")
+      return {"url": order.get("paypage_url"), "sale_id": order.get("icount_sale_id"), "reused": True}
+    # Expired/missing page: fall through and generate a fresh sale.
+  elif status not in _PAYABLE_STATUSES:
+    if status in ("paid", "provisioning"):
+      raise HTTPException(status_code=409, detail="ההזמנה כבר שולמה")
+    raise HTTPException(status_code=409, detail=f"לא ניתן לשלם על הזמנה בסטטוס '{status}'")
 
   if not order.get("phone") or not order.get("first_name"):
     raise HTTPException(status_code=400, detail="Order is missing buyer identity (call /identity first)")
@@ -1361,15 +1729,22 @@ def pay_with_icount(
   _obs_payment(order_id, provider="icount", status="started", order=order, amount=bd.get("gross"))
   _obs_log("payment.started", order_id=str(order_id), plan=order.get("plan"), gross=bd.get("gross"))
   if amount <= 0:
-    # Nothing left to charge - the customer's existing credit already covers the
-    # target plan (a downgrade, or an upgrade fully offset by what they have
-    # paid). This used to raise 400, which left the order permanently stuck:
-    # unpayable because it cost nothing, and unprovisionable because it was never
-    # paid. Settle it directly instead; provisioning is idempotent and verifies
-    # nothing is owed, so no payment is skipped that was actually due.
+    # Nothing left to charge (a 100%-off coupon). Settling without payment
+    # provisions an event and messages the buyer phone, so it requires that the
+    # caller be SIGNED IN as that phone - otherwise a ₪0 order would open an event
+    # for any phone with no OTP. (Downgrades can no longer reach here: they are
+    # rejected at order creation.)
+    if not _caller_user_id(authorization):
+      return _login_required_response("יש להתחבר כדי להשלים הזמנה ללא תשלום")
+    if not _is_order_owner(order, authorization):
+      return _login_required_response(
+          "יש להתחבר עם מספר הטלפון של ההזמנה כדי להשלים אותה",
+          code="phone_mismatch", status_code=403,
+      )
     print(f"[PAY] order {order_id} has nothing to charge (gross={bd['gross']}); provisioning directly")
     if not _claim_order_for_provisioning(env, order_id):
       return {"status": "already_in_progress", "order_id": str(order_id)}
+    _record_settlement(env, order_id, expected_gross=0.0, amount_paid=0.0, evidence=None)
     try:
       result = provision_order(order_id)
     except Exception as exc:
@@ -1419,8 +1794,72 @@ def pay_with_icount(
   ipn_sig = _order_ipn_sig(order_id)
   print(f"[PAY] order {order_id} type={'upgrade' if upgrade else 'new_purchase'} "
         f"paypage={paypage_id or '<legacy/unset>'} amount={amount}")
+
+  # Serialize concurrent "pay" clicks on this order: the row lock is held across
+  # generate_sale, so a second click waits and then sees the first click's live
+  # PayPage instead of generating a second sale. The state is re-checked under
+  # the lock (an IPN may have moved the order meanwhile).
+  conn = psycopg2.connect(
+      host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"],
+      password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
+  )
   try:
-    result = payments_icount.generate_sale(
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+      cur.execute(
+          "SELECT status, paypage_url, paypage_created_at, icount_sale_id, "
+          "(verified_ipn IS NOT NULL) AS has_evidence "
+          "FROM orders WHERE order_id = %s FOR UPDATE",
+          (str(order_id),),
+      )
+      locked = cur.fetchone() or {}
+      lstatus = locked.get("status")
+      if locked.get("has_evidence"):
+        conn.rollback()
+        raise HTTPException(status_code=409, detail="התשלום התקבל וההזמנה בהקמה - נסו לרענן בעוד מספר דקות")
+      if lstatus == "payment_pending" and _paypage_still_valid(locked):
+        conn.rollback()
+        return {"url": locked.get("paypage_url"), "sale_id": locked.get("icount_sale_id"), "reused": True}
+      if lstatus not in _PAYABLE_STATUSES and lstatus != "payment_pending":
+        conn.rollback()
+        raise HTTPException(status_code=409, detail="ההזמנה כבר שולמה" if lstatus in ("paid", "provisioning")
+                            else f"לא ניתן לשלם על הזמנה בסטטוס '{lstatus}'")
+      result = _generate_sale_or_502(
+          order_id=order_id, order=order, items=items, full_name=full_name, base=base,
+          order_token=order_token, ipn_sig=ipn_sig, paypage_id=paypage_id,
+      )
+      # Persist the sale + PayPage, FREEZE the expected charge (the IPN is
+      # verified against this, not a re-computed price), and mark the order
+      # awaiting payment - conditionally, so a paid/provisioning order is never
+      # moved back.
+      cur.execute(
+          "UPDATE orders SET icount_sale_id = %s, paypage_url = %s, paypage_created_at = NOW(), "
+          "expected_gross = %s, status = 'payment_pending', updated_at = NOW() "
+          "WHERE order_id = %s AND status = ANY(%s)",
+          (
+              str(result["sale_id"]) if result.get("sale_id") is not None else None,
+              result.get("url"),
+              float(bd["gross"]),
+              str(order_id),
+              list(_PAYABLE_STATUSES) + ["payment_pending"],
+          ),
+      )
+    conn.commit()
+  except Exception:
+    try:
+      conn.rollback()
+    except Exception:
+      pass
+    raise
+  finally:
+    conn.close()
+
+  return {"url": result.get("url"), "sale_id": result.get("sale_id")}
+
+
+def _generate_sale_or_502(*, order_id, order, items, full_name, base, order_token,
+                          ipn_sig, paypage_id) -> Dict[str, Any]:
+  try:
+    return payments_icount.generate_sale(
         order_id=str(order_id),
         items=items,
         full_name=full_name,
@@ -1437,20 +1876,6 @@ def pay_with_icount(
     )
   except Exception as e:
     raise HTTPException(status_code=502, detail=f"iCount error: {e}")
-
-  # Persist the sale id + mark the order awaiting payment.
-  with psycopg2.connect(
-      host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"],
-      password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
-  ) as conn:
-    with conn.cursor() as cur:
-      cur.execute(
-          "UPDATE orders SET icount_sale_id = %s, status = %s, updated_at = NOW() WHERE order_id = %s",
-          (str(result.get("sale_id")), "payment_pending", str(order_id)),
-      )
-      conn.commit()
-
-  return {"url": result.get("url"), "sale_id": result.get("sale_id")}
 
 
 def _order_id_from_callback(env: Dict[str, Any], payload: Dict[str, Any]) -> Optional[uuid.UUID]:
@@ -1491,7 +1916,13 @@ def _order_id_from_callback(env: Dict[str, Any], payload: Dict[str, Any]) -> Opt
 # Statuses an order may hold while it has not yet been provisioned. Only these
 # may be claimed - 'paid' and 'provisioning' are excluded so a claim can never
 # re-run a completed or in-flight provisioning.
-_CLAIMABLE_STATUSES = ("draft", "event_confirmed", "identity_added", "payment_pending", "underpaid")
+#
+# 'expired' is claimable on purpose: reconciliation expires stale unpaid
+# 'payment_pending' rows, and a claim only ever follows a VERIFIED payment - so a
+# late IPN for an expired order must still provision rather than strand a
+# customer who did pay.
+_CLAIMABLE_STATUSES = ("draft", "event_confirmed", "identity_added", "payment_pending",
+                       "underpaid", "expired")
 
 # Tolerance when comparing the charged amount to our own breakdown, in ILS.
 # Absorbs rounding between our VAT math and iCount's, without leaving room for a
@@ -1505,14 +1936,91 @@ def _verify_paid_amount(order: Dict[str, Any], sale_info: Dict[str, Any]) -> tup
   Returns (ok, detail). When iCount does not state an amount at all we accept -
   refusing would strand legitimate customers on a payload shape we cannot
   control - but the decision is logged so it is visible rather than implicit.
+
+  The expected amount is the one FROZEN on the order when the sale was generated
+  (`expected_gross`); re-computing it here let a coupon/config change made after
+  the PayPage opened mark a correct payment as underpaid. Orders created before
+  the column existed fall back to the live breakdown.
   """
-  expected = float(_order_breakdown(order).get("gross") or 0.0)
+  frozen = order.get("expected_gross")
+  expected = float(frozen) if frozen is not None else float(_order_breakdown(order).get("gross") or 0.0)
   actual = payments_icount.paid_amount(sale_info)
   if actual is None:
     return True, f"amount not reported by iCount (expected {expected:.2f}); accepted"
   if actual + _AMOUNT_TOLERANCE_ILS < expected:
     return False, f"charged {actual:.2f} < expected {expected:.2f}"
   return True, f"charged {actual:.2f} >= expected {expected:.2f}"
+
+
+def _sanitize_evidence(payload: Dict[str, Any]) -> Dict[str, Any]:
+  """The payment evidence to persist: everything except our own URL signature."""
+  try:
+    clean = {k: v for k, v in (payload or {}).items() if k not in ("sig",)}
+    json.dumps(clean, default=str)  # must be JSON-serialisable
+    return json.loads(json.dumps(clean, default=str))
+  except Exception:
+    return {"_unserialisable": True}
+
+
+def _record_settlement(env, order_id, *, expected_gross: Optional[float] = None,
+                       amount_paid: Optional[float] = None,
+                       evidence: Optional[Dict[str, Any]] = None) -> None:
+  """Persist VERIFIED payment evidence on the order, before provisioning.
+
+  `verified_ipn` is what lets reconciliation re-provision a paid order whose
+  provisioning failed, without get_sale_info. `amount_paid` feeds the upgrade
+  credit. `expected_gross` is only filled if no sale froze it. Raises on DB
+  failure: the IPN caller must then answer non-2xx so iCount retries."""
+  sets, vals = [], []
+  if evidence is not None:
+    sets.append("verified_ipn = %s")
+    vals.append(psycopg2.extras.Json(evidence))
+  if amount_paid is not None:
+    sets.append("amount_paid = %s")
+    vals.append(float(amount_paid))
+  if expected_gross is not None:
+    sets.append("expected_gross = COALESCE(expected_gross, %s)")
+    vals.append(float(expected_gross))
+  if not sets:
+    return
+  with psycopg2.connect(
+      host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"],
+      password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
+  ) as conn:
+    with conn.cursor() as cur:
+      cur.execute(
+          f"UPDATE orders SET {', '.join(sets)} WHERE order_id = %s AND status <> 'paid'",
+          (*vals, str(order_id)),
+      )
+      conn.commit()
+
+
+def _charged_amount(order: Dict[str, Any], sale_info: Dict[str, Any]) -> float:
+  """What was actually charged: iCount's reported amount, else the frozen expected
+  amount (iCount omitting the amount was already accepted by _verify_paid_amount)."""
+  actual = payments_icount.paid_amount(sale_info)
+  if actual is not None:
+    return float(actual)
+  frozen = order.get("expected_gross")
+  if frozen is not None:
+    return float(frozen)
+  return float(_order_breakdown(order).get("gross") or 0.0)
+
+
+def _mask_ipn_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+  """PII/secret-safe view of an IPN for logs: keys plus non-identifying fields."""
+  safe_keys = {"orderId", "sale_id", "sale_uniqid", "status", "payment_status", "paid",
+               "total_paid", "cc_total", "total", "sum", "amount", "currency_code",
+               "doc_type", "confirmation_code"}
+  out: Dict[str, Any] = {}
+  for k, v in (payload or {}).items():
+    if k == "confirmation_code":
+      out[k] = "<present>" if str(v or "").strip() else "<empty>"
+    elif k in safe_keys and not isinstance(v, (dict, list)):
+      out[k] = v
+    else:
+      out[k] = "<redacted>"
+  return out
 
 
 def _mark_order_status(env, order_id, status: str) -> None:
@@ -1575,9 +2083,19 @@ def _release_provisioning_claim(env, order_id) -> None:
 
 @router.post("/icount/callback")
 async def icount_callback(request: Request) -> JSONResponse:
-  """Server-to-server IPN from iCount. Re-verifies the sale with iCount
-  (authoritative) and provisions the order on success. Always 200 so iCount does not
-  retry indefinitely; provisioning is idempotent on already-paid orders."""
+  """Server-to-server IPN from iCount. Verifies the sale and provisions the order.
+
+  Response contract with iCount (which retries non-2xx deliveries):
+    * 2xx - nothing more to do: provisioned, already paid/claimed, forged or
+      unknown, not a completed payment, or underpaid (an ops case, not a retry).
+    * 503 - a VERIFIED payment we failed to provision (or could not record).
+      iCount retries; reconciliation also re-provisions from the persisted
+      `verified_ipn`, so recovery does not depend on iCount's retry policy.
+
+  Only the body read is async; everything else (DB + core HTTP, including the
+  synchronous provisioning) runs in the threadpool so a slow provisioning never
+  freezes aub's event loop (login, OTP, checkout).
+  """
   # Parse the IPN defensively from the RAW body + query string. iCount posts
   # form-urlencoded data (and sometimes echoes ids on the query string). We do NOT
   # rely on request.form() - it raises when python-multipart is absent and a bare
@@ -1606,11 +2124,12 @@ async def icount_callback(request: Request) -> JSONResponse:
   query_params = dict(request.query_params)
   payload = {**query_params, **payload}
 
-  # Log the raw IPN (body + content-type + query) so the field shape is never a
-  # mystery again.
   # PII-safe: the IPN body carries buyer name/phone/email - log shape only.
-  print(f"[ICOUNT IPN] ctype={ctype!r} body_len={len(raw_body)} keys={sorted(payload.keys()) if isinstance(payload, dict) else type(payload)}")
+  print(f"[ICOUNT IPN] ctype={ctype!r} body_len={len(raw_body)} keys={sorted(payload.keys())}")
+  return await run_in_threadpool(_handle_icount_ipn, payload)
 
+
+def _handle_icount_ipn(payload: Dict[str, Any]) -> JSONResponse:
   env = get_env()
   ensure_orders_table(env)
   order_id = _order_id_from_callback(env, payload)
@@ -1625,9 +2144,11 @@ async def icount_callback(request: Request) -> JSONResponse:
     expected_sig = _order_ipn_sig(order_id)
   except IpnSecretMissing as exc:
     # Fail closed: without a signing secret we cannot distinguish iCount from an
-    # attacker, so we refuse to provision rather than trust the callback body.
+    # attacker, so we refuse to provision. 503 (not 200) so iCount keeps retrying
+    # a possibly-real payment until the secret is configured.
     print(f"[ICOUNT IPN] REFUSING callback for {order_id}: {exc}")
-    return JSONResponse(status_code=200, content={"status": "ignored", "reason": "ipn auth not configured"})
+    _ops_error(f"IPN refused - signing secret missing: {exc}", severity="critical", order_id=order_id)
+    return JSONResponse(status_code=503, content={"status": "error", "reason": "ipn auth not configured"})
   if not provided_sig or not hmac.compare_digest(provided_sig, expected_sig):
     print(f"[ICOUNT IPN] REJECTED: bad/missing sig for order {order_id} (possible forgery)")
     return JSONResponse(status_code=200, content={"status": "ignored", "reason": "bad signature"})
@@ -1644,12 +2165,14 @@ async def icount_callback(request: Request) -> JSONResponse:
   verified = payments_icount.is_paid(payload)
   if not verified and sale_id:
     try:
-      sale_info = payments_icount.get_sale_info(sale_id)
-      verified = payments_icount.is_paid(sale_info)
+      looked_up = payments_icount.get_sale_info(sale_id)
+      if payments_icount.is_paid(looked_up, strict=True):
+        sale_info, verified = looked_up, True
     except Exception as e:
       print(f"[ICOUNT IPN] get_sale_info unavailable ({e}); relying on IPN payload")
   if not verified:
-    print(f"[ICOUNT IPN] sale not verified as paid for {order_id}; payload={payload}")
+    # Masked: the payload carries buyer PII (and the URL sig must never hit logs).
+    print(f"[ICOUNT IPN] sale not verified as paid for {order_id}; payload={_mask_ipn_payload(payload)}")
     return JSONResponse(status_code=200, content={"status": "not_approved"})
 
   # Verify HOW MUCH was charged, not just that a charge happened. Without this a
@@ -1663,9 +2186,24 @@ async def icount_callback(request: Request) -> JSONResponse:
     _obs_log("payment.failed", level="warning", order_id=str(order_id), reason=amount_detail)
     return JSONResponse(status_code=200, content={"status": "underpaid", "detail": amount_detail})
 
+  # Persist the verified evidence FIRST: from here on the order is known-paid,
+  # and reconciliation can re-provision it from this row even if every IPN retry
+  # is lost. If we cannot even record it, ask iCount to retry.
+  try:
+    _record_settlement(env, order_id,
+                       amount_paid=_charged_amount(order, sale_info),
+                       evidence=_sanitize_evidence(sale_info))
+  except Exception as e:
+    print(f"[ICOUNT IPN] could not persist verified payment for {order_id}: {e}")
+    _ops_error(f"verified payment could not be recorded: {e}", severity="critical",
+               order_id=order_id, exc=e)
+    return JSONResponse(status_code=503, content={"status": "error", "detail": "temporarily unavailable"})
+
   # Claim the order before provisioning. iCount retries IPNs, so two deliveries
   # can arrive concurrently; the claim is a conditional UPDATE, so exactly one
-  # wins and the loser is a no-op instead of a second provisioning run.
+  # wins and the loser is a no-op instead of a second provisioning run. (If the
+  # winner then crashes, reconciliation releases the stale claim and
+  # re-provisions from verified_ipn.)
   if not _claim_order_for_provisioning(env, order_id):
     print(f"[ICOUNT IPN] order {order_id} already being provisioned; skipping duplicate")
     return JSONResponse(status_code=200, content={"status": "ok", "already_claimed": True})
@@ -1683,18 +2221,20 @@ async def icount_callback(request: Request) -> JSONResponse:
     print(f"[ICOUNT IPN] provisioning failed for {order_id}: {e}")
     # Surface to the ops dashboard: a verified payment that failed to provision is
     # a customer stuck paid-but-eventless and needs an operator's eyes.
-    try:
-      import traceback
-      from shared.ops.errors import record_error, SEVERITY_CRITICAL
-      record_error("aub", f"provisioning failed after payment: {e}",
-                   severity=SEVERITY_CRITICAL, error_type=type(e).__name__,
-                   stack=traceback.format_exc(), context={"order_id": str(order_id)})
-    except Exception:
-      pass
+    _ops_error(f"provisioning failed after payment: {e}", severity="critical",
+               order_id=order_id, exc=e)
     # ...and to Sentry (unexpected failure, with payment context on the scope).
     _obs_log("payment.failed", level="error", order_id=str(order_id), reason=str(e))
     _obs_capture(e, operation="provision_order", flow="payment", order_id=str(order_id))
-    return JSONResponse(status_code=200, content={"status": "error", "detail": str(e)})
+    # NON-2xx so iCount retries the IPN (a 200 told it "done" and the paid
+    # customer stayed eventless). Detail kept generic - this goes to iCount.
+    return JSONResponse(status_code=503, content={"status": "error", "detail": "provisioning failed; retry"})
+
+
+# Unpaid 'payment_pending' orders older than this are expired so they stop
+# occupying the reconciliation window (they are retried oldest-first, so a few
+# unverifiable rows used to block every newer one forever).
+_PAYMENT_EXPIRY_DAYS = int(os.getenv("ORDER_PAYMENT_EXPIRY_DAYS", "7") or 7)
 
 
 def reconcile_pending_orders(max_age_minutes: int = 15, limit: int = 50) -> Dict[str, Any]:
@@ -1705,12 +2245,17 @@ def reconcile_pending_orders(max_age_minutes: int = 15, limit: int = 50) -> Dict
   host briefly 502s, a network blip - the customer's card was charged and no
   event ever appeared, with no automated recovery at all.
 
-  Two recoveries, both safe to run repeatedly:
+  Recoveries, all safe to run repeatedly:
 
   * 'provisioning' rows older than the cutoff are stale claims left by a crashed
     provisioning run; they are released so they can be retried.
-  * 'payment_pending' rows older than the cutoff are re-verified against iCount
-    and provisioned when the sale did in fact complete.
+  * 'payment_pending' rows carrying a persisted `verified_ipn` (payment verified,
+    provisioning failed) are re-provisioned straight from that evidence - no
+    get_sale_info call (it is unavailable on the paypage API). These go first.
+  * other 'payment_pending' rows with a sale are re-verified against iCount
+    (strictly: explicit confirmation AND a positive paid amount).
+  * unverified 'payment_pending' rows older than ORDER_PAYMENT_EXPIRY_DAYS are
+    marked 'expired' (a late verified IPN still provisions them).
 
   Orders we cannot verify are reported, never guessed at - provisioning without
   a verified payment is exactly what this whole effort removes.
@@ -1718,8 +2263,10 @@ def reconcile_pending_orders(max_age_minutes: int = 15, limit: int = 50) -> Dict
   env = get_env()
   ensure_orders_table(env)
   cutoff_expr = f"NOW() - INTERVAL '{int(max_age_minutes)} minutes'"
+  expiry_expr = f"NOW() - INTERVAL '{int(_PAYMENT_EXPIRY_DAYS)} days'"
 
   released = 0
+  expired = 0
   with psycopg2.connect(
       host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"],
       password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
@@ -1730,6 +2277,12 @@ def reconcile_pending_orders(max_age_minutes: int = 15, limit: int = 50) -> Dict
           f"WHERE status = 'provisioning' AND updated_at < {cutoff_expr}"
       )
       released = cur.rowcount or 0
+      cur.execute(
+          f"UPDATE orders SET status = 'expired', updated_at = NOW() "
+          f"WHERE status = 'payment_pending' AND verified_ipn IS NULL "
+          f"AND updated_at < {expiry_expr}"
+      )
+      expired = cur.rowcount or 0
       conn.commit()
 
   with psycopg2.connect(
@@ -1738,9 +2291,12 @@ def reconcile_pending_orders(max_age_minutes: int = 15, limit: int = 50) -> Dict
   ) as conn:
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
       cur.execute(
-          f"SELECT order_id, icount_sale_id FROM orders "
-          f"WHERE status = 'payment_pending' AND icount_sale_id IS NOT NULL "
-          f"AND updated_at < {cutoff_expr} ORDER BY updated_at ASC LIMIT %s",
+          f"SELECT order_id, icount_sale_id, (verified_ipn IS NOT NULL) AS has_evidence "
+          f"FROM orders "
+          f"WHERE status = 'payment_pending' "
+          f"AND (verified_ipn IS NOT NULL OR icount_sale_id IS NOT NULL) "
+          f"AND updated_at < {cutoff_expr} "
+          f"ORDER BY (verified_ipn IS NULL) ASC, updated_at ASC LIMIT %s",
           (int(limit),),
       )
       candidates = cur.fetchall() or []
@@ -1748,24 +2304,39 @@ def reconcile_pending_orders(max_age_minutes: int = 15, limit: int = 50) -> Dict
   provisioned, unverified, errors = [], [], []
   for row in candidates:
     order_id = str(row["order_id"])
-    sale_id = row.get("icount_sale_id")
-    try:
-      sale_info = payments_icount.get_sale_info(sale_id)
-    except Exception as exc:
-      # get_sale_info is documented as unavailable on the paypage API; when it is
-      # we simply cannot self-heal, so surface the order for ops rather than
-      # provisioning an unverified payment.
-      unverified.append({"order_id": order_id, "reason": f"lookup unavailable: {exc}"})
-      continue
-    if not payments_icount.is_paid(sale_info):
-      unverified.append({"order_id": order_id, "reason": "sale not paid"})
-      continue
     order = _fetch_order(env, order_id)
-    ok_amount, detail = _verify_paid_amount(order, sale_info)
-    if not ok_amount:
-      _mark_order_status(env, order_id, "underpaid")
-      unverified.append({"order_id": order_id, "reason": detail})
-      continue
+    if row.get("has_evidence"):
+      # Payment already verified (and amount-checked) by the IPN handler.
+      sale_info = order.get("verified_ipn") or {}
+      if isinstance(sale_info, str):
+        try:
+          sale_info = json.loads(sale_info)
+        except Exception:
+          sale_info = {}
+    else:
+      sale_id = row.get("icount_sale_id")
+      try:
+        sale_info = payments_icount.get_sale_info(sale_id)
+      except Exception as exc:
+        # get_sale_info is documented as unavailable on the paypage API; when it is
+        # we simply cannot self-heal, so surface the order for ops rather than
+        # provisioning an unverified payment.
+        unverified.append({"order_id": order_id, "reason": f"lookup unavailable: {exc}"})
+        continue
+      if not payments_icount.is_paid(sale_info, strict=True):
+        unverified.append({"order_id": order_id, "reason": "sale not paid"})
+        continue
+      ok_amount, detail = _verify_paid_amount(order, sale_info)
+      if not ok_amount:
+        _mark_order_status(env, order_id, "underpaid")
+        unverified.append({"order_id": order_id, "reason": detail})
+        continue
+      try:
+        _record_settlement(env, order_id, amount_paid=_charged_amount(order, sale_info),
+                           evidence=_sanitize_evidence(sale_info))
+      except Exception as exc:
+        errors.append({"order_id": order_id, "error": f"could not record settlement: {exc}"})
+        continue
     if not _claim_order_for_provisioning(env, order_id):
       continue
     try:
@@ -1778,11 +2349,12 @@ def reconcile_pending_orders(max_age_minutes: int = 15, limit: int = 50) -> Dict
   summary = {
       "checked": len(candidates),
       "stale_claims_released": released,
+      "expired": expired,
       "provisioned": provisioned,
       "unverified": unverified,
       "errors": errors,
   }
-  if provisioned or errors or unverified:
+  if provisioned or errors or unverified or expired:
     print(f"[RECONCILE] {json.dumps(summary, default=str)}")
   return summary
 

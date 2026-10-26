@@ -1,88 +1,25 @@
 import React from 'react';
-import { Box, Container, Grid, Typography, Paper, Button, Chip } from '@mui/material';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import { Box, Container, Typography, Button } from '@mui/material';
+import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import ShieldRoundedIcon from '@mui/icons-material/ShieldRounded';
 import LockRoundedIcon from '@mui/icons-material/LockRounded';
-import { styled, useTheme } from '@mui/material/styles';
+import { useTheme, alpha } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
 import { plans } from '../config/plans';
 import PriceTag from './PriceTag';
 
-const StyledPaper = styled(Paper, {
-  shouldForwardProp: (prop) => prop !== 'accent' && prop !== 'popular',
-})<{ accent: string; popular?: boolean }>(({ theme, accent, popular }) => ({
-  padding: popular ? theme.spacing(5) : theme.spacing(4),
-  display: 'flex',
-  flexDirection: 'column',
-  width: '100%',
-  height: '100%',
-  borderRadius: 16,
-  backgroundColor: theme.palette.mode === 'dark' 
-    ? theme.palette.background.paper 
-    : '#ffffff',
-  border: popular 
-    ? `1px solid ${accent}` 
-    : `1px solid ${theme.palette.mode === 'dark' ? theme.palette.divider : '#e2e8f0'}`,
-  boxShadow: popular 
-    ? '0 16px 40px rgba(37,99,235,0.18)' 
-    : theme.palette.mode === 'dark'
-      ? '0 10px 30px rgba(0,0,0,0.3)'
-      : '0 10px 30px rgba(15,23,42,0.06)',
-  position: 'relative',
-  overflow: 'hidden',
-  transform: popular ? 'scale(1.05)' : 'scale(1)',
-  transition:
-    'transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, background-color 0.22s ease',
-  '&::before': popular
-    ? {
-        content: '""',
-        position: 'absolute',
-        inset: 0,
-        background: `linear-gradient(135deg, ${accent}22, transparent 60%)`,
-        pointerEvents: 'none',
-      }
-    : {},
-  '&:hover': {
-    transform: popular ? 'scale(1.08) translateY(-6px)' : 'translateY(-6px)',
-    boxShadow: popular
-      ? '0 20px 55px rgba(37,99,235,0.25)'
-      : theme.palette.mode === 'dark'
-        ? '0 18px 45px rgba(0,0,0,0.4)'
-      : '0 18px 45px rgba(15,23,42,0.12)',
-    borderColor: accent,
-    backgroundColor: theme.palette.mode === 'dark'
-      ? theme.palette.background.paper
-      : '#fdfefe',
-  },
-  [theme.breakpoints.down('md')]: {
-    transform: 'scale(1)',
-    '&:hover': {
-      transform: popular ? 'scale(1.02) translateY(-6px)' : 'translateY(-6px)',
-    },
-  },
-}));
+const BRAND = '#9D83E0';
+const DEEP = '#5A3DA6';
 
-const FeatureItem = styled(Box)(({ theme }) => ({
-  display: 'flex',
-  alignItems: 'center',
-  marginBottom: theme.spacing(1),
-  '& svg': {
-    marginLeft: theme.spacing(1),
-    color: theme.palette.success.main,
-  },
-}));
-
-const FeaturesBox = styled(Box)(({ theme }) => ({
-  flex: '1 1 auto',
-  marginTop: theme.spacing(3),
-  marginBottom: theme.spacing(4),
-  minHeight: 0,
-}));
-
+/**
+ * Three plans, one visual language. The recommended plan is lifted by a brand
+ * border and a filled button; the others stay quiet with an outlined button.
+ * No per-plan colors - the difference between plans is the number, not the hue.
+ */
 export default function Pricing() {
   const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
   const navigate = useNavigate();
-  const tiers = plans;
 
   const handleStartNow = (planId: string) => {
     navigate(`/wizard?package=${planId}`);
@@ -92,227 +29,165 @@ export default function Pricing() {
     <Box
       id="pricing"
       sx={{
-        py: 10,
-        bgcolor: theme.palette.mode === 'dark'
-          ? theme.palette.background.default
-          : '#ffffff',
+        py: { xs: 8, md: 12 },
+        bgcolor: isDark ? theme.palette.background.default : '#ffffff',
       }}
     >
-      <Container maxWidth="lg" sx={{ overflow: 'visible', px: { md: 4 } }}>
-        <Box
-          sx={{
-            textAlign: 'center',
-            maxWidth: 640,
-            mx: 'auto',
-            mb: 6,
-            direction: 'rtl',
-          }}
-        >
-          <Typography
-            variant="h3"
-            gutterBottom
-            sx={{
-              fontWeight: 800,
-              textAlign: 'center',
-            }}
-          >
+      <Container maxWidth="lg" sx={{ px: { xs: 2.5, md: 4 } }}>
+        <Box sx={{ textAlign: 'center', maxWidth: 620, mx: 'auto', mb: { xs: 5, md: 7 }, direction: 'rtl' }}>
+          <Typography variant="overline" sx={{ color: BRAND, fontWeight: 700, letterSpacing: 1.5 }}>
+            תעריפים
+          </Typography>
+          <Typography component="h2" variant="h3" sx={{ fontWeight: 800, mt: 1, letterSpacing: '-0.02em' }}>
             מחיר אחד. בלי כוכביות.
           </Typography>
-          <Typography variant="h6" color="text.secondary" sx={{ textAlign: 'center' }}>
-            כל חבילה כוללת את כל היכולות - ההבדל היחיד הוא כמות האורחים וסבבי ההודעות. משלמים פעם אחת ונגמר, בלי מנוי ובלי אותיות קטנות.
+          <Typography variant="h6" sx={{ color: 'text.secondary', mt: 1.5, fontWeight: 400, lineHeight: 1.7 }}>
+            כל חבילה כוללת את כל היכולות. ההבדל היחיד הוא כמות האורחים וסבבי ההודעות. משלמים פעם אחת, בלי מנוי.
           </Typography>
         </Box>
 
-        <Grid 
-          container 
-          spacing={{ xs: 3, md: 4 }} 
-          sx={{ 
-            mt: 2, 
-            alignItems: 'stretch', 
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' },
+            gap: { xs: 2.5, md: 3 },
+            alignItems: 'stretch',
             direction: 'rtl',
-            py: { md: 2 },
           }}
         >
-          {tiers.map((tier, index) => (
-            <Grid 
-              item 
-              xs={12} 
-              sm={6} 
-              md={4} 
-              key={tier.title}
-              sx={{
-                display: 'flex',
-                alignItems: 'stretch',
-              }}
-            >
-              {tier.isPopular ? (
-                <StyledPaper accent={tier.color} popular elevation={0} sx={{ width: '100%' }}>
-                  <Chip
-                    label="הכי פופולרית"
-                    color="primary"
-                    size="small"
+          {plans.map((tier) => {
+            const popular = !!tier.isPopular;
+            return (
+              <Box
+                key={tier.id}
+                sx={{
+                  position: 'relative',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  p: { xs: 3, md: 3.5 },
+                  borderRadius: 4,
+                  bgcolor: isDark ? alpha('#fff', 0.03) : '#fff',
+                  border: '1px solid',
+                  borderColor: popular ? alpha(DEEP, 0.55) : (isDark ? alpha('#fff', 0.1) : alpha('#0f172a', 0.08)),
+                  boxShadow: popular
+                    ? `0 24px 56px ${alpha(DEEP, 0.16)}`
+                    : (isDark ? 'none' : '0 8px 28px rgba(15,23,42,0.05)'),
+                  transition: 'transform .22s ease, box-shadow .22s ease',
+                  '&:hover': {
+                    transform: 'translateY(-4px)',
+                    boxShadow: popular ? `0 30px 64px ${alpha(DEEP, 0.2)}` : '0 18px 44px rgba(15,23,42,0.09)',
+                  },
+                }}
+              >
+                {popular && (
+                  <Box
                     sx={{
                       position: 'absolute',
-                      top: 16,
-                      right: 16,
-                      fontWeight: 700,
-                      borderRadius: 999,
+                      top: -13,
+                      insetInlineStart: 24,
                       px: 1.5,
-                    }}
-                  />
-                  <Typography
-                    component="h2"
-                    variant="h4"
-                    gutterBottom
-                    sx={{ fontWeight: 700, mt: 1, direction: 'rtl', textAlign: 'right' }}
-                  >
-                    {tier.title}
-                  </Typography>
-                  <Typography
-                    variant="h6"
-                    color="text.secondary"
-                    gutterBottom
-                    sx={{ direction: 'rtl', textAlign: 'right' }}
-                  >
-                    {tier.subtitle}
-                  </Typography>
-                  <Box sx={{ my: 2 }}>
-                    <PriceTag price={tier.price} size="lg" align="right" />
-                  </Box>
-                  <Typography
-                    variant="subtitle1"
-                    color="text.secondary"
-                    gutterBottom
-                    sx={{ direction: 'rtl', textAlign: 'right' }}
-                  >
-                    {tier.description}
-                  </Typography>
-                  <FeaturesBox>
-                    {tier.features.map((feature) => (
-                      <FeatureItem key={feature}>
-                        <CheckCircleIcon fontSize="small" />
-                        <Typography variant="body1" sx={{ mr: 1 }}>
-                          {feature}
-                        </Typography>
-                      </FeatureItem>
-                    ))}
-                  </FeaturesBox>
-                  <Button
-                    fullWidth
-                    variant="contained"
-                    sx={{
+                      py: 0.35,
                       borderRadius: 999,
-                      py: 1.2,
-                      fontWeight: 600,
-                      background: `linear-gradient(90deg, ${tier.color}, #111827)`,
-                      border: 'none',
-                      boxShadow: 'none',
-                      '&:hover': {
-                        background: `linear-gradient(90deg, ${tier.color}, #020617)`,
-                        transform: 'translateY(-1px)',
-                        boxShadow: '0 12px 30px rgba(15,23,42,0.25)',
-                      },
-                      '&:focusVisible': {
-                        outline: 'none',
-                        boxShadow: 'none',
-                        border: 'none',
-                      },
+                      bgcolor: DEEP,
+                      color: '#fff',
+                      fontSize: '0.74rem',
+                      fontWeight: 800,
+                      letterSpacing: '0.02em',
                     }}
-                    onClick={() => handleStartNow(tier.id)}
                   >
-                    יוצאים לדרך
-                  </Button>
-                </StyledPaper>
-              ) : (
-                <StyledPaper accent={tier.color} elevation={0} sx={{ width: '100%' }}>
-                  <Typography
-                    component="h2"
-                    variant="h4"
-                    gutterBottom
-                    sx={{ fontWeight: 700, direction: 'rtl', textAlign: 'right' }}
-                  >
-                    {tier.title}
-                  </Typography>
-                  <Typography
-                    variant="h6"
-                    color="text.secondary"
-                    gutterBottom
-                    sx={{ direction: 'rtl', textAlign: 'right' }}
-                  >
-                    {tier.subtitle}
-                  </Typography>
-                  <Box sx={{ my: 2 }}>
-                    <PriceTag price={tier.price} size="lg" align="right" />
+                    הבחירה של רוב המארחים
                   </Box>
-                  <Typography
-                    variant="subtitle1"
-                    color="text.secondary"
-                    gutterBottom
-                    sx={{ direction: 'rtl', textAlign: 'right' }}
-                  >
-                    {tier.description}
-                  </Typography>
-                  <FeaturesBox>
-                    {tier.features.map((feature) => (
-                      <FeatureItem key={feature}>
-                        <CheckCircleIcon fontSize="small" />
-                        <Typography variant="body1" sx={{ mr: 1 }}>
-                          {feature}
-                        </Typography>
-                      </FeatureItem>
-                    ))}
-                  </FeaturesBox>
-                  <Button
-                    fullWidth
-                    variant="contained"
-                    sx={{
-                      borderRadius: 999,
-                      py: 1.2,
-                      fontWeight: 600,
-                      background: tier.color,
-                      border: 'none',
-                      boxShadow: 'none',
-                      '&:hover': {
-                        background: tier.color,
-                        opacity: 0.95,
-                        transform: 'translateY(-1px)',
-                        boxShadow: '0 10px 24px rgba(15,23,42,0.18)',
-                      },
-                      '&:focusVisible': {
-                        outline: 'none',
-                        boxShadow: 'none',
-                        border: 'none',
-                      },
-                    }}
-                    onClick={() => handleStartNow(tier.id)}
-                  >
-                    יוצאים לדרך
-                  </Button>
-                </StyledPaper>
-              )}
-            </Grid>
-          ))}
-        </Grid>
+                )}
+
+                <Typography component="h3" sx={{ fontWeight: 800, fontSize: '1.25rem', letterSpacing: '-0.01em' }}>
+                  {tier.title}
+                </Typography>
+                <Typography sx={{ color: 'text.secondary', mt: 0.5, fontSize: '0.95rem' }}>
+                  {tier.subtitle}
+                </Typography>
+
+                <Box sx={{ mt: 3, display: 'flex', alignItems: 'baseline', gap: 1 }}>
+                  <PriceTag price={tier.price} size="lg" align="right" />
+                  <Typography sx={{ color: 'text.secondary', fontSize: '0.9rem' }}>לאירוע</Typography>
+                </Box>
+                <Typography sx={{ mt: 0.75, fontWeight: 700, color: popular ? DEEP : 'text.primary' }}>
+                  {tier.description}
+                </Typography>
+
+                <Box
+                  sx={{
+                    mt: 3,
+                    pt: 3,
+                    borderTop: '1px solid',
+                    borderColor: isDark ? alpha('#fff', 0.08) : alpha('#0f172a', 0.07),
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 1.25,
+                    flex: 1,
+                  }}
+                >
+                  {tier.features.map((feature) => (
+                    <Box key={feature} sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                      <Box
+                        sx={{
+                          width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          bgcolor: alpha(DEEP, 0.1), color: DEEP,
+                        }}
+                      >
+                        <CheckRoundedIcon sx={{ fontSize: 15 }} />
+                      </Box>
+                      <Typography sx={{ fontSize: '0.95rem' }}>{feature}</Typography>
+                    </Box>
+                  ))}
+                </Box>
+
+                <Button
+                  fullWidth
+                  variant={popular ? 'contained' : 'outlined'}
+                  disableElevation
+                  onClick={() => handleStartNow(tier.id)}
+                  sx={{
+                    mt: 3.5,
+                    borderRadius: 999,
+                    py: 1.2,
+                    fontWeight: 700,
+                    fontSize: '0.98rem',
+                    ...(popular
+                      ? { bgcolor: DEEP, '&:hover': { bgcolor: '#5257c9' } }
+                      : {
+                          color: DEEP,
+                          borderColor: alpha(DEEP, 0.4),
+                          '&:hover': { borderColor: DEEP, bgcolor: alpha(DEEP, 0.05) },
+                        }),
+                  }}
+                >
+                  יוצאים לדרך
+                </Button>
+              </Box>
+            );
+          })}
+        </Box>
 
         <Box
           sx={{
-            mt: { xs: 4, md: 6 },
+            mt: { xs: 4, md: 5 },
             display: 'flex',
             flexWrap: 'wrap',
             justifyContent: 'center',
             alignItems: 'center',
-            gap: { xs: 1.5, md: 3 },
+            gap: { xs: 1.5, md: 4 },
             color: 'text.secondary',
             direction: 'rtl',
           }}
         >
           {[
-            { icon: <ShieldRoundedIcon fontSize="small" color="success" />, text: 'החזר כספי מלא תוך 14 יום' },
-            { icon: <LockRoundedIcon fontSize="small" color="success" />, text: 'תשלום מאובטח · ללא שמירת פרטי אשראי' },
-            { icon: <CheckCircleIcon fontSize="small" color="success" />, text: 'תשלום חד‑פעמי · ללא מנוי וללא התחייבות' },
+            { icon: <ShieldRoundedIcon sx={{ fontSize: 18 }} />, text: 'החזר כספי מלא תוך 14 יום' },
+            { icon: <LockRoundedIcon sx={{ fontSize: 18 }} />, text: 'תשלום מאובטח, בלי לשמור פרטי אשראי' },
+            { icon: <CheckRoundedIcon sx={{ fontSize: 18 }} />, text: 'תשלום חד‑פעמי, בלי מנוי' },
           ].map((item) => (
             <Box key={item.text} sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-              {item.icon}
+              <Box sx={{ color: DEEP, display: 'flex' }}>{item.icon}</Box>
               <Typography variant="body2" sx={{ fontWeight: 500 }}>
                 {item.text}
               </Typography>

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useEvent } from './EventContext';
+import { useSupport } from './SupportContext';
 
 interface BannerContextType {
   isBannerVisible: boolean;
@@ -9,6 +10,7 @@ const BannerContext = createContext<BannerContextType | undefined>(undefined);
 
 export function BannerProvider({ children }: { children: ReactNode }) {
   const { selectedEvent } = useEvent();
+  const { session: supportSession } = useSupport();
   const [isDismissed, setIsDismissed] = useState(false);
 
   // Check if event is inactive
@@ -69,7 +71,11 @@ export function BannerProvider({ children }: { children: ReactNode }) {
     }
   }, [selectedEvent]);
 
-  const isBannerVisible = Boolean(isEventInactive && !isDismissed);
+  // While an admin is inside a support session, THEIR banner owns the top strip:
+  // it is the one piece of chrome that must never be missable, and the
+  // inactive-event banner's "settle payment" CTA is aimed at the owner, not at
+  // support. Either way one 48px strip is showing, so the shell's offset holds.
+  const isBannerVisible = Boolean(supportSession || (isEventInactive && !isDismissed));
 
   return (
     <BannerContext.Provider value={{ isBannerVisible }}>

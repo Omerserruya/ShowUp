@@ -11,11 +11,10 @@ export default function SectionHeader({
 }: { emoji?: string; title: string; subtitle?: string; sx?: object }) {
   return (
     <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.25, mb: { xs: 1.5, sm: 2 }, px: 0.5, ...sx }}>
-      <Box sx={{ mt: '5px', width: 4, height: 22, borderRadius: 2, bgcolor: 'primary.main', flexShrink: 0 }} />
       <Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
           {emoji && <Box component="span" sx={{ fontSize: '1.25rem', lineHeight: 1 }}>{emoji}</Box>}
-          <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.2rem', sm: '1.35rem' }, letterSpacing: '-0.02em', lineHeight: 1.2, color: 'text.primary' }}>
+          <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.15rem', sm: '1.25rem' }, letterSpacing: '-0.02em', lineHeight: 1.2, color: 'text.primary' }}>
             {title}
           </Typography>
         </Box>

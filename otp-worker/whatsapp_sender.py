@@ -6,6 +6,7 @@ Meta Cloud API. WhatsApp is the single, canonical channel for delivering
 verification codes - there is no other delivery channel or fallback.
 """
 
+import json
 import logging
 import os
 from typing import Any, Dict, Optional
@@ -13,6 +14,27 @@ from typing import Any, Dict, Optional
 import requests
 
 logger = logging.getLogger(__name__)
+
+
+def _mask(phone) -> str:
+    digits = "".join(ch for ch in str(phone or "") if ch.isdigit())
+    return f"***{digits[-4:]}" if digits else "***"
+
+
+def _safe_meta_error(body: str, code: str) -> str:
+    """Reduce a Graph API error body to code/subcode/type/message, with the OTP
+    scrubbed in case Meta echoed it."""
+    summary = ""
+    try:
+        err = (json.loads(body or "{}") or {}).get("error") or {}
+        summary = "code=%s subcode=%s type=%s msg=%s" % (
+            err.get("code"), err.get("error_subcode"), err.get("type"), (err.get("message") or "")[:200],
+        )
+    except Exception:
+        summary = "unparseable error body (%d bytes)" % len(body or "")
+    if code:
+        summary = summary.replace(str(code), "******")
+    return summary
 
 GRAPH_API_VERSION = os.getenv("WA_API_VERSION", "v22.0")
 
@@ -99,7 +121,7 @@ class WhatsAppOTPSender:
                 "OTP sent via WhatsApp template '%s' (lang=%s) to %s",
                 self.template_name,
                 self.language_code,
-                to,
+                _mask(to),
             )
             return "sent"
         except requests.exceptions.HTTPError as e:
@@ -116,11 +138,16 @@ class WhatsAppOTPSender:
             # identical request just hot-loops, so treat it as permanent.
             permanent = status is not None and 400 <= status < 500 and status != 429
             outcome = "permanent" if permanent else "transient"
-            logger.error("Failed to send WhatsApp OTP (%s, %s): %s", status, outcome, body)
+            # Meta error bodies can echo request parameters (i.e. the code):
+            # log only the structured error fields, never the raw body.
+            logger.error(
+                "Failed to send WhatsApp OTP to %s (%s, %s): %s",
+                _mask(to), status, outcome, _safe_meta_error(body, code),
+            )
             return outcome
         except requests.exceptions.RequestException as e:
             # Network error / timeout - temporary, worth retrying.
-            logger.error("WhatsApp OTP request failed (transient): %s", e)
+            logger.error("WhatsApp OTP request failed for %s (transient): %s", _mask(to), type(e).__name__)
             return "transient"
 
 

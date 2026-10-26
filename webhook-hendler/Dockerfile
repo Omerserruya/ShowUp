@@ -17,5 +17,7 @@ COPY shared ./shared
 EXPOSE ${PORT}
 
 # Run the application
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT}"]
+# WEB_CONCURRENCY uvicorn worker processes; each owns its own publisher
+# thread + RabbitMQ connection (see main.py). Default 2.
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT} --workers ${WEB_CONCURRENCY:-2} --no-access-log"]
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Box, alpha, useTheme } from '@mui/material';
 
-const PURPLE = '#888cee';
+const PURPLE = '#9D83E0';
 const TEAL = '#34c3a3';
 
 /**

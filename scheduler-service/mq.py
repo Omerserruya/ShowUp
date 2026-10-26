@@ -104,3 +104,33 @@ def _inject_correlation(message: dict) -> None:
         inject_into(message)
     except Exception:
         pass
+
+
+def queue_depth(conn: pika.BlockingConnection, queue_names) -> int | None:
+    """Total ready messages across `queue_names`, via passive declare (cheap; does
+    not create anything). A queue that does not exist counts as 0. Returns None
+    if the broker cannot be asked at all."""
+    if conn is None or conn.is_closed:
+        return None
+    total = 0
+    ch = None
+    try:
+        for name in queue_names:
+            if ch is None or ch.is_closed:
+                ch = conn.channel()
+            try:
+                ok = ch.queue_declare(queue=name, passive=True)
+                total += int(ok.method.message_count or 0)
+            except pika.exceptions.ChannelClosedByBroker:
+                # 404 NOT_FOUND closes the channel; the queue simply isn't there.
+                ch = None
+        return total
+    except Exception as e:
+        logger.warning(f"queue depth check failed: {e}")
+        return None
+    finally:
+        try:
+            if ch is not None and ch.is_open:
+                ch.close()
+        except Exception:
+            pass

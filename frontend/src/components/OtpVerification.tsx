@@ -108,9 +108,9 @@ export default function OtpVerification({
                     bgcolor: 'background.paper',
                     transition: 'box-shadow .15s ease, border-color .15s ease',
                     '& fieldset': { borderWidth: 2, borderColor: alpha(theme.palette.text.primary, 0.15) },
-                    '&:hover fieldset': { borderColor: alpha('#888cee', 0.5) },
-                    '&.Mui-focused fieldset': { borderColor: '#888cee' },
-                    '&.Mui-focused': { boxShadow: `0 0 0 4px ${alpha('#888cee', 0.12)}` },
+                    '&:hover fieldset': { borderColor: alpha('#9D83E0', 0.5) },
+                    '&.Mui-focused fieldset': { borderColor: '#9D83E0' },
+                    '&.Mui-focused': { boxShadow: `0 0 0 4px ${alpha('#9D83E0', 0.12)}` },
                   },
                 }}
               />

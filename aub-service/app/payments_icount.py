@@ -201,29 +201,55 @@ def paid_amount(sale_info: Dict[str, Any]) -> Optional[float]:
     return None
 
 
-def is_paid(sale_info: Dict[str, Any]) -> bool:
+_PAID_STATUS_WORDS = ("paid", "success", "completed")
+
+
+def _sale_payload(sale_info: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
+    """(the dict holding sale fields, whether it is NESTED under sale/data).
+
+    When it is not nested, a top-level `status` is the API call's own success
+    flag (get_sale_info answers `status: true` for ANY found sale, paid or not),
+    so it must never be read as a payment status."""
+    if not isinstance(sale_info, dict):
+        return {}, False
+    nested = sale_info.get("sale") or sale_info.get("data")
+    if isinstance(nested, dict):
+        return nested, True
+    return sale_info, False
+
+
+def has_payment_confirmation(sale_info: Dict[str, Any]) -> bool:
+    """An EXPLICIT completed-charge signal: a confirmation_code (iCount only issues
+    one on a completed sale), a `paid` flag, or a textual paid payment status."""
+    data, nested = _sale_payload(sale_info)
+    if str(data.get("confirmation_code") or "").strip():
+        return True
+    if data.get("paid") in (True, 1, "1"):
+        return True
+    status = str(data.get("payment_status") or (data.get("status") if nested else "") or "").lower()
+    return status in _PAID_STATUS_WORDS
+
+
+def is_paid(sale_info: Dict[str, Any], *, strict: bool = False) -> bool:
     """True when iCount reports the sale as successfully paid.
 
     Handles BOTH shapes:
       • the paypage IPN - which has NO top-level `status`, and signals a completed
-        charge with a `confirmation_code` + a positive `total_paid`/`cc_total`;
-      • a get_sale_info response - which uses a truthy top-level `status`.
+        charge with a `confirmation_code` and/or a positive `total_paid`/`cc_total`;
+      • a get_sale_info response.
+
+    The old fallback - "top-level status is truthy" - is gone: that flag is the
+    API call's success indicator, true for any sale that merely EXISTS, so an
+    abandoned PayPage reconciled as paid.
+
+    `strict=True` (used for get_sale_info responses during reconciliation, where
+    there is no customer-facing signal to corroborate) requires BOTH an explicit
+    confirmation (code / paid flag / paid status) AND a positive paid amount.
     """
-    data = sale_info.get("sale") or sale_info.get("data") or sale_info
-    if not isinstance(data, dict):
-        data = sale_info if isinstance(sale_info, dict) else {}
-
-    # Paypage IPN: a confirmation_code (iCount only issues one on a completed sale)
-    # or a positive paid total is proof of payment.
-    if str(data.get("confirmation_code") or "").strip():
+    if strict:
+        amount = paid_amount(sale_info)
+        return has_payment_confirmation(sale_info) and amount is not None and amount > 0
+    if has_payment_confirmation(sale_info):
         return True
-    if _num(data.get("total_paid")) > 0 or _num(data.get("cc_total")) > 0:
-        return True
-    if data.get("paid") in (True, 1, "1"):
-        return True
-    payment_status = str(data.get("payment_status") or data.get("status") or "").lower()
-    if payment_status in ("paid", "success", "completed", "1", "true"):
-        return True
-
-    # Fallback: explicit server-side OK status (get_sale_info responses).
-    return _ok(sale_info)
+    data, _ = _sale_payload(sale_info)
+    return _num(data.get("total_paid")) > 0 or _num(data.get("cc_total")) > 0

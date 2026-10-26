@@ -9,7 +9,7 @@
  * so the "first time" celebration only happens once per browser.
  */
 
-const BRAND_COLORS = ['#6D28D9', '#A78BFA', '#EC4899', '#F59E0B', '#16A34A', '#4C1D95'];
+const BRAND_COLORS = ['#6D28D9', '#A78BFA', '#9D83E0', '#F59E0B', '#16A34A', '#4C1D95'];
 
 interface Particle {
   x: number;

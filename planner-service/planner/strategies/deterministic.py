@@ -22,25 +22,49 @@ Algorithm (per channel):
      at-risk). The planner never exceeds capacity to force a fit - the reserved
      safety margin is deliberately left untouched.
 
+  4. Carry-forward: volume that still does not fit inside the preferred window
+     moves to the next feasible day after it, ascending, up to the window's
+     `deadline` (event-date based, see windows.resolve_window). Only what fits
+     nowhere before the deadline is `unplaced`.
+
+Capacity is packed ON TOP of `PlanContext.prefill` (volume already released
+today / in the rolling 24h) - every replan used to start each day at 0 and
+re-spend capacity that had already been used. Days in `PlanContext.closed_days`
+(send window closed) are never used.
+
 Because the whole plan is recomputed from the full campaign set every run, adding
 or changing a campaign naturally rebalances all affected days (continuous
 rebalancing) with no special-casing.
 """
 from __future__ import annotations
 
-from datetime import date, timedelta
-from typing import Dict, List
+from datetime import date, datetime, timedelta, timezone
+from typing import Dict, List, Optional
 
 from ..config import PlannerConfig
-from ..models import Allocation, CampaignRequest, PlanResult
+from ..models import Allocation, CampaignRequest, PlanContext, PlanResult
 from ..strategy import PlannerStrategy, register_strategy
+
+_FAR_DATE = date.max
+_FAR_TS = float("inf")
+
+
+def _created_ts(value: Optional[datetime]) -> float:
+    if value is None:
+        return _FAR_TS
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.timestamp()
 
 
 def _priority_sort_key(req: CampaignRequest):
-    # Highest priority first (-priority for ascending sort); then the campaign
-    # that wants to send earliest; then smaller volume (easier to place cleanly);
-    # then id for full determinism.
-    return (-req.priority, req.window.target, req.volume, req.campaign_id)
+    # Highest priority first (-priority for ascending sort); within a priority
+    # the SOONER EVENT first, then the campaign CREATED first (first come, first
+    # served), then the one that wants to send earliest, then smaller volume;
+    # the id only as a last resort for full determinism (it used to be the
+    # deciding tie-break - effectively random).
+    return (-req.priority, req.event_date or _FAR_DATE, _created_ts(req.created_at),
+            req.window.target, req.volume, req.campaign_id)
 
 
 def _candidate_days(req: CampaignRequest) -> List[date]:
@@ -69,23 +93,41 @@ def _candidate_days(req: CampaignRequest) -> List[date]:
     return days
 
 
+def _carry_forward_days(req: CampaignRequest) -> List[date]:
+    """Days after the preferred window up to the deadline, ascending."""
+    w = req.window
+    out = []
+    d = w.latest + timedelta(days=1)
+    while d <= w.hard_latest:
+        out.append(d)
+        d += timedelta(days=1)
+    return out
+
+
 @register_strategy
 class GreedyDeterministicStrategy(PlannerStrategy):
     name = "deterministic"
 
-    def plan(self, requests: List[CampaignRequest], config: PlannerConfig, now: date) -> PlanResult:
+    def plan(self, requests: List[CampaignRequest], config: PlannerConfig, now: date,
+             context: Optional[PlanContext] = None) -> PlanResult:
+        ctx = context or PlanContext()
         result = PlanResult(strategy=self.name)
+        closed = ctx.closed_days or set()
 
         # Group by channel - each channel has independent capacity.
         by_channel: Dict[str, List[CampaignRequest]] = {}
         for req in requests:
             by_channel.setdefault(req.channel, []).append(req)
 
-        for channel, reqs in by_channel.items():
+        for channel in set(by_channel) | set(ctx.prefill or {}):
+            reqs = by_channel.get(channel, [])
             capacity = config.planner_daily_capacity(channel)
             result.capacity[channel] = capacity
             result.reserved[channel] = config.reserved_daily_capacity(channel)
-            day_load: Dict[date, int] = result.day_load.setdefault(channel, {})
+            pre = {d: int(v) for d, v in (ctx.prefill or {}).get(channel, {}).items() if v}
+            result.prefill[channel] = dict(pre)
+            # day_load starts from what was ALREADY used, not 0.
+            day_load: Dict[date, int] = result.day_load.setdefault(channel, dict(pre))
 
             # Unknown channel (no configured limits) => capacity 0 => everything
             # is reported as unplaced rather than silently sent.
@@ -97,10 +139,12 @@ class GreedyDeterministicStrategy(PlannerStrategy):
                     target=req.window.target,
                 )
                 remaining = req.volume
-                if capacity > 0:
-                    for day in _candidate_days(req):
+                if capacity > 0 and not req.window.is_empty:
+                    for day in _candidate_days(req) + _carry_forward_days(req):
                         if remaining <= 0:
                             break
+                        if day in closed or not req.window.allows(day):
+                            continue
                         used = day_load.get(day, 0)
                         free = capacity - used
                         if free <= 0:

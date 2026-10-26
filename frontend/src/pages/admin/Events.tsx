@@ -33,6 +33,7 @@ import {
   ListItem,
   ListItemText,
   Divider,
+  Tooltip,
   useTheme,
   alpha,
 } from '@mui/material';
@@ -45,8 +46,11 @@ import {
   ExpandLess as ExpandLessIcon,
   People as PeopleIcon,
   Campaign as CampaignIcon,
+  Login as LoginIcon,
 } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 import { fetchWithAuth } from '../../utils/fetchWithAuth';
+import { useSupport } from '../../contexts/SupportContext';
 import { parseLocation } from '../../config/messaging';
 
 interface EventRow {
@@ -83,6 +87,9 @@ interface CampaignRow {
 
 function Events() {
   const theme = useTheme();
+  const navigate = useNavigate();
+  const { enterEvent } = useSupport();
+  const [enteringId, setEnteringId] = useState<string | null>(null);
 
   const [events, setEvents] = useState<EventRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -221,6 +228,25 @@ function Events() {
       // Silently handle
     } finally {
       setExpandLoading(false);
+    }
+  };
+
+  /**
+   * Step into a customer's event to help them. This opens a server-side support
+   * session (audited, one event at a time, self-expiring), points the event
+   * switcher at it and drops us on the owner's own dashboard - the support
+   * banner then makes it obvious whose event we are looking at.
+   */
+  const handleEnterEvent = async (event: EventRow) => {
+    setEnteringId(event.id);
+    setError(null);
+    try {
+      await enterEvent(event.id);
+      navigate('/overview');
+    } catch {
+      setError('לא הצלחנו להיכנס לאירוע. נסו שוב.');
+    } finally {
+      setEnteringId(null);
     }
   };
 
@@ -390,6 +416,20 @@ function Events() {
                       </TableCell>
                       <TableCell>
                         <Stack direction="row" spacing={0.5}>
+                          <Tooltip title="כניסה לאירוע כתמיכה - רואים בדיוק מה שבעל האירוע רואה">
+                            <span>
+                              <IconButton
+                                size="small"
+                                color="primary"
+                                disabled={enteringId === event.id}
+                                onClick={() => handleEnterEvent(event)}
+                              >
+                                {enteringId === event.id
+                                  ? <CircularProgress size={16} />
+                                  : <LoginIcon fontSize="small" />}
+                              </IconButton>
+                            </span>
+                          </Tooltip>
                           <IconButton size="small" onClick={() => handleEdit(event)}>
                             <EditIcon fontSize="small" />
                           </IconButton>

@@ -1,0 +1,68 @@
+/* ShowUp design v6 globals. Values mirror src/design/tokens.ts. */
+
+::selection { background: #E4DAFA; color: #16150F; }
+
+/* Material Symbols Rounded, used for every UI icon in the v6 screens. */
+.ms {
+  font-family: 'Material Symbols Rounded';
+  font-weight: 300;
+  font-style: normal;
+  line-height: 1;
+  display: inline-block;
+  white-space: nowrap;
+  direction: ltr;
+  letter-spacing: normal;
+  text-transform: none;
+  word-wrap: normal;
+  -webkit-font-feature-settings: 'liga';
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+.num { font-variant-numeric: tabular-nums; }
+.ltr { direction: ltr; unicode-bidi: isolate; }
+
+.su-scope, .su-scope * { box-sizing: border-box; }
+.su-scope { font-family: Heebo, 'Noto Sans Hebrew', Arial, sans-serif; color: #16150F; -webkit-font-smoothing: antialiased; }
+.su-scope a { color: #5A3DA6; font-weight: 600; text-decoration: none; }
+.su-scope a:hover { color: #432C85; }
+.su-scope button, .su-scope input, .su-scope select, .su-scope textarea { font: inherit; color: inherit; }
+.su-scope input::placeholder, .su-scope textarea::placeholder { color: #8E887C; }
+.su-scope :focus-visible { outline: 3px solid #9D83E0; outline-offset: 2px; }
+
+@keyframes su-ken { from { transform: scale(1) translate3d(0,0,0); } to { transform: scale(1.07) translate3d(1.2%,-1%,0); } }
+@keyframes su-marq-rtl { from { transform: translateX(0); } to { transform: translateX(50%); } }
+@keyframes su-pulse { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
+@keyframes su-pop-in { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes su-tdot { 0%,60%,100% { opacity: .35; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
+@keyframes su-fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .su-scope *, .su-scope *::before, .su-scope *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
+
+/* Hover helpers (inline styles can't express :hover). */
+.su-hover-lav:hover { background: #BBA6EE !important; }
+.su-hover-ink:hover { border-color: #16150F !important; }
+.su-hover-purple:hover { border-color: #5A3DA6 !important; }
+.su-hover-soft:hover { background: #F1EEE7 !important; }
+.su-hover-row:hover { background: #FBFAF7 !important; }
+.su-hover-nav:hover { background: #F5F2EC !important; color: #16150F !important; }
+.su-hover-chip:hover { border-color: #5A3DA6 !important; color: #432C85 !important; background: #F6F2FD !important; }
+.su-hover-dim:hover { filter: brightness(.96); }
+.su-hover-white:hover { background: #F1ECFC !important; }
+.su-hover-ghost-white:hover { background: rgba(255,255,255,.12) !important; }
+.su-hover-green:hover { background: #F1FAF4 !important; }
+.su-hover-deep:hover { background: #432C85 !important; color: #FFFFFF !important; }
+.su-hover-underline:hover { text-decoration: underline; }
+.su-hover-danger:hover { border-color: #8E3418 !important; color: #8E3418 !important; }
+
+.su-input { transition: border-color .15s, box-shadow .15s, background .15s; }
+.su-input:focus { border-color: #5A3DA6 !important; background: #FFFFFF !important; outline: none; box-shadow: 0 0 0 3px rgba(157,131,224,.28); }
+
+.su-scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }

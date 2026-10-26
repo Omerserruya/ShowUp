@@ -16,18 +16,20 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import date
-from typing import Callable, Dict, List, Type
+from typing import Callable, Dict, List, Optional, Type
 
 from .config import PlannerConfig
-from .models import CampaignRequest, PlanResult
+from .models import CampaignRequest, PlanContext, PlanResult
 
 
 class PlannerStrategy(ABC):
     name: str = "base"
 
     @abstractmethod
-    def plan(self, requests: List[CampaignRequest], config: PlannerConfig, now: date) -> PlanResult:
-        """Produce a full platform delivery plan. Must respect capacity + windows."""
+    def plan(self, requests: List[CampaignRequest], config: PlannerConfig, now: date,
+             context: Optional[PlanContext] = None) -> PlanResult:
+        """Produce a full platform delivery plan. Must respect capacity (on top
+        of `context.prefill`), hard windows, and `context.closed_days`."""
         raise NotImplementedError
 
 

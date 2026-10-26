@@ -37,7 +37,7 @@ export function ImportedGuestsWidget({ onClick }: ImportedGuestsWidgetProps) {
         p: 2.5,
         mb: 2,
         borderRadius: 2,
-        backgroundColor: '#6f74e0',
+        backgroundColor: '#5A3DA6',
         boxShadow: 'none',
         border: 'none',
         textAlign: 'right',
@@ -47,7 +47,7 @@ export function ImportedGuestsWidget({ onClick }: ImportedGuestsWidgetProps) {
         justifyContent: 'space-between',
         gap: 2,
         '&:hover': {
-          backgroundColor: '#5f64d6',
+          backgroundColor: '#5A3DA6',
           boxShadow: 'none',
         },
       }}

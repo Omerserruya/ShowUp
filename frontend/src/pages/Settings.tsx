@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import { Box, Typography, Stack, ButtonBase, alpha, useTheme } from '@mui/material';
 import { useSearchParams } from 'react-router-dom';
-import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded';
 import Diversity3RoundedIcon from '@mui/icons-material/Diversity3Rounded';
 import CreditCardRoundedIcon from '@mui/icons-material/CreditCardRounded';
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded';
+import EventRoundedIcon from '@mui/icons-material/EventRounded';
+import QuizRoundedIcon from '@mui/icons-material/QuizRounded';
+import EventDetailsPanel from '../components/v6/EventDetailsPanel';
+import GuestQuestionsPanel from '../components/v6/GuestQuestionsPanel';
 import Profile from './Profile';
 import Team from './Team';
 import Billing from './Billing';
@@ -18,8 +21,10 @@ import { useEvent } from '../contexts/EventContext';
  * The sub-pages render in `embedded` mode. Deep-linkable via `?tab=`.
  */
 const TABS = [
+  { key: 'event', label: 'פרטי האירוע', desc: 'שם, תאריך, שעה ומקום', icon: <EventRoundedIcon /> },
   { key: 'profile', label: 'הפרופיל שלי', desc: 'פרטים אישיים והעדפות', icon: <PersonRoundedIcon /> },
   { key: 'team', label: 'הצוות', desc: 'שותפים והרשאות', icon: <Diversity3RoundedIcon /> },
+  { key: 'questions', label: 'שאלות לאורחים', desc: 'הסעה ושאלות אחרי אישור הגעה', icon: <QuizRoundedIcon /> },
   { key: 'media', label: 'תמונות האירוע', desc: 'תמונת וואטסאפ והזמנה', icon: <PhotoLibraryRoundedIcon /> },
   // "חבילה", never "מנוי" - the product promise is a one-time payment, no subscription.
   { key: 'billing', label: 'חבילה ותשלום', desc: 'החבילה והשימוש שלך', icon: <CreditCardRoundedIcon /> },
@@ -31,28 +36,17 @@ export default function Settings() {
   const { selectedEvent } = useEvent();
   const [params, setParams] = useSearchParams();
   const requested = params.get('tab');
-  const [tab, setTab] = useState<string>(TABS.some(t => t.key === requested) ? requested! : 'profile');
+  const [tab, setTab] = useState<string>(TABS.some(t => t.key === requested) ? requested! : 'event');
 
   const select = (key: string) => {
     setTab(key);
-    setParams(key === 'profile' ? {} : { tab: key }, { replace: true });
+    setParams(key === 'event' ? {} : { tab: key }, { replace: true });
   };
 
   const active = TABS.find(t => t.key === tab) ?? TABS[0];
 
   return (
-    <Box sx={{ maxWidth: 1040, mx: 'auto', px: { xs: 2, sm: 3 }, py: { xs: 2.5, sm: 4 }, direction: 'rtl' }}>
-      {/* Branded header */}
-      <Stack useFlexGap direction="row" spacing={1.75} alignItems="center" sx={{ mb: { xs: 2.5, sm: 3.5 } }}>
-        <Box sx={{ width: 46, height: 46, flexShrink: 0, borderRadius: 2.5, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: alpha(primary, 0.1), color: 'primary.main' }}>
-          <SettingsRoundedIcon />
-        </Box>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800, lineHeight: 1.1, letterSpacing: '-0.02em' }}>הגדרות</Typography>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>הפרופיל, הצוות והחבילה שלך - במקום אחד.</Typography>
-        </Box>
-      </Stack>
-
+    <Box sx={{ maxWidth: 1040, mx: 'auto', px: { xs: 0, sm: 1 }, py: { xs: 0.5, sm: 1 }, direction: 'rtl' }}>
       <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: { xs: 1.5, md: 3 }, alignItems: 'flex-start' }}>
         {/* Section nav */}
         <Box
@@ -105,8 +99,8 @@ export default function Settings() {
               '& .MuiButton-startIcon': { mx: 0 }, '& .MuiButton-endIcon': { mx: 0 },
             },
             '& .MuiButton-contained': {
-              boxShadow: 'none', bgcolor: 'primary.main',
-              '&:hover': { boxShadow: 'none', bgcolor: 'primary.dark' },
+              boxShadow: 'none', bgcolor: '#C9B8F3', color: '#16150F',
+              '&:hover': { boxShadow: 'none', bgcolor: '#BBA6EE' },
             },
             '& .MuiButton-outlined': {
               borderColor: alpha(primary, 0.5), color: 'primary.main',
@@ -115,8 +109,10 @@ export default function Settings() {
           }}
         >
           <Typography variant="h6" sx={{ fontWeight: 700, mb: 2, display: { xs: 'none', md: 'block' } }}>{active.label}</Typography>
+          {tab === 'event' && <EventDetailsPanel />}
           {tab === 'profile' && <Profile embedded />}
           {tab === 'team' && <Team embedded />}
+          {tab === 'questions' && <GuestQuestionsPanel />}
           {tab === 'media' && (selectedEvent?.id
             ? (<>
                 <Typography sx={{ color: 'text.secondary', fontSize: '0.875rem', mb: 2 }}>

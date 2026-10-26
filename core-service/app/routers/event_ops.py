@@ -42,6 +42,29 @@ def clone_event(event_id: uuid.UUID, payload: CloneEventIn, db: Session = Depend
     # become OWNER of the copy. Require owner-level authority over the source.
     require_event_permission(db, src, user_id, Action.EVENT_DELETE)
 
+    # Capacity: the clone lands on the free self-service plan, so copying the
+    # source's guest list must respect THAT plan's cap. Copying guests used to
+    # bypass check_capacity_limit entirely - a way to get a paid tier's guest list
+    # onto a free event. Checked BEFORE the event is created (no orphan clone).
+    if payload.include_guests:
+        from sqlalchemy import func
+        from app.plans_client import plan_count_limit
+        cap = plan_count_limit(DEFAULT_SELF_SERVICE_PLAN)  # None = unmetered
+        if cap is not None:
+            src_seats = int(
+                db.query(func.coalesce(func.sum(Guest.import_count), 0))  # same measure as check_capacity_limit
+                .filter(Guest.event_id == str(event_id))
+                .scalar() or 0
+            )
+            if src_seats > cap:
+                raise HTTPException(status_code=409, detail={
+                    "code": "over_capacity",
+                    "message": (f"לאירוע המקור {src_seats} מוזמנים, והחבילה של העותק מאפשרת עד {cap}. "
+                                "אפשר לשכפל בלי רשימת המוזמנים."),
+                    "guests": src_seats,
+                    "limit": cap,
+                })
+
     # A clone is a NEW event and must consume its own entitlement, exactly like
     # any other creation. It is a free SYSTEM grant on the starter plan - copying
     # the source's paid tier would hand out entitlement for free. The base event

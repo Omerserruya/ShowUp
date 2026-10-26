@@ -22,8 +22,8 @@ export const VIEW_MODE_META: Record<ViewMode, { label: string; short: string; ho
   venue: { label: 'ניהול האולם', short: 'אולם', home: '/venue', icon: <StorefrontRoundedIcon /> },
 };
 
-const BRAND = '#888cee';
-const DEEP = '#6f74e0';
+const BRAND = '#9D83E0';
+const DEEP = '#5A3DA6';
 
 export default function ViewModeSwitcher({
   modes, value, onChange, expanded,

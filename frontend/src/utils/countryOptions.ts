@@ -107,3 +107,20 @@ export const countryOptions: CountryOption[] = [
   { code: 'MX', name: 'Mexico', dialCode: '+52', flag: '🇲🇽' },
 ];
 
+
+/**
+ * Account phones (owner sign-up / login / checkout identity) are Israeli-only
+ * for now. Every account screen sends ACCOUNT_COUNTRY_CODE automatically - to
+ * support more countries later, change it here (and ACCOUNT_PHONE_PREFIXES on
+ * aub-service) and bring back a country picker.
+ */
+export const ACCOUNT_COUNTRY_CODE = '+972';
+
+/** Local input ("050-1234567" / "501234567") → E.164 ("+972501234567"). */
+export const toAccountPhone = (local: string): string =>
+  normalizePhoneNumber(local.replace(/\D/g, ''), ACCOUNT_COUNTRY_CODE);
+
+/** Israeli mobile: 05XXXXXXXX (leading 0 optional). */
+export const isValidAccountPhone = (local: string): boolean => /^0?5\d{8}$/.test(local.replace(/\D/g, ''));
+
+export const ACCOUNT_PHONE_ERROR = 'צריך מספר נייד ישראלי, למשל 050-1234567';

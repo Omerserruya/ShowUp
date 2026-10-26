@@ -7,12 +7,18 @@ import { AccountProvider } from './contexts/AccountContext';
 import ThemeProvider from './theme/ThemeProvider';
 import Layout from './components/Layout';
 import InactiveEventBanner from './components/InactiveEventBanner';
+import SupportBanner from './components/SupportBanner';
 import { BannerProvider } from './contexts/BannerContext';
+import { SupportProvider } from './contexts/SupportContext';
 import Overview from './pages/Overview';
+import Insights from './pages/Insights';
 import Guests from './pages/Guests';
 import Messages from './pages/Messages';
 import Recap from './pages/Recap';
 import Seating from './pages/Seating';
+import SeatingList from './pages/SeatingList';
+import useViewportWidth from './design/useViewport';
+
 import Settings from './pages/Settings';
 import { ImportedGuestsReviewScreen } from './components/ImportedGuestsReviewScreen';
 import Login from './pages/Login';
@@ -41,9 +47,16 @@ import AdminFeatureFlags from './pages/admin/FeatureFlags';
 import AdminMonitoring from './pages/admin/Monitoring';
 import AdminOperations from './pages/admin/Operations';
 import AdminAuditLog from './pages/admin/AuditLog';
+import AdminConversationFlows from './pages/admin/ConversationFlows';
 import VenueRoute from './components/VenueRoute';
 import VenueDashboard from './pages/venue/VenueDashboard';
 import VenueSettings from './pages/venue/VenueSettings';
+
+/** Phones get the list-with-fill-bars seating (Mobile Flows 05); desktop keeps the hall map. */
+function SeatingRoute() {
+  const w = useViewportWidth();
+  return w < 700 ? <SeatingList /> : <Seating />;
+}
 
 function App() {
   useEffect(() => {
@@ -109,23 +122,27 @@ function App() {
             <UserProvider>
               <AccountProvider>
                 <EventProvider>
-                  <BannerProvider>
-                    {/* Inactive Event Banner - Full width, above everything (fixed position) */}
-                    <InactiveEventBanner />
-                    <Layout />
-                  </BannerProvider>
+                  <SupportProvider>
+                    <BannerProvider>
+                      {/* Inactive Event Banner - Full width, above everything (fixed position) */}
+                      <InactiveEventBanner />
+                      <SupportBanner />
+                      <Layout />
+                    </BannerProvider>
+                  </SupportProvider>
                 </EventProvider>
               </AccountProvider>
             </UserProvider>
           } 
         >
           <Route path="/overview" element={<Overview />} />
+          <Route path="/insights" element={<Insights />} />
           <Route path="/invitation" element={<Invitation />} />
           <Route path="/guests" element={<Guests />} />
           <Route path="/guests/imported" element={<ImportedGuestsReviewScreen />} />
           <Route path="/messages" element={<Messages />} />
           <Route path="/recap" element={<Recap />} />
-          <Route path="/seating" element={<Seating />} />
+          <Route path="/seating" element={<SeatingRoute />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/venue" element={<VenueRoute><VenueDashboard /></VenueRoute>} />
           <Route path="/venue/settings" element={<VenueRoute><VenueSettings /></VenueRoute>} />
@@ -145,6 +162,7 @@ function App() {
           <Route path="/admin/monitoring" element={<AdminRoute><AdminMonitoring /></AdminRoute>} />
           <Route path="/admin/operations" element={<AdminRoute><AdminOperations /></AdminRoute>} />
           <Route path="/admin/audit-log" element={<AdminRoute><AdminAuditLog /></AdminRoute>} />
+          <Route path="/admin/flows" element={<AdminRoute><AdminConversationFlows /></AdminRoute>} />
         </Route>
         </Routes>
     </ThemeProvider>

@@ -6,9 +6,9 @@ messages (recipients). Everything here is provider/channel-agnostic.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 
 class CampaignType(str, Enum):
@@ -28,20 +28,46 @@ class DeliveryWindow:
 
     earliest <= target <= latest are all real calendar dates already resolved
     against "now" (never in the past) - the engine treats them as hard bounds.
+
+    `deadline` (>= latest) is the last day volume that did not fit inside the
+    preferred window may be CARRIED FORWARD to (e.g. event_date - 1 for an
+    invitation). None = no carry-forward (deadline == latest). A window whose
+    earliest is after its deadline is empty: nothing can be placed.
     """
     earliest: date
     target: date
     latest: date
+    deadline: Optional[date] = None
+
+    @property
+    def hard_latest(self) -> date:
+        return self.deadline if self.deadline is not None else self.latest
+
+    @property
+    def is_empty(self) -> bool:
+        return self.earliest > self.hard_latest
 
     def clamp(self) -> "DeliveryWindow":
-        e, t, l = self.earliest, self.target, self.latest
+        e, t, l, d = self.earliest, self.target, self.latest, self.deadline
+        hard = d if d is not None else l
         if l < e:
-            l = e
-        t = min(max(t, e), l)
-        return DeliveryWindow(e, t, l)
+            # Preferred window already over: fall back to the carry-forward
+            # range when one exists, never past the deadline.
+            l = e if (d is None or e <= hard) else hard
+        if d is not None and l > d:
+            l = d
+        t = min(max(t, e), l) if e <= l else t
+        if d is not None and d < l:
+            d = l
+        return DeliveryWindow(e, t, l, d)
 
     def contains(self, day: date) -> bool:
+        """Inside the preferred (type-flexibility) window."""
         return self.earliest <= day <= self.latest
+
+    def allows(self, day: date) -> bool:
+        """Inside the hard bounds (preferred window + carry-forward)."""
+        return self.earliest <= day <= self.hard_latest
 
 
 @dataclass(frozen=True)
@@ -61,6 +87,25 @@ class CampaignRequest:
     plan: str = ""
     # Free-form label kept for monitoring/debugging (original campaign name).
     label: str = ""
+    # Tie-breaks inside one priority: sooner event first, then the campaign
+    # created first (previously the random UUID decided).
+    event_date: Optional[date] = None
+    created_at: Optional[datetime] = None
+
+
+@dataclass
+class PlanContext:
+    """Facts about the world the strategy must respect besides the requests.
+
+    prefill:     per (channel, day) volume ALREADY used/committed (released
+                 today, sent in the rolling 24h, in-flight). The planner packs on
+                 top of it - without this every replan started each day at 0 and
+                 re-filled capacity that had already been spent.
+    closed_days: days nothing can be released on (send window closed for the
+                 whole day, or today after the window's last close).
+    """
+    prefill: Dict[str, Dict[date, int]] = field(default_factory=dict)
+    closed_days: Set[date] = field(default_factory=set)
 
 
 @dataclass
@@ -108,10 +153,24 @@ class PlanResult:
     capacity: Dict[str, int] = field(default_factory=dict)
     reserved: Dict[str, int] = field(default_factory=dict)
     strategy: str = ""
+    # per (channel, date) -> volume that was already used before this plan
+    # (included in day_load; NOT part of any allocation).
+    prefill: Dict[str, Dict[date, int]] = field(default_factory=dict)
 
     # ---- derived monitoring metrics ----------------------------------------
     def total_planned(self) -> int:
-        return sum(sum(days.values()) for days in self.day_load.values())
+        """Volume placed by THIS plan (excludes prefill)."""
+        return sum(a.placed for a in self.allocations)
+
+    def planned_load(self, channel: str) -> Dict[date, int]:
+        """Per-day volume placed by this plan only (day_load minus prefill)."""
+        out: Dict[date, int] = {}
+        for a in self.allocations:
+            if a.channel != channel:
+                continue
+            for d, v in a.by_day.items():
+                out[d] = out.get(d, 0) + v
+        return out
 
     def total_moved(self) -> int:
         return sum(a.moved for a in self.allocations)

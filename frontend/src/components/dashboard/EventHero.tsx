@@ -4,8 +4,8 @@ import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import EventStatusBadge from '../EventStatusBadge';
 import { useCountUp } from './useCountUp';
 
-const BRAND = '#888cee';
-const DEEP = '#6f74e0';
+const BRAND = '#9D83E0';
+const DEEP = '#5A3DA6';
 
 const HE_MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
 const STAGES = ['יצאו הזמנות', 'אוספים אישורים', 'הכול מוכן'];
@@ -135,7 +135,7 @@ export default function EventHero({
       {/* countdown + lifecycle marker - the hero's left side */}
       <Box sx={{ textAlign: 'center', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: { xs: 1.5, sm: 2 } }}>
         {typeof daysUntil === 'number' && daysUntil < 0 && (
-          <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.5rem', sm: '1.9rem' }, letterSpacing: '-0.02em', color: DEEP }}>היה בלתי נשכח 💜</Typography>
+          <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.5rem', sm: '1.9rem' }, letterSpacing: '-0.02em', color: DEEP }}>היה בלתי נשכח</Typography>
         )}
         {showCountdown && (daysUntil === 0 ? (
           <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.8rem', sm: '2.3rem' }, letterSpacing: '-0.02em', color: DEEP }}>היום הגדול! 🎉</Typography>

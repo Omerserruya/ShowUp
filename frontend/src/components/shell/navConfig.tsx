@@ -46,8 +46,7 @@ export const mobileNav: NavItem[] = [
  * a duplicate heading.
  */
 export const pageMeta: Record<string, { title: string; subtitle?: string }> = {
-  // '/guests' renders its title inside the summary band (GuestsSummary), not here.
-  '/messages': { title: 'תזכורות והודעות', subtitle: 'אנחנו נדאג שכולם יידעו ויגיעו' },
+  // '/guests' and '/messages' render their own masthead (title + actions inline).
   '/seating': { title: 'סידור מושבים', subtitle: 'מי יושב ליד מי' },
   '/admin/users': { title: 'ניהול משתמשים' },
   '/admin/events': { title: 'ניהול אירועים' },

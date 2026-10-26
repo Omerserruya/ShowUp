@@ -3,6 +3,7 @@
 Decoupled from templates: a campaign carries its own audience, and this module
 turns that into the guest list. Mirrors core-service/app/audience.py but in raw
 SQL (this worker uses psycopg2). Status values come from the shared SSOT.
+Custom filter keys (must match core exactly): status, group, tag_id, table.
 """
 from __future__ import annotations
 
@@ -42,6 +43,14 @@ def select_guests_by_audience(conn, event_id: str, audience, audience_filter: Op
             join = "JOIN guest_tags gt ON gt.guest_id = g.id"
             where.append("gt.tag_id = %s")
             params.append(f["tag_id"])
+        # Seating filter - same semantics as core-service/app/audience.py:
+        # 'none' -> no table assigned, 'any' -> has a table. Any other value is
+        # ignored by BOTH resolvers (a key only one side knows widens the send).
+        table = f.get("table")
+        if table == "none":
+            where.append("g.table_number IS NULL")
+        elif table == "any":
+            where.append("g.table_number IS NOT NULL")
     # 'everyone' (and unknown) -> no status filter
 
     if status_values:

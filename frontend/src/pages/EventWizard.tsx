@@ -2,7 +2,6 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
   Box,
   Button,
-  Container,
   FormControlLabel,
   Switch,
   TextField,
@@ -11,7 +10,6 @@ import {
   Paper,
   Divider,
   MenuItem,
-  IconButton,
   InputAdornment,
   Alert,
   Checkbox,
@@ -25,7 +23,6 @@ import {
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { saveOrderToken, orderAuthHeaders } from '../utils/orderToken';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import CheckIcon from '@mui/icons-material/Check';
 import InventoryIcon from '@mui/icons-material/Inventory';
 import EventIcon from '@mui/icons-material/Event';
 import ScheduleIcon from '@mui/icons-material/Schedule';
@@ -47,9 +44,10 @@ import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import { useTheme } from '@mui/material/styles';
 import { plans, PlanTier } from '../config/plans';
+import { color as DC } from '../design/tokens';
+import { featureFlags } from '../config/featureFlags';
 import PriceTag from '../components/PriceTag';
 import PriceSummary from '../components/PriceSummary';
-import { fireConfetti } from '../utils/confetti';
 import { CampaignSchedule } from '../config/campaigns';
 import { buildAdaptiveTimeline } from '../config/scheduling';
 import { israelTimeToISOUTC } from '../utils/israelTime';
@@ -68,13 +66,12 @@ import {
 } from '../config/messaging';
 import CustomMessageEditor from '../components/CustomMessageEditor';
 import { useUser } from '../contexts/UserContext';
-import { countryOptions, normalizePhoneNumber } from '../utils/countryOptions';
+import { countryOptions, toAccountPhone, isValidAccountPhone, ACCOUNT_PHONE_ERROR } from '../utils/countryOptions';
 import PersonIcon from '@mui/icons-material/Person';
 import EmailIcon from '@mui/icons-material/Email';
 import PhoneIcon from '@mui/icons-material/Phone';
 import { usePlacesAutocomplete } from '../hooks/usePlacesAutocomplete';
 import { saveWizardDraft, loadWizardDraft, clearWizardDraft, draftHasProgress, WizardDraft } from '../utils/wizardDraft';
-import RestoreRoundedIcon from '@mui/icons-material/RestoreRounded';
 
 /** The minimal shape the WhatsApp preview bubble needs - a catalog template or a
  * custom message both satisfy it, so preview and delivery share one definition. */
@@ -233,6 +230,18 @@ const WhatsAppBubble = ({ template, variables }: { template: { title?: string; b
   );
 };
 
+// Material Symbols per event type (design v6 - no emoji in the UI).
+const EVENT_TYPE_ICON: Record<string, string> = {
+  wedding: 'favorite',
+  bar: 'menu_book',
+  bat: 'auto_awesome',
+  brit: 'child_care',
+  brita: 'child_friendly',
+  birthday: 'cake',
+  corporate: 'apartment',
+  other: 'celebration',
+};
+
 const steps = [
   { label: 'חבילה', icon: InventoryIcon },
   { label: 'האירוע', icon: EventIcon },
@@ -252,18 +261,6 @@ const EVENT_TYPE_SUBTITLES: Record<string, string> = {
   bat: 'הודעות ותזכורות שמותאמות למשפחה',
   corporate: 'ניהול אישורי הגעה מקצועי לאירועים עסקיים',
   birthday: 'דרך פשוטה לנהל את רשימת המוזמנים',
-};
-
-// A warm, celebratory opener per event type - used across the wizard so a wedding
-// feels different from a brit, and a brit from a business event.
-const EVENT_CONGRATS: Record<string, string> = {
-  wedding: 'מזל טוב! 💍',
-  brit: 'בשעה טובה ומוצלחת! 👶',
-  brita: 'בשעה טובה ומוצלחת! 🍼',
-  bar: 'מזל טוב! 🎉',
-  bat: 'מזל טוב! 🎀',
-  corporate: 'בהצלחה עם האירוע! 🥂',
-  birthday: 'יום הולדת שמח! 🎂',
 };
 
 // The invitation campaign - the first message guests receive. We weave the
@@ -374,6 +371,12 @@ export default function EventWizard() {
   // If package is selected, skip package selection step
   const [activeStep, setActiveStep] = useState(packageFromQuery ? 1 : 0);
   const [selectedPackageId, setSelectedPackageId] = useState<string>(packageFromQuery || '');
+  // Rough guest count chip on the package step (0: ≤50, 1: ≤250, 2: more) - only
+  // drives the "מומלצת לכם" badge; the plan itself is what gets ordered.
+  const [guestSize, setGuestSize] = useState<number>(() => {
+    const i = ['basic', 'plus', 'pro'].indexOf(packageFromQuery || '');
+    return i >= 0 ? i : 1;
+  });
   
   // Parse full name from query
   const nameParts = fullNameFromQuery ? fullNameFromQuery.split(' ').filter(Boolean) : [];
@@ -870,13 +873,8 @@ export default function EventWizard() {
     const cleanedLocalPhone = paymentData.phone.replace(/\s/g, '');
     if (!cleanedLocalPhone) {
       errors.phone = 'מספר טלפון הוא שדה חובה';
-    } else if (!/^\d{7,15}$/.test(cleanedLocalPhone)) {
-      errors.phone = 'מספר הטלפון אינו תקין';
-    } else {
-      const normalized = normalizePhoneNumber(cleanedLocalPhone, paymentData.countryCode);
-      if (!/^\+\d{8,15}$/.test(normalized)) {
-        errors.phone = 'מספר הטלפון חייב להיות בפורמט בינלאומי (כולל קידומת)';
-      }
+    } else if (!isValidAccountPhone(cleanedLocalPhone)) {
+      errors.phone = ACCOUNT_PHONE_ERROR;
     }
     // Email is optional, but if provided, must be valid
     if (paymentData.email.trim() && !/^\S+@\S+\.\S+$/.test(paymentData.email.trim())) {
@@ -987,7 +985,7 @@ export default function EventWizard() {
 
       // 2) Enrich order with buyer identity (pre-payment)
       if (currentOrderId) {
-        const normalizedPhone = normalizePhoneNumber(paymentData.phone, paymentData.countryCode);
+        const normalizedPhone = toAccountPhone(paymentData.phone);
         const identityRes = await fetch(`/api/orders/${currentOrderId}/identity`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', ...orderAuthHeaders(currentOrderId) },
@@ -1008,7 +1006,7 @@ export default function EventWizard() {
       //    already authenticated. An already-logged-in user whose account phone
       //    matches the buyer phone is verified by definition - no OTP round-trip,
       //    straight to payment. If the phone differs, verify it as usual.
-      const buyerPhone = normalizePhoneNumber(paymentData.phone, paymentData.countryCode);
+      const buyerPhone = toAccountPhone(paymentData.phone);
       const loggedInPhone = (user?.phone || '').replace(/\s+/g, '');
       if (user && loggedInPhone && loggedInPhone === buyerPhone) {
         localStorage.setItem('user_first_name', paymentData.firstName);
@@ -1093,7 +1091,7 @@ export default function EventWizard() {
   const getStepInfo = (step: number): string => {
     switch (step) {
       case 0:
-        return 'כל חבילה כוללת את כל מה שצריך כדי שהאורחים יידעו, יאשרו ויגיעו. בחרו לפי כמות האורחים.';
+        return '';
       case 1:
         return '';
       case 2:
@@ -1101,11 +1099,9 @@ export default function EventWizard() {
       case 3:
         return '';
       case 4:
-        return 'רגע לפני שמתחילים - הנה הכול במקום אחד. תמיד אפשר לחזור ולערוך.';
+        return '';
       case 5:
-        return user
-          ? 'עוד פרט אחרון ואתם מסודרים - נשמור את הכול בבטחה.'
-          : 'נשאיר לכם את האירוע מוכן ומחכה - רק נסיים את הפרטים והכול יוצא לדרך.';
+        return '';
       default:
         return '';
     }
@@ -1180,144 +1176,105 @@ export default function EventWizard() {
     </Box>
   );
 
+  // Design v6 package step: rough guest count → recommended plan, then plan
+  // cards with a radio. Plans/prices/caps come from config/plans (= aub plans.json).
+  const sizeOptions: { label: string; plan: PlanTier['id'] }[] = [
+    { label: 'עד 50', plan: 'basic' },
+    { label: 'עד 250', plan: 'plus' },
+    { label: 'יותר מ־250', plan: 'pro' },
+  ];
   const renderPackageStep = () => {
-
+    const recommended = sizeOptions[guestSize]?.plan;
     return (
-      <Box>
-        <Typography variant="h6" sx={{ mb: 2, fontWeight: 800 }}>
-          כמה אורחים אתם מזמינים?
-        </Typography>
-        {renderInfoBox()}
-        <Box
-          sx={{
-            display: { xs: 'flex', sm: 'grid' },
-            gridTemplateColumns: { sm: 'repeat(3, 1fr)' },
-            gap: 2,
-            direction: 'rtl',
-            overflowX: { xs: 'auto', sm: 'visible' },
-            overflowY: 'hidden',
-            scrollBehavior: 'smooth',
-            scrollSnapType: { xs: 'x mandatory', sm: 'none' },
-            py: { xs: 2, sm: 4, md: 4 },
-            px: { xs: 1.5, md: 3 },
-            mx: { xs: -2, sm: 0 },
-            '&::-webkit-scrollbar': {
-              display: 'none',
-            },
-            scrollbarWidth: 'none',
-          }}
-        >
-          {plans.map((plan: PlanTier) => {
-          const selected = selectedPackageId === plan.id;
-          return (
-            <Paper
-              key={plan.id}
-              variant="outlined"
-              onClick={() => setSelectedPackageId(plan.id)}
-              aria-pressed={selected}
-              {...pressableCardProps(() => setSelectedPackageId(plan.id))}
-              sx={{
-                ...focusRingSx,
-                p: plan.isPopular ? 3 : 2.5,
-                borderRadius: 3,
-                cursor: 'pointer',
-                borderWidth: selected ? 2 : 1,
-                borderColor: selected ? plan.color : theme.palette.divider,
-                boxShadow: selected
-                  ? `0 0 0 2px ${alpha(plan.color, 0.25)}, 0 14px 34px ${alpha(theme.palette.common.black, 0.14)}`
-                  : `0 10px 30px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.24 : 0.08)}`,
-                transition: 'transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, border-width 0.22s ease',
-                position: 'relative',
-                overflow: 'hidden',
-                bgcolor: 'background.paper',
-                transform: plan.isPopular ? 'scale(1.03)' : 'scale(1)',
-                minWidth: { xs: '85%', sm: 'auto' },
-                width: { xs: '85%', sm: 'auto' },
-                flexShrink: { xs: 0, sm: 1 },
-                scrollSnapAlign: { xs: 'center', sm: 'none' },
-                '&::before': plan.isPopular
-                  ? {
-                      content: '""',
-                      position: 'absolute',
-                      inset: 0,
-                      background: `linear-gradient(135deg, ${alpha(plan.color, 0.08)}, transparent 60%)`,
-                      pointerEvents: 'none',
-                    }
-                  : {},
-                '&:hover': {
-                  transform: plan.isPopular ? 'scale(1.05) translateY(-4px)' : 'translateY(-4px)',
-                  borderColor: plan.color,
-                  boxShadow: selected
-                    ? `0 0 0 2px ${alpha(plan.color, 0.25)}, 0 18px 45px ${alpha(plan.color, 0.16)}`
-                    : `0 18px 45px ${alpha(theme.palette.common.black, 0.12)}`,
-                },
-              }}
-            >
-              {plan.isPopular && (
-                <Chip
-                  label="הכי פופולרי"
-                  color="primary"
-                  size="small"
-                  sx={{ position: 'absolute', top: 12, left: 12, fontWeight: 700 }}
-                />
-              )}
-              <Typography variant="h5" fontWeight={800} sx={{ textAlign: 'right', direction: 'rtl' }}>
-                {plan.title}
-              </Typography>
-              <Typography variant="subtitle1" color="text.secondary" sx={{ textAlign: 'right', direction: 'rtl' }}>
-                {plan.subtitle}
-              </Typography>
-              <Box sx={{ mt: 1 }}>
-                <PriceTag price={plan.price} size="md" align="right" color={plan.color} />
-              </Box>
-              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'right', mb: 1, direction: 'rtl' }}>
-                {plan.description}
-              </Typography>
-              <Box sx={{ mt: 1.5, display: 'grid', gap: 0.6, direction: 'rtl' }}>
-                {plan.features.slice(0, 4).map((f) => (
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3.5, direction: 'rtl' }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+          <Typography sx={{ fontSize: 15, fontWeight: 600 }}>כמה אורחים אתם מזמינים, בערך?</Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px 16px' }}>
+            <Box role="radiogroup" aria-label="כמות אורחים" sx={{ display: 'inline-flex', flexWrap: 'wrap', gap: '4px', p: '4px', border: `1px solid ${DC.fieldSignup}`, borderRadius: '12px', bgcolor: '#fff' }}>
+              {sizeOptions.map((z, i) => {
+                const on = i === guestSize;
+                return (
                   <Box
-                    key={f}
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 0.75,
-                      justifyContent: 'flex-end',
-                      flexDirection: 'row-reverse',
-                      direction: 'rtl',
-                    }}
+                    component="button"
+                    type="button"
+                    key={z.label}
+                    role="radio"
+                    aria-checked={on}
+                    onClick={() => { setGuestSize(i); setSelectedPackageId(z.plan); }}
+                    sx={{ height: 40, px: 2, border: 'none', borderRadius: '9px', cursor: 'pointer', fontSize: 14.5, fontWeight: on ? 600 : 500, whiteSpace: 'nowrap', fontFamily: 'inherit', bgcolor: on ? DC.tint : 'transparent', color: on ? DC.purpleDark : DC.body, boxShadow: on ? `inset 0 0 0 1px ${DC.tintBorder}` : 'none' }}
                   >
-                    <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'right' }}>
-                      {f}
-                    </Typography>
-                    <CheckCircleIcon fontSize="small" sx={{ color: theme.palette.success.main }} />
+                    {z.label}
                   </Box>
-                ))}
+                );
+              })}
+            </Box>
+            <Typography sx={{ fontSize: 13.5, color: DC.muted }}>לא צריך מספר מדויק</Typography>
+          </Box>
+        </Box>
+
+        <Box role="radiogroup" aria-label="חבילה" sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,230px),1fr))', gap: '14px', alignItems: 'stretch' }}>
+          {plans.map((plan: PlanTier) => {
+            const on = selectedPackageId === plan.id;
+            const rec = plan.id === recommended;
+            return (
+              <Box
+                component="button"
+                type="button"
+                key={plan.id}
+                role="radio"
+                aria-checked={on}
+                onClick={() => setSelectedPackageId(plan.id)}
+                sx={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', textAlign: 'right', p: '22px', borderRadius: '16px', cursor: 'pointer', bgcolor: '#fff', fontFamily: 'inherit', color: DC.ink, border: `1px solid ${on ? DC.purple : DC.line}`, boxShadow: on ? `0 0 0 1px ${DC.purple}, 0 14px 34px rgba(90,61,166,.10)` : '0 1px 2px rgba(22,21,15,.04)', '&:hover': { borderColor: DC.purple } }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
+                  <Typography dir="ltr" sx={{ fontSize: 18, fontWeight: 600, letterSpacing: '-0.02em' }}>{plan.title}</Typography>
+                  {rec && <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', height: 22, px: 1, borderRadius: '6px', fontSize: 12.5, fontWeight: 600, color: DC.purpleDark, bgcolor: DC.tint, border: `1px solid ${DC.tintBorder}`, whiteSpace: 'nowrap' }}>מומלצת לכם</Box>}
+                  <Box sx={{ flex: 1 }} />
+                  <Box component="span" sx={{ width: 20, height: 20, borderRadius: '50%', flex: 'none', border: on ? `6px solid ${DC.purple}` : `1.5px solid ${DC.fieldSignup}`, bgcolor: '#fff' }} />
+                </Box>
+                <Typography sx={{ fontSize: 14, lineHeight: 1.5, color: DC.body, mt: 0.5 }}>{plan.subtitle}</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mt: 1.75 }}>
+                  <Typography className="num" sx={{ fontSize: 34, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1 }}>{plan.price}</Typography>
+                  <Typography sx={{ fontSize: 13.5, color: DC.muted }}>לאירוע, כולל מע״מ</Typography>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: '7px', mt: 1.5, fontSize: 14, fontWeight: 500 }}>
+                  <span className="ms" style={{ fontSize: 19, color: DC.muted }}>group</span>{plan.description}
+                </Box>
+                <Box sx={{ height: '1px', bgcolor: '#EFEBE4', width: '100%', my: '15px' }} />
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: '9px', width: '100%' }}>
+                  {plan.features.map((f) => (
+                    <Box key={f} sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', fontSize: 14, lineHeight: 1.45 }}>
+                      <span className="ms" style={{ fontSize: 18, color: DC.purple }}>check</span><span>{f}</span>
+                    </Box>
+                  ))}
+                </Box>
               </Box>
-              {selected && (
-                <Chip
-                  label="נבחר"
-                  size="small"
-                  sx={{
-                    mt: 1.5,
-                    alignSelf: 'flex-end',
-                    bgcolor: plan.color,
-                    color: theme.palette.common.white,
-                    fontWeight: 700,
-                  }}
-                />
-              )}
-            </Paper>
-          );
-        })}
+            );
+          })}
+        </Box>
+
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, p: '18px 20px', border: `1px solid ${DC.line}`, borderRadius: '14px', bgcolor: '#FBF9F5' }}>
+          <Typography sx={{ fontSize: 14.5, fontWeight: 600 }}>בכל החבילות</Typography>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,220px),1fr))', gap: '10px 24px' }}>
+            {[
+              ['event_note', 'לוח שליחה מוכן לפי התאריך, ואפשר לשנות כל הודעה'],
+              ['table_view', 'ייבוא וייצוא של הרשימה לאקסל'],
+              ['forward_to_inbox', 'הוספת אורחים גם מוואטסאפ'],
+              ['support_agent', 'עוזר בוואטסאפ שעונה על שאלות על האירוע'],
+            ].map(([i, t]) => (
+              <Box key={t} sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', fontSize: 14, lineHeight: 1.45, color: DC.body }}>
+                <span className="ms" style={{ fontSize: 19, color: DC.purple }}>{i}</span>{t}
+              </Box>
+            ))}
+          </Box>
+        </Box>
       </Box>
-    </Box>
     );
   };
 
   const renderEventStep = () => {
     const t = eventDetails.type;
     const typeSelected = !!t;
-    const typeMeta = eventTypeCards.find((e) => e.id === t);
 
     // Pick an event type: set the type and (re)generate the suggested name + inviter.
     // Re-clicking the already-selected type is a no-op - it must not clobber a
@@ -1326,10 +1283,6 @@ export default function EventWizard() {
       if (typeId === eventDetails.type) return;
       const { name, inviterName } = deriveEventFromSubjects(typeId, subjects);
       setNameManuallyEdited(false);
-      // A small, subtle celebration when a type is chosen.
-      if (typeId) {
-        fireConfetti(1400);
-      }
       setEventDetails((ed) => ({
         ...ed,
         type: typeId,
@@ -1525,60 +1478,34 @@ export default function EventWizard() {
 
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, direction: 'rtl' }}>
-        <Box sx={{ textAlign: 'right' }}>
-          <Typography variant="h6" sx={{ fontWeight: 700 }}>איזה אירוע אתם חוגגים?</Typography>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            בחרו את סוג האירוע ונתפור לכם חוויה שמתאימה בדיוק לו.
-          </Typography>
-        </Box>
-
-        {/* Event-type cards */}
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)' }, gap: 1.5 }}>
-          {eventTypeCards.map((et) => {
-            const selected = t === et.id;
-            return (
-              <Paper
-                key={et.id}
-                variant="outlined"
-                onClick={() => selectEventType(et.id)}
-                aria-pressed={selected}
-                {...pressableCardProps(() => selectEventType(et.id))}
-                sx={{
-                  ...focusRingSx,
-                  cursor: 'pointer',
-                  p: 2,
-                  borderRadius: 3,
-                  textAlign: 'center',
-                  borderWidth: selected ? 2 : 1,
-                  borderColor: selected ? 'primary.main' : 'divider',
-                  bgcolor: selected ? alpha(theme.palette.primary.main, 0.06) : 'background.paper',
-                  boxShadow: selected ? 6 : 0,
-                  transform: selected ? 'translateY(-3px)' : 'none',
-                  transition: 'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease',
-                  '&:hover': { borderColor: 'primary.main', transform: 'translateY(-3px)', boxShadow: 4 },
-                }}
-              >
-                <Typography component="div" sx={{ fontSize: 34, lineHeight: 1 }}>{et.emoji}</Typography>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, mt: 1 }}>{et.title}</Typography>
-                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5, lineHeight: 1.4 }}>
-                  {et.subtitle}
-                </Typography>
-              </Paper>
-            );
-          })}
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '16px 36px' }}>
+          <Box sx={{ flex: '1 1 200px', maxWidth: 250 }}>
+            <Typography component="h3" sx={{ fontSize: 16.5, fontWeight: 600 }}>מה חוגגים</Typography>
+            <Typography sx={{ fontSize: 14, lineHeight: 1.55, color: DC.muted, mt: 0.5 }}>לפי זה נתאים את נוסח ההזמנה ואת לוח השליחה</Typography>
+          </Box>
+          <Box role="radiogroup" aria-label="סוג האירוע" sx={{ flex: '3 1 380px', minWidth: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(102px,1fr))', gap: 1 }}>
+            {eventTypeCards.map((et) => {
+              const on = t === et.id;
+              return (
+                <Box
+                  component="button"
+                  type="button"
+                  key={et.id}
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => selectEventType(et.id)}
+                  sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, height: 88, px: 0.75, borderRadius: '12px', cursor: 'pointer', fontSize: 14, fontWeight: on ? 600 : 500, textAlign: 'center', fontFamily: 'inherit', border: `1px solid ${on ? DC.purple : DC.line}`, bgcolor: on ? DC.tint : '#fff', color: on ? DC.purpleDark : DC.ink, boxShadow: on ? `0 0 0 1px ${DC.purple}` : 'none', '&:hover': { borderColor: DC.purple } }}
+                >
+                  <span className="ms" style={{ fontSize: 24, color: on ? DC.purple : DC.body }}>{EVENT_TYPE_ICON[et.id] || 'celebration'}</span>
+                  <span>{et.title}</span>
+                </Box>
+              );
+            })}
+          </Box>
         </Box>
 
         {typeSelected && (
           <>
-            <Alert
-              icon={<AutoAwesomeIcon fontSize="inherit" />}
-              severity="success"
-              sx={{ borderRadius: 2, '& .MuiAlert-message': { direction: 'rtl', textAlign: 'right' } }}
-            >
-              <Typography variant="body2" sx={{ fontWeight: 700 }}>{EVENT_CONGRATS[t] || 'בחירה מצוינת! ✨'}</Typography>
-              כבר הכנו עבורכם את כל מהלך התקשורת ל{eventTypeLabel(catalog, t) || typeMeta?.title} - מההזמנה ועד התודה שאחרי. נשארו רק כמה פרטים שרק אתם יודעים.
-            </Alert>
-
             {renderContextualFields()}
 
             {/* Auto-generated event name (editable) */}
@@ -1766,6 +1693,43 @@ export default function EventWizard() {
     );
   };
 
+  // Copy only: "when does the invitation go out" line for the schedule + review
+  // steps. Reads the resolved invitation campaign (or the first enabled round);
+  // never changes the schedule.
+  const inviteSendInfo = (): { label: string; soon: boolean } | null => {
+    const enabled = campaigns.filter((c) => c.enabled);
+    const inv = enabled.find((c) => c.stage === 'invitation')
+      || [...enabled].sort((a, b) => b.offsetDays - a.offsetDays)[0];
+    if (!inv) return null;
+    let at: Date | null = null;
+    if (inv.scheduledAt) at = new Date(inv.scheduledAt);
+    else if (eventDetails.date) {
+      at = new Date(israelTimeToISOUTC(eventDetails.date.subtract(inv.offsetDays || 0, 'day'), inv.time || '12:00'));
+    }
+    if (!at || isNaN(at.getTime())) return null;
+    const label = new Intl.DateTimeFormat('he-IL', {
+      weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem',
+    }).format(at);
+    return { label, soon: at.getTime() - Date.now() < 24 * 3600 * 1000 };
+  };
+
+  const renderInviteSendLine = () => {
+    const info = inviteSendInfo();
+    if (!info) return null;
+    return (
+      <Box sx={{ mb: 2, p: 1.75, borderRadius: '14px', border: `1.5px solid ${DC.tintBorder}`, bgcolor: DC.tintApp, textAlign: 'right', direction: 'rtl' }}>
+        <Typography sx={{ fontSize: 15, fontWeight: 600, color: DC.ink }}>
+          ההזמנה יוצאת ב־{info.label}. עד אז מוסיפים מוזמנים
+        </Typography>
+        {info.soon && (
+          <Typography sx={{ fontSize: 13.5, color: DC.warn, mt: 0.5, lineHeight: 1.55 }}>
+            ההזמנה יוצאת בעוד פחות מיום — אם עוד אין לכם רשימה, היא תחכה כטיוטה עד שתוסיפו מוזמנים
+          </Typography>
+        )}
+      </Box>
+    );
+  };
+
   const renderScheduleStep = () => {
     // Sort campaigns by offsetDays descending (30, 7, 1, -1). While the customize
     // editor is open, render in the order frozen at open time (scheduleOrder) so
@@ -1793,6 +1757,7 @@ export default function EventWizard() {
             'מתי ניצור קשר עם האורחים?',
             `סידרנו תזמון חכם ל${warmEventRef()} - מההזמנה הראשונה ועד התודה שאחרי. אפשר להשאיר כך, או להתאים בקליק.`
           )}
+          {renderInviteSendLine()}
           {wasCompressed && (
             <Alert severity="info" icon={<AutoAwesomeIcon />} sx={{ mb: 2, borderRadius: 2, textAlign: 'right', direction: 'rtl' }}>
               המועד קרוב, אז התאמנו את לוח הזמנים כך שכל הודעה עדיין תצא בזמן - בלי הודעות בעבר ובסדר הנכון.
@@ -1833,6 +1798,7 @@ export default function EventWizard() {
 
     return (
       <Box>
+        {renderInviteSendLine()}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, direction: 'rtl', flexWrap: 'wrap', gap: 1 }}>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
             התאמה אישית - הפעילו, כבו או שנו תזמון לכל הודעה.
@@ -2341,8 +2307,10 @@ export default function EventWizard() {
                 })}
               </Box>
 
-              {/* Write your own message */}
-              {!custom ? (
+              {/* Write your own message. Hidden by default: a free-text first message is
+                  rejected by Meta (no open 24h window) and core drops custom_message
+                  on outbound campaigns. See featureFlags.customMessages. */}
+              {!featureFlags.customMessages && !custom ? null : !custom ? (
                 <Button
                   variant="outlined"
                   startIcon={<EditIcon />}
@@ -2434,10 +2402,9 @@ export default function EventWizard() {
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         {renderInfoBox()}
+        {renderInviteSendLine()}
         
-        <Typography variant="h5" fontWeight={800} sx={{ textAlign: 'center', mb: 1 }}>
-          האירוע שלכם כמעט מוכן 🎉
-        </Typography>
+
 
         {/* Package and Price */}
         <Paper variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
@@ -2534,9 +2501,6 @@ export default function EventWizard() {
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 2 }}>
             <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.8, textAlign: 'right' }}>
               • ביצוע התשלום מהווה הסכמה לתנאי השימוש והשירות
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.8, textAlign: 'right' }}>
-              • ניתן לבטל את ההזמנה עד 48 שעות לפני מועד האירוע
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.8, textAlign: 'right' }}>
               • השירות כולל תמיכה טכנית במהלך תקופת האירוע
@@ -2636,7 +2600,7 @@ export default function EventWizard() {
     // An OTP is sent unless the logged-in account's phone matches the buyer phone
     // (then submit goes straight to payment). Mirrors handlePaymentSubmit.
     const buyerPhoneNormalized = paymentData.phone.trim()
-      ? normalizePhoneNumber(paymentData.phone, paymentData.countryCode)
+      ? toAccountPhone(paymentData.phone)
       : '';
     const loggedInPhone = (user?.phone || '').replace(/\s+/g, '');
     const otpWillBeSent = !(user && loggedInPhone && loggedInPhone === buyerPhoneNormalized);
@@ -2678,7 +2642,7 @@ export default function EventWizard() {
                 'טלפון',
                 // Bidi-isolate the phone so "+972 05..." doesn't get mangled in RTL.
                 <Box component="span" dir="ltr" sx={{ unicodeBidi: 'isolate', display: 'inline-block' }}>
-                  {`${paymentData.countryCode} ${paymentData.phone}`.trim()}
+                  {paymentData.phone}
                 </Box>
               )}
               {paymentData.email.trim() && detailRow(<EmailIcon sx={{ color: 'text.secondary' }} />, 'אימייל', paymentData.email.trim())}
@@ -2780,32 +2744,6 @@ export default function EventWizard() {
               {/* Phone */}
               <Box sx={{ display: 'flex', gap: 1, flexDirection: 'row-reverse' }}>
                 <TextField
-                  select
-                  value={paymentData.countryCode}
-                  onChange={(e) => setPaymentData({ ...paymentData, countryCode: e.target.value })}
-                  sx={{
-                    minWidth: 120,
-                    '& .MuiOutlinedInput-root': {
-                      borderRadius: 2,
-                    },
-                  }}
-                  SelectProps={{
-                    // Bidi-isolate the dial code so "+972" renders correctly in RTL.
-                    renderValue: (value) => (
-                      <Box component="span" dir="ltr" sx={{ unicodeBidi: 'isolate', display: 'inline-block' }}>
-                        {(value as string) || '+972'}
-                      </Box>
-                    ),
-                  }}
-                  inputProps={{ style: { direction: 'rtl', textAlign: 'right', fontSize: 13 } }}
-                >
-                  {countryOptions.map((option) => (
-                    <MenuItem key={option.code + option.dialCode} value={option.dialCode}>
-                      {option.flag} {option.name} ({option.dialCode})
-                    </MenuItem>
-                  ))}
-                </TextField>
-                <TextField
                   fullWidth
                   type="tel"
                   label="מספר טלפון"
@@ -2903,286 +2841,198 @@ export default function EventWizard() {
     return null;
   };
 
-  const renderMilestoneTracker = () => (
-    <Box
-      sx={{
-        display: { xs: 'none', md: 'flex' },
-        flexDirection: 'column',
-        gap: 0,
-        minWidth: 240,
-        pr: 4,
-      }}
-    >
-      {steps.map((step, index) => {
-        const StepIcon = step.icon;
-        const isCompleted = index < activeStep;
-        const isActive = index === activeStep;
-        const isUpcoming = index > activeStep;
+  // ---- Design v6 shell: 4 phases over the 6 internal steps -------------------
+  // Internal steps keep their logic/validation; the host sees the design's four
+  // milestones: package → event details → messages (schedule + wording) →
+  // payment (review + identity).
+  const PHASE_OF_STEP = [0, 1, 2, 2, 3, 3];
+  const FIRST_STEP_OF_PHASE = [0, 1, 2, 4];
+  const phase = PHASE_OF_STEP[activeStep] ?? 0;
+  const PHASES = [
+    { t: 'חבילה', todo: 'כמה אורחים ואיזו חבילה', done: selectedPlan ? `${selectedPlan.title} · ${selectedPlan.price}` : '' },
+    { t: 'פרטי האירוע', todo: 'מה חוגגים, מי, מתי ואיפה', done: [eventTypeLabel(catalog, eventDetails.type), eventDetails.name].filter(Boolean).join(' · ') },
+    { t: 'הודעות', todo: 'מה יוצא לאורחים ומתי', done: `${campaigns.filter((c) => c.enabled).length} הודעות בלוח` },
+    { t: 'תשלום', todo: 'סיכום ותשלום מאובטח', done: '' },
+  ];
+  const PHASE_HEAD: Record<number, [string, string]> = {
+    0: ['איזו חבילה מתאימה לאירוע שלכם?', 'משלמים פעם אחת לאירוע, בלי מנוי. ההבדל בין החבילות הוא רק כמות האורחים וסבבי ההודעות'],
+    1: ['ספרו לנו על האירוע', 'ממלאים פעם אחת, והפרטים נכנסים לבד לכל ההודעות'],
+    2: ['מה יוצא לאורחים, ומתי', 'בנינו לוח שליחה לפי התאריך שלכם. אחרי הפתיחה אפשר לשנות או לעצור כל סבב'],
+    3: ['מה כתוב בכל הודעה', 'כך זה ייראה אצל האורחים. אפשר להשאיר את הנוסח שבחרנו או לבחור אחר'],
+    4: ['עוברים על הכול', 'רגע לפני התשלום, הכול במקום אחד. לחיצה על עריכה מחזירה לשלב'],
+    5: ['עוד פרט אחרון ומשלמים', 'אחרי התשלום האירוע נפתח ואפשר להתחיל להוסיף אורחים'],
+  };
+  const isLastStep = activeStep === steps.length - 1;
+  const isFree = selectedPackageId === 'free';
+  const nextLabel = (compact: boolean) => {
+    if (isLastStep) return isFree ? 'יצירת האירוע' : compact ? `תשלום ${selectedPlan?.price || ''}` : `למעבר לתשלום ${selectedPlan?.price || ''}`;
+    if (compact) return 'המשך';
+    return ['המשך לפרטי האירוע', 'המשך להודעות', 'המשך לנוסח ההודעות', 'המשך לסיכום', 'המשך לתשלום'][activeStep] || 'המשך';
+  };
+  const onPrimary = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!isLastStep) { handleNext(); return; }
+    if (isFree) handleCreateFree();
+    else handlePaymentSubmit(e as any);
+  };
+  const minsLeft = [5, 4, 3, 2, 1, 1][activeStep] ?? 1;
 
-        return (
-          <Box key={index} sx={{ position: 'relative' }}>
-            {/* Connecting line */}
-            {index < steps.length - 1 && (
-              <Box
-                sx={{
-                  position: 'absolute',
-                  right: 11,
-                  top: 40,
-                  width: 2,
-                  height: 60,
-                  bgcolor: isCompleted ? theme.palette.success.main : theme.palette.divider,
-                  zIndex: 0,
-                }}
-              />
-            )}
-            {/* Step content */}
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: 2,
-                py: 2,
-                position: 'relative',
-                zIndex: 1,
-              }}
-            >
-              {/* Icon circle */}
-              <Box
-                sx={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: '50%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  bgcolor: isCompleted
-                    ? theme.palette.success.main
-                    : isActive
-                    ? theme.palette.primary.main
-                    : theme.palette.action.disabledBackground,
-                  color: isCompleted || isActive ? theme.palette.common.white : theme.palette.text.secondary,
-                  flexShrink: 0,
-                }}
-              >
-                {isCompleted ? (
-                  <CheckIcon sx={{ fontSize: 16 }} />
-                ) : (
-                  <StepIcon sx={{ fontSize: 16 }} />
-                )}
-              </Box>
-              {/* Text content */}
-              <Box sx={{ flex: 1, direction: 'rtl' }}>
-                <Typography
-                  variant="body1"
-                  sx={{
-                    fontWeight: isActive ? 700 : isCompleted ? 600 : 400,
-                    color: isCompleted
-                      ? theme.palette.success.main
-                      : isActive
-                      ? theme.palette.primary.main
-                      : theme.palette.text.secondary,
-                    mb: 0.5,
-                  }}
+  const renderRail = () => (
+    <Box component="aside" sx={{ width: 280, flex: 'none', position: 'sticky', top: 96, display: { xs: 'none', md: 'flex' }, flexDirection: 'column', gap: 2 }}>
+      <Box sx={{ bgcolor: '#fff', border: `1px solid ${DC.line}`, borderRadius: '16px', p: '22px 20px 18px' }}>
+        <Typography sx={{ fontSize: 16, fontWeight: 600, letterSpacing: '-0.01em' }}>פתיחת האירוע</Typography>
+        <Typography sx={{ fontSize: 13.5, color: DC.muted, mt: '3px' }}>{phase} מתוך 4 הושלמו · בערך {minsLeft} דקות לסיום</Typography>
+        <Box sx={{ height: 4, borderRadius: 99, bgcolor: '#EFEBE4', mt: '14px', mb: '20px', overflow: 'hidden' }}>
+          <Box sx={{ height: '100%', width: `${(phase / 4) * 100}%`, bgcolor: DC.purple, borderRadius: 99, transition: 'width .3s' }} />
+        </Box>
+        <Box component="ol" sx={{ listStyle: 'none', m: 0, p: 0, display: 'flex', flexDirection: 'column' }}>
+          {PHASES.map((m, i) => {
+            const done = i < phase;
+            const now = i === phase;
+            return (
+              <Box component="li" key={m.t} sx={{ position: 'relative', pb: '20px' }}>
+                {i < 3 && <Box component="span" sx={{ position: 'absolute', insetInlineStart: 12, top: 30, bottom: 2, width: 2, borderRadius: 2, bgcolor: done ? DC.purple : '#EFEBE4' }} />}
+                <Box
+                  component="button"
+                  type="button"
+                  disabled={!done}
+                  onClick={() => done && setActiveStep(FIRST_STEP_OF_PHASE[i])}
+                  sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start', width: '100%', bgcolor: 'transparent', border: 'none', p: 0, textAlign: 'right', cursor: done ? 'pointer' : 'default', fontFamily: 'inherit', color: 'inherit' }}
                 >
-                  {step.label}
-                </Typography>
-                {isCompleted && (
-                  <Typography variant="caption" sx={{ color: theme.palette.success.main, fontWeight: 600 }}>
-                    הושלם
-                  </Typography>
-                )}
-                {isActive && (
-                  <Typography variant="caption" sx={{ color: theme.palette.primary.main, fontWeight: 600 }}>
-                    בתהליך
-                  </Typography>
-                )}
+                  <Box component="span" sx={{ position: 'relative', width: 26, height: 26, borderRadius: '50%', flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, bgcolor: done ? DC.purple : '#fff', color: done ? '#fff' : now ? DC.purpleDark : DC.muted, border: done ? 'none' : now ? `2px solid ${DC.purple}` : `1.5px solid ${DC.fieldSignup}`, boxShadow: now ? '0 0 0 4px #EEE8FB' : 'none' }}>
+                    {done ? <span className="ms" style={{ fontSize: 16, fontWeight: 500 }}>check</span> : i + 1}
+                  </Box>
+                  <Box component="span" sx={{ flex: 1, minWidth: 0, pt: '2px' }}>
+                    <Box component="span" sx={{ display: 'block', fontSize: 15, fontWeight: now ? 600 : 500, color: now || done ? DC.ink : DC.muted }}>{m.t}</Box>
+                    <Box component="span" sx={{ display: 'block', fontSize: 13, color: DC.muted, mt: '2px', lineHeight: 1.45 }}>{done && m.done ? m.done : m.todo}</Box>
+                  </Box>
+                </Box>
               </Box>
-            </Box>
+            );
+          })}
+        </Box>
+        <Box sx={{ borderTop: '1px solid #EFEBE4', pt: 2 }}>
+          <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: DC.muted, mb: 1.5 }}>ואחרי הפתיחה</Typography>
+          <Box component="ol" sx={{ listStyle: 'none', m: 0, p: 0, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+            {[['מוסיפים אורחים', 'מאקסל, מוואטסאפ או אחד אחד'], ['ההודעות יוצאות לפי הלוח', 'אפשר לשנות או לעצור כל הודעה'], ['עוקבים אחרי התשובות', 'מספר סופי לאולם ולהושבה']].map(([t, d]) => (
+              <Box component="li" key={t} sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
+                <Box component="span" sx={{ width: 10, height: 10, borderRadius: '50%', flex: 'none', mt: '6px', mx: 1, bgcolor: '#fff', border: `1.5px solid ${DC.fieldSignup}` }} />
+                <Box component="span" sx={{ flex: 1, minWidth: 0 }}>
+                  <Box component="span" sx={{ display: 'block', fontSize: 14, fontWeight: 500, color: DC.body }}>{t}</Box>
+                  <Box component="span" sx={{ display: 'block', fontSize: 12.5, color: DC.muted, mt: '1px', lineHeight: 1.45 }}>{d}</Box>
+                </Box>
+              </Box>
+            ))}
           </Box>
-        );
-      })}
+        </Box>
+      </Box>
+      <Box sx={{ display: 'flex', gap: 1.25, alignItems: 'flex-start', px: 0.75, fontSize: 13.5, lineHeight: 1.55, color: DC.body }}>
+        <span className="ms" style={{ fontSize: 20, color: DC.purple }}>support_agent</span>
+        <span>שאלה באמצע? <a href="/go/whatsapp" style={{ color: DC.purple, fontWeight: 600 }}>כתבו לנו בוואטסאפ</a></span>
+      </Box>
     </Box>
   );
 
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
-      <Box
-        sx={{
-          minHeight: '100vh',
-          background: theme.palette.mode === 'dark'
-            ? `radial-gradient(1200px 600px at 10% 0%, ${alpha(theme.palette.primary.dark, 0.15)} 0%, transparent 70%), radial-gradient(800px 500px at 90% 20%, ${alpha('#7c3aed', 0.1)} 0%, transparent 65%), ${theme.palette.background.default}`
-            : `radial-gradient(1200px 600px at 10% 0%, #e8ecff 0%, #f0f4ff 40%, transparent 70%), radial-gradient(800px 500px at 90% 20%, #fce8f5 0%, #fef0f7 35%, transparent 65%), linear-gradient(180deg, #f7f8fb 0%, #f3f4fa 100%)`,
-          py: { xs: 4, md: 6 },
-        }}
-      >
-        <Container
-          maxWidth="lg"
-          sx={{
-            py: { xs: 4, md: 6 },
-            px: { xs: 2, sm: 3, md: 4 },
-            bgcolor: 'transparent',
-            overflow: { xs: 'visible', sm: 'visible' },
-          }}
-          dir="rtl"
-        >
-        <Box sx={{ mb: 4, textAlign: 'center' }}>
-          <Typography variant="h4" fontWeight={800} sx={{ mb: 1 }}>
-            בואו נארגן את האירוע שלכם ✨
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            כמה צעדים קצרים, ואנחנו נדאג שכל האורחים יידעו, יאשרו ויגיעו.
-          </Typography>
+      <Box className="su-scope" dir="rtl" sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', bgcolor: DC.paperApp }}>
+        <Box component="header" sx={{ position: 'sticky', top: 0, zIndex: 10, bgcolor: 'rgba(245,241,233,.94)', backdropFilter: 'blur(10px)', borderBottom: `1px solid ${DC.line}` }}>
+          <Box sx={{ maxWidth: 1240, mx: 'auto', px: 'clamp(16px,3vw,28px)', height: 64, display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Box component="a" href="/" sx={{ display: 'flex', alignItems: 'center', gap: 1.25, color: DC.ink, textDecoration: 'none' }}>
+              <img src="/brand/seal.png" alt="" style={{ width: 30, height: 30, objectFit: 'contain' }} />
+              <Box component="span" sx={{ fontSize: 18, fontWeight: 600, letterSpacing: '-0.03em', color: DC.ink }}>ShowUp</Box>
+            </Box>
+            <Box sx={{ display: { xs: 'none', md: 'contents' } }}>
+              <Box component="span" sx={{ width: '1px', height: 22, bgcolor: DC.fieldSignup }} />
+              <Box component="span" sx={{ fontSize: 15, fontWeight: 500, color: DC.body }}>פתיחת אירוע חדש</Box>
+            </Box>
+            <Box sx={{ flex: 1 }} />
+            <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 0.75, fontSize: 13.5, color: DC.muted }}>
+              <span className="ms" style={{ fontSize: 18 }}>cloud_done</span>כל שינוי נשמר
+            </Box>
+            <Box component="a" href="/go/whatsapp" sx={{ fontSize: 14 }}>עזרה</Box>
+            <Box component="a" href="/" sx={{ fontSize: 14, color: `${DC.body} !important` }}>יציאה</Box>
+          </Box>
         </Box>
 
-        {/* Abandoned-wizard recovery: pick up exactly where you left off. */}
-        {pendingDraft && (
-          <Alert
-            icon={<RestoreRoundedIcon />}
-            severity="info"
-            sx={{ mb: 4, borderRadius: 3, textAlign: 'right', direction: 'rtl', alignItems: 'center' }}
-            action={
-              <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
-                <Button color="inherit" size="small" onClick={discardDraft}>
-                  אירוע חדש
-                </Button>
-                <Button variant="contained" size="small" onClick={restoreDraft} sx={{ fontWeight: 700 }}>
-                  המשך מאיפה שעצרתי
-                </Button>
+        <Box sx={{ flex: 1, width: '100%', maxWidth: 1240, mx: 'auto', pt: 'clamp(20px,3vw,32px)', px: 'clamp(16px,3vw,28px)', display: 'flex', gap: '44px', alignItems: 'flex-start' }}>
+          {renderRail()}
+
+          <Box component="main" sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 96px)' }}>
+            {/* Compact progress (mobile) */}
+            <Box sx={{ display: { xs: 'block', md: 'none' }, mb: 2.75 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1.25, fontSize: 13.5 }}>
+                <Box component="span" sx={{ fontWeight: 600, color: DC.purpleDark }}>שלב {phase + 1} מתוך 4 · {PHASES[phase].t}</Box>
+                {phase < 3 && <Box component="span" sx={{ color: DC.muted }}>הבא: {PHASES[phase + 1].t}</Box>}
               </Box>
-            }
-          >
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              שמרנו את האירוע שהתחלתם להכין
-              {(pendingDraft.eventDetails?.name as string) ? ` - ${pendingDraft.eventDetails?.name as string}` : ''}.
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              אפשר להמשיך בדיוק מהמקום שעצרתם.
-            </Typography>
-          </Alert>
-        )}
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: '4px', mt: 1 }}>
+                {[0, 1, 2, 3].map((i) => <Box key={i} sx={{ height: 4, borderRadius: 99, bgcolor: i < phase ? DC.purple : i === phase ? DC.lavMid : DC.line }} />)}
+              </Box>
+            </Box>
 
-        {/* Mobile horizontal progress bar */}
-        <Box sx={{ display: { xs: 'block', md: 'none' }, mb: 4 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-            <Typography variant="caption" color="text.secondary">
-              שלב {activeStep + 1} מתוך {steps.length}
-            </Typography>
-          </Box>
-          <Box
-            sx={{
-              width: '100%',
-              height: 4,
-              bgcolor: theme.palette.divider,
-              borderRadius: 2,
-              overflow: 'hidden',
-            }}
-          >
-            <Box
-              sx={{
-                width: `${((activeStep + 1) / steps.length) * 100}%`,
-                height: '100%',
-                bgcolor: theme.palette.primary.main,
-                transition: 'width 0.3s ease',
-              }}
-            />
+            {pendingDraft && (
+              <Box role="status" sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', mb: 3, p: '14px 16px', borderRadius: '14px', bgcolor: '#fff', border: `1px solid ${DC.tintBorder}` }}>
+                <span className="ms" style={{ fontSize: 22, color: DC.purple }}>edit_note</span>
+                <Box sx={{ flex: '1 1 220px', minWidth: 0 }}>
+                  <Typography sx={{ fontSize: 14.5, fontWeight: 600 }}>
+                    שמרנו את האירוע שהתחלתם להכין{(pendingDraft.eventDetails?.name as string) ? `: ${pendingDraft.eventDetails?.name as string}` : ''}
+                  </Typography>
+                  <Typography sx={{ fontSize: 13, color: DC.muted }}>אפשר להמשיך בדיוק מהמקום שעצרתם</Typography>
+                </Box>
+                <Button variant="text" size="small" onClick={discardDraft}>אירוע חדש</Button>
+                <Button variant="contained" size="small" onClick={restoreDraft}>להמשיך מאיפה שעצרתי</Button>
+              </Box>
+            )}
+
+            <Box sx={{ flex: 1 }}>
+              <Box sx={{ mb: 3.5 }}>
+                <Typography sx={{ fontSize: 14, fontWeight: 500, color: DC.purple }}>שלב {phase + 1} מתוך 4</Typography>
+                <Typography component="h1" sx={{ fontSize: 'clamp(26px,3vw,34px)', lineHeight: 1.15, letterSpacing: '-0.03em', fontWeight: 600, m: '6px 0 0' }}>{PHASE_HEAD[activeStep]?.[0]}</Typography>
+                <Typography sx={{ fontSize: 16, lineHeight: 1.6, color: DC.body, mt: 1, maxWidth: '60ch' }}>{PHASE_HEAD[activeStep]?.[1]}</Typography>
+              </Box>
+              <Box ref={stepContentRef} tabIndex={-1} sx={{ mb: 3, minWidth: 0, outline: 'none' }} dir="rtl">
+                {renderStepContent()}
+              </Box>
+            </Box>
+
+            <Box sx={{ position: 'sticky', bottom: 0, zIndex: 5, mt: 4, bgcolor: 'rgba(245,241,233,.96)', backdropFilter: 'blur(8px)', borderTop: `1px solid ${DC.line}` }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, pt: '14px', pb: 'calc(18px + env(safe-area-inset-bottom))' }}>
+                <Box
+                  component="button"
+                  type="button"
+                  onClick={handleBack}
+                  className="su-hover-ink"
+                  sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, height: 50, px: 2, borderRadius: '12px', border: `1px solid ${DC.fieldSignup}`, bgcolor: '#fff', fontSize: 15, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: DC.ink, visibility: activeStep === 0 ? 'hidden' : 'visible' }}
+                >
+                  <span className="ms" style={{ fontSize: 20 }}>arrow_forward</span>חזרה
+                </Box>
+                <Box sx={{ flex: 1 }} />
+                {selectedPlan && activeStep > 0 && (
+                  <Box component="span" sx={{ display: { xs: 'none', md: 'inline' }, fontSize: 14, color: DC.muted, whiteSpace: 'nowrap' }}>
+                    חבילה {selectedPlan.title} · {selectedPlan.price}
+                  </Box>
+                )}
+                <Box
+                  component="button"
+                  type="button"
+                  onClick={onPrimary}
+                  disabled={!canNext || paymentLoading || creatingFree}
+                  className="su-hover-lav"
+                  sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 1, height: 50, px: '22px', border: 'none', borderRadius: '12px', bgcolor: DC.lav, color: DC.ink, fontSize: 16, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit', '&:disabled': { bgcolor: '#E6E2DA', color: DC.muted, cursor: 'not-allowed' } }}
+                >
+                  {(paymentLoading || creatingFree) ? <CircularProgress size={22} color="inherit" /> : (
+                    <>
+                      <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{nextLabel(false)}</Box>
+                      <Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>{nextLabel(true)}</Box>
+                      <span className="ms" style={{ fontSize: 20 }}>{isLastStep && !isFree ? 'lock' : 'arrow_back'}</span>
+                    </>
+                  )}
+                </Box>
+              </Box>
+            </Box>
           </Box>
         </Box>
-
-        {/* Desktop layout with sidebar */}
-        <Box sx={{ display: { xs: 'block', md: 'flex' }, gap: 4 }}>
-          {renderMilestoneTracker()}
-
-          {/* minWidth:0 lets this flex column shrink to the available width so inner
-              horizontal scrollers (e.g. the template variant cards) scroll internally
-              instead of widening the row and pushing the nav buttons off-screen. */}
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Box
-              ref={stepContentRef}
-              tabIndex={-1}
-              sx={{ mb: 3, minWidth: 0, outline: 'none' }}
-              dir="rtl"
-            >
-              {renderStepContent()}
-            </Box>
-
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, flexDirection: 'row-reverse' }}>
-              {activeStep === steps.length - 1 ? (
-                <Box sx={{ display: 'flex', gap: 2, flexDirection: 'row-reverse', width: '100%' }}>
-                  <Button
-                    onClick={(e) => {
-                      e.preventDefault();
-                      // The Free plan has no payment step - create the event directly.
-                      if (selectedPackageId === 'free') {
-                        handleCreateFree();
-                      } else {
-                        handlePaymentSubmit(e as any);
-                      }
-                    }}
-                    variant="contained"
-                    disabled={!canNext || paymentLoading || creatingFree}
-                    sx={{
-                      flex: 1,
-                      minWidth: { xs: '120px', sm: '140px' },
-                      bgcolor: selectedPlan?.color || 'primary.main',
-                      '&:hover': {
-                        bgcolor: selectedPlan?.color ? alpha(selectedPlan.color, 0.85) : 'primary.dark',
-                      },
-                      '&:disabled': {
-                        bgcolor: theme.palette.action.disabledBackground,
-                      },
-                    }}
-                  >
-                    {(paymentLoading || creatingFree)
-                      ? <CircularProgress size={24} color="inherit" />
-                      : selectedPackageId === 'free' ? 'יוצרים את האירוע 🎉' : 'למעבר לתשלום מאובטח'}
-                  </Button>
-                </Box>
-              ) : activeStep === steps.length - 2 ? (
-                <Box sx={{ display: 'flex', gap: 1.5, flexDirection: { xs: 'column', sm: 'row-reverse' }, width: '100%' }}>
-                  <Button
-                    variant="contained"
-                    onClick={handleNext}
-                    disabled={!canNext}
-                    sx={{
-                      flex: 1,
-                      minWidth: { xs: '120px', sm: '140px' },
-                      bgcolor: selectedPlan?.color || 'primary.main',
-                      '&:hover': {
-                        bgcolor: selectedPlan?.color ? alpha(selectedPlan.color, 0.85) : 'primary.dark',
-                      },
-                    }}
-                  >
-                    מעולה, בואו נסיים
-                  </Button>
-                </Box>
-              ) : (
-                // On the package step keep the primary action fully hidden until a
-                // package is chosen - selecting a card is the action; an empty/disabled
-                // "next" is just noise.
-                (activeStep !== 0 || !!selectedPackageId) && (
-                  <Button
-                    variant="contained"
-                    onClick={handleNext}
-                    disabled={!canNext}
-                    sx={{
-                      minWidth: { xs: '120px', sm: '140px' },
-                    }}
-                  >
-                    ממשיכים
-                  </Button>
-                )
-              )}
-              {activeStep !== 0 && (
-                <Button variant="text" onClick={handleBack}>
-                  חזרה
-                </Button>
-              )}
-            </Box>
-            </Box>
-          </Box>
-        </Container>
       </Box>
     </LocalizationProvider>
   );
 }
-

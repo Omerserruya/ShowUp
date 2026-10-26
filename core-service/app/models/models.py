@@ -237,6 +237,11 @@ class Campaign(Base):
     # the follow_up_audience (typically 'no_response').
     follow_up_after_hours = Column(Integer, nullable=True)
     follow_up_audience = Column(String(20), nullable=True)
+    # Owned by campaign-worker/scheduler (their startup DDL adds these): why the
+    # round is in its status, and the stuck-processing sweep bookkeeping.
+    status_reason = Column(Text, nullable=True)
+    processing_started_at = Column(DateTime(timezone=True), nullable=True)
+    processing_attempts = Column(Integer, nullable=True, server_default="0")
 
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
@@ -351,6 +356,8 @@ class EventFieldDef(Base):
     options = Column(JSON, nullable=True)               # allowed values for ENUM
     required = Column(Boolean, nullable=False, server_default='false')
     applies_to_template = Column(Boolean, nullable=False, server_default='false')
+    # "Questions for guests": asked by the WhatsApp bot / web RSVP after confirm.
+    ask_in_rsvp = Column(Boolean, nullable=False, server_default='false', default=False)
     sort_order = Column(Integer, nullable=False, server_default='0')
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 

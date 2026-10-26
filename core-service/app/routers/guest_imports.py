@@ -9,6 +9,7 @@ from sqlalchemy import func
 
 from app.db import get_db
 from app.crud import event as event_crud
+from app.authz import is_owner_or_support
 from app.models.models import GuestImport, GuestImportContact
 from shared.auth.deps import get_current_user_id
 
@@ -41,7 +42,7 @@ def list_guest_imports(
     """
     # AuthZ check
     event = event_crud.get_event(db, event_id)
-    if not event or not event_crud.is_owner(event, user_id):
+    if not is_owner_or_support(db, event, user_id):
         raise HTTPException(status_code=404, detail="Event not found or not permitted")
 
     query = db.query(GuestImport).filter(GuestImport.event_id == str(event_id))
@@ -101,7 +102,7 @@ def get_guest_import_summary(
     """
     # AuthZ check
     event = event_crud.get_event(db, event_id)
-    if not event or not event_crud.is_owner(event, user_id):
+    if not is_owner_or_support(db, event, user_id):
         raise HTTPException(status_code=404, detail="Event not found or not permitted")
 
     # Count pending contacts (contacts that haven't been approved/rejected yet)
@@ -148,7 +149,7 @@ def update_guest_import_contact(
 
     # AuthZ check
     event = event_crud.get_event(db, import_record.event_id)
-    if not event or not event_crud.is_owner(event, user_id):
+    if not is_owner_or_support(db, event, user_id):
         raise HTTPException(status_code=404, detail="Event not found or not permitted")
 
     # Only allow updates to pending contacts
@@ -194,7 +195,7 @@ def approve_guest_import_contact(
 
     # AuthZ check
     event = event_crud.get_event(db, import_record.event_id)
-    if not event or not event_crud.is_owner(event, user_id):
+    if not is_owner_or_support(db, event, user_id):
         raise HTTPException(status_code=404, detail="Event not found or not permitted")
 
     # Import guest creation logic from guest_crud
@@ -270,7 +271,7 @@ def reject_guest_import_contact(
 
     # AuthZ check
     event = event_crud.get_event(db, import_record.event_id)
-    if not event or not event_crud.is_owner(event, user_id):
+    if not is_owner_or_support(db, event, user_id):
         raise HTTPException(status_code=404, detail="Event not found or not permitted")
 
     # Save contact ID before deletion

@@ -17,13 +17,20 @@ hours (assist:ctx). The same evsel:* picker also finishes a pending WhatsApp
 contact import: contact-import-worker parks contacts in Redis (ci:pending)
 and this worker sends back a "finalize_import" instruction with the chosen
 event once the owner taps a button.
+
+Safe to run as N replicas: inbound messages are deduped by WhatsApp message id
+(assist:seen:{wamid}, SETNX, 24h) so a Meta redelivery never re-runs an action,
+and a per-sender Redis lock (assist:lock:{phone}) keeps one owner's messages in
+order while different owners are served in parallel. Replies go to outpost's
+priority queue (OUTPOST_PRIORITY_QUEUE).
 """
 
 import json
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional
+import uuid
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 import jwt as pyjwt
@@ -34,6 +41,9 @@ import mq
 
 ASSISTANT_INBOUND_QUEUE = os.getenv("ASSISTANT_INBOUND_QUEUE", "assistant_inbound_queue")
 OUTPOST_QUEUE = os.getenv("OUTPOST_QUEUE_NAME", "outpost_queue")
+# Owner-facing replies go to outpost's PRIORITY queue so a conversation is never
+# stuck behind a bulk campaign send on the regular outpost queue.
+OUTPOST_PRIORITY_QUEUE = os.getenv("OUTPOST_PRIORITY_QUEUE", "outpost_priority_queue")
 CONTACT_IMPORT_QUEUE = os.getenv("CONTACT_IMPORT_QUEUE", "contact_import_queue")
 CORE_SERVICE_URL = os.getenv("CORE_SERVICE_URL", "http://core-service:8000")
 JWT_SECRET = os.getenv("JWT_SECRET")
@@ -47,14 +57,21 @@ EVENT_CTX_TTL_SECONDS = 6 * 3600
 PENDING_QUESTION_TTL_SECONDS = 15 * 60
 HISTORY_TTL_SECONDS = 24 * 3600
 MAX_HISTORY_MESSAGES = 20
+# Meta redelivers webhooks; an inbound message id is processed at most once.
+SEEN_TTL_SECONDS = 24 * 3600
+# Per-sender lock so N replicas can run safely: one owner's messages are
+# handled in order (history/picker state is per phone), different owners in
+# parallel.
+SENDER_LOCK_TTL_SECONDS = int(ASSISTANT_HTTP_TIMEOUT) + 30
+SENDER_LOCK_WAIT_SECONDS = float(os.getenv("ASSISTANT_SENDER_LOCK_WAIT_SECONDS", "120"))
 
 MSG_NOT_REGISTERED = "היי! המספר הזה לא מזוהה אצלנו במערכת ShowUp, אז אני לא יכולה לעזור כאן 😅"
-MSG_NO_ACTIVE_EVENT = "לא מצאתי אירוע פעיל בבעלותך. ברגע שיהיה לך אירוע פעיל במערכת - אשמח לעזור! 🙂"
+MSG_NO_ACTIVE_EVENT = "לא מצאתי אירוע פעיל בבעלותכם. ברגע שיהיה לכם אירוע פעיל במערכת - אשמח לעזור! 🙂"
 MSG_TEXT_ONLY = "כרגע אני יודעת לטפל בהודעות טקסט ובאנשי קשר בלבד 🙂"
 MSG_EVENT_GONE = "האירוע הזה כבר לא זמין. שלחו לי הודעה חדשה ונתחיל מההתחלה 🙂"
 MSG_BUSY = "אני קצת עמוסה כרגע 😅 נסו שוב בעוד רגע"
 MSG_ERROR = "משהו השתבש אצלי 😅 נסו שוב בעוד כמה דקות"
-PICKER_PROMPT_CHAT = "יש לך כמה אירועים פעילים 🙂 על איזה מהם נדבר?"
+PICKER_PROMPT_CHAT = "יש לכם כמה אירועים פעילים 🙂 על איזה מהם נדבר?"
 
 
 def configure_logging():
@@ -78,7 +95,7 @@ def log_json(level: int, message: str, **fields):
 
 
 def send_text(channel, phone: str, text: str):
-    mq.publish(channel, OUTPOST_QUEUE, {
+    mq.publish(channel, OUTPOST_PRIORITY_QUEUE, {
         "platform": "WA",
         "recipient": phone,
         "message_type": "free_text",
@@ -106,7 +123,7 @@ def send_event_picker(channel, phone: str, events: List[Dict[str, Any]], prompt:
             "action": {
                 "button": "בחירת אירוע",
                 "sections": [{
-                    "title": "האירועים שלך",
+                    "title": "האירועים שלכם",
                     "rows": [
                         {"id": f"evsel:{e['id']}", "title": (e["name"] or "אירוע")[:24]}
                         for e in events[:10]
@@ -114,7 +131,7 @@ def send_event_picker(channel, phone: str, events: List[Dict[str, Any]], prompt:
                 }],
             },
         }
-    mq.publish(channel, OUTPOST_QUEUE, {
+    mq.publish(channel, OUTPOST_PRIORITY_QUEUE, {
         "platform": "WA",
         "recipient": phone,
         "message_type": "interactive",
@@ -125,7 +142,10 @@ def send_event_picker(channel, phone: str, events: List[Dict[str, Any]], prompt:
 
 
 def call_assistant(user: Dict[str, Any], phone: str, event_id: str, text: str,
-                   history: List[Dict[str, str]]) -> str:
+                   history: List[Dict[str, str]]) -> Tuple[str, bool]:
+    """(reply, ok). ok=False means the reply is a canned error message - it is
+    sent to the owner but never stored as conversation history (it would teach
+    the model that it "failed" and pollute later turns)."""
     now = int(time.time())
     token = pyjwt.encode(
         {"user_id": user["user_id"], "sub": db.canonical_phone(phone), "iat": now, "exp": now + 300},
@@ -141,13 +161,21 @@ def call_assistant(user: Dict[str, Any], phone: str, event_id: str, text: str,
         )
     except httpx.HTTPError as exc:
         log_json(logging.ERROR, "Assistant HTTP call failed", error=str(exc), event_id=event_id)
-        return MSG_ERROR
+        return MSG_ERROR, False
     if resp.status_code == 200:
-        return (resp.json().get("reply") or "").strip() or MSG_ERROR
+        reply = (resp.json().get("reply") or "").strip()
+        return (reply, True) if reply else (MSG_ERROR, False)
+    if resp.status_code == 429:
+        # Per-user rate/budget limit - core supplies an honest Hebrew message.
+        try:
+            detail = resp.json().get("detail")
+        except Exception:
+            detail = None
+        return (detail if isinstance(detail, str) and detail else MSG_BUSY), False
     if resp.status_code in (502, 503):
-        return MSG_BUSY
+        return MSG_BUSY, False
     log_json(logging.ERROR, "Assistant returned error", status=resp.status_code, body=resp.text[:500])
-    return MSG_ERROR
+    return MSG_ERROR, False
 
 
 def answer_with_assistant(channel, r, phone: str, user: Dict[str, Any],
@@ -162,8 +190,12 @@ def answer_with_assistant(channel, r, phone: str, user: Dict[str, Any],
         except json.JSONDecodeError:
             continue
 
-    reply = call_assistant(user, phone, event["id"], text, history)
+    reply, ok = call_assistant(user, phone, event["id"], text, history)
     send_text(channel, phone, reply)
+    if not ok:
+        log_json(logging.INFO, "Assistant error reply sent (not stored in history)",
+                 phone=phone, event_id=event["id"])
+        return
 
     pipe = r.pipeline()
     pipe.rpush(hist_key, json.dumps({"role": "user", "content": text}, ensure_ascii=False))
@@ -202,12 +234,78 @@ def handle_event_selection(channel, r, phone: str, user: Dict[str, Any],
         send_text(channel, phone, f'מעולה, מדברים על "{event["name"]}" 🙂 איך אפשר לעזור?')
 
 
+def inbound_message_id(msg: Dict[str, Any]) -> Optional[str]:
+    payload = msg.get("payload") or {}
+    return msg.get("message_id") or payload.get("id") or None
+
+
+def claim_inbound(r, msg: Dict[str, Any]) -> bool:
+    """SETNX on the WhatsApp message id: True the first time, False for a Meta
+    redelivery (which must not re-run a tool action). Messages without an id
+    are processed (nothing to dedupe on)."""
+    wamid = inbound_message_id(msg)
+    if not wamid:
+        return True
+    try:
+        return bool(r.set(f"assist:seen:{wamid}", "1", nx=True, ex=SEEN_TTL_SECONDS))
+    except Exception as exc:
+        # Redis down: prefer answering over silently dropping the owner.
+        log_json(logging.WARNING, "Dedup check failed; processing anyway", error=str(exc))
+        return True
+
+
+def acquire_sender_lock(r, phone: str) -> Optional[str]:
+    """Serialize one sender's messages across replicas. Returns a token to
+    release with, or None if the lock could not be taken in time (we then
+    proceed anyway rather than drop the message)."""
+    token = uuid.uuid4().hex
+    key = f"assist:lock:{phone}"
+    deadline = time.time() + SENDER_LOCK_WAIT_SECONDS
+    while True:
+        try:
+            if r.set(key, token, nx=True, ex=SENDER_LOCK_TTL_SECONDS):
+                return token
+        except Exception:
+            return None
+        if time.time() >= deadline:
+            log_json(logging.WARNING, "Sender lock wait timed out; proceeding", phone=phone)
+            return None
+        time.sleep(0.25)
+
+
+def release_sender_lock(r, phone: str, token: Optional[str]) -> None:
+    if not token:
+        return
+    key = f"assist:lock:{phone}"
+    try:
+        # Compare-and-delete so we never release a lock another replica took
+        # after ours expired.
+        r.eval("if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+               1, key, token)
+    except Exception:
+        pass
+
+
 def handle_message(conn, channel, r, msg: Dict[str, Any]):
     payload = msg.get("payload") or {}
     phone = msg.get("recipient") or payload.get("from")
     if not phone:
         log_json(logging.WARNING, "Message without sender phone, skipping")
         return
+
+    if not claim_inbound(r, msg):
+        log_json(logging.INFO, "Duplicate inbound message skipped",
+                 phone=phone, message_id=inbound_message_id(msg))
+        return
+
+    token = acquire_sender_lock(r, phone)
+    try:
+        _handle_message_locked(conn, channel, r, msg, payload, phone)
+    finally:
+        release_sender_lock(r, phone, token)
+
+
+def _handle_message_locked(conn, channel, r, msg: Dict[str, Any], payload: Dict[str, Any], phone: str):
 
     ts = payload.get("timestamp")
     try:
@@ -273,7 +371,7 @@ def main():
     except Exception:
         pass
 
-    conn = db.connect()
+    state = {"conn": db.connect()}
     r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
     rabbit = mq.connect()
     channel = rabbit.channel()
@@ -293,7 +391,9 @@ def main():
                 set_flow(worker="assistant-worker", flow="assistant")
             except Exception:
                 pass
-            handle_message(conn, ch, r, msg)
+            if state["conn"].closed:
+                state["conn"] = db.connect()
+            handle_message(state["conn"], ch, r, msg)
             ch.basic_ack(delivery_tag=method.delivery_tag)
         except json.JSONDecodeError as e:
             log_json(logging.ERROR, "Invalid message JSON", error=str(e))

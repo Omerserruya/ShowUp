@@ -5,10 +5,12 @@ import CloseIcon from '@mui/icons-material/Close';
 import PaymentIcon from '@mui/icons-material/Payment';
 import { useEvent } from '../contexts/EventContext';
 import { useBanner } from '../contexts/BannerContext';
+import { useSupport } from '../contexts/SupportContext';
 
 const InactiveEventBanner: React.FC = () => {
   const { selectedEvent } = useEvent();
   const { isBannerVisible } = useBanner();
+  const { session: supportSession } = useSupport();
   const navigate = useNavigate();
 
   const handleDismiss = () => {
@@ -31,7 +33,9 @@ const InactiveEventBanner: React.FC = () => {
     }
   };
 
-  if (!isBannerVisible) {
+  // The support banner owns the top strip while an admin is inside someone
+  // else's event - and "settle payment" is the owner's action, not support's.
+  if (!isBannerVisible || supportSession) {
     return null;
   }
 

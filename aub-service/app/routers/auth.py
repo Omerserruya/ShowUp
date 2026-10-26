@@ -4,6 +4,8 @@ Auth API endpoints
 import hmac
 import os
 import json
+import secrets
+import threading
 import httpx
 import pika
 import psycopg2
@@ -32,12 +34,60 @@ def get_env():
         "OUTPOST_QUEUE_NAME": os.getenv("OUTPOST_QUEUE_NAME"),
         "REDIS_HOST": os.getenv("REDIS_HOST"),
         "REDIS_PORT": int(os.getenv("REDIS_PORT")),
+        # Redis requires auth in production (compose runs it with --requirepass).
+        # REDIS_URL wins when set; otherwise host/port + REDIS_PASSWORD.
+        "REDIS_URL": os.getenv("REDIS_URL"),
+        "REDIS_PASSWORD": os.getenv("REDIS_PASSWORD") or None,
         "OTP_TTL_SEC": int(os.getenv("OTP_TTL_SEC")),
         "JWT_EXP_SECONDS": int(os.getenv("JWT_EXP_SECONDS")),
     }
 
 
-def ensure_users_table(env):
+_redis_lock = threading.Lock()
+_redis_clients: dict = {}
+
+
+def get_redis(env) -> "redis.Redis":
+    """Process-wide Redis client (redis-py keeps its own connection pool), so a
+    request no longer opens a fresh TCP connection. Authenticates with
+    REDIS_URL or REDIS_PASSWORD."""
+    key = (env.get("REDIS_URL"), env.get("REDIS_HOST"), env.get("REDIS_PORT"), env.get("REDIS_PASSWORD"))
+    client = _redis_clients.get(key)
+    if client is None:
+        with _redis_lock:
+            client = _redis_clients.get(key)
+            if client is None:
+                if env.get("REDIS_URL"):
+                    client = redis.Redis.from_url(env["REDIS_URL"], socket_connect_timeout=3, socket_timeout=3)
+                else:
+                    client = redis.Redis(
+                        host=env["REDIS_HOST"], port=env["REDIS_PORT"], password=env.get("REDIS_PASSWORD"),
+                        socket_connect_timeout=3, socket_timeout=3,
+                    )
+                _redis_clients[key] = client
+    return client
+
+
+# The users schema is created once per process (at startup, see main.py), not on
+# every request: per-request DDL took an ACCESS EXCLUSIVE-ish lock path and added
+# several round-trips to every login. Callers that still invoke this (orders.py)
+# hit the memoized no-op after the first success.
+_users_schema_ready = False
+_users_schema_lock = threading.Lock()
+
+
+def ensure_users_table(env, force: bool = False):
+    global _users_schema_ready
+    if _users_schema_ready and not force:
+        return
+    with _users_schema_lock:
+        if _users_schema_ready and not force:
+            return
+        _create_users_schema(env)
+        _users_schema_ready = True
+
+
+def _create_users_schema(env):
     ddl = (
         "CREATE TABLE IF NOT EXISTS users ("
         "id UUID PRIMARY KEY DEFAULT gen_random_uuid(),"
@@ -108,7 +158,6 @@ def internal_user_by_phone(phone: str, x_internal_secret: str = Header(None)):
     _check_internal_secret(x_internal_secret)
     phone = _canonical_phone(phone)
     env = get_env()
-    ensure_users_table(env)
     with psycopg2.connect(
         host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"], password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
     ) as conn:
@@ -128,7 +177,6 @@ def internal_users_by_ids(payload: dict = Body(...), x_internal_secret: str = He
     if not ids:
         return {"users": []}
     env = get_env()
-    ensure_users_table(env)
     with psycopg2.connect(
         host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"], password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
     ) as conn:
@@ -145,7 +193,6 @@ def _ensure_user_row(env, phone: str, first_name: str, last_name: str, email=Non
     """Create-or-get a user by phone. Marks new users verified (a partner venue /
     a completed payment vouches for them). Returns {user_id, first_name, last_name, phone}."""
     phone = _canonical_phone(phone)  # store/lookup in the same form login uses
-    ensure_users_table(env)
     with psycopg2.connect(
         host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"], password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
     ) as conn:
@@ -269,16 +316,70 @@ def _otp_key(phone: str) -> str:
 
 
 def _otp_attempts_key(phone: str) -> str:
+    # Per-PHONE failed-verify counter. Deliberately independent of the code's
+    # lifetime: re-issuing an OTP must NOT reset it (that reset is what made
+    # unlimited guessing possible - review item 5.3).
     return f"otp_attempts:{phone}"
 
 
+def _otp_issue_hour_key(phone: str) -> str:
+    return f"otp_issued_h:{phone}"
+
+
+def _otp_issue_day_key(phone: str) -> str:
+    return f"otp_issued_d:{phone}"
+
+
+# Limits (env-overridable). Guess budget per phone is bounded by
+#   min(issues/day * per-code attempts, failed-verifies window) - ~50/day,
+# i.e. a 1-in-20,000 daily chance against a 6-digit code.
+OTP_MAX_ISSUES_PER_HOUR = int(os.getenv("OTP_MAX_ISSUES_PER_HOUR", "5"))
+OTP_MAX_ISSUES_PER_DAY = int(os.getenv("OTP_MAX_ISSUES_PER_DAY", "10"))
+OTP_MAX_ATTEMPTS_PER_CODE = 5          # frontend shows "נותרו {5 - attempts}"
+OTP_MAX_FAILED_VERIFIES = int(os.getenv("OTP_MAX_FAILED_VERIFIES", "10"))
+OTP_FAILED_VERIFY_WINDOW_SEC = int(os.getenv("OTP_FAILED_VERIFY_WINDOW_SEC", "900"))
+
+OTP_RATE_LIMITED_MESSAGE = "נשלחו יותר מדי קודים למספר הזה. נסו שוב מאוחר יותר"
+OTP_LOCKED_MESSAGE = "יותר מדי ניסיונות שגויים. נסו שוב בעוד כרבע שעה"
+
+
+def _rate_limited_response(error: str, message: str, retry_after: int) -> JSONResponse:
+    retry_after = max(1, int(retry_after or 1))
+    return JSONResponse(
+        status_code=429,
+        content={"error": error, "message": message, "retry_after": retry_after},
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
+def _reserve_otp_issue(phone: str, env):
+    """Count one OTP issue against the phone's hourly + daily budget.
+    Returns None when allowed, or a ready 429 response when over budget.
+    Call BEFORE any side effect (user insert, code generation, enqueue)."""
+    r = get_redis(env)
+    hour_key, day_key = _otp_issue_hour_key(phone), _otp_issue_day_key(phone)
+    pipe = r.pipeline()
+    pipe.incr(hour_key)
+    pipe.expire(hour_key, 3600, nx=True)
+    pipe.incr(day_key)
+    pipe.expire(day_key, 86400, nx=True)
+    hour_count, _, day_count, _ = pipe.execute()
+    if int(hour_count) > OTP_MAX_ISSUES_PER_HOUR:
+        return _rate_limited_response("otp_rate_limited", OTP_RATE_LIMITED_MESSAGE, r.ttl(hour_key))
+    if int(day_count) > OTP_MAX_ISSUES_PER_DAY:
+        return _rate_limited_response("otp_rate_limited", OTP_RATE_LIMITED_MESSAGE, r.ttl(day_key))
+    return None
+
+
 def _issue_otp(phone: str, ttl_sec: int, env):
-    code = str(int.from_bytes(os.urandom(3), 'big')).zfill(6)[:6]
-    r = redis.Redis(host=env["REDIS_HOST"], port=env["REDIS_PORT"]) 
-    # store as JSON
+    # Uniform 000000-999999 (the old os.urandom(3) variant was biased: ~46% of
+    # codes started with '1').
+    code = f"{secrets.randbelow(10**6):06d}"
+    r = get_redis(env)
+    # Per-code attempts live inside the code payload; the per-phone failed
+    # verify counter (_otp_attempts_key) is intentionally left untouched.
     payload = json.dumps({"code": code, "attempts": 0})
     r.setex(_otp_key(phone), ttl_sec, payload)
-    r.setex(_otp_attempts_key(phone), ttl_sec, 0)
     return code
 
 
@@ -326,6 +427,25 @@ def _canonical_phone(phone: str) -> str:
     elif len(digits) == 9:              # bare 9-digit local (no leading 0)
         digits = "972" + digits
     return ("+" + digits) if digits else (phone or "")
+
+
+# Account phones (owner login / sign-up) are currently Israeli mobiles only.
+# Comma-separated E.164 dial prefixes; widen here (env) to support more countries.
+ACCOUNT_PHONE_PREFIXES = tuple(
+    p.strip() for p in os.getenv("ACCOUNT_PHONE_PREFIXES", "+9725").split(",") if p.strip()
+)
+
+
+def _account_phone_error(phone: str):
+    """None if the canonical phone is allowed for an account, else a 400 response."""
+    digits = "".join(c for c in phone if c.isdigit())
+    ok = phone.startswith(ACCOUNT_PHONE_PREFIXES) and (not phone.startswith("+972") or len(digits) == 12)
+    if ok:
+        return None
+    return JSONResponse(status_code=400, content={
+        "error": "israeli_phone_required",
+        "message": "כרגע אפשר להירשם ולהתחבר רק עם מספר נייד ישראלי",
+    })
 
 
 def _normalize_wa_msisdn(phone: str) -> str:
@@ -383,10 +503,11 @@ def register(payload: dict = Body(...)):
     last_name = (payload or {}).get("last_name")
     if not phone:
         return JSONResponse(status_code=400, content={"error": "phone is required"})
+    if (err := _account_phone_error(phone)) is not None:
+        return err
     if not first_name or not last_name:
         return JSONResponse(status_code=400, content={"error": "first_name and last_name are required"})
 
-    ensure_users_table(env)
     with psycopg2.connect(
         host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"], password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
     ) as conn:
@@ -397,6 +518,11 @@ def register(payload: dict = Body(...)):
             exists = cur.fetchone() is not None
             if exists:
                 return JSONResponse(status_code=409, content={"error": "user_exists"})
+            # Budget check before the insert, so a rate-limited sign-up does not
+            # leave a half-created account behind (and a 409 costs no budget).
+            limited = _reserve_otp_issue(phone, env)
+            if limited is not None:
+                return limited
             # Create new user
             cur.execute(
                 "INSERT INTO users (phone, email, first_name, last_name) VALUES (%s, %s, %s, %s)",
@@ -416,7 +542,15 @@ def verify_otp(payload: dict = Body(...)):
     if not phone or not code:
         return JSONResponse(status_code=400, content={"error": "phone and code are required"})
 
-    r = redis.Redis(host=env["REDIS_HOST"], port=env["REDIS_PORT"])
+    r = get_redis(env)
+    attempts_key = _otp_attempts_key(phone)
+
+    # Per-phone lockout first, so a locked phone cannot even probe whether a
+    # code is outstanding.
+    failed = int(r.get(attempts_key) or 0)
+    if failed >= OTP_MAX_FAILED_VERIFIES:
+        return _rate_limited_response("too_many_attempts", OTP_LOCKED_MESSAGE, r.ttl(attempts_key))
+
     data_raw = r.get(_otp_key(phone))
     if not data_raw:
         return JSONResponse(status_code=400, content={"error": "otp_expired_or_missing"})
@@ -426,21 +560,20 @@ def verify_otp(payload: dict = Body(...)):
     except Exception:
         return JSONResponse(status_code=400, content={"error": "otp_corrupted"})
 
-    attempts_key = _otp_attempts_key(phone)
-    attempts = int(r.get(attempts_key) or 0)
-    if attempts >= 5:
+    code_attempts = int(data.get("attempts") or 0)
+    if code_attempts >= OTP_MAX_ATTEMPTS_PER_CODE:
         return JSONResponse(status_code=429, content={"error": "too_many_attempts"})
 
-    if str(code) != str(data.get("code")):
-        attempts += 1
-        # preserve TTL using GETEX or by fetching TTL then setex
-        ttl_attempts = r.ttl(attempts_key)
-        ttl_otp = r.ttl(_otp_key(phone))
-        ttl = ttl_attempts if ttl_attempts and ttl_attempts > 0 else ttl_otp
-        if not ttl or ttl <= 0:
-            ttl = env["OTP_TTL_SEC"]
-        r.setex(attempts_key, ttl, attempts)
-        return JSONResponse(status_code=400, content={"error": "invalid_code", "attempts": attempts})
+    if not hmac.compare_digest(str(code).strip().encode("utf-8"), str(data.get("code")).encode("utf-8")):
+        code_attempts += 1
+        data["attempts"] = code_attempts
+        # Keep the code's remaining lifetime.
+        r.set(_otp_key(phone), json.dumps(data), keepttl=True)
+        pipe = r.pipeline()
+        pipe.incr(attempts_key)
+        pipe.expire(attempts_key, OTP_FAILED_VERIFY_WINDOW_SEC, nx=True)
+        pipe.execute()
+        return JSONResponse(status_code=400, content={"error": "invalid_code", "attempts": code_attempts})
 
     # success: fetch the user + status. A suspended account cannot obtain a token.
     user_id = None
@@ -474,8 +607,9 @@ def verify_otp(payload: dict = Body(...)):
                 except Exception:
                     pass
 
-    r.delete(_otp_key(phone))
-    r.delete(attempts_key)
+    # Success clears the outstanding code and the failed-verify counter. The
+    # issue counters stay: they bound how many codes a phone can be sent.
+    r.delete(_otp_key(phone), attempts_key)
 
     if status == "suspended":
         return JSONResponse(status_code=403, content={"error": "account_suspended"})
@@ -541,7 +675,6 @@ def get_current_user(authorization: str = Header(None)):
             detail=f"Invalid token: {str(e)}"
         )
     
-    ensure_users_table(env)
     
     with psycopg2.connect(
         host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"], password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
@@ -600,9 +733,8 @@ def login(payload: dict = Body(...)):
     phone = _canonical_phone((payload or {}).get("phone"))
     if not phone:
         return JSONResponse(status_code=400, content={"error": "phone is required"})
-
-    # Ensure users table exists (idempotent)
-    ensure_users_table(env)
+    if (err := _account_phone_error(phone)) is not None:
+        return err
 
     # Ensure user exists
     with psycopg2.connect(
@@ -613,6 +745,10 @@ def login(payload: dict = Body(...)):
             exists = cur.fetchone() is not None
             if not exists:
                 return JSONResponse(status_code=404, content={"error": "user_not_found"})
+
+    limited = _reserve_otp_issue(phone, env)
+    if limited is not None:
+        return limited
 
     code = _issue_otp(phone, env["OTP_TTL_SEC"], env)
     _enqueue_otp(phone, code, env)

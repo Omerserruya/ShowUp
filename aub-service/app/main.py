@@ -1,7 +1,7 @@
 import os
+import time
 import psycopg2
 import pika
-import redis
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from .routers import plans, auth, orders, admin as admin_router
@@ -21,6 +21,8 @@ def get_env():
         "OTP_QUEUE_NAME": os.getenv("OTP_QUEUE_NAME"),
         "REDIS_HOST": os.getenv("REDIS_HOST"),
         "REDIS_PORT": int(os.getenv("REDIS_PORT")),
+        "REDIS_URL": os.getenv("REDIS_URL"),
+        "REDIS_PASSWORD": os.getenv("REDIS_PASSWORD") or None,
         "OTP_TTL_SEC": int(os.getenv("OTP_TTL_SEC")),
         "JWT_EXP_SECONDS": int(os.getenv("JWT_EXP_SECONDS")),
     }
@@ -36,6 +38,21 @@ def _start_heartbeat():
         bootstrap("aub")
     except Exception:
         pass
+
+
+@app.on_event("startup")
+def _ensure_schema():
+    """Create the users/login_history schema ONCE per process (request handlers
+    no longer run DDL). Retries briefly in case Postgres is still warming up;
+    never blocks startup - ensure_users_table() is memoized and /health retries it."""
+    env = get_env()
+    for attempt in range(5):
+        try:
+            auth.ensure_users_table(env)
+            return
+        except Exception as exc:
+            print(f"[AUB] users schema init failed (attempt {attempt + 1}/5): {exc}")
+            time.sleep(2)
 
 
 try:
@@ -86,20 +103,24 @@ def check_rabbit_connection(env):
 
 def check_redis_connection(env):
     try:
-        r = redis.Redis(host=env["REDIS_HOST"], port=env["REDIS_PORT"], socket_connect_timeout=2)
-        r.ping()
+        auth.get_redis(env).ping()
         return True
     except Exception:
         return False
 
 
+@app.get("/healthz")
+def healthz():
+    """Cheap liveness probe for the container healthcheck (no DB/broker I/O)."""
+    return {"status": "ok"}
+
+
 @app.get("/health")
 def health():
     env = get_env()
-    # Import ensure_users_table from auth router for health check
     from .routers.auth import ensure_users_table
-    
-    # Ensure users table exists on startup/health-check so the schema is always ready
+
+    # Memoized: a no-op once the startup init succeeded; self-heals otherwise.
     try:
         ensure_users_table(env)
         users_table_ok = True

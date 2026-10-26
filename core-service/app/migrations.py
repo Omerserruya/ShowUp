@@ -36,7 +36,7 @@ def ensure_messaging_template_state(engine: Engine) -> None:
                 """
             ))
         except Exception as exc:  # pragma: no cover
-            logger.debug("messaging_template_state create skipped: %s", exc)
+            logger.warning("messaging_template_state create skipped: %s", exc)
 
 
 def ensure_guest_counts_and_group(engine: Engine) -> None:
@@ -66,7 +66,7 @@ def ensure_guest_counts_and_group(engine: Engine) -> None:
             try:
                 conn.execute(text(stmt))
             except Exception as exc:  # pragma: no cover - best-effort migration
-                logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
+                logger.warning("Schema patch skipped: %s (%s)", stmt, exc)
                 continue
 
     logger.info("Guest schema verified (guest_count nullable, import_count default=1, guest_group column exists)")
@@ -91,7 +91,7 @@ def ensure_campaign_recipient_count(engine: Engine) -> None:
             try:
                 conn.execute(text(stmt))
             except Exception as exc:  # pragma: no cover - best-effort migration
-                logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
+                logger.warning("Schema patch skipped: %s (%s)", stmt, exc)
                 continue
 
     logger.info("Campaign schema verified (recipient_count column exists with default 0)")
@@ -115,7 +115,7 @@ def ensure_events_location_text(engine: Engine) -> None:
                 conn.execute(text(stmt))
                 logger.info(f"Schema patch applied: {stmt}")
             except Exception as exc:  # pragma: no cover - best-effort migration
-                logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
+                logger.warning("Schema patch skipped: %s (%s)", stmt, exc)
                 continue
 
     logger.info("Event schema verified (location column is TEXT)")
@@ -135,7 +135,7 @@ def ensure_events_plan_id(engine: Engine) -> None:
                 conn.execute(text(stmt))
                 logger.info(f"Schema patch applied: {stmt}")
             except Exception as exc:  # pragma: no cover - best-effort migration
-                logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
+                logger.warning("Schema patch skipped: %s (%s)", stmt, exc)
                 continue
 
     logger.info("Event schema verified (plan_id column exists)")
@@ -152,7 +152,7 @@ def ensure_events_seating_layout(engine: Engine) -> None:
                 conn.execute(text(stmt))
                 logger.info("Schema patch applied: %s", stmt)
             except Exception as exc:  # pragma: no cover
-                logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
+                logger.warning("Schema patch skipped: %s (%s)", stmt, exc)
     logger.info("Event schema verified (seating_layout column exists)")
 
 
@@ -183,7 +183,7 @@ def ensure_events_v2_columns(engine: Engine) -> None:
                 conn.execute(text(stmt))
                 logger.info("Schema patch applied: %s", stmt)
             except Exception as exc:  # pragma: no cover - best-effort migration
-                logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
+                logger.warning("Schema patch skipped: %s (%s)", stmt, exc)
                 continue
 
     # Add the accounts FK separately - there's no ADD CONSTRAINT IF NOT EXISTS,
@@ -201,7 +201,7 @@ def ensure_events_v2_columns(engine: Engine) -> None:
                 conn.execute(text(fk_stmt))
                 logger.info("Schema patch applied: %s", fk_stmt)
         except Exception as exc:  # pragma: no cover - best-effort migration
-            logger.debug("Schema patch skipped: %s (%s)", fk_stmt, exc)
+            logger.warning("Schema patch skipped: %s (%s)", fk_stmt, exc)
 
     logger.info("Event schema verified (state, account_id, public_slug, invitation columns exist)")
 
@@ -222,7 +222,7 @@ def ensure_events_payment_status(engine: Engine) -> None:
                 conn.execute(text(stmt))
                 logger.info("Schema patch applied: %s", stmt)
             except Exception as exc:  # pragma: no cover - best-effort migration
-                logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
+                logger.warning("Schema patch skipped: %s (%s)", stmt, exc)
                 continue
     logger.info("Event schema verified (payment_status column exists)")
 
@@ -273,7 +273,7 @@ def ensure_events_provisioning(engine: Engine) -> None:
                 conn.execute(text(stmt))
                 logger.info("Schema patch applied: %s", stmt.split("\n")[0])
             except Exception as exc:  # pragma: no cover - best-effort migration
-                logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
+                logger.warning("Schema patch skipped: %s (%s)", stmt, exc)
                 continue
     logger.info("Event provisioning schema verified (order id + settlement backfill)")
 
@@ -292,7 +292,7 @@ def ensure_guest_optout(engine: Engine) -> None:
                 conn.execute(text(stmt))
                 logger.info("Schema patch applied: %s", stmt)
             except Exception as exc:  # pragma: no cover
-                logger.debug("guest opt-out patch skipped: %s (%s)", stmt, exc)
+                logger.warning("guest opt-out patch skipped: %s (%s)", stmt, exc)
     logger.info("Guest opt-out schema verified")
 
 
@@ -309,7 +309,7 @@ def ensure_message_delivery(engine: Engine) -> None:
             try:
                 conn.execute(text(stmt))
             except Exception as exc:  # pragma: no cover
-                logger.debug("message delivery patch skipped: %s", exc)
+                logger.warning("message delivery patch skipped: %s", exc)
     logger.info("Message delivery schema verified")
 
 
@@ -326,12 +326,12 @@ def ensure_ops_tables(engine: Engine) -> None:
         try:
             conn.execute(text(HEARTBEAT_DDL))
         except Exception as exc:  # pragma: no cover
-            logger.debug("service_heartbeats ensure skipped: %s", exc)
+            logger.warning("service_heartbeats ensure skipped: %s", exc)
         for stmt in ERRORS_DDL:
             try:
                 conn.execute(text(stmt))
             except Exception as exc:  # pragma: no cover
-                logger.debug("ops_errors ensure skipped: %s", exc)
+                logger.warning("ops_errors ensure skipped: %s", exc)
     logger.info("Ops tables verified (service_heartbeats, ops_errors)")
 
 
@@ -396,7 +396,7 @@ def ensure_entitlements(engine: Engine) -> None:
                 conn.execute(text(stmt))
                 logger.info("Schema patch applied: %s", stmt.strip().split("\n")[0])
             except Exception as exc:  # pragma: no cover - best-effort migration
-                logger.debug("entitlements patch skipped: %s (%s)", stmt.strip()[:60], exc)
+                logger.warning("entitlements patch skipped: %s (%s)", stmt.strip()[:60], exc)
     logger.info("Entitlement schema verified (table + event link + backfill)")
 
 
@@ -432,7 +432,7 @@ def ensure_round_usage_backfill(engine: Engine) -> None:
             result = conn.execute(text(stmt))
             logger.info("Round usage ledger backfilled for %s event(s)", result.rowcount)
         except Exception as exc:  # pragma: no cover - best-effort migration
-            logger.debug("round usage backfill skipped: %s", exc)
+            logger.warning("round usage backfill skipped: %s", exc)
 
 
 def ensure_events_subjects(engine: Engine) -> None:
@@ -444,7 +444,7 @@ def ensure_events_subjects(engine: Engine) -> None:
             conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS subjects JSONB"))
             logger.info("Schema patch applied: events.subjects")
         except Exception as exc:  # pragma: no cover
-            logger.debug("events.subjects skipped: %s", exc)
+            logger.warning("events.subjects skipped: %s", exc)
 
 
 def ensure_events_event_type(engine: Engine) -> None:
@@ -459,7 +459,7 @@ def ensure_events_event_type(engine: Engine) -> None:
                 conn.execute(text(stmt))
                 logger.info("Schema patch applied: %s", stmt)
             except Exception as exc:  # pragma: no cover - best-effort migration
-                logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
+                logger.warning("Schema patch skipped: %s (%s)", stmt, exc)
                 continue
 
 
@@ -475,7 +475,7 @@ def ensure_campaign_custom_message(engine: Engine) -> None:
                 conn.execute(text(stmt))
                 logger.info("Schema patch applied: %s", stmt)
             except Exception as exc:  # pragma: no cover - best-effort migration
-                logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
+                logger.warning("Schema patch skipped: %s (%s)", stmt, exc)
                 continue
 
 
@@ -489,7 +489,7 @@ def ensure_campaign_template_key(engine: Engine) -> None:
         try:
             conn.execute(text("ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS template_key VARCHAR(80)"))
         except Exception as exc:  # pragma: no cover
-            logger.debug("template_key column skipped: %s", exc)
+            logger.warning("template_key column skipped: %s", exc)
             return
 
     # Backfill (best-effort): resolve legacy template -> canonical key. UUID/DB
@@ -530,7 +530,7 @@ def ensure_campaign_stage_variant(engine: Engine) -> None:
             try:
                 conn.execute(text(stmt))
             except Exception as exc:  # pragma: no cover
-                logger.debug("stage/variant column skipped: %s", exc)
+                logger.warning("stage/variant column skipped: %s", exc)
                 return
 
     try:
@@ -573,7 +573,7 @@ def ensure_campaign_audience(engine: Engine) -> None:
                 conn.execute(text(stmt))
                 logger.info("Schema patch applied: %s", stmt)
             except Exception as exc:  # pragma: no cover - best-effort migration
-                logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
+                logger.warning("Schema patch skipped: %s (%s)", stmt, exc)
                 continue
 
 
@@ -594,7 +594,7 @@ def ensure_wa_template_metadata(engine: Engine) -> None:
                 conn.execute(text(stmt))
                 logger.info("Schema patch applied: %s", stmt)
             except Exception as exc:  # pragma: no cover - best-effort migration
-                logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
+                logger.warning("Schema patch skipped: %s (%s)", stmt, exc)
                 continue
 
 
@@ -619,7 +619,7 @@ def ensure_accounts_venue_columns(engine: Engine) -> None:
                 conn.execute(text(stmt))
                 logger.info("Schema patch applied: %s", stmt)
             except Exception as exc:  # pragma: no cover - best-effort migration
-                logger.debug("Schema patch skipped: %s (%s)", stmt, exc)
+                logger.warning("Schema patch skipped: %s (%s)", stmt, exc)
                 continue
     logger.info("Account schema verified (type, event_capacity, partner_coupon_code columns exist)")
 
@@ -668,7 +668,7 @@ def ensure_admin_ops_schema(engine: Engine) -> None:
                 conn.execute(text(stmt))
                 logger.info("Schema patch applied: %s", stmt.strip().split("\n")[0])
             except Exception as exc:  # pragma: no cover - best-effort migration
-                logger.debug("Schema patch skipped: %s (%s)", stmt.strip()[:50], exc)
+                logger.warning("Schema patch skipped: %s (%s)", stmt.strip()[:50], exc)
                 continue
     logger.info("Admin-ops schema verified (accounts.status/branding, audit_log, feature_flags)")
 
@@ -682,7 +682,7 @@ def ensure_events_wa_image(engine: Engine) -> None:
         try:
             conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS wa_image_url TEXT"))
         except Exception as exc:  # pragma: no cover
-            logger.debug("events.wa_image_url add skipped: %s", exc)
+            logger.warning("events.wa_image_url add skipped: %s", exc)
 
 
 def ensure_team_invitations(engine: Engine) -> None:
@@ -712,7 +712,7 @@ def ensure_team_invitations(engine: Engine) -> None:
                 "CREATE INDEX IF NOT EXISTS idx_team_invitations_phone ON team_invitations (phone) WHERE status = 'pending'"
             ))
         except Exception as exc:  # pragma: no cover
-            logger.debug("team_invitations create skipped: %s", exc)
+            logger.warning("team_invitations create skipped: %s", exc)
 
 
 def ensure_owner_notifications(engine: Engine) -> None:
@@ -741,10 +741,118 @@ def ensure_owner_notifications(engine: Engine) -> None:
                 "CREATE INDEX IF NOT EXISTS idx_owner_notifications_pending ON owner_notifications (created_at) WHERE status = 'pending'"
             ))
         except Exception as exc:  # pragma: no cover
-            logger.debug("owner_notifications create skipped: %s", exc)
+            logger.warning("owner_notifications create skipped: %s", exc)
 
 
-def apply_schema_patches(engine: Engine) -> None:
+def ensure_admin_support_sessions(engine: Engine) -> None:
+    """Admin support sessions: which platform admin is currently stepping into
+    which event. One row per admin (the PK), self-expiring via `expires_at`.
+    See app/support.py - this table is the only grant of cross-tenant access."""
+    with engine.begin() as conn:
+        try:
+            conn.execute(text(
+                """
+                CREATE TABLE IF NOT EXISTS admin_support_sessions (
+                    admin_user_id UUID PRIMARY KEY,
+                    event_id UUID NOT NULL,
+                    started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    expires_at TIMESTAMPTZ NOT NULL
+                )
+                """
+            ))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_admin_support_sessions_event ON admin_support_sessions (event_id)"
+            ))
+        except Exception as exc:  # pragma: no cover
+            logger.warning("admin_support_sessions create skipped: %s", exc)
+
+
+def ensure_performance_indexes(engine: Engine) -> None:
+    """Hot-path indexes (readiness review 5.9 / 3.13). Idempotent.
+
+    Plain (non-CONCURRENT) CREATE INDEX: patches run inside a transaction at
+    startup and the tables are small enough today that the brief lock is fine.
+    `messages_log` belongs to webhook-worker and may not exist yet on this
+    database - guarded with to_regclass so its absence is not an error.
+    """
+    statements = [
+        "CREATE INDEX IF NOT EXISTS idx_guests_event_id ON guests (event_id)",
+        "CREATE INDEX IF NOT EXISTS idx_guests_event_phone ON guests (event_id, phone)",
+        "CREATE INDEX IF NOT EXISTS idx_campaigns_event_id ON campaigns (event_id)",
+        "CREATE INDEX IF NOT EXISTS idx_campaigns_pending_schedule ON campaigns (schedule_time) WHERE status = 'pending'",
+    ]
+    with engine.begin() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))
+        if conn.execute(text("SELECT to_regclass('public.messages_log')")).scalar() is not None:
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_messages_log_wa_message_id ON messages_log (wa_message_id)"
+            ))
+        else:
+            logger.info("messages_log not present yet - its wa_message_id index will be created on a later boot")
+    logger.info("Performance indexes verified")
+
+
+def ensure_assistant_tables(engine: Engine) -> None:
+    """AI assistant server-side state (core has no Redis):
+
+    - assistant_pending_actions: one pending high-impact tool call per
+      (user, event) awaiting the user's explicit confirmation (two-phase
+      confirmation, readiness review 4.1). Expired rows are ignored and purged.
+    - assistant_turns: one row per assistant turn - the per-user rate limit and
+      daily budget are counted from it, and it records token usage (4.4).
+    """
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS assistant_pending_actions (
+            user_id UUID NOT NULL,
+            event_id UUID NOT NULL,
+            token VARCHAR(32) NOT NULL,
+            tool VARCHAR(60) NOT NULL,
+            args JSONB NOT NULL DEFAULT '{}',
+            args_hash VARCHAR(64) NOT NULL,
+            summary TEXT,
+            turn_id VARCHAR(64),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            expires_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (user_id, event_id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS assistant_turns (
+            id BIGSERIAL PRIMARY KEY,
+            user_id UUID NOT NULL,
+            event_id UUID,
+            occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            prompt_tokens INTEGER NOT NULL DEFAULT 0,
+            completion_tokens INTEGER NOT NULL DEFAULT 0,
+            llm_calls INTEGER NOT NULL DEFAULT 0,
+            outcome VARCHAR(30)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_assistant_turns_user_time ON assistant_turns (user_id, occurred_at DESC)",
+    ]
+    with engine.begin() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))
+    logger.info("Assistant tables verified (assistant_pending_actions, assistant_turns)")
+
+
+def ensure_guest_questions(engine: Engine) -> None:
+    """"Questions for guests" (e.g. shuttle): event_field_defs.ask_in_rsvp marks
+    an ENUM field as a question the WhatsApp bot / web RSVP asks confirming
+    guests. sort_order already exists in the model; ensured here for old DBs."""
+    statements = [
+        "ALTER TABLE event_field_defs ADD COLUMN IF NOT EXISTS ask_in_rsvp BOOLEAN NOT NULL DEFAULT false",
+        "ALTER TABLE event_field_defs ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0",
+        "CREATE INDEX IF NOT EXISTS idx_field_defs_event_ask ON event_field_defs (event_id) WHERE ask_in_rsvp",
+    ]
+    with engine.begin() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))
+
+
+def apply_schema_patches(engine: Engine) -> list:
     """Apply every schema patch, isolating failures.
 
     Each patch runs independently: one that raises is logged and the rest still
@@ -778,6 +886,7 @@ def apply_schema_patches(engine: Engine) -> None:
         ensure_events_wa_image,
         ensure_team_invitations,
         ensure_owner_notifications,
+        ensure_admin_support_sessions,
         ensure_guest_optout,
         ensure_message_delivery,
         ensure_ops_tables,
@@ -785,6 +894,10 @@ def apply_schema_patches(engine: Engine) -> None:
         ensure_entitlements,
         # Must run AFTER the campaigns/usage tables exist.
         ensure_round_usage_backfill,
+        ensure_performance_indexes,
+        ensure_assistant_tables,
+        ensure_guest_questions,
+        ensure_conversation_flow_configs,
     )
     failed = []
     for patch in patches:
@@ -793,11 +906,54 @@ def apply_schema_patches(engine: Engine) -> None:
         except Exception as exc:
             failed.append(patch.__name__)
             logger.error("Schema patch %s FAILED: %s", patch.__name__, exc)
+            _record_patch_failure(patch.__name__, exc)
     if failed:
         logger.error(
             "%s schema patch(es) failed and were skipped: %s. The service will run, "
             "but features depending on those columns may misbehave.",
             len(failed), ", ".join(failed),
         )
+    return failed
 
 
+def _record_patch_failure(name: str, exc: Exception) -> None:
+    """Surface a failed schema patch on the ops dashboard (ops_errors) - a log
+    line alone is invisible in production. Best-effort, never raises."""
+    try:
+        from shared.ops.errors import record_error
+        record_error("core", f"schema patch {name} failed: {exc}", severity="critical",
+                     error_type=type(exc).__name__, context={"patch": name})
+    except Exception:
+        pass
+
+
+
+
+def ensure_conversation_flow_configs(engine: Engine) -> None:
+    """Admin-editable guest RSVP conversation flow (shared/domain/flow_config.py).
+
+    One row per saved VERSION of a scope's sparse override; exactly one active
+    row per (scope, scope_key). Saving = new version; revert = new version that
+    copies an old config. A scope with no active row inherits fully.
+    """
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS conversation_flow_configs (
+            id BIGSERIAL PRIMARY KEY,
+            scope VARCHAR(20) NOT NULL,
+            scope_key VARCHAR(64) NOT NULL,
+            config JSONB NOT NULL DEFAULT '{}'::jsonb,
+            version INTEGER NOT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT false,
+            note TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            created_by UUID,
+            CONSTRAINT ck_flow_scope CHECK (scope IN ('global', 'event_type', 'event'))
+        )
+        """,
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_flow_scope_version ON conversation_flow_configs (scope, scope_key, version)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_flow_scope_active ON conversation_flow_configs (scope, scope_key) WHERE is_active",
+    ]
+    with engine.begin() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))

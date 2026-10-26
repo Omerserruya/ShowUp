@@ -28,6 +28,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def mask_phone(phone) -> str:
+    """Log-safe phone: only the last 4 digits ("***4567"). OTP codes and message
+    bodies are never logged (review item 5.12)."""
+    digits = "".join(ch for ch in str(phone or "") if ch.isdigit())
+    return f"***{digits[-4:]}" if digits else "***"
+
+
 class OTPWorker:
     """Worker that consumes OTP messages from RabbitMQ and sends them."""
     
@@ -96,34 +103,34 @@ class OTPWorker:
             body: Message body (bytes)
         """
         try:
-            logger.info(f"Received message: {body.decode('utf-8')}")
-            
+            logger.info("Received OTP message (%d bytes)", len(body or b""))
+
             # Parse message
             message_data = self.parse_message(body)
             phone = message_data['phone']
             code = message_data['code']
             platform = message_data.get('platform', 'WA')
             
-            logger.info(f"Processing OTP: phone={phone}, code={code}, platform={platform}")
+            logger.info("Processing OTP: phone=%s platform=%s", mask_phone(phone), platform)
 
             # Deliver the OTP over WhatsApp using the approved "otp" template.
             outcome = send_otp_via_whatsapp(phone, code)
 
             if outcome == "sent":
                 ch.basic_ack(delivery_tag=method.delivery_tag)
-                logger.info(f"Successfully sent OTP via WhatsApp for phone: {phone}")
+                logger.info("Successfully sent OTP via WhatsApp for phone: %s", mask_phone(phone))
             elif outcome == "permanent":
                 # Will never succeed as-is (e.g. expired token, bad params).
                 # Requeuing would hot-loop and flood the API/logs, so drop it.
                 logger.error(
-                    f"Permanent WhatsApp OTP failure for {phone}; dropping message "
+                    f"Permanent WhatsApp OTP failure for {mask_phone(phone)}; dropping message "
                     f"(check WA_API_B token / template config)"
                 )
                 ch.basic_ack(delivery_tag=method.delivery_tag)
             else:
                 # Transient failure - back off before requeueing so a sustained
                 # outage retries slowly instead of in a tight loop.
-                logger.warning(f"Transient WhatsApp OTP failure for {phone}; requeueing after backoff")
+                logger.warning("Transient WhatsApp OTP failure for %s; requeueing after backoff", mask_phone(phone))
                 time.sleep(RETRY_BACKOFF_SECONDS)
                 ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
 

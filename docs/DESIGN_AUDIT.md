@@ -209,4 +209,6 @@ All changes typecheck clean and the production build passes (bundle −9.26 kB g
 - #65 partial: OTP resend refocuses the first digit (Login + Register).
 - #46 Recap mobile strip divider fixed; first-confirmation confetti no longer fires on past events.
 
-**Deliberately NOT done (needs product decisions / bigger effort):** #28 brand-token consolidation (pick violet vs. indigo first), #29 theme-level RTL (stylis plugin - mechanical but wide), #13 root fix (should Basic include seating?), #25 canonical event-status helper (backend contract), #47 optimistic guest grid, #49 CustomMessageEditor in campaign editing, #44 recap "moments", #59 image crop/progress, #63 timezone anchoring (backend).
+**Update 2026-09-04:** #28 brand-token consolidation is DONE - theme `primary` is now the periwinkle family (`brand[400]=#5f64d6`, `brand[300]=#888cee`); plan colors unified; landing, dashboard KPI tiles and the Guests header were restyled in the same pass.
+
+**Deliberately NOT done (needs product decisions / bigger effort):** #29 theme-level RTL (stylis plugin - mechanical but wide), #13 root fix (should Basic include seating?), #25 canonical event-status helper (backend contract), #47 optimistic guest grid, #49 CustomMessageEditor in campaign editing, #44 recap "moments", #59 image crop/progress, #63 timezone anchoring (backend).

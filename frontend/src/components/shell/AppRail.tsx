@@ -16,16 +16,12 @@ import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import { primaryNav, accountNav, NavItem } from './navConfig';
 import ViewModeSwitcher, { ViewMode, VIEW_MODE_META } from './ViewModeSwitcher';
-import EventSwitcher from './EventSwitcher';
-import UserAvatar from '../UserAvatar';
-import OptionsMenu from '../OptionsMenu';
 import { useUser } from '../../contexts/UserContext';
-import { useEvent } from '../../contexts/EventContext';
 import { useBanner } from '../../contexts/BannerContext';
 import { useVenueAdmin } from '../../hooks/useVenueAdmin';
 
-const BRAND = '#888cee';
-const DEEP = '#6f74e0';
+const BRAND = '#9D83E0';
+const DEEP = '#5A3DA6';
 const COLLAPSED = 76;
 const EXPANDED = 264;
 
@@ -46,8 +42,7 @@ export default function AppRail() {
   const isDark = theme.palette.mode === 'dark';
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, isAdmin } = useUser();
-  const { selectedEvent } = useEvent();
+  const { isAdmin } = useUser();
   const { isBannerVisible } = useBanner();
   const { isVenueAdmin } = useVenueAdmin();
   const [expanded, setExpanded] = useState(false);
@@ -178,12 +173,9 @@ export default function AppRail() {
         </Box>
       )}
 
-      {/* Event switcher - only relevant while working on your own event. */}
-      {mode === 'owner' && <EventSwitcher expanded={expanded} />}
-
-      {/* Scrollable nav region - EventSwitcher (above) and the user footer
-          (below) stay pinned; the nav groups scroll when they overflow (e.g. the
-          admin console adds many items on shorter screens). */}
+      {/* The event switcher and the signed-in user live in the top bar on desktop -
+          the rail is navigation only. The nav groups scroll when they overflow
+          (e.g. the admin console adds many items on shorter screens). */}
       <Box
         sx={{
           flex: 1,
@@ -230,14 +222,6 @@ export default function AppRail() {
         </Box>
       </Box>
 
-      {/* User */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, p: 1, borderRadius: 3, bgcolor: isDark ? alpha('#fff', 0.04) : alpha(theme.palette.text.primary, 0.03) }}>
-        <Box sx={{ flexShrink: 0 }}><UserAvatar username={user?.username || 'Guest'} /></Box>
-        <Box sx={{ flex: 1, minWidth: 0, opacity: expanded ? 1 : 0, transition: 'opacity .18s ease', whiteSpace: 'nowrap', overflow: 'hidden' }}>
-          <Typography noWrap sx={{ fontSize: '0.85rem', fontWeight: 700, color: 'text.primary' }}>{user?.username || 'אורח'}</Typography>
-        </Box>
-        <Box sx={{ flexShrink: 0, opacity: expanded ? 1 : 0, transition: 'opacity .18s ease', pointerEvents: expanded ? 'auto' : 'none' }}><OptionsMenu /></Box>
-      </Box>
     </Box>
   );
 }

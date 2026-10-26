@@ -63,3 +63,44 @@ def queue_owner_notification(
         except Exception:
             pass
         return False
+
+
+def queue_assistant_intro(db: Session, *, event, owner_user_id: uuid.UUID) -> bool:
+    """Queue the one-time "meet your AI assistant" WhatsApp to a new event's owner.
+
+    Called from the single event-construction path (entitlement redemption), so
+    EVERY way an event comes into being - paid checkout, free self-service, a
+    redemption/gift link, a clone, an admin or venue direct-create - introduces
+    the assistant exactly once. Dedupe key is the event id, so a replayed payment
+    IPN or a second writer (aub's provisioning) can never send it twice.
+
+    Best-effort in every respect: the owner's phone lives in aub, so a failed
+    directory lookup means no intro, never a failed event creation.
+    """
+    try:
+        from app import user_directory  # local import: keeps aub HTTP out of import time
+
+        directory = user_directory.resolve_users_by_ids([owner_user_id])
+        owner = directory.get(str(owner_user_id)) or {}
+        phone = (owner.get("phone") or "").strip()
+        if not phone:
+            logger.warning(
+                "assistant intro skipped for event %s: no phone for owner %s",
+                getattr(event, "id", None), owner_user_id,
+            )
+            return False
+        return queue_owner_notification(
+            db,
+            kind="assistant_intro",
+            recipient_phone=phone,
+            params={
+                "1": (owner.get("first_name") or "").strip() or "חבר/ה",
+                "2": (getattr(event, "name", None) or "האירוע"),
+            },
+            event_id=getattr(event, "id", None),
+            dedupe_key=f"assistant_intro:{event.id}",
+        )
+    except Exception as exc:
+        logger.warning("assistant intro queue failed for event %s: %s",
+                       getattr(event, "id", None), exc)
+        return False

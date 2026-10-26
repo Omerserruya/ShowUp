@@ -46,3 +46,9 @@ def normalize_phone(phone: str | None) -> str | None:
     
     return digits
 
+
+
+def mask_phone(phone: str | None) -> str:
+    """Log-safe phone: last 4 digits only ("***1686")."""
+    digits = "".join(ch for ch in str(phone or "") if ch.isdigit())
+    return f"***{digits[-4:]}" if digits else "-"

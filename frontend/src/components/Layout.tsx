@@ -1,10 +1,10 @@
 import React from 'react';
-import { Box, Button, CircularProgress, Typography, useTheme } from '@mui/material';
+import { Box, Button, CircularProgress, Typography } from '@mui/material';
 import { Outlet, Navigate, useLocation } from 'react-router-dom';
-import AppRail from './shell/AppRail';
+import SideNav from './shell/SideNav';
 import MobileNav from './shell/MobileNav';
-import PageHeader from './shell/PageHeader';
-import DashboardHeader from './dashboard/DashboardHeader';
+import AppHeader from './shell/AppHeader';
+import { SnapshotProvider } from '../contexts/SnapshotContext';
 import AssistantWidget from './AssistantWidget';
 import KeyboardShortcuts from './KeyboardShortcuts';
 import { useUser } from '../contexts/UserContext';
@@ -15,11 +15,12 @@ import { useVenueAdmin } from '../hooks/useVenueAdmin';
 // Browser-tab titles per section, matching the nav labels so tabs, history and
 // bookmarks are distinguishable.
 const DOC_TITLES: Record<string, string> = {
-  '/overview': 'הבית',
-  '/guests': 'האורחים',
+  '/overview': 'סקירה',
+  '/insights': 'תמונת מצב',
+  '/guests': 'מוזמנים',
   '/guests/imported': 'אישור אורחים',
   '/invitation': 'ההזמנה',
-  '/messages': 'תזכורות',
+  '/messages': 'סבבי שליחה',
   '/seating': 'הושבה',
   '/recap': 'סיכום החגיגה',
   '/settings': 'הגדרות',
@@ -43,9 +44,7 @@ function Layout() {
   const { events, eventsLoaded, error: eventsError, fetchEvents } = useEvent();
   const { isVenueAdmin, loading: venueAdminLoading } = useVenueAdmin();
   const location = useLocation();
-  const theme = useTheme();
   const { isBannerVisible } = useBanner();
-  const isDark = theme.palette.mode === 'dark';
 
   React.useEffect(() => {
     const section = DOC_TITLES[location.pathname];
@@ -54,7 +53,7 @@ function Layout() {
 
   const centeredLoader = (
     <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-      <CircularProgress sx={{ color: '#888cee' }} />
+      <CircularProgress sx={{ color: '#9D83E0' }} />
     </Box>
   );
 
@@ -92,61 +91,43 @@ function Layout() {
     }
   }
 
+  const fullBleed = location.pathname.startsWith('/seating') || location.pathname.startsWith('/invitation');
   return (
-    <Box
-      dir="rtl"
-      sx={{
-        minHeight: '100dvh',
-        background: isDark ? theme.palette.background.default : '#ffffff',
-        pt: isBannerVisible ? '48px' : 0,
-      }}
-    >
-      <AppRail />
-      <MobileNav />
-
-      {/* Content area - clears the floating rail on desktop. */}
+    <SnapshotProvider>
       <Box
-        component="main"
-        sx={{
-          pr: { xs: 0, md: '108px' },
-          pl: { xs: 0, md: 2 },
-        }}
+        dir="rtl"
+        className="su-scope"
+        sx={{ position: 'relative', minHeight: '100dvh', bgcolor: '#F5F1E9', pt: isBannerVisible ? '48px' : 0 }}
       >
-        {/* Application chrome - full-width, sticks to the top of the content. */}
-        <Box
-          sx={{
-            position: 'sticky',
-            top: isBannerVisible ? '48px' : 0,
-            zIndex: 1100,
-            bgcolor: isDark ? '#0b0e16' : '#ffffff',
-            borderBottom: '1px solid',
-            borderColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(46,58,74,0.07)',
-          }}
-        >
-          <Box sx={{ maxWidth: 1280, mx: 'auto', px: { xs: 2.25, sm: 4 } }}>
-            <DashboardHeader />
+        {/* Design v6 backdrop: the ShowUp seal, very faint, plus a dot grid. */}
+        <Box aria-hidden="true" sx={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none', overflow: 'hidden' }}>
+          <Box component="img" src="/brand/seal.png" alt="" sx={{ position: 'absolute', top: '50%', left: '34%', width: '120vmax', height: '120vmax', m: '-60vmax 0 0 -60vmax', objectFit: 'contain', opacity: 0.05, filter: 'grayscale(0.2)', display: { xs: 'none', md: 'block' } }} />
+          <Box sx={{ position: 'absolute', inset: 0, opacity: 0.3, backgroundImage: 'radial-gradient(rgba(22,21,15,.09) .9px,transparent 1px)', backgroundSize: '46px 46px' }} />
+        </Box>
+
+        <Box sx={{ position: 'relative', zIndex: 1, display: 'flex', minHeight: '100dvh' }}>
+          <SideNav />
+          <Box component="main" sx={{ flex: 1, minWidth: 0 }}>
+            <AppHeader />
+            <Box
+              sx={{
+                maxWidth: fullBleed ? 'none' : 1240,
+                mx: 'auto',
+                px: fullBleed ? { xs: 2.25, md: 2 } : { xs: 2.25, md: 4 },
+                pt: { xs: 2.5, md: 3.25 },
+                pb: { xs: '110px', md: 8 }, // room for the mobile tab bar
+              }}
+            >
+              <Outlet />
+            </Box>
           </Box>
         </Box>
 
-        <Box
-          sx={{
-            // The seating canvas wants the whole viewport width - every other
-            // page keeps the comfortable reading column.
-            maxWidth: location.pathname.startsWith('/seating') ? 'none' : 1280,
-            mx: 'auto',
-            px: location.pathname.startsWith('/seating') ? { xs: 1, sm: 2 } : { xs: 2.25, sm: 4 },
-            pt: { xs: 2.5, md: 3.5 },
-            pb: { xs: '120px', md: 6 }, // room for the mobile dock
-          }}
-        >
-          <PageHeader />
-          <Outlet />
-        </Box>
+        <MobileNav />
+        <AssistantWidget />
+        <KeyboardShortcuts />
       </Box>
-
-      <AssistantWidget />
-      <KeyboardShortcuts />
-    </Box>
+    </SnapshotProvider>
   );
 }
 

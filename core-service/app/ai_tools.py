@@ -99,9 +99,15 @@ def dispatch_tool(ctx: ToolContext, name: str, args: Optional[dict] = None) -> d
     try:
         result = tool.handler(ctx, args)
     except (ToolDenied, ToolError) as e:
+        # A handler may have failed mid-write; never leave the session in a
+        # failed transaction for the audit write (or the next tool call).
+        ctx.db.rollback()
         record_audit(ctx.db, account_id=account_id, actor_type=ctx.actor_type, actor_id=ctx.user_id,
                      action=f"tool:{name}", entity_type="event", entity_id=ctx.event_id,
                      data={"status": "error", "error": str(e), "args": _safe(args)})
+        raise
+    except Exception:
+        ctx.db.rollback()
         raise
     record_audit(ctx.db, account_id=account_id, actor_type=ctx.actor_type, actor_id=ctx.user_id,
                  action=f"tool:{name}", entity_type="event", entity_id=ctx.event_id,
@@ -128,11 +134,44 @@ def _uuid_arg(value, field_name: str) -> uuid.UUID:
 
 # --------------------------- handlers ---------------------------
 
-def _guest_out(g: Guest) -> dict:
-    return {"id": str(g.id), "name": g.name, "phone": g.phone, "status": g.status,
-            "group": g.group, "guest_count": g.guest_count, "table_number": g.table_number,
-            "notes": g.notes,
-            "last_response": g.last_response.isoformat() if g.last_response else None}
+# Guest notes are written by GUESTS (free text over WhatsApp) - untrusted input
+# that reaches the model. Bounded so a long note can't carry a payload/flood
+# the context; the router additionally wraps every tool result as untrusted.
+NOTES_MAX_CHARS = 200
+
+
+def _short_notes(notes: Optional[str]) -> Optional[str]:
+    if not notes:
+        return notes
+    notes = str(notes)
+    return notes if len(notes) <= NOTES_MAX_CHARS else notes[:NOTES_MAX_CHARS] + "…"
+
+
+def _guest_out(g: Guest, include_phone: bool = False) -> dict:
+    out = {"id": str(g.id), "name": g.name, "status": g.status,
+           "group": g.group,
+           # party_size = the guest's own answer once they confirmed (guest_count),
+           # else the owner's expected number (import_count).
+           "party_size": _party_size(g),
+           "guest_count": g.guest_count, "expected_count": g.import_count,
+           "table_number": g.table_number,
+           "notes": _short_notes(g.notes),
+           "last_response": g.last_response.isoformat() if g.last_response else None}
+    # Phone numbers are not sent to the LLM provider unless the user asked.
+    if include_phone:
+        out["phone"] = g.phone
+    return out
+
+
+def _is_confirmed(status: Optional[str]) -> bool:
+    return (str(status or "").strip().lower() in GuestStatus.confirmed_values()
+            or GuestStatus.normalize(status) == GuestStatus.CONFIRMED)
+
+
+def _party_size(g: Guest) -> int:
+    if _is_confirmed(g.status) and g.guest_count:
+        return g.guest_count
+    return g.import_count or g.guest_count or 1
 
 
 def _parse_dt(value, field_name: str) -> dt.datetime:
@@ -180,13 +219,23 @@ def _h_search_guest(ctx: ToolContext, args: dict):
         items = [g for g in items if g.last_response and g.last_response >= since]
     if scan_all:
         items = items[:max(limit, 200)]
-    return [_guest_out(g) for g in items]
+    include_phone = bool(args.get("include_phone"))
+    return [_guest_out(g, include_phone) for g in items]
 
 
 def _h_add_guest(ctx: ToolContext, args: dict):
-    payload = GuestCreate(event_id=ctx.event_id, name=args["name"], phone=args["phone"],
-                          import_count=args.get("import_count", 1))
-    guest = guest_crud.create_guest(ctx.db, payload)
+    if not str(args.get("name") or "").strip() or not str(args.get("phone") or "").strip():
+        raise ToolError("name and phone are both required to add a guest")
+    try:
+        payload = GuestCreate(event_id=ctx.event_id, name=args["name"], phone=args["phone"],
+                              import_count=args.get("import_count", 1))
+    except Exception as e:  # pydantic validation (bad count, too-long name...)
+        raise ToolError(f"invalid guest details: {e}")
+    try:
+        guest = guest_crud.create_guest(ctx.db, payload)
+    except ValueError as e:  # capacity reached / duplicate phone in this event
+        ctx.db.rollback()
+        raise ToolError(str(e))
     record_guest_event(ctx.db, guest_id=guest.id, event_id=ctx.event_id, type=GuestEventType.AI_ACTION,
                        actor_type=ActorType.ASSISTANT, actor_id=ctx.user_id, data={"action": "add_guest"})
     event = event_crud.get_event(ctx.db, ctx.event_id)
@@ -240,19 +289,55 @@ def _resolve_guest(ctx: ToolContext, args: dict) -> Guest:
 
 def _h_update_guest(ctx: ToolContext, args: dict):
     guest = _resolve_guest(ctx, args)
+    args = dict(args)
+    # Party size: `party_size` is the model-facing arg. A legacy `guest_count`
+    # arg means the same thing - the model can't know the storage rule, and
+    # writing guest_count for a guest who never answered fabricated an RSVP
+    # answer ("coming with 3") the guest never gave. `import_count` stays an
+    # explicit "expected" write.
+    party_size = args.pop("party_size", None)
+    if party_size is None:
+        party_size = args.pop("guest_count", None)
+    else:
+        args.pop("guest_count", None)
     fields = {k: v for k, v in args.items() if k in GuestUpdate.model_fields and v is not None}
-    if not fields:
-        raise ToolError("nothing to update - provide at least one field to change "
-                        "(status, notes, guest_count, table_number, name, phone, group...)")
     if "status" in fields:
         fields["status"] = GuestStatus.normalize(fields["status"]).value
+    if party_size is not None:
+        try:
+            party_size = int(party_size)
+        except (TypeError, ValueError):
+            raise ToolError("party_size must be a whole number (1 or more)")
+        if party_size < 1:
+            raise ToolError("party_size must be at least 1")
+        # The status AFTER this update decides: confirmed -> the RSVP answer
+        # (guest_count); otherwise -> the owner's expected number (import_count).
+        if _is_confirmed(fields.get("status", guest.status)):
+            fields["guest_count"] = party_size
+        else:
+            fields["import_count"] = party_size
+    if not fields:
+        raise ToolError("nothing to update - provide at least one field to change "
+                        "(status, notes, party_size, table_number, name, phone, group...)")
+    from app.plans_client import PlanLookupUnavailable
     try:
         guest = guest_crud.update_guest(ctx.db, guest, GuestUpdate(**fields))
-    except ValueError as e:  # e.g. duplicate phone in this event
+    except ValueError as e:  # e.g. duplicate phone in this event, capacity reached
+        ctx.db.rollback()
         raise ToolError(str(e))
+    except PlanLookupUnavailable:
+        ctx.db.rollback()
+        raise ToolError("could not verify the plan's guest capacity right now - try again in a minute")
     record_guest_event(ctx.db, guest_id=guest.id, event_id=ctx.event_id, type=GuestEventType.AI_ACTION,
                        actor_type=ActorType.ASSISTANT, actor_id=ctx.user_id, data={"action": "update_guest", "fields": list(fields)})
-    return {"id": str(guest.id), "status": guest.status}
+    out = {"id": str(guest.id), "name": guest.name, "status": guest.status,
+           "party_size": _party_size(guest), "updated_fields": sorted(fields)}
+    if "import_count" in fields and party_size is not None:
+        out["note"] = ("the guest has not confirmed yet, so this was saved as the EXPECTED party "
+                       "size; it becomes their confirmed count only when they RSVP")
+    if "table_number" in fields:
+        out["table_number"] = guest.table_number
+    return out
 
 
 def _h_delete_guest(ctx: ToolContext, args: dict):
@@ -294,9 +379,16 @@ def _h_event_stats(ctx: ToolContext, args: dict):
 
 def _h_export_guests(ctx: ToolContext, args: dict):
     items, _ = guest_crud.list_guests(ctx.db, event_id=ctx.event_id, page=1, page_size=10000)
-    return [{"name": g.name, "phone": g.phone, "status": g.status, "group": g.group,
-             "guest_count": g.guest_count, "table_number": g.table_number, "notes": g.notes}
-            for g in items]
+    include_phone = bool(args.get("include_phone"))
+    out = []
+    for g in items:
+        row = {"name": g.name, "status": g.status, "group": g.group,
+               "guest_count": g.guest_count, "table_number": g.table_number,
+               "notes": _short_notes(g.notes)}
+        if include_phone:
+            row["phone"] = g.phone
+        out.append(row)
+    return out
 
 
 def _phone_key(phone: Optional[str]) -> str:
@@ -363,13 +455,123 @@ def _h_message_stats(ctx: ToolContext, args: dict):
 
 def _h_event_summary(ctx: ToolContext, args: dict):
     event = event_crud.get_event(ctx.db, ctx.event_id)
-    return {
+    out = {
         "id": str(event.id),
         "name": event.name,
         "description": event.description,
         "event_date": event.event_date.isoformat() if event.event_date else None,
         "location": event.location,
+        "event_type": getattr(event, "event_type", None),
         "active": bool(event.active),
+        "plan": getattr(event, "plan_id", None),
+    }
+    # Message rounds: included in the plan + purchased, how many are used/left.
+    try:
+        out["rounds"] = _rounds_status(ctx, event)
+    except Exception:
+        ctx.db.rollback()
+    return out
+
+
+def _rounds_status(ctx: ToolContext, event) -> dict:
+    from app.routers.campaigns import _rounds_status as rounds_status
+    st = rounds_status(ctx.db, event)
+    return {"included_in_plan": st["included"], "purchased_extra": st["allowance"],
+            "used": st["used"], "remaining": st["remaining"]}
+
+
+# --------------------------- questions to guests ---------------------------
+
+_YES_NO_HE = {True: "כן", False: "לא"}
+_QUESTION_TEXT_MAX = 80
+
+
+def _answer_labels(field, value) -> list[str]:
+    """A guest's stored answer as display labels (one per selected option)."""
+    if value is None or value == "" or value == []:
+        return []
+    values = value if isinstance(value, list) else [value]
+    out = []
+    for v in values:
+        if isinstance(v, dict):  # tolerate {"value": ..} / {"label": ..} shapes
+            v = v.get("label", v.get("value"))
+        if isinstance(v, bool) or (field.data_type == "boolean" and str(v).lower() in ("true", "false")):
+            v = _YES_NO_HE[v if isinstance(v, bool) else str(v).lower() == "true"]
+        text = str(v).strip()
+        if text:
+            out.append(text if len(text) <= _QUESTION_TEXT_MAX else text[:_QUESTION_TEXT_MAX] + "…")
+    return out
+
+
+def _h_question_results(ctx: ToolContext, args: dict):
+    """Answers to the questions the event asks its guests (custom fields)."""
+    from app.models.models import EventFieldDef, GuestCustomValue
+
+    defs = (ctx.db.query(EventFieldDef)
+            .filter(EventFieldDef.event_id == ctx.event_id)
+            .order_by(EventFieldDef.sort_order, EventFieldDef.created_at).all())
+    if not defs:
+        return {"questions": [], "note": "this event has no questions for guests yet - they can be "
+                                         "added in the app (Settings / invitation page)"}
+
+    def _summary(f) -> dict:
+        return {"key": f.key, "label": f.label, "type": f.data_type,
+                "options": list(f.options or []) if f.data_type == "enum" else None,
+                "asked_in_rsvp": bool(getattr(f, "ask_in_rsvp", False))}
+
+    wanted = str(args.get("question") or args.get("question_key") or args.get("label") or "").strip()
+    if not wanted:
+        return {"questions": [_summary(f) for f in defs],
+                "note": "call again with question=<key or label> for the answers"}
+
+    low = wanted.lower()
+    field = (next((f for f in defs if f.key.lower() == low), None)
+             or next((f for f in defs if (f.label or "").strip().lower() == low), None))
+    if field is None:
+        partial = [f for f in defs if low in (f.label or "").lower() or low in f.key.lower()
+                   or (f.label or "").lower() in low]
+        if len(partial) == 1:
+            field = partial[0]
+        elif len(partial) > 1:
+            raise ToolError("several questions match '%s': %s - pass the exact key" % (
+                wanted, ", ".join(f"{f.label} (key {f.key})" for f in partial)))
+        else:
+            raise ToolError("no question matching '%s'. Existing questions: %s" % (
+                wanted, ", ".join(f"{f.label} (key {f.key})" for f in defs)))
+
+    rows = (ctx.db.query(GuestCustomValue, Guest)
+            .join(Guest, Guest.id == GuestCustomValue.guest_id)
+            .filter(GuestCustomValue.field_def_id == field.id,
+                    Guest.event_id == str(ctx.event_id)).all())
+
+    by_option: Dict[str, list] = {}
+    if field.data_type == "enum":
+        for opt in field.options or []:
+            by_option[str(opt)] = []
+    elif field.data_type == "boolean":
+        by_option = {"כן": [], "לא": []}
+    answered_ids = set()
+    for cv, g in rows:
+        labels = _answer_labels(field, cv.value)
+        if not labels:
+            continue
+        answered_ids.add(str(g.id))
+        for label in labels:
+            by_option.setdefault(label, []).append({"name": g.name, "rsvp_status": g.status,
+                                                    "party_size": _party_size(g)})
+
+    confirmed = GuestStatus.confirmed_values()
+    confirmed_guests = ctx.db.query(Guest).filter(Guest.event_id == str(ctx.event_id),
+                                                  Guest.status.in_(list(confirmed))).all()
+    no_answer = [g for g in confirmed_guests if str(g.id) not in answered_ids]
+    return {
+        **_summary(field),
+        "answered": len(answered_ids),
+        "results": [{"answer": label, "count": len(gs),
+                     "people": sum(x["party_size"] for x in gs),
+                     "guests": gs[:200]} for label, gs in by_option.items()],
+        "confirmed_without_answer": len(no_answer),
+        "confirmed_without_answer_names": [g.name for g in no_answer[:50]],
     }
 
 
@@ -425,6 +627,10 @@ def _h_update_campaign(ctx: ToolContext, args: dict):
         fields["name"] = args["name"]
     if args.get("schedule_time"):
         fields["schedule_time"] = _parse_dt(args["schedule_time"], "schedule_time")
+        # Moving a round to (nearly) now is a LAUNCH, not an edit: it needs the
+        # same permission as TriggerCampaign (an editor may reschedule, not send).
+        if is_near_launch(fields["schedule_time"]):
+            _require_action(ctx, Action.CAMPAIGN_LAUNCH)
     if args.get("audience"):
         try:
             fields["audience"] = CampaignAudience(str(args["audience"]))
@@ -446,6 +652,208 @@ def _h_update_campaign(ctx: ToolContext, args: dict):
     except ValueError as e:  # e.g. schedule conflicts with another campaign
         raise ToolError(str(e))
     return _campaign_out(campaign)
+
+
+# A reschedule to within this window of "now" counts as launching the round.
+NEAR_LAUNCH_WINDOW = dt.timedelta(hours=6)
+
+
+def is_near_launch(when: dt.datetime) -> bool:
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=dt.timezone.utc)
+    return when <= dt.datetime.now(dt.timezone.utc) + NEAR_LAUNCH_WINDOW
+
+
+def _require_action(ctx: ToolContext, action: Action) -> None:
+    event = event_crud.get_event(ctx.db, ctx.event_id)
+    role = resolve_role(ctx.db, event, ctx.user_id)
+    if role is None or not can(role, action):
+        raise ToolDenied(f"this requires the '{action.value}' permission, which your role does not have")
+
+
+# --------------------------- new rounds ---------------------------
+
+# Stages the assistant may open a round for (save-the-date is wizard-only).
+CREATABLE_STAGES = ("invitation", "reminder", "final_reminder", "table_assignment", "thank_you")
+STAGE_TITLE_HE = {"invitation": "הזמנה", "reminder": "תזכורת", "final_reminder": "תזכורת אחרונה",
+                  "table_assignment": "שיוך שולחן", "thank_you": "תודה"}
+AUDIENCE_HE = {"everyone": "כל האורחים", "confirmed": "מי שאישר הגעה", "declined": "מי שסירב",
+               "no_response": "מי שעוד לא ענה", "custom": "קבוצה מותאמת"}
+SEND_WINDOW_NOTE_HE = ("סבבים יוצאים רק בשעות השליחה: א'-ה' 09:00-21:00, שישי עד 14:00 "
+                       "(ובמוצאי שבת 20:00-21:00). סבב שמתוזמן מחוץ לשעות האלה יוצא כשהחלון נפתח.")
+
+_IL_TZ = None
+
+
+def _il_tz():
+    global _IL_TZ
+    if _IL_TZ is None:
+        try:
+            from zoneinfo import ZoneInfo
+            _IL_TZ = ZoneInfo("Asia/Jerusalem")
+        except Exception:
+            _IL_TZ = dt.timezone(dt.timedelta(hours=2))
+    return _IL_TZ
+
+
+def _in_send_window(when: dt.datetime) -> bool:
+    """Default campaign send window (scheduler-service/send_window.py):
+    Sun-Thu 09-21, Fri 09-14, Sat 20-21, Israel time. Informational only."""
+    local = when.astimezone(_il_tz())
+    minutes = local.hour * 60 + local.minute
+    wd = local.weekday()  # Mon=0 .. Sun=6
+    if wd == 4:
+        return 9 * 60 <= minutes < 14 * 60
+    if wd == 5:
+        return 20 * 60 <= minutes < 21 * 60
+    return 9 * 60 <= minutes < 21 * 60
+
+
+def _parse_when(value) -> dt.datetime:
+    """'now' or an ISO datetime; a naive time is Israel local time."""
+    raw = str(value or "").strip()
+    now = dt.datetime.now(dt.timezone.utc)
+    if not raw or raw.lower() in ("now", "עכשיו", "immediately"):
+        return now
+    try:
+        parsed = dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        raise ToolError("when must be 'now' or an ISO 8601 datetime with offset, e.g. 2026-11-02T10:00:00+02:00")
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_il_tz())
+    parsed = parsed.astimezone(dt.timezone.utc)
+    if parsed < now - dt.timedelta(minutes=5):
+        raise ToolError("when is in the past - pick a future time, or 'now'")
+    return max(parsed, now)
+
+
+def _template_for_stage(stage: str, event_type: Optional[str]):
+    """The catalog's default SENDABLE template for this stage AND event type -
+    the same choice the Messages page's "סבב חדש" dialog preselects
+    (isSendableFor + is_default first). Image-header templates are skipped:
+    the assistant cannot attach the required image."""
+    from shared.domain.messaging import BUILTIN_CATALOG
+    from app.routers.catalog import _sendable_event_types
+    sendable_for = _sendable_event_types()
+
+    def _sendable(t) -> bool:
+        ets = sendable_for.get(t.key, ())
+        if not event_type:
+            return bool(t.is_usable or ets)
+        return event_type in ets
+
+    candidates = [t for t in BUILTIN_CATALOG.values()
+                  if getattr(t.flow_stage, "value", t.flow_stage) == stage and _sendable(t)]
+    no_image = [t for t in candidates if getattr(t.preview, "header", None) != "image"]
+    if not no_image:
+        if candidates:
+            raise ToolError(f"the {stage} templates available for this event need an image - "
+                            "tell the user to create this round in the app (סבבי שליחה -> סבב חדש)")
+        raise ToolError(f"no sendable {stage} template is available for this event type yet - "
+                        "tell the user to check the סבבי שליחה page")
+    no_image.sort(key=lambda t: (not t.is_default, t.title or ""))
+    return no_image[0]
+
+
+def _rounds_exhausted_error(ctx: ToolContext, detail: dict) -> ToolError:
+    price = detail.get("price_gross")
+    price_txt = f" (מחיר סבב נוסף ל-{detail.get('recipients')} נמענים: ₪{price:g})" if isinstance(
+        price, (int, float)) else ""
+    return ToolError(
+        "ROUNDS_EXHAUSTED: לא נשארו סבבים כלולים בחבילה של האירוע "
+        f"(נוצלו {detail.get('used')} מתוך {detail.get('free_total')}). "
+        f"סבב נוסף הוא בתשלום{price_txt} ואפשר לרכוש אותו רק באפליקציה: "
+        "בעמוד 'סבבי שליחה' -> 'סבב חדש'. אי אפשר לרכוש סבב דרכי. "
+        "Tell the user exactly this, in Hebrew; do NOT retry.")
+
+
+def plan_new_round(ctx: ToolContext, args: dict) -> dict:
+    """Validate a CreateCampaign request WITHOUT writing anything: stage,
+    template, time, audience, deliverability, rounds left, launch permission.
+    Shared by the confirmation summary and the handler, so the user is never
+    asked to confirm something that would then be refused."""
+    from fastapi import HTTPException
+    from app.routers import campaigns as campaigns_router
+    from app.schemas.schemas import CampaignCreate
+    from shared.domain.messaging import canonical_stage
+
+    cs = canonical_stage(args.get("stage"))
+    stage = cs.value if cs else None
+    if stage not in CREATABLE_STAGES:
+        raise ToolError("stage must be one of: " + ", ".join(CREATABLE_STAGES))
+    when = _parse_when(args.get("when"))
+    if is_near_launch(when):
+        _require_action(ctx, Action.CAMPAIGN_LAUNCH)
+
+    event = event_crud.get_event(ctx.db, ctx.event_id)
+    event_type = getattr(event, "event_type", None) or "wedding"
+    tmpl = _template_for_stage(stage, event_type)
+
+    fields = {"event_id": ctx.event_id, "name": STAGE_TITLE_HE.get(stage, "סבב חדש"),
+              "template": tmpl.key, "channel": "whatsapp", "status": "pending",
+              "schedule_time": when}
+    audience_arg = str(args.get("audience") or "").strip()
+    if audience_arg:
+        if audience_arg not in ("no_response", "confirmed", "everyone"):
+            raise ToolError("audience must be one of: no_response, confirmed, everyone")
+        fields["audience"] = CampaignAudience(audience_arg)
+    item = CampaignCreate(**fields)
+
+    try:
+        campaigns_router._require_deliverable_template(ctx.db, item.template, None, event_type=event_type)
+    except HTTPException as e:
+        raise ToolError(f"template not deliverable: {e.detail}")
+    try:
+        campaign_crud.validate_schedule_vs_event(ctx.db, event, item.template, when)
+    except ValueError:
+        raise ToolError("that time is after the event - a pre-event round must go out before the event")
+    try:
+        campaigns_router._require_rounds_available(ctx.db, event, ctx.event_id, 1, [item])
+    except HTTPException as e:
+        if e.status_code == 402 and isinstance(e.detail, dict):
+            raise _rounds_exhausted_error(ctx, e.detail)
+        raise ToolError(str(e.detail))
+
+    audience, audience_filter = campaign_crud.derive_audience(ctx.db, item)
+    return {"item": item, "stage": stage, "when": when, "template": tmpl.key,
+            "audience": audience, "audience_filter": audience_filter,
+            "recipients": count_audience(ctx.db, ctx.event_id, audience, audience_filter),
+            "in_send_window": _in_send_window(when)}
+
+
+def new_round_summary(plan: dict) -> str:
+    when_local = plan["when"].astimezone(_il_tz()).strftime("%d/%m/%Y %H:%M")
+    near_now = plan["when"] <= dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=2)
+    when_txt = "מיד (עכשיו)" if near_now else when_local
+    txt = (f'ליצור סבב "{STAGE_TITLE_HE.get(plan["stage"], plan["stage"])}" שיתוזמן ל-{when_txt}, '
+           f'ל-{plan["recipients"]} אורחים ({AUDIENCE_HE.get(plan["audience"], plan["audience"])}). '
+           "הסבב ינוצל מהסבבים הכלולים בחבילה")
+    if not plan["in_send_window"]:
+        txt += ". המועד מחוץ לשעות השליחה, אז הוא ייצא כשחלון השליחה ייפתח"
+    return txt
+
+
+def _h_create_campaign(ctx: ToolContext, args: dict):
+    from app.usage import record_usage as _record_usage
+    plan = plan_new_round(ctx, args)
+    try:
+        campaign = campaign_crud.create_campaign(ctx.db, plan["item"])
+    except ValueError as e:  # min gap between rounds, schedule after event...
+        ctx.db.rollback()
+        raise ToolError(str(e))
+    event = event_crud.get_event(ctx.db, ctx.event_id)
+    # Round usage is billing usage - recorded exactly like the HTTP create path.
+    _record_usage(ctx.db, account_id=getattr(event, "account_id", None), event_id=ctx.event_id,
+                  metric=UsageMetric.ROUND_LAUNCHED, quantity=1, ref_id=campaign.id)
+    out = _campaign_out(campaign)
+    out["schedule_time_israel"] = plan["when"].astimezone(_il_tz()).strftime("%d/%m/%Y %H:%M")
+    out["planned_recipients"] = plan["recipients"]
+    out["note"] = ("The round was CREATED and SCHEDULED - it has NOT been sent yet. Tell the user it is "
+                   "scheduled for schedule_time_israel (to planned_recipients guests). "
+                   + SEND_WINDOW_NOTE_HE)
+    if not plan["in_send_window"]:
+        out["outside_send_window"] = True
+    return out
 
 
 def _h_pause_campaign(ctx: ToolContext, args: dict):
@@ -480,10 +888,20 @@ def _h_update_event(ctx: ToolContext, args: dict):
         fields["event_date"] = _parse_dt(args["event_date"], "event_date")
     if not fields:
         raise ToolError("nothing to update - provide name, description, location and/or event_date")
-    event = event_crud.update_event(ctx.db, event, EventUpdate(**fields))
-    return {"id": str(event.id), "name": event.name,
-            "event_date": event.event_date.isoformat() if event.event_date else None,
-            "location": event.location}
+    try:
+        event = event_crud.update_event(ctx.db, event, EventUpdate(**fields))
+    except ValueError as e:  # e.g. event_date in the past
+        ctx.db.rollback()
+        raise ToolError(str(e))
+    out = {"id": str(event.id), "name": event.name,
+           "event_date": event.event_date.isoformat() if event.event_date else None,
+           "location": event.location}
+    shifted = getattr(event, "shifted_campaigns", None)
+    if shifted:
+        out["shifted_campaigns"] = shifted
+        out["note"] = ("not-yet-sent campaigns were moved by the same amount as the event; "
+                       "any that would now be in the past were paused")
+    return out
 
 
 register(Tool("SearchGuest", Action.GUEST_READ, _h_search_guest,
@@ -503,6 +921,8 @@ register(Tool("SearchGuest", Action.GUEST_READ, _h_search_guest,
                       "Case-insensitive regex matched against guest notes, e.g. 'צמחוני|טבעוני' or 'אלרג'"},
                   "has_notes": {"type": "boolean", "description":
                       "Only guests that have any note - use to summarize all notes/special requirements"},
+                  "include_phone": {"type": "boolean", "description":
+                      "Include phone numbers - ONLY when the user explicitly asked for phone numbers (default false)"},
                   "limit": {"type": "integer", "description": "Max results (default 50)"}}}))
 register(Tool("AddGuest", Action.GUEST_WRITE, _h_add_guest,
               "Create a guest in this event.",
@@ -512,7 +932,7 @@ register(Tool("AddGuest", Action.GUEST_WRITE, _h_add_guest,
                   "import_count": {"type": "integer", "description": "Party size (default 1)"}},
                "required": ["name", "phone"]}))
 register(Tool("UpdateGuest", Action.GUEST_WRITE, _h_update_guest,
-              "Update a guest in this event (status, name, phone, group, table_number, notes, guest_count...). "
+              "Update a guest in this event (status, name, phone, group, table_number, notes, party_size...). "
               "Identify the guest with guest_id (preferred, from SearchGuest) or guest_name.",
               {"type": "object", "properties": {
                   "guest_id": {"type": "string", "description": "Guest UUID from SearchGuest (preferred)"},
@@ -522,7 +942,9 @@ register(Tool("UpdateGuest", Action.GUEST_WRITE, _h_update_guest,
                   "name": {"type": "string", "description": "New name (rename the guest)"},
                   "phone": {"type": "string", "description": "New phone, international format +9725..."},
                   "group": {"type": "string", "description": "Guest group/side"},
-                  "guest_count": {"type": "integer"},
+                  "party_size": {"type": "integer", "description":
+                      "How many people this guest is coming with in total (including them). The "
+                      "server stores it correctly for confirmed vs not-yet-answered guests."},
                   "table_number": {"type": "integer"},
                   "notes": {"type": "string", "description": "Free-text note saved on the guest (overwrites the "
                             "existing note; pass an empty string to delete the note)"}}}))
@@ -544,18 +966,22 @@ register(Tool("MessageStats", Action.CAMPAIGN_READ, _h_message_stats,
                   "campaign_id": {"type": "string", "description": "Limit to one campaign (default: whole event)"},
                   "list": {"type": "string", "enum": ["read", "not_read", "read_no_reply", "not_received"]}}}))
 register(Tool("EventSummary", Action.EVENT_READ, _h_event_summary,
-              "This event's details: name, date, location, description, active state."))
+              "This event's details: name, date, location, description, type, active state, plan, "
+              "and message rounds (included in the plan / used / remaining)."))
 register(Tool("UpdateEvent", Action.EVENT_WRITE, _h_update_event,
               "Update this event's name, description, location (venue/address) and/or event_date "
-              "(date AND time live in event_date). Confirm with the user before changing the date - "
-              "scheduled campaigns do not move automatically.",
+              "(date AND time live in event_date). Changing the date needs the user's confirmation; "
+              "not-yet-sent campaigns move automatically by the same amount.",
               {"type": "object", "properties": {
                   "name": {"type": "string"},
                   "description": {"type": "string"},
                   "location": {"type": "string", "description": "Venue name and/or address, free text"},
                   "event_date": {"type": "string", "description": "ISO 8601 datetime with timezone offset"}}}))
 register(Tool("ExportGuests", Action.GUEST_READ, _h_export_guests,
-              "Full guest list with status, group and table assignment."))
+              "Full guest list with status, group and table assignment.",
+              {"type": "object", "properties": {
+                  "include_phone": {"type": "boolean", "description":
+                      "Include phone numbers - ONLY when the user explicitly asked for them (default false)"}}}))
 register(Tool("ListCampaigns", Action.CAMPAIGN_READ, _h_list_campaigns,
               "List this event's message campaigns with status and schedule.",
               {"type": "object", "properties": {
@@ -581,6 +1007,29 @@ register(Tool("UpdateCampaign", Action.CAMPAIGN_WRITE, _h_update_campaign,
                   "audience_group": {"type": "string", "description":
                       "Send only to this guest group/side (exact group name from EventStats)"}},
                "required": ["campaign_id"]}))
+register(Tool("CreateCampaign", Action.CAMPAIGN_WRITE, _h_create_campaign,
+              "Create a NEW message round (reminder / final reminder / invitation / thank-you / "
+              "table assignment) and schedule it. The server picks the right approved template for "
+              "this event and asks the user to confirm first. Uses one of the plan's rounds; if none "
+              "are left it returns an error explaining an extra round must be bought in the app. "
+              "Never say the round was sent - it is scheduled.",
+              {"type": "object", "properties": {
+                  "stage": {"type": "string", "enum": list(CREATABLE_STAGES),
+                            "description": "reminder = to those who haven't answered; final_reminder = "
+                                           "close to the event; thank_you = after the event; "
+                                           "table_assignment = tell confirmed guests their table"},
+                  "when": {"type": "string", "description":
+                      "'now' or ISO 8601 datetime with Israel offset, e.g. 2026-11-02T10:00:00+02:00"},
+                  "audience": {"type": "string", "enum": ["no_response", "confirmed", "everyone"],
+                               "description": "Optional override; default follows the stage "
+                                              "(reminder -> no_response, thank_you -> confirmed...)"}},
+               "required": ["stage", "when"]}))
+register(Tool("QuestionResults", Action.GUEST_READ, _h_question_results,
+              "Answers to the event's questions for guests (asked in the RSVP, e.g. 'צריכים הסעה?', "
+              "'מנה מועדפת'): count and guest names per answer. Call with no question to list the "
+              "event's questions; then with question=<key or label>.",
+              {"type": "object", "properties": {
+                  "question": {"type": "string", "description": "Question key or (part of) its label"}}}))
 register(Tool("PauseCampaign", Action.CAMPAIGN_WRITE, _h_pause_campaign,
               "Put a scheduled campaign on hold so it will NOT be sent. Confirm with the user first.",
               {"type": "object", "properties": {"campaign_id": {"type": "string"}},

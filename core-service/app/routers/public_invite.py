@@ -26,8 +26,9 @@ any guest's RSVP. Rate limiting is enforced at the edge (nginx `limit_req` on
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 
-from typing import Optional
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -37,7 +38,7 @@ from app.db import get_db
 from app.crud import event as event_crud, guest as guest_crud
 from app.schemas.schemas import GuestCreate, PublicRsvpIn
 from app.utils import normalize_phone
-from app.models.models import Guest
+from app.models.models import EventFieldDef, Guest, GuestCustomValue
 from shared.domain.enums import GuestStatus
 from shared.domain.invite_token import verify_guest_token
 
@@ -53,6 +54,85 @@ class RsvpLookupIn(BaseModel):
     """
     token: Optional[str] = Field(None, max_length=256)
     phone: Optional[str] = Field(None, min_length=4, max_length=32)
+
+
+class PublicRsvpWithAnswersIn(PublicRsvpIn):
+    """PublicRsvpIn + answers to the host's questions ("שאלות לאורחים").
+
+    `answers` maps question (field) id -> chosen option label. Stored only for
+    confirming guests; unknown ids / stale options are ignored so a cached page
+    can never block an RSVP.
+    """
+    answers: Optional[Dict[str, str]] = None
+
+
+def _public_questions(db: Session, event_id) -> List[EventFieldDef]:
+    try:
+        return (
+            db.query(EventFieldDef)
+            .filter(EventFieldDef.event_id == event_id, EventFieldDef.ask_in_rsvp.is_(True),
+                    EventFieldDef.data_type == "enum")
+            .order_by(EventFieldDef.sort_order, EventFieldDef.created_at)
+            .all()
+        )
+    except Exception:  # column not migrated yet -> no questions, never break the page
+        db.rollback()
+        return []
+
+
+def _guest_answers(db: Session, guest_id, questions: List[EventFieldDef]) -> Dict[str, str]:
+    ids = [q.id for q in questions]
+    if not ids:
+        return {}
+    rows = (
+        db.query(GuestCustomValue)
+        .filter(GuestCustomValue.guest_id == _as_uuid(guest_id), GuestCustomValue.field_def_id.in_(ids))
+        .all()
+    )
+    return {str(r.field_def_id): r.value for r in rows if isinstance(r.value, str)}
+
+
+def _as_uuid(value):
+    return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
+
+
+def _store_answers(db: Session, event_id, guest_id, answers: Optional[Dict[str, str]]) -> None:
+    """Best-effort: the RSVP is already committed; a failure here never fails it."""
+    if not answers:
+        return
+    try:
+        _store_answers_unsafe(db, event_id, guest_id, answers)
+    except Exception:
+        db.rollback()
+        import logging
+        logging.getLogger(__name__).exception("storing public RSVP answers failed")
+
+
+def _store_answers_unsafe(db: Session, event_id, guest_id, answers: Dict[str, str]) -> None:
+    questions = {str(q.id): q for q in _public_questions(db, event_id)}
+    gid = _as_uuid(guest_id)
+    for fid, value in answers.items():
+        q = questions.get(str(fid))
+        if q is None or value not in (q.options or []):
+            continue
+        row = (
+            db.query(GuestCustomValue)
+            .filter(GuestCustomValue.guest_id == gid, GuestCustomValue.field_def_id == q.id)
+            .first()
+        )
+        if row:
+            row.value = value
+        else:
+            db.add(GuestCustomValue(guest_id=gid, field_def_id=q.id, value=value))
+    db.commit()
+
+
+def _conflict(exc: ValueError) -> HTTPException:
+    """409 with a machine-readable reason, so the page can tell a guest who is
+    already on the list apart from an event that is genuinely full."""
+    msg = str(exc)
+    code = "duplicate_phone" if "already exists" in msg else "capacity"
+    return HTTPException(status_code=409, detail={"code": code, "message": msg})
 
 
 def _require_published_event(db: Session, slug: str):
@@ -78,7 +158,12 @@ def _public_event_view(event) -> dict:
 @router.get("/{slug}")
 def get_public_invitation(slug: str, db: Session = Depends(get_db)):
     event = _require_published_event(db, slug)
-    return _public_event_view(event)
+    view = _public_event_view(event)
+    view["questions"] = [
+        {"id": str(q.id), "label": q.label, "options": list(q.options or [])}
+        for q in _public_questions(db, event.id)
+    ]
+    return view
 
 
 @router.post("/{slug}/rsvp/lookup")
@@ -103,17 +188,22 @@ def lookup_public_rsvp(slug: str, payload: RsvpLookupIn, db: Session = Depends(g
     )
     if not g:
         return {"found": False}
+    # Canonical status: the WhatsApp flow writes the legacy 'attending', which the
+    # page used to read as "maybe" - and a re-submit then overwrote a confirmed
+    # guest with maybe. Party size: the WhatsApp flow records it in guest_count,
+    # the web form / import in import_count.
     return {
         "found": True,
         "name": g.name,
-        "status": g.status,
-        "party_size": g.import_count,
+        "status": GuestStatus.normalize(g.status).value,
+        "party_size": g.guest_count or g.import_count or None,
         "notes": g.notes,
+        "answers": _guest_answers(db, g.id, _public_questions(db, event.id)),
     }
 
 
 @router.post("/{slug}/rsvp", status_code=201)
-def submit_public_rsvp(slug: str, payload: PublicRsvpIn, db: Session = Depends(get_db)):
+def submit_public_rsvp(slug: str, payload: PublicRsvpWithAnswersIn, db: Session = Depends(get_db)):
     event = _require_published_event(db, slug)
 
     # Respect the per-invitation RSVP toggle.
@@ -160,7 +250,7 @@ def submit_public_rsvp(slug: str, payload: PublicRsvpIn, db: Session = Depends(g
             try:
                 guest_crud.check_capacity_limit(db, event, delta)
             except ValueError as e:
-                raise HTTPException(status_code=409, detail=str(e))
+                raise _conflict(e)
         existing.name = payload.name or existing.name
         existing.status = status
         existing.import_count = party
@@ -170,6 +260,8 @@ def submit_public_rsvp(slug: str, payload: PublicRsvpIn, db: Session = Depends(g
             existing.notes = payload.notes
         db.add(existing)
         db.commit()
+        if status in GuestStatus.confirmed_values():
+            _store_answers(db, event.id, existing.id, payload.answers)
         return {"ok": True, "status": status, "updated": True, "party_size": party}
 
     # New guest via the open form. create_guest re-checks capacity under the same
@@ -190,6 +282,8 @@ def submit_public_rsvp(slug: str, payload: PublicRsvpIn, db: Session = Depends(g
         )
     except ValueError as e:
         # Capacity exceeded or duplicate -> 409 so the page can show a friendly msg.
-        raise HTTPException(status_code=409, detail=str(e))
+        raise _conflict(e)
 
+    if status in GuestStatus.confirmed_values():
+        _store_answers(db, event.id, guest.id, payload.answers)
     return {"ok": True, "status": status, "updated": False, "guest_id": str(guest.id), "party_size": party}

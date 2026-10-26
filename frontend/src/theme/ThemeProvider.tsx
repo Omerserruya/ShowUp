@@ -66,7 +66,8 @@ const ThemeProvider = ({ children }: ThemeProviderProps) => {
     <CssVarsProvider
       theme={theme}
       defaultMode="light"
-      modeStorageKey="show-up-color-scheme"
+      modeStorageKey="show-up-color-scheme-v6"
+      colorSchemeStorageKey="show-up-color-scheme-v6-scheme"
     >
       <CssBaseline />
       {children}

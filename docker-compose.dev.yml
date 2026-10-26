@@ -1,31 +1,92 @@
+# ---------------------------------------------------------------------------
+# Shared service defaults (YAML anchors, merged with `<<:`).
+#   restart: unless-stopped  - survive crashes + host reboots (review 2.2/5.7)
+#   json-file log rotation   - 10MB x 3 per container, so logs cannot fill disk
+# Only nginx publishes a host port. Postgres / Redis / RabbitMQ and every
+# backend are reachable on the compose network only; for debugging use
+# `docker compose exec <svc> ...` (or an SSH tunnel to the container IP).
+# ---------------------------------------------------------------------------
+x-defaults: &defaults
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+# Cheap HTTP liveness probe for the Python/FastAPI services (no curl/wget in
+# python:slim images, so use the stdlib). Pass the URL via the service's
+# healthcheck `test`.
+x-healthcheck-timing: &hc-timing
+  interval: 30s
+  timeout: 5s
+  retries: 3
+  start_period: 30s
+
 services:
 
   nginx:
+    <<: *defaults
     image: nginx:alpine
     ports:
-      - ${HTTP_PORT}:${HTTP_PORT}  # HTTP port for local development
+      # The ONLY published port. cloudflared runs on the host and connects to
+      # it; set NGINX_BIND_ADDR=127.0.0.1 once you have confirmed the tunnel
+      # targets localhost, so nginx is not reachable from the LAN/internet
+      # directly (direct access could spoof CF-Connecting-IP).
+      - ${NGINX_BIND_ADDR:-0.0.0.0}:${HTTP_PORT:-80}:80
     environment:
       - CORE_SERVICE_URL=${BACKEND_PROTOCOL}://${CORE_SERVICE_HOST}:${CORE_SERVICE_PORT}
       - AUB_SERVICE_URL=${BACKEND_PROTOCOL}://${AUB_SERVICE_HOST}:${AUB_SERVICE_PORT}
       - WEBHOOK_HANDLER_URL=${BACKEND_PROTOCOL}://${WEBHOOK_HANDLER_HOST}:${WEBHOOK_HANDLER_PORT}/
       - FRONTEND_DEV_URL=http://frontend-dev:3000
-      - DOLLAR=$ # To escape $ in envsubst
+      # dev    = proxy the SPA to the React dev server (frontend-dev) - default.
+      # static = serve the production build from ./frontend/build
+      #          (nginx/conf.d/default.conf). Switch: build the frontend to
+      #          ./frontend/build, set NGINX_MODE=static in .env, recreate nginx,
+      #          then `docker compose -f docker-compose.dev.yml stop frontend-dev`.
+      - NGINX_MODE=${NGINX_MODE:-dev}
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/conf.d/dev.conf:/etc/nginx/conf.d/default.conf.template
-    command: /bin/sh -c "envsubst '$$CORE_SERVICE_URL $$AUB_SERVICE_URL $$WEBHOOK_HANDLER_URL $$FRONTEND_DEV_URL $$DOLLAR' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'"
+      - ./nginx:/etc/nginx/showup:ro
+      - ./frontend/build:/usr/share/nginx/html:ro
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        mkdir -p /etc/nginx/snippets
+        cp /etc/nginx/showup/snippets/*.conf /etc/nginx/snippets/
+        envsubst '$$CORE_SERVICE_URL $$AUB_SERVICE_URL $$WEBHOOK_HANDLER_URL' \
+          < /etc/nginx/showup/snippets/api_locations.conf.template > /etc/nginx/snippets/api_locations.conf
+        if [ "$$NGINX_MODE" = "static" ]; then site=default.conf; else site=dev.conf; fi
+        echo "nginx mode: $$NGINX_MODE ($$site)"
+        envsubst '$$FRONTEND_DEV_URL' < /etc/nginx/showup/conf.d/$$site > /etc/nginx/conf.d/default.conf
+        exec nginx -g 'daemon off;'
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/nginx-health || exit 1"]
+      <<: *hc-timing
     depends_on:
-      - frontend-dev
-      - aub-service
-      - core-service
-      - webhook-hendler
+      frontend-dev:
+        condition: service_started
+        required: false   # only present with --profile dev (NGINX_MODE=dev)
+      aub-service:
+        condition: service_started
+      core-service:
+        condition: service_started
+      webhook-hendler:
+        condition: service_started
 
   frontend-dev:
+    <<: *defaults
+    # Hot-reload dev server. Production serves ./frontend/build (NGINX_MODE=static);
+    # start this only for local UI work: docker compose -f docker-compose.dev.yml --profile dev up -d frontend-dev
+    profiles: ["dev"]
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
     ports:
-      - "3000:3000"
+      # Loopback only - the public path is Cloudflare -> nginx -> frontend-dev.
+      - "127.0.0.1:3000:3000"
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -46,13 +107,12 @@ services:
     tty: true
 
   postgres:
+    <<: *defaults
     image: postgres:15
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
-    ports:
-      - ${DB_PORT}:${DB_PORT}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -62,27 +122,44 @@ services:
       retries: 5
 
   rabbitmq:
+    <<: *defaults
     image: rabbitmq:3-management
-    ports:
-      - ${RABBITMQ_PORT}:${RABBITMQ_PORT}
-      - ${RABBITMQ_MANAGEMENT_PORT}:${RABBITMQ_MANAGEMENT_PORT}
+    # Fixed hostname: RabbitMQ keys its data dir by node name (rabbit@<hostname>);
+    # a random container hostname would orphan the volume on every recreate.
+    hostname: rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    volumes:
+      # Durable queues survive recreate/deploy (review 2.10).
+      - rabbitmqdata:/var/lib/rabbitmq
 
   redis:
+    <<: *defaults
     image: redis:alpine
-    ports:
-      - ${REDIS_PORT}:${REDIS_PORT}
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    # Auth required when REDIS_PASSWORD is set (it MUST be in production);
+    # AOF persistence so OTP/rate-limit/batching state survives a restart.
+    command:
+      - /bin/sh
+      - -c
+      - |
+        if [ -n "$$REDIS_PASSWORD" ]; then set -- --requirepass "$$REDIS_PASSWORD"; fi
+        exec redis-server --appendonly yes "$$@"
     volumes:
       - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   core-service:
+    <<: *defaults
     build:
       context: .
       dockerfile: core-service/Dockerfile
-    ports:
-      - ${CORE_SERVICE_PORT}:${CORE_SERVICE_PORT}
     environment:
       - SENTRY_DSN=${SENTRY_DSN:-}
       - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
@@ -96,6 +173,9 @@ services:
       - DB_NAME=${DB_NAME}
       - RABBITMQ_HOST=${RABBITMQ_HOST}
       - RABBITMQ_PORT=${RABBITMQ_PORT}
+      - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
+      - OUTPOST_PRIORITY_QUEUE=${OUTPOST_PRIORITY_QUEUE:-outpost_priority_queue}
       - REDIS_HOST=${REDIS_HOST}
       - REDIS_PORT=${REDIS_PORT}
       - CAMPAIGN_MIN_GAP_MINUTES=${CAMPAIGN_MIN_GAP_MINUTES}
@@ -126,16 +206,20 @@ services:
       - ASSISTANT_MODEL=${ASSISTANT_MODEL:-gpt-4o-mini}
       # Paid extra-round price bands [[max_recipients, price],…] (null = "and above").
       - EXTRA_ROUND_PRICES_JSON=${EXTRA_ROUND_PRICES_JSON:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${CORE_SERVICE_PORT}/healthz', timeout=4)"]
+      <<: *hc-timing
     depends_on:
-      - postgres
-      - rabbitmq
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
 
   aub-service:
+    <<: *defaults
     build:
       context: .
       dockerfile: aub-service/Dockerfile
-    ports:
-      - ${AUB_SERVICE_PORT}:${AUB_SERVICE_PORT}
     environment:
       - SENTRY_DSN=${SENTRY_DSN:-}
       - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
@@ -152,8 +236,14 @@ services:
       - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
       - REDIS_HOST=${REDIS_HOST}
       - REDIS_PORT=${REDIS_PORT}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - JWT_SECRET=${JWT_SECRET}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+      - ICOUNT_IPN_SECRET=${ICOUNT_IPN_SECRET:-}
+      # Per-phone OTP budgets (defaults shown; enforced in aub via Redis).
+      - OTP_MAX_ISSUES_PER_HOUR=${OTP_MAX_ISSUES_PER_HOUR:-5}
+      - OTP_MAX_ISSUES_PER_DAY=${OTP_MAX_ISSUES_PER_DAY:-10}
+      - OTP_MAX_FAILED_VERIFIES=${OTP_MAX_FAILED_VERIFIES:-10}
       - JWT_EXP_SECONDS=${JWT_EXP_SECONDS}
       - OTP_TTL_SEC=${OTP_TTL_SEC}
       - OTP_QUEUE_NAME=${OTP_QUEUE_NAME}
@@ -184,11 +274,18 @@ services:
       - WA_VENUE_WELCOME_TEMPLATE=${WA_VENUE_WELCOME_TEMPLATE:-}
       # Approved MARKETING template sent by the landing-page WhatsApp demo button.
       - WA_DEMO_TEMPLATE_NAME=${WA_DEMO_TEMPLATE_NAME:-showup_whatsapp_demo}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${AUB_SERVICE_PORT}/healthz', timeout=4)"]
+      <<: *hc-timing
     depends_on:
-      - postgres
-      - rabbitmq
-      - redis
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+      redis:
+        condition: service_healthy
   outpost-service:
+    <<: *defaults
     build:
       context: .
       dockerfile: outpost-service/Dockerfile
@@ -213,15 +310,16 @@ services:
       - OUTPOST_ENABLE_DB_LOGGING=true
       - LOG_LEVEL=${LOG_LEVEL}
     depends_on:
-      - rabbitmq
-      - postgres
+      rabbitmq:
+        condition: service_started
+      postgres:
+        condition: service_healthy
 
   schedule-service:
+    <<: *defaults
     build:
       context: .
       dockerfile: scheduler-service/Dockerfile
-    ports:
-      - ${SCHEDUALE_SERVICE_PORT}:${SCHEDUALE_SERVICE_PORT}
     environment:
       - SENTRY_DSN=${SENTRY_DSN:-}
       - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
@@ -248,18 +346,25 @@ services:
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
       - PAYMENT_RECONCILE_INTERVAL_SECONDS=${PAYMENT_RECONCILE_INTERVAL_SECONDS:-300}
       - PAYMENT_RECONCILE_MIN_AGE_MINUTES=${PAYMENT_RECONCILE_MIN_AGE_MINUTES:-15}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${SCHEDUALE_SERVICE_PORT}/healthz', timeout=4)"]
+      <<: *hc-timing
     depends_on:
-      - postgres
-      - rabbitmq
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
 
   # Global Delivery Planner - owns delivery timing across all events (see prod compose).
   planner-service:
+    <<: *defaults
     build:
       context: .
       dockerfile: planner-service/Dockerfile
-    ports:
-      - ${PLANNER_SERVICE_PORT:-5010}:${PLANNER_SERVICE_PORT:-5010}
     environment:
+      - WA_API_B=${WA_API_B}
+      - CAMPAIGN_WA_PHONE_ID=${CAMPAIGN_WA_PHONE_ID}
+      - WA_PHONE_ID=${WA_PHONE_ID}
       - SENTRY_DSN=${SENTRY_DSN:-}
       - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
       - SENTRY_RELEASE=${SENTRY_RELEASE:-}
@@ -276,14 +381,19 @@ services:
       - PLANNER_SAFETY_MARGIN_PERCENT=${PLANNER_SAFETY_MARGIN_PERCENT:-15}
       - MAX_EARLY_SEND_DAYS=${MAX_EARLY_SEND_DAYS:-5}
       - MAX_LATE_SEND_DAYS=${MAX_LATE_SEND_DAYS:-2}
-      - PLANNER_INTERVAL_SECONDS=${PLANNER_INTERVAL_SECONDS:-60}
+      - PLANNER_INTERVAL_SECONDS=${PLANNER_INTERVAL_SECONDS:-20}
       - PLANNER_STRATEGY=${PLANNER_STRATEGY:-deterministic}
       - PLANNER_HORIZON_DAYS=${PLANNER_HORIZON_DAYS:-60}
       - PLANNER_FLEXIBILITY_JSON=${PLANNER_FLEXIBILITY_JSON:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${PLANNER_SERVICE_PORT:-5010}/healthz', timeout=4)"]
+      <<: *hc-timing
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
   campaign-worker:
+    <<: *defaults
     build:
       context: .
       dockerfile: campaign-worker/Dockerfile
@@ -306,14 +416,20 @@ services:
       # Public app origin for invitation/RSVP links resolved at send time.
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
     depends_on:
-      - postgres
-      - rabbitmq
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
 
   otp-worker:
+    <<: *defaults
     build:
       context: .
       dockerfile: otp-worker/Dockerfile
     environment:
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+      - SENTRY_RELEASE=${SENTRY_RELEASE:-}
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=${RABBITMQ_PORT}
       - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
@@ -326,14 +442,14 @@ services:
       - WA_OTP_TEMPLATE_NAME=${WA_OTP_TEMPLATE_NAME:-otp}
       - WA_OTP_LANG=${WA_OTP_LANG:-he}
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_started
 
   webhook-hendler:
+    <<: *defaults
     build:
       context: .
       dockerfile: webhook-hendler/Dockerfile
-    ports:
-      - ${WEBHOOK_HANDLER_PORT}:${WEBHOOK_HANDLER_PORT}
     environment:
       - SENTRY_DSN=${SENTRY_DSN:-}
       - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
@@ -341,7 +457,7 @@ services:
       - PORT=${WEBHOOK_HANDLER_PORT}
       - WEBHOOK_VERIFY_TOKEN=${WEBHOOK_VERIFY_TOKEN}
       - WEBHOOK_SECRET=${WEBHOOK_SECRET}
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-}@${REDIS_HOST}:${REDIS_PORT}/0
       - WEBHOOK_QUEUE=${WEBHOOK_QUEUE_NAME}
       - CONTACT_IMPORT_QUEUE=${CONTACT_IMPORT_QUEUE}
       # Inbound routing by receiving business number (per-handler phone split).
@@ -352,10 +468,15 @@ services:
       - RABBITMQ_PORT=${RABBITMQ_PORT}
       - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
       - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${WEBHOOK_HANDLER_PORT}/health', timeout=4)"]
+      <<: *hc-timing
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_started
 
   contact-import-worker:
+    <<: *defaults
     build:
       context: .
       dockerfile: contact-import-worker/Dockerfile
@@ -374,18 +495,22 @@ services:
       - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
       - CONTACT_IMPORT_QUEUE=${CONTACT_IMPORT_QUEUE}
       - OUTPOST_QUEUE_NAME=${OUTPOST_QUEUE_NAME}
-      - REDIS_URL=redis://${REDIS_HOST}:${REDIS_PORT}/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-}@${REDIS_HOST}:${REDIS_PORT}/0
       # Debounce window for multi-contact shares (seconds).
       - CONTACT_BATCH_WINDOW_SECONDS=${CONTACT_BATCH_WINDOW_SECONDS:-2}
     depends_on:
-      - postgres
-      - rabbitmq
-      - redis
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+      redis:
+        condition: service_healthy
 
   # Owner-facing WhatsApp AI assistant: consumes messages that arrived on the
   # assistant business number, authorizes by sender phone (event owners only)
   # and answers via core-service POST /assistant.
   assistant-worker:
+    <<: *defaults
     build:
       context: .
       dockerfile: assistant-worker/Dockerfile
@@ -408,16 +533,21 @@ services:
       - ASSISTANT_INBOUND_QUEUE=${ASSISTANT_INBOUND_QUEUE:-assistant_inbound_queue}
       - OUTPOST_QUEUE_NAME=${OUTPOST_QUEUE_NAME}
       - CONTACT_IMPORT_QUEUE=${CONTACT_IMPORT_QUEUE}
-      - REDIS_URL=redis://${REDIS_HOST}:${REDIS_PORT}/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-}@${REDIS_HOST}:${REDIS_PORT}/0
       - CORE_SERVICE_URL=${BACKEND_PROTOCOL}://${CORE_SERVICE_HOST}:${CORE_SERVICE_PORT}
       - JWT_SECRET=${JWT_SECRET}
     depends_on:
-      - postgres
-      - rabbitmq
-      - redis
-      - core-service
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      core-service:
+        condition: service_started
 
   webhook-worker:
+    <<: *defaults
     build:
       context: .
       dockerfile: webhook-worker/Dockerfile
@@ -444,7 +574,7 @@ services:
       rabbitmq:
         condition: service_started
       redis:
-        condition: service_started
+        condition: service_healthy
       core-service:
         condition: service_started
 
@@ -454,3 +584,4 @@ networks:
 volumes:
   pgdata:
   redisdata:
+  rabbitmqdata:

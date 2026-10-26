@@ -24,6 +24,7 @@ from .models import (
     DeliveryWindow,
     Allocation,
     PlanResult,
+    PlanContext,
     CampaignType,
 )
 from .engine import Planner
@@ -36,6 +37,7 @@ __all__ = [
     "DeliveryWindow",
     "Allocation",
     "PlanResult",
+    "PlanContext",
     "CampaignType",
     "Planner",
     "PlannerStrategy",

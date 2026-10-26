@@ -64,7 +64,11 @@ def test_clone_event_copies_config_and_fields(client, db):
     assert guests == []
 
 
-def test_clone_event_with_guests(client, db):
+def test_clone_event_with_guests(client, db, monkeypatch):
+    # The clone checks the target (starter) plan's guest cap; aub is unreachable
+    # in tests, so pin the limit instead of failing closed with 503.
+    import app.plans_client as plans_client
+    monkeypatch.setattr(plans_client, "plan_count_limit", lambda plan_id: 50)
     owner, _, event_id = _event(db)
     make_guest(db, event_id, phone="+972500000041")
     r = client.post(f"/events/{event_id}/clone", json={"include_guests": True}, headers=auth_header(owner))
@@ -72,6 +76,17 @@ def test_clone_event_with_guests(client, db):
     guests = client.get(f"/guests?event_id={new_id}", headers=auth_header(owner)).json()
     assert len(guests) == 1
     assert guests[0]["status"] == "invited"  # reset
+
+
+def test_clone_event_with_guests_over_target_capacity(client, db, monkeypatch):
+    import app.plans_client as plans_client
+    monkeypatch.setattr(plans_client, "plan_count_limit", lambda plan_id: 1)
+    owner, _, event_id = _event(db)
+    make_guest(db, event_id, phone="+972500000051")
+    make_guest(db, event_id, phone="+972500000052")
+    r = client.post(f"/events/{event_id}/clone", json={"include_guests": True}, headers=auth_header(owner))
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "over_capacity"
 
 
 # --------------------------- Import Mapping Wizard ---------------------------

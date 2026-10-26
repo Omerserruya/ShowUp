@@ -15,7 +15,7 @@ from shared.auth.deps import get_current_user_id
 from shared.domain.roles import Action
 from shared.domain.enums import EventState, TemplateState
 from shared.domain.lifecycle import can_transition_event, derive_active
-from app.authz import ensure_personal_account, require_event_permission
+from app.authz import ensure_personal_account, is_owner_or_support, require_event_permission
 from app.models.models import WaTemplate
 from app import entitlement_service, provisioning
 from shared.domain.enums import EntitlementSource
@@ -47,7 +47,7 @@ def list_events(
 @router.get("/{event_id}", response_model=EventOut)
 def get_event(event_id: uuid.UUID, db: Session = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
     event = event_crud.get_event(db, event_id)
-    if not event or not event_crud.is_owner(event, user_id):
+    if not is_owner_or_support(db, event, user_id):
         raise HTTPException(status_code=404, detail="Event not found")
     event_crud.annotate_venue(db, [event])
     # FastAPI will serialize using response_model, which uses model_dump(by_alias=True) via our override
@@ -65,6 +65,10 @@ def create_event(payload: EventCreate, db: Session = Depends(get_db), user_id: u
     tier; a paid tier only ever arrives through a PAYMENT (or admin/venue/beta)
     entitlement, never from this payload.
     """
+    try:
+        event_crud.validate_future_event_date(payload.event_date)
+    except event_crud.EventDateError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     account_id = ensure_personal_account(db, user_id)
     event, _ = entitlement_service.issue_and_redeem(
         db,
@@ -81,9 +85,13 @@ def create_event(payload: EventCreate, db: Session = Depends(get_db), user_id: u
 @router.put("/{event_id}", response_model=EventOut)
 def update_event(event_id: uuid.UUID, payload: EventUpdate, db: Session = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
     event = event_crud.get_event(db, event_id)
-    if not event or not event_crud.is_owner(event, user_id):
+    if not is_owner_or_support(db, event, user_id):
         raise HTTPException(status_code=404, detail="Event not found or not permitted")
-    event = event_crud.update_event(db, event, payload)
+    try:
+        event = event_crud.update_event(db, event, payload)
+    except event_crud.EventDateError as e:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(e))
     event_crud.annotate_venue(db, [event])
     # FastAPI will serialize using response_model, which uses model_dump(by_alias=True) via our override
     return event
@@ -217,7 +225,7 @@ def publish_invitation(
 @router.delete("/{event_id}", status_code=204)
 def delete_event(event_id: uuid.UUID, db: Session = Depends(get_db), user_id: uuid.UUID = Depends(get_current_user_id)):
     event = event_crud.get_event(db, event_id)
-    if not event or not event_crud.is_owner(event, user_id):
+    if not is_owner_or_support(db, event, user_id):
         raise HTTPException(status_code=404, detail="Event not found or not permitted")
     event_crud.delete_event(db, event)
     return None

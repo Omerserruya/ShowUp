@@ -13,7 +13,7 @@ import { useCatalog } from '../../hooks/useCatalog';
 import VenueEntitlements from '../../components/venue/VenueEntitlements';
 import { eventTypeLabel } from '../../config/messaging';
 
-const BRAND = '#888cee';
+const BRAND = '#9D83E0';
 
 interface VenueEvent {
   id: string;
@@ -134,7 +134,7 @@ export default function VenueDashboard() {
               <Button
                 variant="contained" disableElevation startIcon={<AddRoundedIcon />}
                 onClick={() => setCreateOpen(true)} disabled={isFull}
-                sx={{ borderRadius: 2, fontWeight: 700, bgcolor: BRAND, '&:hover': { bgcolor: '#6f74e0' } }}
+                sx={{ borderRadius: 2, fontWeight: 700, bgcolor: '#C9B8F3', color: '#16150F', '&:hover': { bgcolor: '#BBA6EE' } }}
               >
                 אירוע חדש
               </Button>
@@ -179,7 +179,7 @@ export default function VenueDashboard() {
                   <Box sx={{ minWidth: 0 }}>
                     <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
                       <Typography sx={{ fontWeight: 800, fontSize: 16 }} noWrap>{ev.name}</Typography>
-                      <Chip size="small" label={eventTypeLabel(catalog, ev.event_type || '')} sx={{ bgcolor: alpha(BRAND, 0.1), color: '#6f74e0', fontWeight: 700 }} />
+                      <Chip size="small" label={eventTypeLabel(catalog, ev.event_type || '')} sx={{ bgcolor: alpha(BRAND, 0.1), color: '#5A3DA6', fontWeight: 700 }} />
                     </Stack>
                     <Typography variant="body2" color="text.secondary" noWrap>
                       {fmtDate(ev.event_date)}
@@ -323,7 +323,7 @@ function CreateEventDialog({
       <DialogActions sx={{ px: 3, pb: 2.5 }}>
         <Button onClick={onClose} disabled={saving} sx={{ color: 'text.secondary', fontWeight: 600 }}>ביטול</Button>
         <Button onClick={submit} disabled={!canSubmit || saving} variant="contained" disableElevation
-          sx={{ borderRadius: 2, fontWeight: 700, bgcolor: BRAND, '&:hover': { bgcolor: '#6f74e0' } }}>
+          sx={{ borderRadius: 2, fontWeight: 700, bgcolor: '#C9B8F3', color: '#16150F', '&:hover': { bgcolor: '#BBA6EE' } }}>
           {saving ? <CircularProgress size={20} sx={{ color: '#fff' }} /> : 'צרו אירוע'}
         </Button>
       </DialogActions>

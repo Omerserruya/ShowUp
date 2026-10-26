@@ -9,7 +9,7 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import { alpha } from '@mui/material/styles';
 import { TemplateVarGroup, ContentBlock, validateTemplateBodyMeta } from '../config/messaging';
 
-const BRAND = '#888cee';
+const BRAND = '#9D83E0';
 
 interface CustomMessageEditorProps {
   value: string; // canonical message text using {{key}} placeholders

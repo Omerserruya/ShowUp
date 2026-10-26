@@ -1,277 +1,222 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, Typography, Grid, Skeleton, Button } from '@mui/material';
-
-import EventHero from '../components/dashboard/EventHero';
-import LoadErrorState from '../components/dashboard/LoadErrorState';
-import SectionHeader from '../components/dashboard/SectionHeader';
-import RsvpRingCard from '../components/dashboard/RsvpRingCard';
-import KpiCards from '../components/dashboard/KpiCards';
-import AttentionPanel, { AttentionItem } from '../components/dashboard/AttentionPanel';
-import Timeline, { TimelineEntry } from '../components/dashboard/Timeline';
-
-import { useOverviewStats, useCampaigns, useGuests } from '../hooks/useOverviewData';
+import { Skeleton } from '@mui/material';
+import { color as C } from '../design/tokens';
 import { useEvent } from '../contexts/EventContext';
-import { fireConfettiOnce } from '../utils/confetti';
-import { daysUntilEvent } from '../utils/dates';
-import OnboardingImagesDialog from '../components/OnboardingImagesDialog';
+import { useSnapshot } from '../contexts/SnapshotContext';
+import { agoLabel, STATUS_LABEL } from '../adapters/eventSnapshot';
+import { computeNextStep } from '../components/shell/NextStepCard';
+import PreSendChecklist from '../components/v6/PreSendChecklist';
+import LoadErrorState from '../components/dashboard/LoadErrorState';
+import { Card, Kicker, Ms, Chip, Dot, Btn, TextLink, FigureStrip, EmptyNote, STATUS_TONE } from '../components/v6/ui';
+import type { ChipTone } from '../design/tokens';
 
-const HE_DAYS = ['יום ראשון', 'יום שני', 'יום שלישי', 'יום רביעי', 'יום חמישי', 'יום שישי', 'שבת'];
-
-function whenLabel(iso: string) {
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return '';
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${HE_DAYS[d.getDay()]} · ${hh}:${mm}`;
-}
-function futureChip(d: Date, now: Date) {
-  // Calendar-day distance - elapsed-ms math would label tomorrow-morning "היום".
-  const diff = daysUntilEvent(d, now);
-  if (diff === null || diff <= 0) return 'היום';
-  if (diff === 1) return 'מחר';
-  // Beyond a week a bare weekday name is ambiguous - anchor it to a date.
-  if (diff > 6) return `${HE_DAYS[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}`;
-  return HE_DAYS[d.getDay()];
-}
-function pastChip(d: Date, now: Date) {
-  if (d.toDateString() === now.toDateString()) return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  const days = Math.floor((now.getTime() - d.getTime()) / 86400000);
-  if (days <= 1) return 'אתמול';
-  if (days < 7) return `לפני ${days} ימים`;
-  return `${d.getDate()}.${d.getMonth() + 1}`;
-}
-const VERB: Record<string, string> = { confirmed: 'אישרו הגעה', attending: 'אישרו הגעה', declined: 'לא יגיעו', maybe: 'אולי יגיעו' };
-
+/**
+ * Home (סקירה), design v6. Answers "is my event under control?": how many are
+ * coming, what's waiting for me, what just came in on WhatsApp, and the rounds.
+ * All numbers come from the Snapshot adapter (real guests + campaigns).
+ */
 function Overview() {
   const navigate = useNavigate();
   const { selectedEvent } = useEvent();
-  const [statsRetry, setStatsRetry] = React.useState(0);
-  const { stats, loading: statsLoading, error: statsError } = useOverviewStats(statsRetry);
-  const { campaigns, loading: campaignsLoading, error: campaignsError } = useCampaigns(statsRetry);
-  // The `_refresh_` suffix is stripped by useGuests before hitting the API - it
-  // only exists to re-run the fetch when the user retries after a failure.
-  const { guests, loading: guestsLoading, error: guestsError } = useGuests(1, 6, statsRetry ? `_refresh_${statsRetry}` : '');
+  const { snapshot: s, loading, error, refresh } = useSnapshot();
 
-  // First-run onboarding: a fresh event with no cover images gets a one-time
-  // prompt to upload the WhatsApp cover + the invitation cover.
-  const [onboardImages, setOnboardImages] = React.useState(false);
-  React.useEffect(() => {
-    if (!selectedEvent?.id) return;
-    const flag = `onboarding_images_${selectedEvent.id}`;
-    if (localStorage.getItem(flag)) return;
-    let cancelled = false;
-    import('../utils/fetchWithAuth').then(({ fetchWithAuth }) =>
-      fetchWithAuth(`/api/events/${selectedEvent.id}`).then((r) => (r.ok ? r.json() : null)),
-    ).then((ev) => {
-      if (cancelled || !ev) return;
-      const hasWa = !!(ev.waImageUrl || ev.wa_image_url);
-      const hasInvite = !!ev.invitation?.hero?.imageUrl;
-      if (!hasWa && !hasInvite) setOnboardImages(true);
-      else localStorage.setItem(flag, '1'); // images exist - never prompt again
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [selectedEvent?.id]);
-
-  React.useEffect(() => {
-    if (!selectedEvent?.id || (stats?.approved || 0) < 1) return;
-    // Celebrate only while the event is still ahead - a retroactive burst on a
-    // long-finished event reads as a glitch, not a moment.
-    const iso = (selectedEvent as any)?.event_date || (selectedEvent as any)?.date;
-    const d = iso ? daysUntilEvent(iso) : null;
-    if (d !== null && d < 0) return;
-    fireConfettiOnce(`first_guest_confirmed_${selectedEvent.id}`);
-  }, [selectedEvent?.id, stats?.approved]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  if (!selectedEvent) {
+  if (!selectedEvent) return null;
+  if (error && !s) return <LoadErrorState onRetry={refresh} />;
+  if (loading || !s) {
     return (
-      <Box sx={{ p: 4, direction: 'rtl', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
-        <Typography variant="h6" color="text.secondary">בוחרים אירוע כדי לראות מה קורה בו</Typography>
-      </Box>
-    );
-  }
-  if (statsLoading || campaignsLoading || guestsLoading) {
-    // A layout-shaped skeleton previews the control center instead of a blank
-    // page + spinner - the dashboard should feel instant and composed.
-    return (
-      <Box sx={{ direction: 'rtl' }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 3, px: 1, py: 1.5, mb: 2.5 }}>
-          <Box>
-            <Skeleton variant="text" width={260} height={52} />
-            <Skeleton variant="text" width={180} height={24} />
-            <Skeleton variant="text" width={210} height={20} />
-          </Box>
-          <Skeleton variant="text" width={140} height={64} />
-        </Box>
-        <Skeleton variant="text" width={280} height={32} sx={{ mb: 2 }} />
-        <Grid container spacing={{ xs: 2.5, sm: 3 }} sx={{ mb: 3.5 }}>
-          <Grid item xs={12} md={4} sx={{ order: { xs: 0, md: 2 }, display: 'flex', justifyContent: 'center' }}>
-            <Skeleton variant="circular" width={200} height={200} />
-          </Grid>
-          <Grid item xs={12} md={8} sx={{ order: { xs: 1, md: 1 } }}>
-            <Grid container spacing={2}>
-              {[0, 1, 2, 3].map((i) => (
-                <Grid item xs={6} key={i}><Skeleton variant="rounded" height={104} sx={{ borderRadius: 3 }} /></Grid>
-              ))}
-            </Grid>
-          </Grid>
-        </Grid>
-        <Skeleton variant="text" width={280} height={32} sx={{ mb: 2 }} />
-        <Grid container spacing={{ xs: 2.5, sm: 3 }}>
-          <Grid item xs={12} md={5}><Skeleton variant="rounded" height={180} sx={{ borderRadius: 3 }} /></Grid>
-          <Grid item xs={12} md={7}><Skeleton variant="rounded" height={180} sx={{ borderRadius: 3 }} /></Grid>
-        </Grid>
-      </Box>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,380px),1fr))', gap: 22 }}>
+          <div><Skeleton variant="text" height={64} width="80%" /><Skeleton variant="text" height={28} width="60%" /></div>
+          <Skeleton variant="rounded" height={280} sx={{ borderRadius: '22px' }} />
+        </div>
+        <Skeleton variant="rounded" height={120} sx={{ borderRadius: '20px' }} />
+      </div>
     );
   }
 
-  // A failed load must not render as a confident all-zeros dashboard - a swallowed
-  // campaigns/guests failure would also fabricate warnings like "אין תזכורת מתוזמנת".
-  if (statsError || campaignsError || guestsError) {
-    return <LoadErrorState onRetry={() => setStatsRetry((k) => k + 1)} />;
-  }
+  const inv = s.invitations;
+  const next = computeNextStep(s);
+  const freeSeats = s.tables.reduce((a, t) => a + Math.max(0, t.seats - t.taken), 0);
+  const withNotes = s.guests.filter((g) => g.status === 'confirmed' && g.notes).length;
 
-  const now = new Date();
-  const approved = stats?.approved || 0;
-  const declined = stats?.declined || 0;
-  const pending = stats?.pending || 0;
-  const totalGuests = stats?.total_guests || 0;
+  const headline = inv.total === 0
+    ? 'עוד אין מוזמנים ברשימה'
+    : s.people.confirmed === 0
+      ? 'עוד אף אחד לא אישר. זה רק עניין של זמן'
+      : `${s.people.confirmed} ${s.people.confirmed === 1 ? 'איש כבר אמר שהוא מגיע' : 'אנשים כבר אמרו שהם מגיעים'}`;
+  const sub = inv.total === 0
+    ? 'מוסיפים מוזמנים מאקסל, מוואטסאפ או אחד אחד, וההזמנות יוצאות לפי לוח השליחה.'
+    : [
+        `${inv.confirmed} מתוך ${inv.total} ההזמנות אישרו בוואטסאפ`,
+        inv.pending ? `עוד ${inv.pending} לא ענו` : 'כולם ענו',
+        s.unseated.length ? `ו־${s.unseated.length} מחכים לשולחן` : '',
+      ].filter(Boolean).join('. ').replace('. ו־', ', ו־');
 
-  const eventDate = (selectedEvent as any)?.event_date || (selectedEvent as any)?.date;
-  const daysUntil = eventDate ? daysUntilEvent(eventDate, now) : null;
-  const eventOver = daysUntil !== null && daysUntil < 0;
+  const mix = [
+    { label: 'אישרו הגעה', n: inv.confirmed, color: C.purple },
+    { label: 'עוד לא ענו', n: inv.pending, color: C.lav },
+    ...(inv.maybe ? [{ label: 'אולי', n: inv.maybe, color: C.lavMid }] : []),
+    { label: 'לא יגיעו', n: inv.declined, color: C.field },
+  ];
+  const mixTotal = Math.max(1, mix.reduce((a, m) => a + m.n, 0));
 
-  const upcoming = campaigns
-    .filter((c: any) => c.schedule_time && new Date(c.schedule_time) > now && c.status !== 'sent' && c.status !== 'paused')
-    .sort((a: any, b: any) => new Date(a.schedule_time).getTime() - new Date(b.schedule_time).getTime());
-  const nextRound: any = upcoming[0];
-  const nextReminderShort = nextRound ? futureChip(new Date(nextRound.schedule_time), now) : undefined;
+  type Decision = { stat: number; title: string; detail: string; cta: string; to: string; tone: ChipTone };
+  const decisions: Decision[] = [];
+  if (s.pendingImports) decisions.push({ stat: s.pendingImports, title: 'אנשי קשר מוואטסאפ מחכים לאישור', detail: 'הם נכנסים לרשימה רק אחרי שתאשרו או תתקנו', cta: 'לאישור', to: '/guests/imported', tone: 'lav' });
+  if (inv.pending) decisions.push({ stat: inv.pending, title: 'מוזמנים שעוד לא ענו', detail: s.nextRound ? `${s.nextRound.name} יוצאת ${s.nextRound.whenLabel}` : 'אין כרגע סבב מתוזמן אליהם', cta: s.nextRound ? 'לסבבים' : 'לתזמון', to: '/messages', tone: 'warn' });
+  if (s.unseated.length) decisions.push({ stat: s.unseated.length, title: 'אישרו הגעה ועדיין בלי שולחן', detail: freeSeats ? `יש ${freeSeats} מקומות פנויים בשולחנות` : s.tables.length ? 'השולחנות מלאים, אפשר להוסיף שולחן' : 'עוד לא נוצרו שולחנות', cta: 'להושבה', to: '/seating', tone: 'lav' });
+  if (s.failedDeliveries) decisions.push({ stat: s.failedDeliveries, title: 'הודעות שלא נמסרו', detail: 'בדרך כלל זה מספר שגוי. שווה לבדוק ולתקן', cta: 'למוזמנים', to: '/guests', tone: 'err' });
+  if (s.noPartySize.length) decisions.push({ stat: s.noPartySize.length, title: 'אישרו בלי לומר כמה יגיעו', detail: 'שווה לשאול אותם, בשביל המספר לאולם', cta: 'לרשימה', to: '/insights', tone: 'quiet' });
 
-  let statusTone: 'good' | 'attention' | 'start';
-  let statusLabel: string;
-  if (eventOver) { statusTone = 'good'; statusLabel = 'האירוע מאחוריכם 💜'; }
-  else if (totalGuests === 0) { statusTone = 'start'; statusLabel = 'מתחילים'; }
-  else if (pending === 0) { statusTone = 'good'; statusLabel = 'הכול מוכן'; }
-  else if (nextRound) { statusTone = 'good'; statusLabel = 'הכול בשליטה'; }
-  else { statusTone = 'attention'; statusLabel = 'דורש תשומת לב'; }
-
-  // After the event, "what's next" is no longer logistics - it's the recap.
-  const next = eventOver
-    ? { eyebrow: 'הצעד הבא', label: 'סיכום החגיגה', onAction: () => navigate('/recap') }
-    : nextRound
-    ? { eyebrow: 'התזכורת הבאה', label: whenLabel(nextRound.schedule_time), onAction: () => navigate('/messages') }
-    : totalGuests === 0
-    ? { eyebrow: 'הצעד הבא', label: 'שליחת ההזמנות', onAction: () => navigate('/guests') }
-    : pending > 0
-    ? { eyebrow: 'הצעד הבא', label: 'תזמון תזכורת', onAction: () => navigate('/messages') }
-    : { eyebrow: 'הצעד הבא', label: 'סידור מושבים', onAction: () => navigate('/seating') };
-
-  const attention: AttentionItem[] = [];
-  if (eventOver) {
-    attention.push({ icon: '💌', text: 'שווה לשלוח תודה לאורחים ולראות את הסיכום', actionLabel: 'לסיכום', onAction: () => navigate('/recap') });
-  } else if (totalGuests === 0) {
-    attention.push({ icon: '📋', text: 'רשימת המוזמנים עדיין ריקה', actionLabel: 'הוספה', onAction: () => navigate('/guests') });
-  } else if (pending > 0 && !nextRound) {
-    attention.push({ icon: '🔔', text: `${pending} לא ענו ואין תזכורת מתוזמנת`, actionLabel: 'תזמון', onAction: () => navigate('/messages') });
-  }
-  if (selectedEvent.paymentStatus && selectedEvent.paymentStatus !== 'paid' && selectedEvent.state !== 'active') {
-    attention.push({ icon: '💳', text: 'התשלום עדיין לא הושלם', actionLabel: 'השלמה', onAction: () => navigate('/billing') });
-  }
-
-  const raw: { ts: number; entry: TimelineEntry }[] = [];
-  const sentCampaign = campaigns
-    .filter((c: any) => c.schedule_time && (c.status === 'sent' || new Date(c.schedule_time) <= now))
-    .sort((a: any, b: any) => new Date(a.schedule_time).getTime() - new Date(b.schedule_time).getTime())[0];
-  if (sentCampaign) {
-    const d = new Date(sentCampaign.schedule_time);
-    raw.push({ ts: d.getTime(), entry: { id: 'sent', tone: 'system', icon: '📨', text: 'ההזמנות נשלחו', timeLabel: pastChip(d, now) } });
-  }
-  guests.forEach((g: any) => {
-    if (!g.last_response || (g.status !== 'confirmed' && g.status !== 'attending' && g.status !== 'declined' && g.status !== 'maybe')) return;
-    const d = new Date(g.last_response);
-    if (isNaN(d.getTime())) return;
-    const tone = (g.status === 'declined' ? 'declined' : g.status === 'maybe' ? 'system' : 'confirmed') as TimelineEntry['tone'];
-    raw.push({ ts: d.getTime(), entry: { id: g.id, name: g.name, tone, text: `${g.name} ${VERB[g.status] || 'השיבו'}`, timeLabel: pastChip(d, now) } });
-  });
-  raw.sort((a, b) => a.ts - b.ts);
-  const entries: TimelineEntry[] = raw.slice(-4).map((r) => r.entry);
-  if (eventOver) {
-    entries.push({ id: 'recap', tone: 'recommend', icon: '🎉', text: 'האירוע חגג! כל המספרים והרגעים מחכים בסיכום', timeLabel: 'סיכום', onClick: () => navigate('/recap') });
-  } else if (nextRound) {
-    entries.push({ id: 'next', tone: 'recommend', icon: '🔔', text: `תזכורת תישלח אוטומטית ${nextReminderShort}`, timeLabel: nextReminderShort || '', onClick: () => navigate('/messages') });
-  } else if (totalGuests > 0 && pending > 0) {
-    entries.push({ id: 'rec', tone: 'recommend', icon: '💡', text: 'ממליצים לתזמן תזכורת למי שטרם ענה', timeLabel: 'הצעד הבא', onClick: () => navigate('/messages') });
-  } else if (totalGuests > 0 && pending === 0) {
-    entries.push({ id: 'seat', tone: 'recommend', icon: '🪑', text: 'כולם ענו - אפשר להתחיל לסדר מושבים', timeLabel: 'הצעד הבא', onClick: () => navigate('/seating') });
-  }
-  const timelineHint = 'ברגע שתעלו את רשימת המוזמנים, כל הזמנה, אישור ותגובה יופיעו כאן - כמו יומן חי של האירוע.';
+  const roundCols = 'minmax(150px,1.9fr) 72px 60px 104px';
 
   return (
-    <Box sx={{ direction: 'rtl' }}>
-      <OnboardingImagesDialog
-        open={onboardImages}
-        eventId={selectedEvent.id}
-        onClose={() => {
-          setOnboardImages(false);
-          localStorage.setItem(`onboarding_images_${selectedEvent.id}`, '1');
-        }}
-      />
-      {/* 1. When is my event? - state only */}
-      <EventHero
-        name={selectedEvent.name}
-        dateISO={eventDate}
-        daysUntil={daysUntil}
-        type={(selectedEvent as any)?.type}
-        state={selectedEvent.state}
-        paymentStatus={selectedEvent.paymentStatus}
-        statusTone={statusTone}
-        statusLabel={statusLabel}
-        nextEyebrow={next.eyebrow}
-        nextLabel={next.label}
-        onNext={next.onAction}
-        lifecycleStage={totalGuests === 0 ? 0 : pending > 0 ? 1 : 2}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+      {/* "לפני שההזמנה יוצאת": replaces the old first-run images popup and
+          stays until the invitation round has been sent. */}
+      <PreSendChecklist snapshot={s} eventId={selectedEvent.id} onChanged={refresh} />
+
+      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,380px),1fr))', gap: 22, alignItems: 'stretch' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '6px 0' }}>
+          <h2 style={{ fontSize: 'clamp(30px,4vw,50px)', lineHeight: 1.08, letterSpacing: '-0.034em', fontWeight: 600, margin: 0, maxWidth: '16ch', textWrap: 'balance' } as React.CSSProperties}>{headline}</h2>
+          <p style={{ fontSize: 17, lineHeight: 1.6, color: C.body, margin: '14px 0 0', maxWidth: '44ch' }}>{sub}</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 18px', marginTop: 18 }}>
+            {[
+              { icon: 'event', text: s.event.dateLine },
+              ...(s.event.venue ? [{ icon: 'location_on', text: s.event.venue }] : []),
+              { icon: 'groups', text: `${inv.total} מוזמנים · ${s.people.invited} נפשות` },
+            ].map((m) => (
+              <span key={m.icon} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 14, color: C.body }}>
+                <Ms size={18} style={{ color: C.purple }}>{m.icon}</Ms>{m.text}
+              </span>
+            ))}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 14, marginTop: 24 }}>
+            {next?.cta && <Btn to={next.cta.path}>{next.cta.label}</Btn>}
+            {s.unseated.length > 0 && next?.cta?.path !== '/seating' && (
+              <a href="/seating" onClick={(e) => { e.preventDefault(); navigate('/seating'); }} style={{ fontSize: 15.5, borderBottom: `1.5px solid ${C.lavMid}`, paddingBottom: 1 }}>שיבוץ {s.unseated.length} מוזמנים</a>
+            )}
+          </div>
+        </div>
+
+        <Card hero>
+          <Kicker>כמה מגיעים</Kicker>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+            <span className="num" style={{ fontSize: 64, fontWeight: 600, letterSpacing: '-0.05em', lineHeight: 0.9 }}>{s.people.confirmed}</span>
+            <span style={{ fontSize: 17, color: C.body }}>אנשים מתוך {s.people.invited} שהוזמנו</span>
+          </div>
+          <div style={{ fontSize: 13.5, color: C.body, marginTop: 18 }}>ההזמנות לפי תשובה</div>
+          <div style={{ display: 'flex', height: 12, borderRadius: 99, overflow: 'hidden', background: C.paperWarm, marginTop: 8, gap: 3 }} role="img" aria-label={mix.map((m) => `${m.label} ${m.n}`).join(', ')}>
+            {mix.filter((m) => m.n > 0).map((m) => (
+              <span key={m.label} style={{ display: 'block', width: `${(m.n / mixTotal) * 100}%`, background: m.color, borderRadius: 99 }} />
+            ))}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 18 }}>
+            {mix.map((m) => (
+              <div key={m.label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Dot color={m.color} />
+                <span style={{ flex: 1, fontSize: 14.5, color: C.body }}>{m.label}</span>
+                <span className="num" style={{ fontSize: 16, fontWeight: 600 }}>{m.n}</span>
+                <span className="num" style={{ fontSize: 11.5, color: C.muted, width: 38, textAlign: 'left' }}>{Math.round((m.n / mixTotal) * 100)}%</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 18, paddingTop: 15, borderTop: `1.5px solid ${C.line2}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13.5, color: C.body }}>
+              {s.expected.max > s.expected.min ? `צפי לערב האירוע: ${s.expected.min} עד ${s.expected.max} אנשים` : `צפי לערב האירוע: ${s.expected.min} אנשים`}
+            </span>
+            <TextLink to="/insights">לתמונת המצב</TextLink>
+          </div>
+        </Card>
+      </section>
+
+      <FigureStrip
+        items={[
+          { label: 'צפי לאולם', value: s.expected.max > s.expected.min ? `${s.expected.min}–${s.expected.max}` : String(s.expected.min), hint: 'לפי מי שאישר ומי שענה ״אולי״' },
+          { label: 'עוד לא ענו', value: inv.pending, hint: s.nextRound ? `${s.nextRound.name}: ${s.nextRound.whenLabel}` : 'אין סבב מתוזמן', color: inv.pending ? C.warn : C.ink },
+          { label: 'בלי שולחן', value: s.unseated.length, hint: freeSeats ? `יש ${freeSeats} מקומות פנויים` : s.tables.length ? 'השולחנות מלאים' : 'עוד לא נוצרו שולחנות', color: s.unseated.length ? C.purple : C.ink },
+          { label: 'עם בקשה מיוחדת', value: withNotes, hint: 'אישרו וכתבו הערה, למשל מנה או נגישות' },
+        ]}
       />
 
-      {/* 2. How many confirmed? - ring (left) + 2×2 KPI cards (right).
-          With zero guests there is nothing to count - a 0/0 ring and four zero
-          tiles read as a broken dashboard, so we onboard instead. */}
-      {totalGuests === 0 && !eventOver ? (
-        <Box sx={{ textAlign: 'center', py: { xs: 4, sm: 6 }, px: 2, mb: { xs: 2.5, sm: 3.5 } }}>
-          <Typography sx={{ fontWeight: 800, fontSize: { xs: '1.35rem', sm: '1.6rem' }, letterSpacing: '-0.02em', mb: 1 }}>
-            הכול מתחיל ברשימת המוזמנים
-          </Typography>
-          <Typography sx={{ color: 'text.secondary', maxWidth: 420, mx: 'auto', lineHeight: 1.6, mb: 3 }}>
-            מעלים את הרשימה - ואנחנו כבר נדאג להזמנות, לתזכורות ולספירת האישורים.
-          </Typography>
-          <Button variant="contained" disableElevation onClick={() => navigate('/guests')} sx={{ borderRadius: 99, px: 3.5, py: 1, fontWeight: 700 }}>
-            הוספת מוזמנים
-          </Button>
-        </Box>
-      ) : (
-        <>
-          <SectionHeader emoji="💌" title="מצב האישורים" subtitle="כמה כבר אמרו 'באים', וכמה עוד מותחים אותנו" />
-          <Grid container spacing={{ xs: 2.5, sm: 3 }} alignItems="stretch" sx={{ mb: { xs: 2.5, sm: 3.5 } }}>
-            <Grid item xs={12} md={4} sx={{ order: { xs: 0, md: 2 } }}>
-              <RsvpRingCard confirmed={approved} total={totalGuests} />
-            </Grid>
-            <Grid item xs={12} md={8} sx={{ order: { xs: 1, md: 1 } }}>
-              <KpiCards confirmed={approved} waiting={pending} declined={declined} total={totalGuests} onFilter={(status) => navigate(`/guests?filter=${status}`)} />
-            </Grid>
-          </Grid>
-        </>
-      )}
+      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,360px),1fr))', gap: 22, alignItems: 'start' }}>
+        <Card>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <h3 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', margin: 0 }}>מה מחכה לך</h3>
+            {decisions.length > 0 && <span style={{ fontSize: 12, letterSpacing: '.05em', color: C.muted }}>{decisions.length} פריטים</span>}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
+            {decisions.length === 0 && <EmptyNote icon="check_circle">אין כרגע משהו שמחכה לכם. נעדכן כאן כשיהיה.</EmptyNote>}
+            {decisions.slice(0, 4).map((d) => {
+              const toneBg = { ok: C.okBg, warn: C.warnBg, err: C.errBg, lav: C.tintApp, quiet: C.paperSoft }[d.tone];
+              const toneFg = { ok: C.ok, warn: C.warn, err: C.err, lav: C.purpleDark, quiet: C.body }[d.tone];
+              return (
+                <button key={d.title} type="button" onClick={() => navigate(d.to)} className="su-hover-ink" style={{ display: 'flex', alignItems: 'center', gap: 14, width: '100%', padding: '14px 16px', borderRadius: 16, cursor: 'pointer', textAlign: 'right', background: '#FFFFFF', border: `1.5px solid ${C.lineApp}`, fontFamily: 'inherit', color: C.ink }}>
+                  <span className="num" style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-0.04em', color: toneFg, width: 46, height: 46, flex: 'none', borderRadius: 13, background: toneBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{d.stat}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 15, fontWeight: 600 }}>{d.title}</span>
+                    <span style={{ display: 'block', fontSize: 13.5, color: C.body, marginTop: 3, lineHeight: 1.5 }}>{d.detail}</span>
+                  </span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: C.purple, whiteSpace: 'nowrap' }}>{d.cta}</span>
+                </button>
+              );
+            })}
+          </div>
+        </Card>
 
-      {/* 3. What should we do next?  ·  4. What's happening? (asymmetric) */}
-      <SectionHeader emoji="💓" title="הדופק של האירוע" subtitle="מה דורש אתכם - ומה כבר קורה מאחורי הקלעים" />
-      <Grid container spacing={{ xs: 2.5, sm: 3 }} alignItems="stretch">
-        <Grid item xs={12} md={5}>
-          <AttentionPanel items={attention} />
-        </Grid>
-        <Grid item xs={12} md={7}>
-          <Timeline entries={entries} onSeeAll={() => navigate('/guests')} emptyHint={timelineHint} />
-        </Grid>
-      </Grid>
-    </Box>
+        <Card>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <h3 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', margin: 0 }}>נכנס עכשיו בוואטסאפ</h3>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, color: C.ok }}><Dot color={C.ok} size={7} />מתעדכן לבד</span>
+          </div>
+          <div style={{ marginTop: 12 }}>
+            {s.feed.length === 0 && <EmptyNote icon="forum">עוד אין תשובות. ברגע שמישהו יענה בוואטסאפ, זה יופיע כאן.</EmptyNote>}
+            {s.feed.map((g) => (
+              <div key={g.id} style={{ display: 'grid', gridTemplateColumns: '48px minmax(0,1fr) auto', gap: 12, alignItems: 'center', padding: '12px 0', borderBottom: `1.5px solid ${C.line2}` }}>
+                <span className="num" style={{ fontSize: 11.5, color: C.muted }}>{agoLabel(g.lastResponse)}</span>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block', fontSize: 14.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.name}</span>
+                  <span style={{ display: 'block', fontSize: 13, color: C.body, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {[g.status === 'confirmed' ? (g.partyKnown ? `${g.people} נפשות` : 'עוד לא אמרו כמה') : '', g.notes].filter(Boolean).join(' · ') || STATUS_LABEL[g.status]}
+                  </span>
+                </span>
+                <Chip tone={STATUS_TONE[g.status]}>{g.status === 'confirmed' ? 'מגיעים' : g.status === 'declined' ? 'לא יגיעו' : 'אולי'}</Chip>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </section>
+
+      <Card>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+          <h3 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', margin: 0 }}>סבבי השליחה</h3>
+          <TextLink to="/messages">לכל הסבבים</TextLink>
+        </div>
+        {s.rounds.length === 0 ? (
+          <EmptyNote icon="send">עוד אין סבבי שליחה לאירוע הזה.</EmptyNote>
+        ) : (
+          <div className="su-scroll-x">
+            <div style={{ minWidth: 420 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: roundCols, gap: 12, alignItems: 'center', padding: '0 12px 10px', borderBottom: `1.5px solid ${C.lineApp}`, fontSize: 12.5, fontWeight: 600, color: C.muted }}>
+                <span>סבב</span><span>נשלח ל</span><span>ענו</span><span>סטטוס</span>
+              </div>
+              {s.rounds.map((r) => (
+                <div key={r.id} className="su-hover-row" style={{ display: 'grid', gridTemplateColumns: roundCols, gap: 12, alignItems: 'center', padding: '14px 12px', borderBottom: `1.5px solid ${C.line2}` }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</div>
+                    <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3, whiteSpace: 'nowrap' }}>{r.whenLabel}</div>
+                  </div>
+                  <span className="num" style={{ fontSize: 15 }}>{r.recipients || '–'}</span>
+                  <span className="num" style={{ fontSize: 17, fontWeight: 600 }}>{r.isUpcoming ? 'טרם' : r.replied}</span>
+                  <Chip tone={r.tone}>{r.statusLabel}</Chip>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }
 
