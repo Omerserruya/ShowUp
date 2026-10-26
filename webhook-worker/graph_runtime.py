@@ -21,6 +21,7 @@ Per inbound message:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import datetime
@@ -238,7 +239,7 @@ async def _set_field(session: AsyncSession, conv: Conversation, guest_id: str, f
 async def apply_step(session: AsyncSession, conv: Conversation, guest_id: Optional[str],
                      effects: List[Dict[str, Any]], new_state: Optional[str], *, stamp: bool = True) -> List[Dict[str, Any]]:
     """Run the effects + state change in one transaction. Returns the effects
-    that were recorded but not executed (notify_host)."""
+    that still need sending (notify_host -> notify_hosts)."""
     skipped: List[Dict[str, Any]] = []
     try:
         if guest_id and stamp:
@@ -247,10 +248,7 @@ async def apply_step(session: AsyncSession, conv: Conversation, guest_id: Option
         for eff in effects:
             t = eff.get("type")
             if t == "notify_host":
-                # The owner outbox (owner_notifications) is template-only and the
-                # owner's phone lives in aub - record, don't send.
-                logger.info("flow graph notify_host (recorded, not sent): %s", str(eff.get("text"))[:200],
-                            extra={"event_id": str(conv.event_id), "edge_id": eff.get("edge_id")})
+                # Sent after the step by notify_hosts() (needs the flow renderer).
                 skipped.append(eff)
                 continue
             if not guest_id:
@@ -356,6 +354,79 @@ async def render_send(flow: Any, session: AsyncSession, conv: Conversation, send
     return await r.build_text(session, conv, body)
 
 
+HOST_ALERT_KIND = "host_alert"  # shared/content/system_templates.yaml
+
+
+def _one_line(value: str, limit: int) -> str:
+    """Meta rejects newlines, tabs and 4+ consecutive spaces inside parameters."""
+    out = " ".join(str(value or "").replace("\t", " ").split())
+    return out[:limit]
+
+
+def _dedupe_key(key: str) -> str:
+    """owner_notifications.dedupe_key is VARCHAR(160)."""
+    if len(key) <= 160:
+        return key
+    return f"{HOST_ALERT_KIND}:{hashlib.sha1(key.encode('utf-8')).hexdigest()}"
+
+
+async def notify_hosts(flow: Any, session: AsyncSession, conv: Conversation, guest_id: Optional[str],
+                       effects: List[Dict[str, Any]], cfg: Any) -> int:
+    """notify_host effects -> owner_notifications outbox rows (template host_alert),
+    one per event owner with a phone. The scheduler dispatches them. Best-effort:
+    a failure here never breaks the guest's conversation."""
+    effects = [e for e in effects or [] if e.get("type") == "notify_host"]
+    if not effects:
+        return 0
+    queued = 0
+    try:
+        async with session.begin_nested():
+            ev = (await session.execute(text("SELECT name, owners FROM events WHERE id = CAST(:e AS uuid)"),
+                                        {"e": str(conv.event_id)})).first()
+            if ev is None:
+                return 0
+            owners = ev.owners
+            if isinstance(owners, str):
+                owners = json.loads(owners or "[]")
+            owner_ids = [str(o) for o in (owners or []) if o]
+            phones = []
+            if owner_ids:
+                rows = await session.execute(
+                    text("SELECT phone FROM users WHERE id::text = ANY(:ids) AND phone IS NOT NULL AND phone <> ''"),
+                    {"ids": owner_ids})
+                phones = sorted({r.phone for r in rows})
+            if not phones:
+                logger.info("notify_host: event %s has no owner phone", conv.event_id)
+                return 0
+            guest_name = ""
+            if guest_id:
+                g = (await session.execute(text("SELECT name FROM guests WHERE id = CAST(:g AS uuid)"),
+                                           {"g": guest_id})).first()
+                guest_name = (g.name if g else "") or ""
+            r = _NodeRenderer(flow, "notify_host", cfg)
+            for eff in effects:
+                body = await r._render_text(session, conv, _legacy(str(eff.get("text") or ""), eff.get("turn") or {}))
+                params = {"1": _one_line(ev.name or "האירוע", 200),
+                          "2": _one_line(guest_name or conv.guest_phone or "אורח", 120),
+                          "3": _one_line(body, 700) or "-"}
+                digest = hashlib.sha1(params["3"].encode("utf-8")).hexdigest()[:12]
+                for phone in phones:
+                    res = await session.execute(
+                        text("INSERT INTO owner_notifications (kind, recipient_phone, event_id, params, dedupe_key) "
+                             "VALUES (:k, :p, CAST(:e AS uuid), CAST(:params AS jsonb), :d) "
+                             "ON CONFLICT (dedupe_key) DO NOTHING RETURNING id"),
+                        {"k": HOST_ALERT_KIND, "p": phone, "e": str(conv.event_id),
+                         "params": json.dumps(params, ensure_ascii=False),
+                         "d": _dedupe_key(f"{HOST_ALERT_KIND}:{conv.event_id}:{guest_id or conv.guest_phone}:"
+                                          f"{eff.get('edge_id')}:{digest}:{phone}")})
+                    queued += 1 if res.first() is not None else 0
+        logger.info("notify_host queued %s owner notification(s)", queued,
+                    extra={"event_id": str(conv.event_id)})
+    except Exception as exc:  # never break the guest flow
+        logger.warning("notify_host failed for event %s: %s", conv.event_id, exc)
+    return queued
+
+
 async def emit(flow: Any, session: AsyncSession, conv: Conversation, sends: List[Dict[str, Any]], cfg: Any,
                *, stale: bool) -> None:
     if stale:
@@ -417,7 +488,8 @@ async def run_graph(flow: Any, session: AsyncSession, conv: Conversation, resolv
     res = fg.step(graph, here, inbound, ctx, _DEFAULTS)
     logger.info("Graph transition %s -> %s (edges=%s, graph=%s/%s v%s)", here, res.node_id, res.edge_ids,
                 resolved.scope, resolved.scope_key, resolved.version)
-    await apply_step(session, conv, guest_id, res.effects, res.node_id or here)
+    pending = await apply_step(session, conv, guest_id, res.effects, res.node_id or here)
+    await notify_hosts(flow, session, conv, guest_id, pending, cfg)
     await emit(flow, session, conv, res.sends, cfg, stale=stale)
 
 
@@ -430,8 +502,10 @@ async def continue_after_answer(flow: Any, session: AsyncSession, conv: Conversa
     guest_id = await target_guest_id(session, conv)
     ctx = await build_ctx(session, conv, graph, guest_id)
     res = fg.after_answer(graph, conv.current_state, ctx)
-    await apply_step(session, conv, guest_id, res.effects, res.node_id or conv.current_state, stamp=False)
-    await emit(flow, session, conv, res.sends, await load_flow_config(conv.event_id), stale=stale)
+    pending = await apply_step(session, conv, guest_id, res.effects, res.node_id or conv.current_state, stamp=False)
+    cfg = await load_flow_config(conv.event_id)
+    await notify_hosts(flow, session, conv, guest_id, pending, cfg)
+    await emit(flow, session, conv, res.sends, cfg, stale=stale)
 
 
 async def _acknowledge(flow: Any, session: AsyncSession, conv: Conversation, node: Dict[str, Any], cfg: Any, *,

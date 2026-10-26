@@ -899,6 +899,7 @@ def apply_schema_patches(engine: Engine) -> list:
         ensure_guest_questions,
         ensure_conversation_flow_configs,
         ensure_flow_graphs,
+        ensure_custom_templates,
     )
     failed = []
     for patch in patches:
@@ -986,6 +987,50 @@ def ensure_flow_graphs(engine: Engine) -> None:
         """,
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_flow_graph_version ON flow_graphs (scope, scope_key, version)",
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_flow_graph_active ON flow_graphs (scope, scope_key) WHERE is_active",
+    ]
+    with engine.begin() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))
+
+
+def ensure_custom_templates(engine: Engine) -> None:
+    """Admin Template Studio: WhatsApp templates authored as JSON documents
+    (shared/domain/messaging/custom_templates.py, core /admin/templates).
+
+    `doc` is the working copy the admin edits. `submitted_doc` is the snapshot
+    last sent to Meta under `meta_name` (status `meta_status`). `live` is the
+    snapshot Meta APPROVED - the only thing that is ever delivered:
+    {"meta_name", "meta_id", "doc", "version", "status", "approved_at"}. A new
+    submission of an approved template goes under a versioned name
+    (`<key>_v<N>`) so the live version keeps delivering until the new one is
+    approved. Campaigns reference a custom template as `custom__<key>`.
+    """
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS custom_templates (
+            key VARCHAR(80) PRIMARY KEY,
+            doc JSONB NOT NULL,
+            meta_name VARCHAR(512),
+            meta_id VARCHAR(64),
+            meta_status VARCHAR(20) NOT NULL DEFAULT 'draft',
+            rejection_reason TEXT,
+            submitted_doc JSONB,
+            submitted_at TIMESTAMPTZ,
+            live JSONB,
+            version INTEGER NOT NULL DEFAULT 1,
+            archived BOOLEAN NOT NULL DEFAULT false,
+            last_sync TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            created_by UUID,
+            updated_by UUID,
+            CONSTRAINT ck_custom_template_status CHECK (
+                meta_status IN ('draft', 'pending', 'approved', 'rejected', 'paused', 'disabled'))
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_custom_templates_status ON custom_templates (meta_status)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_custom_templates_meta_name ON custom_templates (meta_name) "
+        "WHERE meta_name IS NOT NULL",
     ]
     with engine.begin() as conn:
         for stmt in statements:

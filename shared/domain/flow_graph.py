@@ -1262,7 +1262,7 @@ def meta() -> Dict[str, Any]:
             {"type": "set_field", "label": "עדכון שדה", "fields": ["field", "value"]},
             {"type": "add_tag", "label": "הוספת תגית", "fields": ["tag"]},
             {"type": "notify_host", "label": "הודעה למארח", "fields": ["text"],
-             "note": "נרשם ביומן בלבד - תיבת ההתראות למארחים תומכת רק בתבניות מאושרות"},
+             "note": "נשלח בוואטסאפ לבעלי האירוע בתבנית host_alert (פועל רק אחרי ש-Meta מאשרת את התבנית)"},
             {"type": "stop_reminders", "label": "הפסקת תזכורות",
              "note": f"מוסיף לאורח את התגית '{NO_REMINDERS_TAG}'"},
         ],

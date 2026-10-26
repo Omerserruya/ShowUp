@@ -176,5 +176,36 @@ worker.process_campaign(None, None, "c1")
 check("reminder with 0 guests keeps old behaviour (sent, 0)",
       not w.parked and w.finished == [("sent", "empty audience", 0)])
 
+# --- Template Studio: an approved custom template (`custom__<key>`) ---
+_CDOC = {"name": "garden_invite", "title": "הזמנה לגן", "group": "invitation", "language": "he",
+         "category": "MARKETING", "header": {"type": "none"},
+         "body": "היי {{guest_name}}, מוזמנים ל{{event_name}}. נשמח לראותכם!",
+         "buttons": [{"type": "QUICK_REPLY", "text": "מגיעים!", "action": "rsvp_accepted"}]}
+_CROW = {"key": "garden_invite", "doc": _CDOC, "version": 1, "archived": False, "meta_status": "approved",
+         "live": {"status": "approved", "meta_name": "garden_invite", "doc": _CDOC, "version": 1}}
+w = World(camp(template="custom__garden_invite", custom_message=None, stage_id=None), ev(), G[:1]).install()
+_refs = []
+worker.fetch_wa_template = lambda conn, ref: (_refs.append(ref) or (_CROW if ref == "custom__garden_invite" else None))
+worker.process_campaign(None, None, "c1")
+_m = w.published[0] if w.published else {}
+check("custom template looked up by its ref", _refs == ["custom__garden_invite"])
+check("custom template sent under its approved Meta name",
+      _m.get("template") == "garden_invite" and _m.get("language") == "he")
+check("custom template params resolved by VariableResolver",
+      _m.get("parameters") == {"body": {"1": "A", "2": "E"}})
+check("custom invitation -> stage + rsvp log_state", _m.get("stage") == "invitation" and _m.get("log_state") == "rsvp_invite")
+# not approved (pending live) -> campaign fails instead of sending other copy
+_pending = {**_CROW, "live": {**_CROW["live"], "status": "pending"}}
+w = World(camp(template="custom__garden_invite", custom_message=None, stage_id=None), ev(), G[:1]).install()
+worker.fetch_wa_template = lambda conn, ref: _pending
+worker.process_campaign(None, None, "c1")
+check("unapproved custom template is never sent", not w.published)
+# missing row -> failed, never a stage-default fallback
+w = World(camp(template="custom__nope", custom_message=None, stage_id=None, campaign_type="invitation"),
+          ev(), G[:1]).install()
+worker.process_campaign(None, None, "c1")
+check("missing custom template -> failed, no fallback send",
+      not w.published and w.finished and w.finished[0][0] == "failed")
+
 print("FAILED" if FAIL else "ALL PASSED")
 sys.exit(1 if FAIL else 0)

@@ -153,7 +153,23 @@ def fetch_event_by_id(conn: psycopg2.extensions.connection, event_id: str) -> Op
 
 def fetch_wa_template(conn: psycopg2.extensions.connection, template_id: str) -> Optional[dict]:
     """Look up an event-scoped/custom template row so the catalog resolver can
-    resolve a legacy UUID reference. Best-effort: None if the table/row is absent."""
+    resolve a legacy UUID reference. Best-effort: None if the table/row is absent.
+
+    A `custom__<key>` ref is an admin-authored Template Studio template: its
+    `custom_templates` row is returned (resolver -> template_from_custom_row,
+    which only delivers the Meta-approved live snapshot)."""
+    if isinstance(template_id, str) and template_id.startswith("custom__"):
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT key, doc, meta_name, meta_id, meta_status, version, live, archived "
+                    "FROM custom_templates WHERE key = %s",
+                    (template_id[len("custom__"):],),
+                )
+                return cur.fetchone()
+        except Exception:
+            conn.rollback()
+            return None
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(

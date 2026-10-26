@@ -119,3 +119,24 @@ templates:
       📤 קמפיינים שנשלחו היום: {{6}}
 
       👀 {{7}}
+
+  host_alert:
+    # Fired by the admin flow builder's "notify_host" action (webhook-worker
+    # graph_runtime) when a guest's answer should reach the hosts right away.
+    # {{3}} is the admin-authored line from the flow graph, rendered per guest
+    # (single line - Meta rejects newlines/tabs inside parameters).
+    meta:
+      name: host_alert
+      category: UTILITY
+    language: he
+    params:
+      "1": event name
+      "2": guest name
+      "3": update text (from the flow builder)
+    body: |-
+      עדכון מהשיחה עם האורחים של "{{1}}" 💬
+
+      האורח/ת {{2}}:
+      {{3}}
+
+      את כל הפרטים אפשר לראות באפליקציה של ShowUp.

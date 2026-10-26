@@ -13,6 +13,13 @@ export interface FlowButton {
   label: string;
 }
 
+/** A template node re-sends this approved WhatsApp template when entered. */
+export interface ResendTemplate {
+  name: string;
+  language: string;
+  params: string[];
+}
+
 export interface FlowNode {
   id: string;
   type: NodeType;
@@ -23,6 +30,7 @@ export interface FlowNode {
   number?: { min?: number | null; max?: number | null } | null;
   guest_questions?: boolean;
   position?: { x: number; y: number } | null;
+  resend_template?: ResendTemplate | null;
 }
 
 export type EdgeWhen =

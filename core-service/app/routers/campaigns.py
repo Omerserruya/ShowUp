@@ -87,7 +87,12 @@ def _require_rounds_available(db: Session, event, event_id, requested: int, item
 
 def _wa_template_row(db: Session, ref: str) -> Optional[dict]:
     """db_lookup for resolve_template: fetch a custom event-scoped template by id,
-    shaped like the worker's `wa_templates` row."""
+    shaped like the worker's `wa_templates` row. A `custom__<key>` ref is an
+    admin-authored Template Studio template (custom_templates table)."""
+    from shared.domain.messaging.custom_templates import is_custom_ref
+    if is_custom_ref(ref):
+        from app.custom_templates_store import custom_template_row
+        return custom_template_row(db, ref)
     try:
         tid = uuid.UUID(str(ref))
     except (ValueError, TypeError):
@@ -119,6 +124,15 @@ def _require_deliverable_template(db: Session, template_ref: Optional[str],
     # Unresolvable refs are left to the worker (may be a stage/variant-addressed
     # campaign we don't model here); only block a template we CAN resolve and know
     # is undeliverable.
+    from shared.domain.messaging.custom_templates import is_custom_ref
+    if is_custom_ref(template_ref) and (tmpl is None or not tmpl.is_usable):
+        # Admin-authored template: only its Meta-APPROVED version, in a guest
+        # stage group, may be sent. Never left to the worker to discover.
+        raise HTTPException(
+            status_code=400,
+            detail=(f"Template '{template_ref}' cannot be delivered: it is not an approved "
+                    f"guest template (approve it on Meta in the Template Studio first)."),
+        )
     if tmpl is not None and not tmpl.is_usable:
         raise HTTPException(
             status_code=400,

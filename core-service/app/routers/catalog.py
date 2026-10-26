@@ -10,7 +10,10 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from app.db import get_db
 
 from shared.domain.messaging import (
     BUILTIN_CATALOG, FlowStage, EVENT_TYPES, VARIABLES,
@@ -112,8 +115,36 @@ def _template_dto(t) -> dict:
     }
 
 
+def _custom_template_dtos(db: Session) -> list:
+    """Admin-authored (Template Studio) templates whose Meta-APPROVED version is
+    in a guest stage group - offered exactly like catalog templates, addressed as
+    `custom__<key>`. ADDITIVE: catalog entries are untouched, and a DB problem
+    only drops these extras (the static catalog still serves)."""
+    try:
+        from app.custom_templates_store import approved_guest_catalog_rows
+        from shared.domain.messaging.custom_templates import template_from_custom_row
+        all_types = [et.value if hasattr(et, "value") else str(et) for et in EVENT_TYPES]
+        out = []
+        for row in approved_guest_catalog_rows(db):
+            t = template_from_custom_row(row)
+            if t is None or not t.is_usable:
+                continue
+            dto = _template_dto(t)
+            dto["sendable"] = True
+            dto["sendable_event_types"] = list(t.event_types) or all_types
+            dto["source"] = "custom"
+            out.append(dto)
+        return out
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return []
+
+
 @router.get("")
-def get_catalog():
+def get_catalog(db: Session = Depends(get_db)):
     """The full messaging catalog: templates (all variants incl. drafts), the
     dimension vocabularies (stages, categories, tones, CTA types), canonical event
     types and variables - one payload the frontend consumes. Consumers offer only
@@ -134,7 +165,7 @@ def get_catalog():
         "triggers": [t.value for t in Trigger],
         "audience_rules": [a.value for a in AudienceRule],
         "completion_rules": [c.value for c in CompletionRule],
-        "templates": [_template_dto(t) for t in BUILTIN_CATALOG.values()],
+        "templates": [_template_dto(t) for t in BUILTIN_CATALOG.values()] + _custom_template_dtos(db),
         "flow_stages": [s.value for s in FlowStage],
         "categories": [c.value for c in TemplateCategory],
         "tones": [t.value for t in Tone],

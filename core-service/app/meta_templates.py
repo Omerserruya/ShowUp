@@ -134,6 +134,33 @@ class MetaTemplateClient:
             category=data.get("category"), raw=data,
         )
 
+    def edit_template(self, meta_id: str, payload: dict, *, dry_run: bool = False,
+                      timeout: float = 20.0) -> MetaTemplateResult:
+        """POST `/{template_id}` - Meta's EDIT endpoint (components / category).
+        Used to resubmit a REJECTED template under the same name. The template
+        goes back to PENDING review. Simulates when unconfigured/dry_run."""
+        if dry_run or not self.configured:
+            return MetaTemplateResult(
+                ok=True, simulated=True, meta_id=meta_id, meta_status="pending",
+                category=payload.get("category"),
+                error=None if (dry_run or self.configured) else "meta_not_configured",
+            )
+        url = f"{self.base}/{meta_id}"
+        headers = {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json"}
+        try:
+            resp = httpx.post(url, json=payload, headers=headers, timeout=timeout)
+            data = resp.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            logger.warning("meta edit_template error: %s", exc)
+            return MetaTemplateResult(ok=False, simulated=False, meta_status="none", error=str(exc))
+        if resp.status_code >= 400 or "error" in (data or {}):
+            err = (data.get("error") or {})
+            msg = err.get("error_user_msg") or err.get("message") or f"HTTP {resp.status_code}"
+            return MetaTemplateResult(ok=False, simulated=False, meta_status="rejected",
+                                      rejection_reason=msg, error=msg, raw=data)
+        return MetaTemplateResult(ok=True, simulated=False, meta_id=meta_id, meta_status="pending",
+                                  category=payload.get("category"), raw=data)
+
     def fetch_status(self, name: str, *, timeout: float = 20.0) -> MetaTemplateResult:
         """GET the current Meta review status for a template name (for /sync)."""
         if not self.configured:

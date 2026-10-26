@@ -6,6 +6,7 @@ import type { FlowGraph, FlowMeta, FlowNode, InputType, NodeType, Stage } from '
 import { Counter, ErrorLine, Field, IconBtn, PanelHeader, Toggle, VarChip, inputBase, insertAtCaret, selectBase } from './controls';
 import { DEFAULT_VARIABLES, INPUT_LABEL, LIMITS, NODE_TYPE_HINT, NODE_TYPE_LABEL, STAGES, STAGE_LABEL } from './labels';
 import { edgeLabel, uid } from './graph';
+import ResendTemplateEditor from './ResendTemplateEditor';
 
 interface Props {
   node: FlowNode;
@@ -97,6 +98,11 @@ export default function NodePanel({ node, graph, meta, errors, onChange, onSetEn
         </div>
         <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>*כוכביות* יוצגו כטקסט מודגש בוואטסאפ.</div>
       </Field>
+
+      {node.type === 'template' && (
+        <ResendTemplateEditor value={node.resend_template} variables={variables}
+          onChange={(v) => onChange({ resend_template: v })} />
+      )}
 
       {node.type !== 'end' && (
         <Field label="איך האורח עונה?">

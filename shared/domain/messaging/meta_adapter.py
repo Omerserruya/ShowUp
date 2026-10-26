@@ -35,8 +35,15 @@ def build_meta_parameters(template: Template, values: Dict[str, str]) -> Dict[st
 
     # STRUCTURED - header (optional) + numbered body + url buttons (optional).
     out: Dict[str, Any] = {}
+    md = template.metadata or {}
     if meta.header_image_var:
-        out["header"] = {"type": "image", "media_url": values.get(meta.header_image_var, "")}
+        # `header_image_fixed` exists only on admin-authored custom templates
+        # (custom_templates.template_from_doc) - catalog templates never set it.
+        out["header"] = {"type": "image",
+                         "media_url": md.get("header_image_fixed") or values.get(meta.header_image_var, "")}
+    elif md.get("header_text_var"):
+        # Custom templates only: a TEXT header with one variable.
+        out["header"] = {"type": "text", "text": values.get(md["header_text_var"], "")}
     out["body"] = {str(i + 1): _slot_value(s, values) for i, s in enumerate(meta.body)}
     if meta.buttons:
         # On Meta the buttons are ordered quick-replies FIRST (capped at 3), then

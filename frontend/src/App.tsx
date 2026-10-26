@@ -49,6 +49,7 @@ import AdminOperations from './pages/admin/Operations';
 import AdminAuditLog from './pages/admin/AuditLog';
 import AdminConversationFlows from './pages/admin/ConversationFlows';
 import AdminFlowBuilder from './pages/admin/FlowBuilder';
+import AdminTemplates from './pages/admin/Templates';
 import VenueRoute from './components/VenueRoute';
 import VenueDashboard from './pages/venue/VenueDashboard';
 import VenueSettings from './pages/venue/VenueSettings';
@@ -165,6 +166,7 @@ function App() {
           <Route path="/admin/audit-log" element={<AdminRoute><AdminAuditLog /></AdminRoute>} />
           <Route path="/admin/flows" element={<AdminRoute><AdminConversationFlows /></AdminRoute>} />
           <Route path="/admin/flow-builder" element={<AdminRoute><AdminFlowBuilder /></AdminRoute>} />
+          <Route path="/admin/templates" element={<AdminRoute><AdminTemplates /></AdminRoute>} />
         </Route>
         </Routes>
     </ThemeProvider>

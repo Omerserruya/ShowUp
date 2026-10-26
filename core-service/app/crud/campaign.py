@@ -80,7 +80,12 @@ def strip_custom_message(custom_message: Optional[str], *, context: str = "") ->
 
 def wa_template_row(db: Session, ref) -> Optional[dict]:
     """db_lookup for resolve_template: an event-scoped custom template by id,
-    shaped like the worker's `wa_templates` row."""
+    shaped like the worker's `wa_templates` row. A `custom__<key>` ref is an
+    admin-authored Template Studio template (custom_templates table)."""
+    from shared.domain.messaging.custom_templates import is_custom_ref
+    if is_custom_ref(ref):
+        from app.custom_templates_store import custom_template_row
+        return custom_template_row(db, ref)
     try:
         tid = uuid.UUID(str(ref))
     except (ValueError, TypeError):

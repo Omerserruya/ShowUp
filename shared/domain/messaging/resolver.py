@@ -28,6 +28,7 @@ from .catalog import (
 from .stages import FlowStage, canonical_stage
 from .event_types import event_type_meta
 from .variables import canonical_var_name
+from .custom_templates import CUSTOM_REF_PREFIX, template_from_custom_row
 
 # Default header image path (identical to the old handler's hardcoded value);
 # prefixed with the media base (MEDIA_S3_URL) at resolve time.
@@ -200,6 +201,13 @@ def resolve_template(
     key = "" if ref is None else str(ref).strip()
 
     if key:
+        # Admin-authored (Template Studio) template: `custom__<key>`. ADDITIVE -
+        # no catalog key carries this prefix. Resolved ONLY through db_lookup and
+        # never falls back to a stage default (that would send different copy
+        # than the one chosen).
+        if key.startswith(CUSTOM_REF_PREFIX):
+            row = db_lookup(key) if db_lookup is not None else None
+            return template_from_custom_row(row) if row else None
         # Exact event-type key, or a base key whose event-type variant is approved.
         if et:
             variant = ALL_TEMPLATES.get(f"{key}__{et}")

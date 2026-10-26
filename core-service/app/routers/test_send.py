@@ -175,6 +175,10 @@ def _extra_cols(db: Session, campaign_id) -> Dict[str, Any]:
 
 
 def _wa_template_row(db: Session, ref: str) -> Optional[dict]:
+    from shared.domain.messaging.custom_templates import is_custom_ref
+    if is_custom_ref(ref):
+        from app.custom_templates_store import custom_template_row
+        return custom_template_row(db, ref)
     try:
         row = db.execute(
             text("SELECT id, name, body, flow_stage, language, components, event_type, "

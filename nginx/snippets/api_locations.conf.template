@@ -206,6 +206,12 @@
         proxy_pass $CORE_SERVICE_URL/admin/flow-graph;
         include /etc/nginx/snippets/proxy_headers.conf;
     }
+    location /api/admin/templates {
+        limit_req zone=api_general burst=100 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/admin/templates;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
     location /api/admin/messaging {
         limit_req zone=api_general burst=100 nodelay;
         limit_conn perip 50;

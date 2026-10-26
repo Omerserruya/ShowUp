@@ -61,9 +61,15 @@ def check(name, cond, detail=None):
 SCHEMA = [
     "DROP TABLE IF EXISTS flow_graphs, conversation_flow_configs, guest_tags, tags, guest_custom_values, "
     "event_field_defs, messages_sent, campaigns, guests, events, inbound_seen, inbound_pending_choice, "
-    "messages_log, conversations CASCADE",
+    "messages_log, conversations, users, owner_notifications CASCADE",
     """CREATE TABLE events (id UUID PRIMARY KEY, name TEXT, event_date TIMESTAMPTZ, location TEXT,
-        inviters JSON, state TEXT DEFAULT 'active', event_type VARCHAR(50), account_id UUID)""",
+        inviters JSON, state TEXT DEFAULT 'active', event_type VARCHAR(50), account_id UUID, owners JSON)""",
+    "CREATE TABLE users (id UUID PRIMARY KEY, first_name TEXT, phone TEXT)",
+    # mirrors core-service migrations (owner_notifications outbox)
+    """CREATE TABLE owner_notifications (id BIGSERIAL PRIMARY KEY, kind VARCHAR(40) NOT NULL,
+        recipient_phone VARCHAR(32) NOT NULL, event_id UUID, params JSONB NOT NULL DEFAULT '{}',
+        status VARCHAR(16) NOT NULL DEFAULT 'pending', attempts INT NOT NULL DEFAULT 0, dedupe_key VARCHAR(200) UNIQUE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(), sent_at TIMESTAMPTZ)""",
     """CREATE TABLE guests (id UUID PRIMARY KEY, event_id UUID, name TEXT, phone TEXT, status TEXT,
         guest_count INT, import_count INT NOT NULL DEFAULT 1, table_number INT, guest_group VARCHAR(100),
         last_response TIMESTAMP, notes TEXT,
@@ -98,6 +104,7 @@ SCHEMA = [
 ACCOUNT = str(uuid.uuid4())
 EV = str(uuid.uuid4())
 GUEST = str(uuid.uuid4())
+OWNER = str(uuid.uuid4())
 CONV = str(uuid.uuid4())
 PHONE = "972501230001"
 Q_SHUTTLE = str(uuid.uuid4())
@@ -124,9 +131,12 @@ async def setup():
         for stmt in SCHEMA:
             await conn.execute(text(stmt))
         await conn.run_sync(Base.metadata.create_all)
-    await exec_sql("INSERT INTO events (id, name, event_date, inviters, event_type, account_id) VALUES "
+    await exec_sql("INSERT INTO events (id, name, event_date, inviters, event_type, account_id, owners) VALUES "
                    "(CAST(:id AS uuid), 'החתונה של נועה', now() + interval '30 days', CAST(:inv AS json), 'wedding', "
-                   "CAST(:a AS uuid))", id=EV, a=ACCOUNT, inv=json.dumps([{"fn": "נועה", "ln": "כהן"}]))
+                   "CAST(:a AS uuid), CAST(:own AS json))", id=EV, a=ACCOUNT,
+                   inv=json.dumps([{"fn": "נועה", "ln": "כהן"}]), own=json.dumps([OWNER]))
+    await exec_sql("INSERT INTO users (id, first_name, phone) VALUES (CAST(:id AS uuid), 'נועה', '+972501112233')",
+                   id=OWNER)
 
 
 async def reset(*, state="rsvp_invite", status="pending", questions=False, guest_count=None):
@@ -435,6 +445,13 @@ async def graph_features():
     tags = await q_all("SELECT t.name FROM guest_tags gt JOIN tags t ON t.id = gt.tag_id")
     check("unknown state -> entry node; stop_reminders tags no_reminders", (await snapshot())["state"] == "no_more"
           and tags == [(fg.NO_REMINDERS_TAG,)] and sent and sent[0]["text"] == "לא נזכיר יותר 🙏", (tags, sent))
+    alerts = [(k, ph, json.loads(pr)) for k, ph, pr in
+              await q_all("SELECT kind, recipient_phone, params::text FROM owner_notifications")]
+    check("notify_host queues a host_alert to the owner", len(alerts) == 1 and alerts[0][0] == "host_alert"
+          and alerts[0][1] == "+972501112233" and "ביקש/ה בלי תזכורות" in alerts[0][2]["3"]
+          and "\n" not in alerts[0][2]["3"] and alerts[0][2]["1"] == "החתונה של נועה", alerts)
+    await inbound(("text", "די, לא להזכיר לי"))
+    check("notify_host dedupes the same alert", len(await q_all("SELECT id FROM owner_notifications")) == 1)
 
     # Event scope beats global.
     ev_graph = fg.build_default_graph()
