@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
+from typing import Dict, Optional
 
 import httpx
 
@@ -185,3 +185,37 @@ class MetaTemplateClient:
             rejection_reason=match.get("rejected_reason") or match.get("rejection_reason"),
             raw=match,
         )
+
+    def list_all(self, *, timeout: float = 20.0, max_pages: int = 20) -> Optional[Dict[str, dict]]:
+        """Every template on the WABA as {name: {id, status, category, language,
+        rejected_reason}} (one entry per name; the 'he' row wins when a name
+        exists in several languages). None when unconfigured or the call fails."""
+        if not self.configured:
+            return None
+        url = f"{self.base}/{self.waba_id}/message_templates"
+        params = {"fields": "id,name,status,category,language,rejected_reason", "limit": 200}
+        headers = {"Authorization": f"Bearer {self.token}"}
+        out: Dict[str, dict] = {}
+        try:
+            for _ in range(max_pages):
+                resp = httpx.get(url, params=params, headers=headers, timeout=timeout)
+                data = resp.json() or {}
+                if resp.status_code >= 400 or "error" in data:
+                    logger.warning("meta list_all failed: %s", str(data)[:200])
+                    return None
+                for r in data.get("data") or []:
+                    name = r.get("name")
+                    if not name or (name in out and out[name].get("language") == "he"):
+                        continue
+                    out[name] = {"id": r.get("id"), "status": (r.get("status") or "").lower(),
+                                 "category": r.get("category"), "language": r.get("language"),
+                                 "rejected_reason": r.get("rejected_reason")}
+                nxt = ((data.get("paging") or {}).get("cursors") or {}).get("after")
+                if not nxt or not (data.get("paging") or {}).get("next"):
+                    break
+                params = {**params, "after": nxt}
+        except (httpx.HTTPError, ValueError) as exc:
+            logger.warning("meta list_all error: %s", exc)
+            return None
+        return out
+

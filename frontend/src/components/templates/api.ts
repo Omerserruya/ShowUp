@@ -89,6 +89,11 @@ export interface ReadonlyTemplate {
   meta_status: string;
   sendable?: boolean;
   placeholder?: boolean;
+  category?: string;
+  language?: string;
+  rejection_reason?: string;
+  doc?: Record<string, unknown> | null;
+  meta_live?: { id?: string; status?: string; category?: string; language?: string } | null;
 }
 
 export interface GroupDef { id: string; label: string; guest: boolean }
@@ -100,6 +105,7 @@ export interface ListResponse {
   groups: GroupDef[];
   statuses: { id: MetaStatus; label: string }[];
   meta_configured: boolean;
+  meta_live?: boolean;
 }
 
 export interface VariableDef { name: string; label_he: string; sample: string; scope: string; in_text: boolean; flow_var: string | null }
@@ -210,7 +216,7 @@ const json = (method: string, body: unknown): RequestInit => ({
 const k = (key: string) => `/${encodeURIComponent(key)}`;
 
 export const templatesApi = {
-  list: () => call<ListResponse>(''),
+  list: (refresh = false) => call<ListResponse>(refresh ? '?refresh=true' : ''),
   variables: () => call<VariablesResponse>('/variables'),
   approved: (group?: string) =>
     call<{ templates: ApprovedTemplate[] }>(`/approved${group ? `?group=${encodeURIComponent(group)}` : ''}`),
@@ -233,8 +239,8 @@ export const templatesApi = {
   importDocs: (templates: unknown[], dryRun: boolean) =>
     call<ImportResult>('/import', json('POST', { templates, dry_run: dryRun })),
   exportUrl: `${BASE}/export`,
-  exportDocs: async (): Promise<Blob> => {
-    const res = await fetchWithAuth(`${BASE}/export`);
+  exportDocs: async (scope: 'custom' | 'all' = 'custom'): Promise<Blob> => {
+    const res = await fetchWithAuth(`${BASE}/export?scope=${scope}`);
     if (!res.ok) throw new TemplatesApiError('הייצוא נכשל', res.status);
     return res.blob();
   },

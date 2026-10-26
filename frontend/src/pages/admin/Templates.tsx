@@ -14,6 +14,7 @@ import { Btn, Card, Chip, Kicker, Ms } from '../../components/v6/ui';
 import { inputBase, selectBase } from '../../components/flowbuilder/controls';
 import TemplateEditor from '../../components/templates/TemplateEditor';
 import WaBubble from '../../components/templates/WaBubble';
+import JsonPanel from '../../components/templates/JsonPanel';
 import {
   emptyDoc, errMsg, quickValidate, STATUS_LABEL, STATUS_TONE, templatesApi,
   type ImportResult, type Issue, type ListResponse, type ReadonlyTemplate, type SubmitResponse,
@@ -56,7 +57,11 @@ export default function Templates() {
   const [statusFilter, setStatusFilter] = useState('');
   const [groupFilter, setGroupFilter] = useState('');
   const [showArchived, setShowArchived] = useState(false);
-  const [showBuiltIn, setShowBuiltIn] = useState(false);
+  const [showBuiltIn, setShowBuiltIn] = useState(true);
+  const [catFilter, setCatFilter] = useState('');
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  const [roTab, setRoTab] = useState<'view' | 'json'>('view');
+  const [showJson, setShowJson] = useState(false);
   const [showPayload, setShowPayload] = useState(false);
   const [payload, setPayload] = useState<Record<string, unknown> | null>(null);
   const [pendingNav, setPendingNav] = useState<(() => void) | null>(null);
@@ -69,9 +74,9 @@ export default function Templates() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (refresh = false) => {
     try {
-      const d = await templatesApi.list();
+      const d = await templatesApi.list(refresh);
       setData(d);
       setLoadError(null);
       return d;
@@ -265,8 +270,8 @@ export default function Templates() {
   const syncAll = async () => {
     setBusy('syncAll');
     try {
-      const r = await templatesApi.syncAll();
-      await load();
+      const r = await templatesApi.syncAll().catch(() => ({ synced: 0 }));
+      await load(true);
       if (view) await openCustom(view.key);
       say(`עודכנו ${r.synced} תבניות`);
     } catch (e) {
@@ -323,13 +328,13 @@ export default function Templates() {
     }
   };
 
-  const doExport = async () => {
+  const doExport = async (scope: 'custom' | 'all' = 'custom') => {
     try {
-      const blob = await templatesApi.exportDocs();
+      const blob = await templatesApi.exportDocs(scope);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `showup-templates-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `showup-templates${scope === 'all' ? '-all' : ''}-${new Date().toISOString().slice(0, 10)}.json`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -375,9 +380,10 @@ export default function Templates() {
     !q || title.toLowerCase().includes(q) || key.toLowerCase().includes(q) || body.toLowerCase().includes(q);
   const customRows = (data?.templates || []).filter((t) =>
     (showArchived || !t.archived) && (!statusFilter || t.meta_status === statusFilter)
-    && (!groupFilter || t.group === groupFilter) && matches(t.title, t.key, t.doc.body));
+    && (!groupFilter || t.group === groupFilter) && (!catFilter || t.doc.category === catFilter)
+    && matches(t.title, t.key, t.doc.body));
   const builtInRows = showBuiltIn ? [...(data?.catalog || []), ...(data?.system || [])].filter((t) =>
-    !t.placeholder && (!groupFilter || t.group === groupFilter)
+    !t.placeholder && (!groupFilter || t.group === groupFilter) && (!catFilter || t.category === catFilter)
     && (!statusFilter || t.meta_status === statusFilter) && matches(t.title, t.key, t.body)) : [];
   const counts = useMemo(() => {
     const out: Record<string, number> = {};
@@ -444,7 +450,8 @@ export default function Templates() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Btn kind="smallGhost" onClick={doExport}><Ms size={18}>download</Ms>ייצוא JSON</Btn>
+          <Btn kind="smallGhost" onClick={() => doExport('all')}><Ms size={18}>download</Ms>ייצוא כל התבניות (JSON)</Btn>
+          <Btn kind="smallGhost" onClick={() => doExport('custom')}><Ms size={18}>download</Ms>ייצוא שלי</Btn>
           <Btn kind="smallGhost" onClick={() => fileRef.current?.click()}><Ms size={18}>upload</Ms>ייבוא JSON</Btn>
           <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportFile(f); }} />
           <Btn kind="smallGhost" disabled={busy === 'syncAll' || !data?.meta_configured} onClick={syncAll}
@@ -517,6 +524,11 @@ export default function Templates() {
                 <option value="">כל הקבוצות</option>
                 {groups.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
               </select>
+              <select style={{ ...selectBase, gridColumn: '1 / -1' }} value={catFilter} onChange={(e) => setCatFilter(e.target.value)} aria-label="סינון לפי קטגוריית Meta">
+                <option value="">כל הקטגוריות (שיווק / שירות)</option>
+                <option value="MARKETING">שיווק (MARKETING)</option>
+                <option value="UTILITY">שירות (UTILITY)</option>
+              </select>
             </div>
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 10, fontSize: 13, color: C.body }}>
               <label style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
@@ -537,9 +549,25 @@ export default function Templates() {
                 {data.templates.length ? 'אין תבניות שמתאימות לסינון.' : 'עדיין אין תבניות. אפשר ליצור תבנית חדשה או לשכפל תבנית מהקטלוג.'}
               </div>
             )}
-            {grouped.map(({ g, custom, builtIn }) => (
-              <div key={g.id} style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 12, letterSpacing: '.05em', color: C.muted, fontWeight: 500, margin: '0 12px 4px' }}>{g.label}</div>
+            {grouped.map(({ g, custom, builtIn }) => {
+              const filtering = !!(q || statusFilter || groupFilter || catFilter);
+              const open = filtering || openGroups.has(g.id);
+              const all = [...custom.map((t) => t.meta_status), ...builtIn.map((t) => t.meta_status)];
+              const nApproved = all.filter((x) => x === 'approved').length;
+              const nRejected = all.filter((x) => x === 'rejected').length;
+              return (
+              <div key={g.id} style={{ marginBottom: 8 }}>
+                <button type="button" aria-expanded={open}
+                  onClick={() => setOpenGroups((s0) => { const n = new Set(s0); if (n.has(g.id)) n.delete(g.id); else n.add(g.id); return n; })}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: 'none', border: 0, cursor: 'pointer',
+                    fontFamily: 'inherit', color: C.ink, padding: '8px 12px', textAlign: 'start' }}>
+                  <Ms size={18} style={{ color: C.muted }}>{open ? 'expand_more' : 'chevron_left'}</Ms>
+                  <span style={{ fontWeight: 600, fontSize: 14.5, flex: 1 }}>{g.label}</span>
+                  <span style={{ fontSize: 12, color: C.muted, fontVariantNumeric: 'tabular-nums' }}>
+                    {all.length}{nApproved ? ` · ${nApproved} מאושרות` : ''}{nRejected ? ` · ${nRejected} נדחו` : ''}
+                  </span>
+                </button>
+                {open && <>
                 {custom.map((t) => listItem(t.key, t.title, t.meta_name || t.key, t.meta_status, selectedKey === t.key,
                   () => pick({ kind: 'custom', key: t.key }),
                   (t.archived || t.has_unsubmitted_changes || (t.live && t.meta_status !== 'approved')) ? (
@@ -551,9 +579,11 @@ export default function Templates() {
                   ) : undefined))}
                 {builtIn.map((t) => listItem(`${t.source}:${t.key}`, t.title, t.meta_name || t.key, t.meta_status,
                   selectedKey === `${t.source}:${t.key}`, () => pick({ kind: 'readonly', item: t }),
-                  <div style={{ fontSize: 11.5, color: C.purple, marginTop: 3 }}>{t.source === 'catalog' ? 'קטלוג · קריאה בלבד' : 'מערכת · קריאה בלבד'}</div>))}
+                  <div style={{ fontSize: 11.5, color: C.purple, marginTop: 3 }}>{t.source === 'catalog' ? 'קטלוג' : 'מערכת'}{t.category ? ` · ${t.category === 'MARKETING' ? 'שיווק' : 'שירות'}` : ''}{t.event_types?.length ? ` · ${t.event_types.join(', ')}` : ''}</div>))}
+                </>}
               </div>
-            ))}
+              );
+            })}
           </div>
         </nav>
 
@@ -589,9 +619,26 @@ export default function Templates() {
                   ? 'התבנית מוגדרת בקטלוג ההודעות בקוד. כדי לשנות אותה, שכפלו אותה לטיוטה חדשה ושלחו לאישור.'
                   : 'התבנית מוגדרת בקוד ונשלחת למארחים אוטומטית. שכפול יוצר טיוטה בקבוצת "למארחים".'}
               </p>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+                {sel.item.category && <Chip>{sel.item.category === 'MARKETING' ? 'שיווק · MARKETING' : 'שירות · UTILITY'}</Chip>}
+                {sel.item.language && <Chip>שפה: {sel.item.language}</Chip>}
+                {!!sel.item.event_types?.length && <Chip>סוג אירוע: {sel.item.event_types.join(', ')}</Chip>}
+                {sel.item.rejection_reason && <Chip tone="err">סיבת דחייה: {sel.item.rejection_reason}</Chip>}
+              </div>
+              <div role="tablist" style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                {(['view', 'json'] as const).map((tb) => (
+                  <Btn key={tb} kind={roTab === tb ? 'smallPrimary' : 'smallGhost'} role="tab" aria-selected={roTab === tb} onClick={() => setRoTab(tb)}>
+                    {tb === 'view' ? 'תוכן' : 'JSON'}
+                  </Btn>
+                ))}
+              </div>
+              {roTab === 'json' ? (
+                <div style={{ marginBottom: 14 }}><JsonPanel value={sel.item.doc ?? sel.item} /></div>
+              ) : (
               <pre dir="rtl" style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 14, background: C.paperSoft, border: `1px solid ${C.line2}`, borderRadius: radius.md, padding: 12, margin: '0 0 14px' }}>
                 {sel.item.body}
               </pre>
+              )}
               <Btn kind="smallPrimary" disabled={busy === 'dup'} onClick={() => duplicate(sel.item.source, sel.item.key)}>
                 <Ms size={18}>content_copy</Ms>שכפול לטיוטה חדשה
               </Btn>
@@ -642,6 +689,20 @@ export default function Templates() {
                       {view.usable_in.includes('campaigns') ? 'זמינה לבחירה בסבבים לאורחים בשלב הזה' : view.usable_in.includes('flow') ? 'זמינה בבונה השיחה' : view.archived ? 'בארכיון - לא מוצעת לבחירה' : 'מאושרת לשליחה למארחים'}
                       {view.usable_in.includes('campaigns') && ' ובבונה השיחה'}.
                     </span>
+                  </div>
+                )}
+              </Card>
+
+              <Card style={{ marginBottom: 16 }}>
+                <button type="button" aria-expanded={showJson} onClick={() => setShowJson((v) => !v)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', background: 'none', border: 0, cursor: 'pointer', fontFamily: 'inherit', color: C.ink, padding: 0, textAlign: 'start' }}>
+                  <Ms size={18} style={{ color: C.muted }}>{showJson ? 'expand_more' : 'chevron_left'}</Ms>
+                  <span style={{ fontWeight: 600, fontSize: 15 }}>עריכה כ-JSON</span>
+                  <span style={{ fontSize: 12.5, color: C.muted }}>התבנית נשמרת כמסמך JSON - אפשר לערוך אותו ישירות</span>
+                </button>
+                {showJson && (
+                  <div style={{ marginTop: 12 }}>
+                    <JsonPanel value={draft} onApply={(obj) => setDraft((d) => (d ? { ...d, ...(obj as Partial<TemplateDoc>) } : d))} />
                   </div>
                 )}
               </Card>

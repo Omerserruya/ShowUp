@@ -120,6 +120,8 @@ templates:
 
       👀 {{7}}
 
+      כל הפרטים מחכים לכם באפליקציה 💜
+
   host_alert:
     # Fired by the admin flow builder's "notify_host" action (webhook-worker
     # graph_runtime) when a guest's answer should reach the hosts right away.

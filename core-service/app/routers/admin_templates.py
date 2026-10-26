@@ -187,7 +187,44 @@ def _require(db: Session, key: str) -> Dict[str, Any]:
     return row
 
 
-def _catalog_listing(db: Session) -> List[Dict[str, Any]]:
+_META_CACHE: Dict[str, Any] = {"at": 0.0, "data": None}
+_META_TTL = 120.0
+
+
+def _meta_live(refresh: bool = False) -> Optional[Dict[str, dict]]:
+    """Real review status of every template on the WABA (cached 2 min)."""
+    import time
+    now = time.monotonic()
+    if refresh or _META_CACHE["data"] is None or now - _META_CACHE["at"] > _META_TTL:
+        try:
+            data = MetaTemplateClient().list_all()
+        except Exception:  # Meta down / client without list_all - keep stored statuses
+            data = None
+        if data is not None:
+            _META_CACHE.update(at=now, data=data)
+    return _META_CACHE["data"]
+
+
+def _overlay(item: Dict[str, Any], live: Optional[Dict[str, dict]]) -> Dict[str, Any]:
+    """Prefer what Meta says right now over our stored status."""
+    if live is None:
+        item["meta_live"] = None
+        return item
+    m = live.get(item.get("meta_name") or "")
+    item["meta_live"] = m
+    if m:
+        st = m.get("status") or ""
+        item["meta_status"] = st if st in ct.STATUSES else item["meta_status"]
+        if m.get("rejected_reason") and m["rejected_reason"] not in ("NONE", None):
+            item["rejection_reason"] = m["rejected_reason"]
+        if m.get("category"):
+            item["category"] = m["category"]
+    elif item.get("source") in ("catalog", "system"):
+        item["meta_status"] = "none"  # not on the WABA at all
+    return item
+
+
+def _catalog_listing(db: Session, live: Optional[Dict[str, dict]] = None) -> List[Dict[str, Any]]:
     try:
         rows = messaging_state.get_row_map(db)
     except Exception:
@@ -198,27 +235,46 @@ def _catalog_listing(db: Session) -> List[Dict[str, Any]]:
         r = rows.get(t.key)
         meta_status = (r.meta_status if r is not None and r.meta_status else
                        ("approved" if t.is_usable else "none"))
-        out.append({
+        meta_name = t.meta.template_name if t.meta else published_name(t)
+        try:
+            doc = ct.doc_from_catalog_template(t, name=meta_name)
+            doc.pop("notes", None)
+        except Exception:
+            doc = None
+        cfg = t.meta_config
+        out.append(_overlay({
             "source": "catalog", "key": t.key, "title": t.title, "group": t.flow_stage.value,
             "group_label": ct.GROUP_LABELS_HE.get(t.flow_stage.value, t.flow_stage.value),
             "event_types": list(t.event_types), "body": t.body,
-            "meta_name": t.meta.template_name if t.meta else published_name(t),
+            "meta_name": meta_name,
             "meta_status": meta_status, "sendable": t.is_usable,
+            "category": (cfg.category if cfg else None) or "UTILITY",
+            "language": (cfg.language if cfg else None) or t.language,
             "placeholder": "[[" in (t.body or "") or "[[" in (t.title or ""),
-        })
+            "doc": doc,
+        }, live))
     return out
 
 
-def _system_listing() -> List[Dict[str, Any]]:
+def _system_listing(live: Optional[Dict[str, dict]] = None) -> List[Dict[str, Any]]:
     try:
         from shared.domain.messaging.system_templates import all_system_templates
         sts = all_system_templates()
     except Exception:
         return []
-    return [{"source": "system", "key": st.key, "title": st.key, "group": ct.HOST_GROUP,
-             "group_label": ct.GROUP_LABELS_HE[ct.HOST_GROUP], "event_types": [], "body": st.body,
-             "meta_name": st.meta_name, "meta_status": "managed", "category": st.meta_category,
-             "params": st.params} for st in sts.values()]
+    out = []
+    for st in sts.values():
+        try:
+            doc = ct.doc_from_system_template(st, name=st.meta_name)
+            doc.pop("notes", None)
+        except Exception:
+            doc = None
+        out.append(_overlay({
+            "source": "system", "key": st.key, "title": st.key, "group": ct.HOST_GROUP,
+            "group_label": ct.GROUP_LABELS_HE[ct.HOST_GROUP], "event_types": [], "body": st.body,
+            "meta_name": st.meta_name, "meta_status": "managed", "category": st.meta_category,
+            "language": st.language, "params": st.params, "doc": doc}, live))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -264,13 +320,15 @@ def _next_versioned_name(db: Session, row: Dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 
 @router.get("")
-def list_templates(include_archived: bool = Query(True), db: Session = Depends(get_db),
-                   admin_id: uuid.UUID = Depends(get_admin_user_id)):
+def list_templates(include_archived: bool = Query(True), refresh: bool = Query(False),
+                   db: Session = Depends(get_db), admin_id: uuid.UUID = Depends(get_admin_user_id)):
     rows = store.list_rows(db, include_archived=include_archived)
+    live = _meta_live(refresh)
     return {
         "templates": [_view(r) for r in rows],
-        "catalog": _catalog_listing(db),
-        "system": _system_listing(),
+        "catalog": _catalog_listing(db, live),
+        "system": _system_listing(live),
+        "meta_live": live is not None,
         "groups": [{"id": g, "label": ct.GROUP_LABELS_HE[g], "guest": g in ct.GUEST_GROUPS} for g in ct.GROUPS],
         "statuses": [{"id": s, "label": ct.STATUS_LABELS_HE[s]} for s in ct.STATUSES],
         "meta_configured": MetaTemplateClient().configured,
@@ -323,10 +381,17 @@ def approved(group: Optional[str] = Query(None), db: Session = Depends(get_db),
 
 
 @router.get("/export")
-def export(include_archived: bool = Query(True), db: Session = Depends(get_db),
-           admin_id: uuid.UUID = Depends(get_admin_user_id)):
-    docs = [ct.normalize_doc(r["doc"]) for r in store.list_rows(db, include_archived=include_archived)]
-    docs.sort(key=lambda d: d["name"])
+def export(include_archived: bool = Query(True), scope: str = Query("custom", pattern="^(custom|all)$"),
+           db: Session = Depends(get_db), admin_id: uuid.UUID = Depends(get_admin_user_id)):
+    docs = [{"source": "custom", **ct.normalize_doc(r["doc"])}
+            for r in store.list_rows(db, include_archived=include_archived)]
+    docs.sort(key=lambda d: (d.get("group") or "", d["name"]))
+    if scope == "all":
+        live = _meta_live()
+        for it in _catalog_listing(db, live) + _system_listing(live):
+            if it.get("doc") and not it.get("placeholder"):
+                docs.append({"source": it["source"], "key": it["key"], "meta_status": it["meta_status"],
+                             **it["doc"]})
     stamp = _now().strftime("%Y%m%d-%H%M")
     return JSONResponse(content=docs, headers={
         "Content-Disposition": f'attachment; filename="showup-templates-{stamp}.json"'})
@@ -472,6 +537,10 @@ def import_templates(payload: Any = Body(...), db: Session = Depends(get_db),
     results: List[Dict[str, Any]] = []
     seen: set = set()
     for i, raw in enumerate(items):
+        if isinstance(raw, dict) and raw.get("source") in ("catalog", "system"):
+            results.append({"index": i, "name": raw.get("name"), "action": "unchanged",
+                            "reason": "תבנית קטלוג/מערכת - לא מיובאת (רק תבניות שלכם)"})
+            continue
         doc = ct.normalize_doc(raw)
         name = doc["name"]
         res = ct.validate_doc(doc, reserved_names=catalog_names)
