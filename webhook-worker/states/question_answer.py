@@ -19,8 +19,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
-import unicodedata
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import text
@@ -37,8 +35,6 @@ MAX_OPTIONS = 10
 BUTTON_TITLE_MAX = 20   # Meta: reply-button title
 ROW_TITLE_MAX = 24      # Meta: list-row title
 
-_PUNCT_RE = re.compile(r"[^\w\s]", re.UNICODE)
-_SPACE_RE = re.compile(r"\s+")
 
 
 # ---------------------------------------------------------------------------
@@ -63,36 +59,9 @@ def parse_answer_id(button_id: Optional[str]) -> Optional[Tuple[str, int]]:
         return None
 
 
-def normalize_answer(value: Any) -> str:
-    s = unicodedata.normalize("NFKC", str(value or "")).strip().lower()
-    s = _PUNCT_RE.sub(" ", s)
-    return _SPACE_RE.sub(" ", s).strip()
-
-
-def match_option(text_value: Optional[str], options: List[str]) -> Optional[int]:
-    """Match a typed reply to an option index, conservatively.
-
-    1. exact normalized label;  2. the option's number ("2");
-    3. exactly ONE option starts with the reply or is contained in it
-       ("כן" -> "כן, אשמח"). Anything ambiguous -> None.
-    """
-    t = normalize_answer(text_value)
-    if not t or not options:
-        return None
-    norm = [normalize_answer(o) for o in options]
-    for i, o in enumerate(norm):
-        if o and o == t:
-            return i
-    if t.isdigit():
-        n = int(t)
-        return n - 1 if 1 <= n <= len(options) else None
-    hits = [i for i, o in enumerate(norm) if o and (o.startswith(t + " ") or o.startswith(t) and len(t) >= 2)]
-    if len(hits) == 1:
-        return hits[0]
-    hits = [i for i, o in enumerate(norm) if o and (" " + o + " ") in (" " + t + " ")]
-    if len(hits) == 1:
-        return hits[0]
-    return None
+# Option matching lives in shared/domain/flow_graph.py (one implementation for
+# this legacy state and the flow-graph interpreter / admin simulator).
+from shared.domain.flow_graph import match_option, normalize_answer  # noqa: E402,F401
 
 
 def build_question_interactive(field_id: Any, label: str, options: List[str], *, prefix: str = "") -> Dict[str, Any]:

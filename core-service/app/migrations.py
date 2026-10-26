@@ -898,6 +898,7 @@ def apply_schema_patches(engine: Engine) -> list:
         ensure_assistant_tables,
         ensure_guest_questions,
         ensure_conversation_flow_configs,
+        ensure_flow_graphs,
     )
     failed = []
     for patch in patches:
@@ -953,6 +954,38 @@ def ensure_conversation_flow_configs(engine: Engine) -> None:
         """,
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_flow_scope_version ON conversation_flow_configs (scope, scope_key, version)",
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_flow_scope_active ON conversation_flow_configs (scope, scope_key) WHERE is_active",
+    ]
+    with engine.begin() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))
+
+
+def ensure_flow_graphs(engine: Engine) -> None:
+    """Admin-editable guest conversation GRAPH (shared/domain/flow_graph.py).
+
+    One row per saved VERSION of a scope's graph; exactly one active row per
+    (scope, scope_key). `enabled` on the active row is the feature flag: rows
+    are created disabled and webhook-worker only runs an enabled graph
+    (event -> event_type -> global); otherwise the legacy state machine.
+    """
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS flow_graphs (
+            id BIGSERIAL PRIMARY KEY,
+            scope VARCHAR(20) NOT NULL,
+            scope_key VARCHAR(64) NOT NULL,
+            graph JSONB NOT NULL,
+            version INTEGER NOT NULL,
+            is_active BOOLEAN NOT NULL DEFAULT false,
+            enabled BOOLEAN NOT NULL DEFAULT false,
+            note TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            created_by UUID,
+            CONSTRAINT ck_flow_graph_scope CHECK (scope IN ('global', 'event_type', 'event'))
+        )
+        """,
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_flow_graph_version ON flow_graphs (scope, scope_key, version)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_flow_graph_active ON flow_graphs (scope, scope_key) WHERE is_active",
     ]
     with engine.begin() as conn:
         for stmt in statements:

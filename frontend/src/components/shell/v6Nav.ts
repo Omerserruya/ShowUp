@@ -41,6 +41,7 @@ export const adminNav: V6NavItem[] = [
   { id: 'a-flags', label: 'דגלי מערכת', path: '/admin/feature-flags', icon: 'flag' },
   { id: 'a-mon', label: 'ניטור', path: '/admin/monitoring', icon: 'monitor_heart' },
   { id: 'a-flows', label: 'שיחת אישור הגעה', path: '/admin/flows', icon: 'forum' },
+  { id: 'a-flow-builder', label: 'בונה שיחה', path: '/admin/flow-builder', icon: 'account_tree' },
   { id: 'a-audit', label: 'יומן ביקורת', path: '/admin/audit-log', icon: 'history' },
 ];
 

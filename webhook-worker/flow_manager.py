@@ -25,6 +25,7 @@ from shared.domain.enums import RsvpAction
 from shared.domain.rsvp import resolve_rsvp_action
 from shared.domain.optout import is_opt_in_text, is_opt_out_text
 from states.base_state import BaseState, load_flow_config
+import graph_runtime
 from utils.phone import mask_phone, normalize_phone
 from states.rsvp_invite import RsvpInviteState
 from states.rsvp_count import RsvpCountState, RsvpCountRetryState
@@ -588,6 +589,16 @@ class FlowManager:
     ) -> None:
         # Admin flow settings for this event (cached 60s; defaults on any error).
         cfg = await load_flow_config(conv.event_id)
+        # Admin-edited conversation graph (shared/domain/flow_graph.py). Only an
+        # ENABLED graph takes over; none / any problem -> the states below.
+        resolved = await graph_runtime.load_flow_graph(conv.event_id)
+        if resolved is not None:
+            await graph_runtime.run_graph(
+                self, session, conv, resolved, cfg,
+                effective_state=effective_state, message_type=message_type, text_value=text, raw=raw,
+                context_id=context_id, action=action, button_id=button_id, reply_kind=reply_kind, stale=stale,
+            )
+            return
         # A quick-reply on an invitation/reminder TEMPLATE always carries RSVP
         # meaning, wherever the conversation stands. Without this, guests who
         # had answered "maybe"/"no" tapped "מגיע" on the reminder and landed in a
@@ -791,13 +802,21 @@ class FlowManager:
                 await session.commit()
             except Exception:
                 await session.rollback()
-        in_loop = conv.current_state in QUESTION_STATES
+        resolved = await graph_runtime.load_flow_graph(conv.event_id)
+        if resolved is not None:
+            gnode = resolved.graph.node(conv.current_state)
+            in_loop = bool(gnode and gnode.get("guest_questions"))
+        else:
+            in_loop = conv.current_state in QUESTION_STATES
         if guest_id and 0 <= idx < len(field["options"]):
             await store_answer(session, guest_id, field["id"], field["options"][idx])
         elif not in_loop:
             logger.info("Stale/invalid question answer ignored (field=%s idx=%s)", field["id"], idx)
             return
 
+        if in_loop and resolved is not None:
+            await graph_runtime.continue_after_answer(self, session, conv, resolved, stale=stale)
+            return
         if in_loop:
             next_state_id = await self._question_gate(session, conv, "question_answer")
             await self._transition_and_send(session, conv, next_state_id, stale=stale)

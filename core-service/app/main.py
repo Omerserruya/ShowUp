@@ -129,6 +129,7 @@ def create_app() -> FastAPI:
     app.include_router(ops_router)
     app.include_router(support_router)
     from app.routers.admin_flows import router as admin_flows_router; app.include_router(admin_flows_router)  # noqa: E702
+    from app.routers.admin_flow_graph import router as admin_flow_graph_router; app.include_router(admin_flow_graph_router)  # noqa: E702
     from app.routers.test_send import router as test_send_router; app.include_router(test_send_router)  # noqa: E702
 
     @app.exception_handler(PlanLookupUnavailable)

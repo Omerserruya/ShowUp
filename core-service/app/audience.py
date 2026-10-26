@@ -18,7 +18,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session, Query
 
-from app.models.models import Guest, GuestTag
+from app.models.models import Guest, GuestTag, Tag
 from shared.domain.enums import GuestStatus, CampaignAudience
 
 
@@ -41,7 +41,12 @@ def apply_audience(query: Query, audience, audience_filter: Optional[dict]) -> Q
     if a == CampaignAudience.DECLINED.value:
         return query.filter(Guest.status.in_(list(GuestStatus.declined_values())))
     if a == CampaignAudience.NO_RESPONSE.value:
-        return query.filter(Guest.status.in_(list(GuestStatus.pending_values())))
+        # Reminders skip guests the conversation flow tagged 'no_reminders'
+        # (flow-graph action stop_reminders). Same rule in campaign-worker.
+        no_rem = (GuestTag.__table__.join(Tag.__table__, Tag.id == GuestTag.tag_id))
+        from sqlalchemy import exists, and_
+        return query.filter(Guest.status.in_(list(GuestStatus.pending_values()))).filter(
+            ~exists().select_from(no_rem).where(and_(GuestTag.guest_id == Guest.id, Tag.name == NO_REMINDERS_TAG)))
     if a == CampaignAudience.CUSTOM.value:
         return _apply_custom(query, audience_filter or {})
     return query
@@ -69,6 +74,8 @@ def _apply_custom(query: Query, f: dict) -> Query:
 
 # Keys both audience resolvers (this module + campaign-worker/audience.py)
 # understand. Anything else in a custom filter is ignored by them.
+NO_REMINDERS_TAG = "no_reminders"
+
 SUPPORTED_FILTER_KEYS = frozenset({"status", "group", "tag_id", "table"})
 
 

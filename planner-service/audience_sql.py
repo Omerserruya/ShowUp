@@ -60,6 +60,8 @@ def audience_where(event_id: str, audience, audience_filter=None) -> Tuple[str, 
         status_values = list(_DECLINED)
     elif a == _A["NO_RESPONSE"]:
         status_values = list(_PENDING)
+        where.append("NOT EXISTS (SELECT 1 FROM guest_tags gtn JOIN tags tn ON tn.id = gtn.tag_id "
+                     "WHERE gtn.guest_id = g.id AND tn.name = 'no_reminders')")
     elif a == _A["CUSTOM"]:
         cstat = f.get("status")
         if cstat:

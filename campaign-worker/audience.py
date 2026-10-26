@@ -32,6 +32,10 @@ def select_guests_by_audience(conn, event_id: str, audience, audience_filter: Op
         status_values = list(GuestStatus.declined_values())
     elif a == CampaignAudience.NO_RESPONSE.value:
         status_values = list(GuestStatus.pending_values())
+        # Reminders skip guests tagged 'no_reminders' by the conversation flow
+        # (flow-graph action stop_reminders) - same rule as core's audience.py.
+        where.append("NOT EXISTS (SELECT 1 FROM guest_tags gtn JOIN tags tn ON tn.id = gtn.tag_id "
+                     "WHERE gtn.guest_id = g.id AND tn.name = 'no_reminders')")
     elif a == CampaignAudience.CUSTOM.value:
         cstat = f.get("status")
         if cstat:
