@@ -59,6 +59,7 @@ export default function Templates() {
   const [showArchived, setShowArchived] = useState(false);
   const [showBuiltIn, setShowBuiltIn] = useState(true);
   const [catFilter, setCatFilter] = useState('');
+  const [etFilter, setEtFilter] = useState('');
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const [roTab, setRoTab] = useState<'view' | 'json'>('view');
   const [showJson, setShowJson] = useState(false);
@@ -375,15 +376,18 @@ export default function Templates() {
   // ---------------------------------------------------------------- list
 
   const groups = data?.groups || vars?.groups || [];
+  const etName = (k: string) => vars?.event_types?.find((e) => e.key === k)?.name_he || k;
+  const etLabel = (ets?: string[]) => (ets && ets.length ? ets.map(etName).join(', ') : 'כל סוגי האירועים');
+  const etOk = (ets?: string[]) => !etFilter || !ets || !ets.length || ets.includes(etFilter);
   const q = search.trim().toLowerCase();
   const matches = (title: string, key: string, body: string) =>
     !q || title.toLowerCase().includes(q) || key.toLowerCase().includes(q) || body.toLowerCase().includes(q);
   const customRows = (data?.templates || []).filter((t) =>
     (showArchived || !t.archived) && (!statusFilter || t.meta_status === statusFilter)
-    && (!groupFilter || t.group === groupFilter) && (!catFilter || t.doc.category === catFilter)
+    && (!groupFilter || t.group === groupFilter) && (!catFilter || t.doc.category === catFilter) && etOk(t.doc.event_types)
     && matches(t.title, t.key, t.doc.body));
   const builtInRows = showBuiltIn ? [...(data?.catalog || []), ...(data?.system || [])].filter((t) =>
-    !t.placeholder && (!groupFilter || t.group === groupFilter) && (!catFilter || t.category === catFilter)
+    !t.placeholder && (!groupFilter || t.group === groupFilter) && (!catFilter || t.category === catFilter) && etOk(t.event_types)
     && (!statusFilter || t.meta_status === statusFilter) && matches(t.title, t.key, t.body)) : [];
   const counts = useMemo(() => {
     const out: Record<string, number> = {};
@@ -524,6 +528,10 @@ export default function Templates() {
                 <option value="">כל הקבוצות</option>
                 {groups.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
               </select>
+              <select style={{ ...selectBase, gridColumn: '1 / -1' }} value={etFilter} onChange={(e) => setEtFilter(e.target.value)} aria-label="סינון לפי סוג אירוע">
+                <option value="">כל סוגי האירועים</option>
+                {(vars?.event_types || []).map((et) => <option key={et.key} value={et.key}>{et.name_he}</option>)}
+              </select>
               <select style={{ ...selectBase, gridColumn: '1 / -1' }} value={catFilter} onChange={(e) => setCatFilter(e.target.value)} aria-label="סינון לפי קטגוריית Meta">
                 <option value="">כל הקטגוריות (שיווק / שירות)</option>
                 <option value="MARKETING">שיווק (MARKETING)</option>
@@ -550,7 +558,7 @@ export default function Templates() {
               </div>
             )}
             {grouped.map(({ g, custom, builtIn }) => {
-              const filtering = !!(q || statusFilter || groupFilter || catFilter);
+              const filtering = !!(q || statusFilter || groupFilter || catFilter || etFilter);
               const open = filtering || openGroups.has(g.id);
               const all = [...custom.map((t) => t.meta_status), ...builtIn.map((t) => t.meta_status)];
               const nApproved = all.filter((x) => x === 'approved').length;
@@ -579,7 +587,7 @@ export default function Templates() {
                   ) : undefined))}
                 {builtIn.map((t) => listItem(`${t.source}:${t.key}`, t.title, t.meta_name || t.key, t.meta_status,
                   selectedKey === `${t.source}:${t.key}`, () => pick({ kind: 'readonly', item: t }),
-                  <div style={{ fontSize: 11.5, color: C.purple, marginTop: 3 }}>{t.source === 'catalog' ? 'קטלוג' : 'מערכת'}{t.category ? ` · ${t.category === 'MARKETING' ? 'שיווק' : 'שירות'}` : ''}{t.event_types?.length ? ` · ${t.event_types.join(', ')}` : ''}</div>))}
+                  <div style={{ fontSize: 11.5, color: C.purple, marginTop: 3 }}>{t.source === 'catalog' ? 'קטלוג' : 'מערכת'}{t.category ? ` · ${t.category === 'MARKETING' ? 'שיווק' : 'שירות'}` : ''}{` · ${etLabel(t.event_types)}`}</div>))}
                 </>}
               </div>
               );
@@ -622,7 +630,7 @@ export default function Templates() {
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
                 {sel.item.category && <Chip>{sel.item.category === 'MARKETING' ? 'שיווק · MARKETING' : 'שירות · UTILITY'}</Chip>}
                 {sel.item.language && <Chip>שפה: {sel.item.language}</Chip>}
-                {!!sel.item.event_types?.length && <Chip>סוג אירוע: {sel.item.event_types.join(', ')}</Chip>}
+                <Chip>סוג אירוע: {etLabel(sel.item.event_types)}</Chip>
                 {sel.item.rejection_reason && <Chip tone="err">סיבת דחייה: {sel.item.rejection_reason}</Chip>}
               </div>
               <div role="tablist" style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
