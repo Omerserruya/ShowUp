@@ -23,7 +23,7 @@ import { uid, type IssueIndex } from './graph';
 import { ACTIONS, ActionEditor, WordsInput, metaFields, newAction } from './actions';
 import {
   addChoice, addTextRule, conditionKey, fixedRowLabel, modeSwitchCost, moveChoice, moveTextRule, nodeRows, removeChoice,
-  setAnswerMode, syncNumberInput, textConditionOptions, updateChoice, whenFromKey, insertEdge,
+  setAnswerMode, syncNumberInput, textConditionOptions, isChangeOfMind, updateChoice, whenFromKey, insertEdge,
   type AnswerMode, type NodeMode, type RowTarget, type TreeBlock,
 } from './simpleTree';
 import { defaultFieldValue, fieldByRef, fieldRef, fieldValueLabel, graphFields, isFieldAction, ANSWER } from './fields';
@@ -388,11 +388,19 @@ function RulesTable({ block, node }: { block: TreeBlock; node: FlowNode }) {
   const editText = (e: FlowEdge, patch: Partial<FlowEdge>) =>
     mutate((g) => syncNumberInput({ ...g, edges: g.edges.map((x) => (x.id === e.id ? { ...x, ...patch } : x)) }, node.id));
 
-  const textRows = rows.text.map((e, i) => {
-    const prev = rows.text[i - 1];
-    const next = rows.text[i + 1];
-    const opts = textConditionOptions(rows.mode, e.when);
-    return (
+  // The question's own answers first; "changed their mind" rules (typed RSVP) after them.
+  // Display only - the matching order stays as saved.
+  const mind = rows.text.filter((e) => isChangeOfMind(node, rows.mode, e));
+  const textList = mind.length ? [...rows.text.filter((e) => !mind.includes(e)), ...mind] : rows.text;
+  const textRows = textList.map((e, i) => {
+    const prev = textList[i - 1];
+    const next = textList[i + 1];
+    const changeOfMind = mind.includes(e);
+    const opts = textConditionOptions(rows.mode, e.when, changeOfMind);
+    const sub = changeOfMind && i === textList.length - mind.length
+      ? <div key={`mind-${e.id}`} className="sfe-subhead">ואם במקום לענות כתב ששינה את דעתו</div>
+      : null;
+    return [sub, (
       <RuleRow key={e.id} domKey={e.id} node={node} edge={e} target={targets.get(e.id) || null} index={idx++}
         onPatch={(patch) => ctx.updateEdge(e.id, patch)} linkNew={linkEdge(e.id)}
         onUp={prev && prev.when.kind === e.when.kind ? () => mutate((g) => moveTextRule(g, node.id, e.id, -1)) : undefined}
@@ -425,10 +433,10 @@ function RulesTable({ block, node }: { block: TreeBlock; node: FlowNode }) {
               </span>
             )}
             {e.when.kind === 'number_invalid' && <span className="sfe-quiet" style={{ marginTop: 2 }}>לא מספר, או מחוץ לטווח</span>}
-            {e.when.kind === 'rsvp' && e.when.typed_only && <span className="sfe-quiet" style={{ marginTop: 2 }}>רק כשכתב בטקסט</span>}
+            {e.when.kind === 'rsvp' && e.when.typed_only && !changeOfMind && <span className="sfe-quiet" style={{ marginTop: 2 }}>רק כשכתב בטקסט</span>}
           </>
         )} />
-    );
+    )];
   });
 
   const choiceRows = rows.choices.map((c, i) => {

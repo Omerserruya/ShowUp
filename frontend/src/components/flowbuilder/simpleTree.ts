@@ -394,6 +394,11 @@ export function updateChoice(g: FlowGraph, nodeId: string, key: string, patch: P
   return { ...g, edges: g.edges.map((e) => (ids.has(e.id) ? { ...e, ...patch } : e)) };
 }
 
+/** Typed RSVP rules on a number / free-text question = "changed their mind" (shown after the real answers). */
+export function isChangeOfMind(node: FlowNode, mode: NodeMode, e: FlowEdge): boolean {
+  return mode === 'text' && node.type !== 'template' && (node.input === 'number' || node.input === 'text') && e.when.kind === 'rsvp';
+}
+
 /** Flat value for a text rule's condition select. */
 export function conditionKey(w: EdgeWhen): string {
   switch (w.kind) {
@@ -414,7 +419,11 @@ export function whenFromKey(key: string, prev?: EdgeWhen): EdgeWhen {
 export interface ConditionOption { key: string; label: string }
 
 /** Text-rule conditions for a mode (number rules only in pure free-text mode). */
-export function textConditionOptions(mode: NodeMode, current?: EdgeWhen): ConditionOption[] {
+/**
+ * On a question that asks for something else (a number / free text), typed RSVP
+ * rules mean the guest changed their mind instead of answering - label them so.
+ */
+export function textConditionOptions(mode: NodeMode, current?: EdgeWhen, changeOfMind = false): ConditionOption[] {
   const out: ConditionOption[] = [];
   if (mode === 'questions') {
     out.push({ key: 'any_text', label: 'כתב משהו אחר' });
@@ -424,9 +433,9 @@ export function textConditionOptions(mode: NodeMode, current?: EdgeWhen): Condit
     }
     out.push(
       { key: 'text_contains', label: 'כתב טקסט שמכיל…' },
-      { key: 'rsvp:confirmed', label: 'כתב שהוא מגיע' },
-      { key: 'rsvp:declined', label: 'כתב שלא יגיע' },
-      { key: 'rsvp:maybe', label: 'כתב שאולי' },
+      { key: 'rsvp:confirmed', label: changeOfMind ? 'כתב שבעצם כן מגיע' : 'כתב שהוא מגיע' },
+      { key: 'rsvp:declined', label: changeOfMind ? 'כתב שבעצם לא יגיע' : 'כתב שלא יגיע' },
+      { key: 'rsvp:maybe', label: changeOfMind ? 'כתב שבעצם עוד מתלבט' : 'כתב שאולי' },
       { key: 'any_text', label: mode === 'both' ? 'כתב משהו אחר' : 'כל תשובה אחרת' },
     );
   }
