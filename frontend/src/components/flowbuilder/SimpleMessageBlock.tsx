@@ -382,26 +382,29 @@ function RulesTable({ block, node }: { block: TreeBlock; node: FlowNode }) {
   const maxLabel = isList ? LIMITS.listLabel : LIMITS.buttonLabel;
   const showChoices = rows.mode === 'choices' || rows.mode === 'both';
   const showText = rows.mode === 'text' || rows.mode === 'both' || rows.mode === 'questions' || rows.text.length > 0;
-  let idx = 0;
+  const mindKey = `${ctx.stage}:mind:${node.id}`;
 
   const linkEdge = (edgeId: string) => (to: string) => (g: FlowGraph) => ({ ...g, edges: g.edges.map((x) => (x.id === edgeId ? { ...x, to } : x)) });
   const editText = (e: FlowEdge, patch: Partial<FlowEdge>) =>
     mutate((g) => syncNumberInput({ ...g, edges: g.edges.map((x) => (x.id === e.id ? { ...x, ...patch } : x)) }, node.id));
 
-  // The question's own answers first; "changed their mind" rules (typed RSVP) after them.
-  // Display only - the matching order stays as saved.
+  // "Changed their mind" rules (typed RSVP on a message that asks something else)
+  // live in their own section, not among the message's answers. Display only -
+  // the matching order stays as saved.
   const mind = rows.text.filter((e) => isChangeOfMind(node, rows.mode, e));
-  const textList = mind.length ? [...rows.text.filter((e) => !mind.includes(e)), ...mind] : rows.text;
-  const textRows = textList.map((e, i) => {
-    const prev = textList[i - 1];
-    const next = textList[i + 1];
-    const changeOfMind = mind.includes(e);
+  const mainText = rows.text.filter((e) => !mind.includes(e));
+  const cBase = showChoices ? rows.choices.length : 0;
+  const tBase = cBase + (showText ? mainText.length : 0);
+  const mBase = tBase + rows.fixed.length;
+  const mindHasError = mind.some((e) => !!ctx.errors.edges[e.id]?.length);
+  const mindOpen = mindHasError || !ctx.isCollapsed(mindKey, true);
+
+  const renderText = (list: FlowEdge[], base: number, changeOfMind: boolean) => list.map((e, i) => {
+    const prev = list[i - 1];
+    const next = list[i + 1];
     const opts = textConditionOptions(rows.mode, e.when, changeOfMind);
-    const sub = changeOfMind && i === textList.length - mind.length
-      ? <div key={`mind-${e.id}`} className="sfe-subhead">ואם במקום לענות כתב ששינה את דעתו</div>
-      : null;
-    return [sub, (
-      <RuleRow key={e.id} domKey={e.id} node={node} edge={e} target={targets.get(e.id) || null} index={idx++}
+    return (
+      <RuleRow key={e.id} domKey={e.id} node={node} edge={e} target={targets.get(e.id) || null} index={base + i}
         onPatch={(patch) => ctx.updateEdge(e.id, patch)} linkNew={linkEdge(e.id)}
         onUp={prev && prev.when.kind === e.when.kind ? () => mutate((g) => moveTextRule(g, node.id, e.id, -1)) : undefined}
         onDown={next && next.when.kind === e.when.kind ? () => mutate((g) => moveTextRule(g, node.id, e.id, 1)) : undefined}
@@ -436,15 +439,17 @@ function RulesTable({ block, node }: { block: TreeBlock; node: FlowNode }) {
             {e.when.kind === 'rsvp' && e.when.typed_only && !changeOfMind && <span className="sfe-quiet" style={{ marginTop: 2 }}>רק כשכתב בטקסט</span>}
           </>
         )} />
-    )];
+    );
   });
+  const textRows = renderText(mainText, cBase, false);
+  const mindRows = renderText(mind, mBase, true);
 
   const choiceRows = rows.choices.map((c, i) => {
     const e = c.edge;
     const twins = c.linked.filter((x) => x.when.kind === 'rsvp').map((x) => (x.when.kind === 'rsvp' ? RSVP_LABEL[x.when.value] || x.when.value : ''));
     const bad = c.buttonId ? (!c.label.trim() || c.label.length > maxLabel) : false;
     return (
-      <RuleRow key={c.key} domKey={e?.id || `${node.id}-${c.key}`} node={node} edge={e} target={e ? targets.get(e.id) || null : null} index={idx++}
+      <RuleRow key={c.key} domKey={e?.id || `${node.id}-${c.key}`} node={node} edge={e} target={e ? targets.get(e.id) || null : null} index={i}
         choiceLabel={c.label}
         onPatch={(patch) => mutate((g) => updateChoice(g, node.id, c.key, patch, newEdgeId))}
         linkNew={(to) => (g) => updateChoice(g, node.id, c.key, { to }, newEdgeId)}
@@ -477,8 +482,8 @@ function RulesTable({ block, node }: { block: TreeBlock; node: FlowNode }) {
     );
   });
 
-  const fixedRows = rows.fixed.map((e) => (
-    <RuleRow key={e.id} domKey={e.id} node={node} edge={e} target={targets.get(e.id) || null} index={idx++}
+  const fixedRows = rows.fixed.map((e, j) => (
+    <RuleRow key={e.id} domKey={e.id} node={node} edge={e} target={targets.get(e.id) || null} index={tBase + j}
       onPatch={(patch) => ctx.updateEdge(e.id, patch)} linkNew={linkEdge(e.id)}
       onRemove={rows.mode === 'none' && !node.skip ? () => ctx.deleteEdge(e.id) : undefined} removeLabel="מחיקת ההמשך"
       condition={<span className="sfe-fixed"><Ms size={15}>subdirectory_arrow_left</Ms>{fixedRowLabel(node, e)}</span>} />
@@ -517,7 +522,7 @@ function RulesTable({ block, node }: { block: TreeBlock; node: FlowNode }) {
           {rows.choices.length === 3 && !isList && <span className="sfe-quiet">בחירה רביעית תהפוך את הכפתורים לרשימה</span>}
         </div>
       )}
-      {showText && rows.text.length > 0 && showChoices && <div className="sfe-subhead">ואם כתב טקסט במקום לבחור</div>}
+      {showText && mainText.length > 0 && showChoices && <div className="sfe-subhead">ואם כתב טקסט במקום לבחור</div>}
       {showText && textRows}
       {(rows.mode === 'text' || rows.mode === 'both' || (rows.mode === 'questions' && !hasAny)) && (
         <div className="sfe-addline">
@@ -534,6 +539,25 @@ function RulesTable({ block, node }: { block: TreeBlock; node: FlowNode }) {
         </div>
       )}
       {fixedRows}
+      {mind.length > 0 && (
+        <div className="sfe-mind">
+          <button type="button" className="sfe-mind-head" aria-expanded={mindOpen} onClick={() => ctx.toggle(mindKey, true)}>
+            <Ms size={18}>{mindOpen ? 'expand_more' : 'chevron_left'}</Ms>
+            <span className="sfe-mind-title">אם באמצע כתב ששינה את דעתו לגבי ההגעה</span>
+            {!mindOpen && (
+              <span className="sfe-quiet">
+                {mind.map((e) => {
+                  const v = e.when.kind === 'rsvp' ? e.when.value : '';
+                  const t = e.to ? graph.nodes.find((n) => n.id === e.to) : undefined;
+                  return `${v === 'declined' ? 'לא יגיע' : v === 'maybe' ? 'מתלבט' : 'כן מגיע'} ← ${t ? nodeName(t) : 'נשאר כאן'}`;
+                }).join(' · ')}
+              </span>
+            )}
+          </button>
+          {mindOpen && <div className="sfe-quiet" style={{ padding: '0 4px 4px' }}>לא קשור לתשובה על ההודעה הזאת. מטפל במי שכותב למשל "בעצם לא נגיע" במקום לענות.</div>}
+          {mindOpen && mindRows}
+        </div>
+      )}
       {rows.mode === 'none' && !rows.fixed.length && node.type === 'message' && (
         <div className="sfe-addline">
           <button type="button" className="sfe-addrule" onClick={() => {
@@ -732,6 +756,9 @@ export const SIMPLE_CSS = `
 .sfe-frow .sfe-cellsel{border-color:${C.line2};}
 .sfe-finput{width:100%;height:32px;box-sizing:border-box;font-family:inherit;font-size:13.5px;font-weight:600;color:${C.ink};border:1.5px solid ${C.line2};border-radius:9px;padding:0 9px;outline:none;background:#FFFFFF;}
 .sfe-finput:focus{border-color:${C.purple};}
+.sfe-mind{margin-top:10px;border:1.5px dashed ${C.line2};border-radius:12px;padding:4px 6px 6px;background:${C.paperSoft};}
+.sfe-mind-head{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;width:100%;border:0;background:none;padding:6px 2px;cursor:pointer;font-family:inherit;text-align:start;color:${C.body};}
+.sfe-mind-title{font-size:13px;font-weight:600;color:${C.body};}
 .sfe-tabs{display:flex;gap:2px;flex-wrap:wrap;border-bottom:1.5px solid ${C.lineApp};margin-bottom:14px;}
 .sfe-tab{display:inline-flex;align-items:center;gap:6px;height:42px;padding:0 14px;border:0;background:none;font-family:inherit;font-size:14.5px;font-weight:600;color:${C.body};cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-1.5px;}
 .sfe-tab.on{color:${C.ink};border-bottom-color:${C.purple};}

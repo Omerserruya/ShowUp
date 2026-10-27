@@ -64,6 +64,18 @@ export function buildTree(
   // `opts.seen` lets several trees share one page: nodes already shown elsewhere become links.
   const seen = opts.seen ?? new Set<string>();
   if (!rootId || !ids.has(rootId) || seen.has(rootId)) return { root: null, order };
+  // "Changed their mind" rows sit in a collapsed section, so a message they lead
+  // to is rendered under a regular row when one reaches it too.
+  const isMind = (n: FlowNode, e: FlowEdge) => isChangeOfMind(n, nodeRows(g, n).mode, e);
+  const primary = new Set<string>();
+  const stack = [rootId];
+  while (stack.length) {
+    const cur = stack.pop() as string;
+    if (primary.has(cur) || (seen.has(cur) && cur !== rootId)) continue;
+    primary.add(cur);
+    const n = g.nodes.find((x) => x.id === cur);
+    if (n) visibleEdges(g, n).forEach((e) => { if (e.to && ids.has(e.to) && !isMind(n, e)) stack.push(e.to); });
+  }
   const visit = (nodeId: string, depth: number): TreeBlock => {
     seen.add(nodeId);
     order.push(nodeId);
@@ -73,7 +85,7 @@ export function buildTree(
       let target: RowTarget;
       if (edge.to == null) target = { kind: 'none' };
       else if (!ids.has(edge.to)) target = { kind: 'missing', nodeId: edge.to };
-      else if (seen.has(edge.to) || depth + 1 > maxDepth) target = { kind: 'link', nodeId: edge.to };
+      else if (seen.has(edge.to) || depth + 1 > maxDepth || (isMind(node, edge) && primary.has(edge.to))) target = { kind: 'link', nodeId: edge.to };
       else target = { kind: 'nested', block: visit(edge.to, depth + 1) };
       block.rows.push({ edge, target });
     });
@@ -394,9 +406,14 @@ export function updateChoice(g: FlowGraph, nodeId: string, key: string, patch: P
   return { ...g, edges: g.edges.map((e) => (ids.has(e.id) ? { ...e, ...patch } : e)) };
 }
 
-/** Typed RSVP rules on a number / free-text question = "changed their mind" (shown after the real answers). */
+/**
+ * "Changed their mind" rules: a typed RSVP intent on a message that asks
+ * something else (count, notes, update...). Shown apart from the message's own
+ * answers, in their own collapsed section.
+ */
 export function isChangeOfMind(node: FlowNode, mode: NodeMode, e: FlowEdge): boolean {
-  return mode === 'text' && node.type !== 'template' && (node.input === 'number' || node.input === 'text') && e.when.kind === 'rsvp';
+  if (node.type === 'template' || e.when.kind !== 'rsvp') return false;
+  return !!e.when.typed_only || (mode === 'text' && (node.input === 'number' || node.input === 'text'));
 }
 
 /** Flat value for a text rule's condition select. */
