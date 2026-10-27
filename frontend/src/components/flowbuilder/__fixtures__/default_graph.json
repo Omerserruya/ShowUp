@@ -1,0 +1,886 @@
+{
+ "schema_version": 1,
+ "entry": {
+  "invitation": "rsvp_invite",
+  "reminder": "rsvp_invite",
+  "final_reminder": "rsvp_invite",
+  "default": "rsvp_invite"
+ },
+ "nodes": [
+  {
+   "id": "rsvp_invite",
+   "type": "template",
+   "title": "ההזמנה (תבנית)",
+   "text": "",
+   "input": "none",
+   "buttons": [],
+   "guest_questions": false,
+   "position": {
+    "x": 0,
+    "y": 300
+   },
+   "resend_template": {
+    "name": "event_no_pic",
+    "language": "he",
+    "params": [
+     "{event_date}",
+     "{event_time}",
+     "{venue}",
+     "{host_name}"
+    ]
+   }
+  },
+  {
+   "id": "didnt_understand",
+   "type": "question",
+   "title": "לא הבנו",
+   "text": "לא כל כך הבנו את התשובה 😅 נסו לבחור אחת מהאפשרויות בהודעה למעלה",
+   "input": "text",
+   "buttons": [],
+   "guest_questions": false,
+   "position": {
+    "x": 0,
+    "y": 620
+   }
+  },
+  {
+   "id": "rsvp_count",
+   "type": "question",
+   "title": "כמה תגיעו?",
+   "text": "יופי! שמחים לדעת שתוכל להגיע ל{event_name} של {host_name} 🥳\nרק כדי שנוכל להתכונן כמו שצריך – כמה אנשים תגיעו? 😊\n\n *הגב בבקשה במספר בלבד*",
+   "input": "number",
+   "buttons": [],
+   "guest_questions": false,
+   "position": {
+    "x": 340,
+    "y": 0
+   },
+   "number": {
+    "min": 1,
+    "max": 50
+   },
+   "skip": false
+  },
+  {
+   "id": "rsvp_count_retry",
+   "type": "question",
+   "title": "כמות לא תקינה",
+   "text": "לא הצלחנו להבין כמה תהיו 😅\nנשמח למספר בלבד, בין {min_count} ל־{max_count} – כולל אותך. למשל: 2",
+   "input": "number",
+   "buttons": [],
+   "guest_questions": false,
+   "position": {
+    "x": 340,
+    "y": -220
+   },
+   "number": {
+    "min": 1,
+    "max": 50
+   },
+   "skip": false
+  },
+  {
+   "id": "question_answer",
+   "type": "question",
+   "title": "שאלות לאורחים",
+   "text": "עוד שאלה קטנה ונסיים 🙂",
+   "input": "text",
+   "buttons": [],
+   "guest_questions": true,
+   "position": {
+    "x": 680,
+    "y": 0
+   },
+   "skip": false
+  },
+  {
+   "id": "question_answer_retry",
+   "type": "question",
+   "title": "שאלות לאורחים - ניסיון נוסף",
+   "text": "לא הצלחנו להבין את התשובה 😅 אפשר לבחור באחת האפשרויות:",
+   "input": "text",
+   "buttons": [],
+   "guest_questions": true,
+   "position": {
+    "x": 680,
+    "y": -220
+   },
+   "skip": false
+  },
+  {
+   "id": "rsvp_info_question",
+   "type": "question",
+   "title": "הערות?",
+   "text": "תודה על העדכון! האם יש משהו שחשוב שנדע? למשל מנה צמחונית/טבעונית או כל הערה מיוחדת – נשמח אם תעדכן כאן ❤️",
+   "input": "buttons",
+   "buttons": [
+    {
+     "id": "no_notes",
+     "label": "אין שום דבר מיוחד"
+    },
+    {
+     "id": "write_note",
+     "label": "לכתוב לנו הערה"
+    }
+   ],
+   "guest_questions": false,
+   "position": {
+    "x": 1020,
+    "y": 0
+   },
+   "skip": false
+  },
+  {
+   "id": "note_info",
+   "type": "question",
+   "title": "כתיבת הערה",
+   "text": "בוודאי 😊 נשמח אם תכתוב לנו את ההערה כאן 👇",
+   "input": "text",
+   "buttons": [],
+   "guest_questions": false,
+   "position": {
+    "x": 1020,
+    "y": 260
+   }
+  },
+  {
+   "id": "rsvp_done",
+   "type": "end",
+   "title": "סיום",
+   "text": "מעולה! רשמנו לפנינו  ✨  \nאם יהיו שינויים, נשמח אם תעדכן כאן או תענה על ההודעה ❤️",
+   "input": "buttons",
+   "buttons": [
+    {
+     "id": "update",
+     "label": "לעדכן הגעה"
+    }
+   ],
+   "guest_questions": false,
+   "position": {
+    "x": 1360,
+    "y": 0
+   },
+   "answered": "confirmed"
+  },
+  {
+   "id": "rsvp_update",
+   "type": "question",
+   "title": "עדכון הגעה",
+   "text": "נשמח אם תעדכן אותנו מה השתנה לגבי ההגעה שלך ✨  \nאפשר לעדכן את הפרטים דרך הכפתור למטה ❤️",
+   "input": "buttons",
+   "buttons": [
+    {
+     "id": "add_note",
+     "label": "יש הערה שלא ציינו"
+    },
+    {
+     "id": "decline",
+     "label": "בסוף לא נוכל להגיע"
+    },
+    {
+     "id": "change_count",
+     "label": "נגיע כמות אחרת בסוף"
+    }
+   ],
+   "guest_questions": false,
+   "position": {
+    "x": 1360,
+    "y": 300
+   },
+   "answered": "confirmed"
+  },
+  {
+   "id": "rsvp_decline",
+   "type": "end",
+   "title": "לא מגיעים",
+   "text": "חבל 😢 עדכנו שלא תגיע. אם תתחרט תמיד אפשר לכתוב לנו שוב!",
+   "input": "buttons",
+   "buttons": [
+    {
+     "id": "change_mind",
+     "label": "בסוף נוכל להגיע"
+    }
+   ],
+   "guest_questions": false,
+   "position": {
+    "x": 340,
+    "y": 560
+   },
+   "answered": "declined"
+  },
+  {
+   "id": "rsvp_maybe",
+   "type": "question",
+   "title": "מתלבטים",
+   "text": "הכול טוב, לוקחים את הזמן 😊 נזכיר לך שוב קרוב יותר לאירוע.\nברגע שתחליט/י - אפשר לעדכן כאן בכל רגע ❤️",
+   "input": "buttons",
+   "buttons": [
+    {
+     "id": "confirm",
+     "label": "בסוף נוכל להגיע"
+    },
+    {
+     "id": "decline",
+     "label": "לצערי לא נוכל"
+    }
+   ],
+   "guest_questions": false,
+   "position": {
+    "x": 340,
+    "y": 860
+   },
+   "answered": "maybe"
+  }
+ ],
+ "edges": [
+  {
+   "id": "e_rsvp_invite_1",
+   "from": "rsvp_invite",
+   "to": "rsvp_count",
+   "when": {
+    "kind": "rsvp",
+    "value": "confirmed"
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "confirmed"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_invite_2",
+   "from": "rsvp_invite",
+   "to": "rsvp_decline",
+   "when": {
+    "kind": "rsvp",
+    "value": "declined"
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "declined"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_invite_3",
+   "from": "rsvp_invite",
+   "to": "rsvp_maybe",
+   "when": {
+    "kind": "rsvp",
+    "value": "maybe"
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "maybe"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_invite_4",
+   "from": "rsvp_invite",
+   "to": "didnt_understand",
+   "when": {
+    "kind": "any_text"
+   },
+   "actions": [],
+   "priority": 0
+  },
+  {
+   "id": "e_didnt_understand_1",
+   "from": "didnt_understand",
+   "to": "rsvp_count",
+   "when": {
+    "kind": "rsvp",
+    "value": "confirmed"
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "confirmed"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_didnt_understand_2",
+   "from": "didnt_understand",
+   "to": "rsvp_decline",
+   "when": {
+    "kind": "rsvp",
+    "value": "declined"
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "declined"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_didnt_understand_3",
+   "from": "didnt_understand",
+   "to": "rsvp_maybe",
+   "when": {
+    "kind": "rsvp",
+    "value": "maybe"
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "maybe"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_didnt_understand_4",
+   "from": "didnt_understand",
+   "to": "rsvp_invite",
+   "when": {
+    "kind": "any_text"
+   },
+   "actions": [],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_count_1",
+   "from": "rsvp_count",
+   "to": "rsvp_decline",
+   "when": {
+    "kind": "rsvp",
+    "value": "declined",
+    "typed_only": true
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "declined"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_count_2",
+   "from": "rsvp_count",
+   "to": "rsvp_maybe",
+   "when": {
+    "kind": "rsvp",
+    "value": "maybe",
+    "typed_only": true
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "maybe"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_count_3",
+   "from": "rsvp_count",
+   "to": "question_answer",
+   "when": {
+    "kind": "number"
+   },
+   "actions": [
+    {
+     "type": "set_field",
+     "field": "guest_count",
+     "value": "{answer}"
+    },
+    {
+     "type": "set_rsvp",
+     "value": "confirmed"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_count_4",
+   "from": "rsvp_count",
+   "to": "rsvp_count_retry",
+   "when": {
+    "kind": "number_invalid"
+   },
+   "actions": [],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_count_5",
+   "from": "rsvp_count",
+   "to": "question_answer",
+   "when": {
+    "kind": "done"
+   },
+   "actions": [],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_count_retry_1",
+   "from": "rsvp_count_retry",
+   "to": "rsvp_decline",
+   "when": {
+    "kind": "rsvp",
+    "value": "declined",
+    "typed_only": true
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "declined"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_count_retry_2",
+   "from": "rsvp_count_retry",
+   "to": "rsvp_maybe",
+   "when": {
+    "kind": "rsvp",
+    "value": "maybe",
+    "typed_only": true
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "maybe"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_count_retry_3",
+   "from": "rsvp_count_retry",
+   "to": "question_answer",
+   "when": {
+    "kind": "number"
+   },
+   "actions": [
+    {
+     "type": "set_field",
+     "field": "guest_count",
+     "value": "{answer}"
+    },
+    {
+     "type": "set_rsvp",
+     "value": "confirmed"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_count_retry_4",
+   "from": "rsvp_count_retry",
+   "to": "rsvp_count_retry",
+   "when": {
+    "kind": "number_invalid"
+   },
+   "actions": [],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_count_retry_5",
+   "from": "rsvp_count_retry",
+   "to": "question_answer",
+   "when": {
+    "kind": "done"
+   },
+   "actions": [],
+   "priority": 0
+  },
+  {
+   "id": "e_question_answer_1",
+   "from": "question_answer",
+   "to": "rsvp_info_question",
+   "when": {
+    "kind": "done"
+   },
+   "actions": [],
+   "priority": 0
+  },
+  {
+   "id": "e_question_answer_2",
+   "from": "question_answer",
+   "to": "question_answer_retry",
+   "when": {
+    "kind": "any_text"
+   },
+   "actions": [],
+   "priority": 0
+  },
+  {
+   "id": "e_question_answer_retry_1",
+   "from": "question_answer_retry",
+   "to": "rsvp_info_question",
+   "when": {
+    "kind": "done"
+   },
+   "actions": [],
+   "priority": 0
+  },
+  {
+   "id": "e_question_answer_retry_2",
+   "from": "question_answer_retry",
+   "to": "question_answer",
+   "when": {
+    "kind": "answered"
+   },
+   "actions": [],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_info_question_1",
+   "from": "rsvp_info_question",
+   "to": "rsvp_done",
+   "when": {
+    "kind": "button",
+    "button_id": "no_notes"
+   },
+   "actions": [],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_info_question_2",
+   "from": "rsvp_info_question",
+   "to": "note_info",
+   "when": {
+    "kind": "button",
+    "button_id": "write_note"
+   },
+   "actions": [],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_info_question_3",
+   "from": "rsvp_info_question",
+   "to": "rsvp_decline",
+   "when": {
+    "kind": "rsvp",
+    "value": "declined",
+    "typed_only": true
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "declined"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_info_question_4",
+   "from": "rsvp_info_question",
+   "to": "rsvp_maybe",
+   "when": {
+    "kind": "rsvp",
+    "value": "maybe",
+    "typed_only": true
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "maybe"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_info_question_5",
+   "from": "rsvp_info_question",
+   "to": "rsvp_info_question",
+   "when": {
+    "kind": "any_text"
+   },
+   "actions": [],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_info_question_6",
+   "from": "rsvp_info_question",
+   "to": "rsvp_done",
+   "when": {
+    "kind": "done"
+   },
+   "actions": [],
+   "priority": 0
+  },
+  {
+   "id": "e_note_info_1",
+   "from": "note_info",
+   "to": "rsvp_done",
+   "when": {
+    "kind": "any_text"
+   },
+   "actions": [
+    {
+     "type": "set_field",
+     "field": "notes_append",
+     "value": "הערת אורח (וואטסאפ): {answer}"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_done_1",
+   "from": "rsvp_done",
+   "to": "rsvp_update",
+   "when": {
+    "kind": "button",
+    "button_id": "update"
+   },
+   "actions": [],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_done_2",
+   "from": "rsvp_done",
+   "to": "rsvp_decline",
+   "when": {
+    "kind": "rsvp",
+    "value": "declined",
+    "typed_only": true
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "declined"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_done_3",
+   "from": "rsvp_done",
+   "to": "rsvp_maybe",
+   "when": {
+    "kind": "rsvp",
+    "value": "maybe",
+    "typed_only": true
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "maybe"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_done_4",
+   "from": "rsvp_done",
+   "to": "rsvp_done",
+   "when": {
+    "kind": "any_text"
+   },
+   "actions": [],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_update_1",
+   "from": "rsvp_update",
+   "to": "note_info",
+   "when": {
+    "kind": "button",
+    "button_id": "add_note"
+   },
+   "actions": [],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_update_2",
+   "from": "rsvp_update",
+   "to": "rsvp_decline",
+   "when": {
+    "kind": "button",
+    "button_id": "decline"
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "declined"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_update_3",
+   "from": "rsvp_update",
+   "to": "rsvp_count",
+   "when": {
+    "kind": "button",
+    "button_id": "change_count"
+   },
+   "actions": [],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_update_4",
+   "from": "rsvp_update",
+   "to": "rsvp_decline",
+   "when": {
+    "kind": "rsvp",
+    "value": "declined",
+    "typed_only": true
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "declined"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_update_5",
+   "from": "rsvp_update",
+   "to": "rsvp_maybe",
+   "when": {
+    "kind": "rsvp",
+    "value": "maybe",
+    "typed_only": true
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "maybe"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_update_6",
+   "from": "rsvp_update",
+   "to": "rsvp_update",
+   "when": {
+    "kind": "any_text"
+   },
+   "actions": [],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_decline_1",
+   "from": "rsvp_decline",
+   "to": "rsvp_count",
+   "when": {
+    "kind": "button",
+    "button_id": "change_mind"
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "confirmed"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_decline_2",
+   "from": "rsvp_decline",
+   "to": "rsvp_count",
+   "when": {
+    "kind": "rsvp",
+    "value": "confirmed"
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "confirmed"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_decline_3",
+   "from": "rsvp_decline",
+   "to": "rsvp_decline",
+   "when": {
+    "kind": "any_text"
+   },
+   "actions": [],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_maybe_1",
+   "from": "rsvp_maybe",
+   "to": "rsvp_count",
+   "when": {
+    "kind": "button",
+    "button_id": "confirm"
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "confirmed"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_maybe_2",
+   "from": "rsvp_maybe",
+   "to": "rsvp_decline",
+   "when": {
+    "kind": "button",
+    "button_id": "decline"
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "declined"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_maybe_3",
+   "from": "rsvp_maybe",
+   "to": "rsvp_count",
+   "when": {
+    "kind": "rsvp",
+    "value": "confirmed"
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "confirmed"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_maybe_4",
+   "from": "rsvp_maybe",
+   "to": "rsvp_decline",
+   "when": {
+    "kind": "rsvp",
+    "value": "declined"
+   },
+   "actions": [
+    {
+     "type": "set_rsvp",
+     "value": "declined"
+    }
+   ],
+   "priority": 0
+  },
+  {
+   "id": "e_rsvp_maybe_5",
+   "from": "rsvp_maybe",
+   "to": "rsvp_maybe",
+   "when": {
+    "kind": "any_text"
+   },
+   "actions": [],
+   "priority": 0
+  }
+ ]
+}

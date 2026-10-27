@@ -11,6 +11,7 @@ export type RsvpValue = 'confirmed' | 'declined' | 'maybe';
 export interface FlowButton {
   id: string;
   label: string;
+  hidden?: boolean;
 }
 
 /** A template node re-sends this approved WhatsApp template when entered. */
@@ -31,16 +32,19 @@ export interface FlowNode {
   guest_questions?: boolean;
   position?: { x: number; y: number } | null;
   resend_template?: ResendTemplate | null;
+  /** Optional step turned off in settings: passes straight through its 'done' edge. */
+  skip?: boolean;
 }
 
 export type EdgeWhen =
   | { kind: 'button'; button_id: string }
-  | { kind: 'rsvp'; value: RsvpValue | string }
+  | { kind: 'rsvp'; value: RsvpValue | string; typed_only?: boolean }
   | { kind: 'number' }
   | { kind: 'number_invalid' }
   | { kind: 'text_contains'; words: string[] }
   | { kind: 'any_text' }
-  | { kind: 'done' };
+  | { kind: 'done' }
+  | { kind: 'answered' };
 
 export type EdgeKind = EdgeWhen['kind'];
 

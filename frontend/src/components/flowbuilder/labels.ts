@@ -61,6 +61,7 @@ export const EDGE_KIND_LABEL: Record<EdgeKind, string> = {
   text_contains: 'טקסט שמכיל מילים',
   any_text: 'כל טקסט',
   done: 'אחרי השאלות / בסיום',
+  answered: 'ענו על שאלה של המארח',
 };
 
 export const ACTION_LABEL: Record<ActionType, string> = {
@@ -131,6 +132,8 @@ export function whenLabel(when: EdgeWhen, graph: FlowGraph, fromId: string): str
       return 'כל טקסט';
     case 'done':
       return 'אחרי השאלות';
+    case 'answered':
+      return 'ענו על שאלה';
     default:
       return 'תנאי';
   }

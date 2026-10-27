@@ -1,9 +1,9 @@
 /** Side panel for the selected node: content, reply type, buttons, entries, exits. */
-import React, { useRef } from 'react';
+import React from 'react';
 import { color as C, radius } from '../../design/tokens';
 import { Btn, Chip, Ms } from '../v6/ui';
 import type { FlowGraph, FlowMeta, FlowNode, InputType, NodeType, Stage } from './types';
-import { Counter, ErrorLine, Field, IconBtn, PanelHeader, Toggle, VarChip, inputBase, insertAtCaret, selectBase } from './controls';
+import { Counter, ErrorLine, Field, IconBtn, PanelHeader, Toggle, VarTextarea, inputBase, selectBase } from './controls';
 import { DEFAULT_VARIABLES, INPUT_LABEL, LIMITS, NODE_TYPE_HINT, NODE_TYPE_LABEL, STAGES, STAGE_LABEL } from './labels';
 import { edgeLabel, uid } from './graph';
 import ResendTemplateEditor from './ResendTemplateEditor';
@@ -25,22 +25,12 @@ const INPUTS: InputType[] = ['buttons', 'list', 'number', 'text', 'none'];
 const TYPES: NodeType[] = ['template', 'message', 'question', 'end'];
 
 export default function NodePanel({ node, graph, meta, errors, onChange, onSetEntry, onDelete, onDuplicate, onSelectEdge, onClose }: Props) {
-  const textRef = useRef<HTMLTextAreaElement>(null);
   const variables = meta?.variables?.length ? meta.variables : DEFAULT_VARIABLES;
   const isList = node.input === 'list';
   const maxItems = isList ? LIMITS.listItems : LIMITS.buttons;
   const maxLabel = isList ? LIMITS.listLabel : LIMITS.buttonLabel;
   const exits = graph.edges.filter((e) => e.from === node.id);
   const stages = (meta?.stages?.length ? meta.stages : STAGES) as Stage[];
-
-  const insertVar = (key: string) => {
-    const { next, caret } = insertAtCaret(textRef.current, node.text || '', `{${key}}`);
-    onChange({ text: next });
-    requestAnimationFrame(() => {
-      const el = textRef.current;
-      if (el) { el.focus(); el.setSelectionRange(caret, caret); }
-    });
-  };
 
   const setButton = (i: number, label: string) =>
     onChange({ buttons: node.buttons.map((b, j) => (j === i ? { ...b, label } : b)) });
@@ -91,11 +81,7 @@ export default function NodePanel({ node, graph, meta, errors, onChange, onSetEn
       </Field>
 
       <Field label="הטקסט שהאורח מקבל" aside={<Counter value={(node.text || '').length} max={1024} />}>
-        <textarea ref={textRef} rows={5} style={{ ...inputBase, resize: 'vertical' }} value={node.text}
-          onChange={(e) => onChange({ text: e.target.value })} placeholder="היי {guest_name}, …" />
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-          {variables.map((v) => <VarChip key={v.key} label={v.label} onClick={() => insertVar(v.key)} />)}
-        </div>
+        <VarTextarea rows={5} value={node.text} onChange={(text) => onChange({ text })} variables={variables} placeholder="היי {guest_name}, …" />
         <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>*כוכביות* יוצגו כטקסט מודגש בוואטסאפ.</div>
       </Field>
 

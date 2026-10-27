@@ -5,6 +5,9 @@
  * nodes are bot messages, edges are "when the guest answers X → do Y → go to Z".
  * Edits happen on a local draft; Save creates a new version, Enable switches the
  * scope to the graph engine. The simulator runs the unsaved draft server-side.
+ *
+ * Two editors over the same draft: "simple" (default) - rule tables per
+ * category (SimpleFlowEditor) - and "advanced" - the reactflow canvas.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMediaQuery } from '@mui/material';
@@ -15,6 +18,7 @@ import FlowCanvas from '../../components/flowbuilder/FlowCanvas';
 import NodePanel from '../../components/flowbuilder/NodePanel';
 import EdgePanel from '../../components/flowbuilder/EdgePanel';
 import Simulator from '../../components/flowbuilder/Simulator';
+import SimpleFlowEditor, { type FocusRequest } from '../../components/flowbuilder/SimpleFlowEditor';
 import { Toggle, inputBase, selectBase } from '../../components/flowbuilder/controls';
 import { FlowApiError, errMsg, flowApi } from '../../components/flowbuilder/api';
 import {
@@ -28,6 +32,12 @@ import type {
 interface ScopeSel { scope: Scope; key: string }
 interface LoadedInfo { version: number | null; enabled: boolean; is_default: boolean; inherited: string | null }
 interface Toast { text: string; tone?: 'ok' | 'err'; undo?: FlowGraph }
+
+type EditorMode = 'simple' | 'advanced';
+const LS_MODE = 'flowbuilder.mode';
+const readMode = (): EditorMode => {
+  try { return window.localStorage.getItem(LS_MODE) === 'advanced' ? 'advanced' : 'simple'; } catch { return 'simple'; }
+};
 
 const sameScope = (a: ScopeSel, b: ScopeSel) => a.scope === b.scope && a.key === b.key;
 const SCOPE_TABS: { id: Scope; label: string }[] = [
@@ -66,6 +76,13 @@ function Notice({ icon, title, children, action }: { icon: string; title: string
 
 function FlowBuilderInner() {
   const isNarrow = useMediaQuery('(max-width: 900px)');
+  const [mode, setModeRaw] = useState<EditorMode>(readMode);
+  const [focusReq, setFocusReq] = useState<FocusRequest | null>(null);
+  const setMode = (m: EditorMode) => {
+    setModeRaw(m);
+    try { window.localStorage.setItem(LS_MODE, m); } catch { /* private mode */ }
+    if (m === 'advanced') setFitKey(`mode/${Date.now()}`);
+  };
   const [scopes, setScopes] = useState<ScopeRow[]>([]);
   const [meta, setMeta] = useState<FlowMeta | null>(null);
   const [sel, setSel] = useState<ScopeSel>({ scope: 'global', key: 'default' });
@@ -107,6 +124,7 @@ function FlowBuilderInner() {
 
   const dirty = useMemo(() => status === 'ready' && JSON.stringify(cleanGraph(graph)) !== savedJson, [graph, savedJson, status]);
   const issueIndex = useMemo(() => indexIssues(issues, graph), [issues, graph]);
+  const warnIndex = useMemo(() => indexIssues(warnings, graph), [warnings, graph]);
   const issueCount = issues.length;
 
   // ------------------------------------------------------------ loading
@@ -300,6 +318,12 @@ function FlowBuilderInner() {
   }, []);
 
   const onSelect = useCallback((s: Selection) => { setSelection(s); if (s) setPanel('inspect'); }, []);
+  /** Show a node/edge in whichever editor is open. */
+  const reveal = (t: Selection) => {
+    if (!t) return;
+    if (mode === 'simple') setFocusReq({ kind: t.kind, id: t.id, nonce: Date.now() });
+    else onSelect(t);
+  };
 
   const relayout = () => {
     mutate((g) => autoLayout(g, false));
@@ -398,21 +422,12 @@ function FlowBuilderInner() {
       <Kicker>ניהול מערכת</Kicker>
       <h1 style={{ fontSize: 'clamp(24px,3vw,30px)', fontWeight: 600, letterSpacing: '-0.03em', margin: '6px 0 4px' }}>בונה שיחה</h1>
       <div style={{ fontSize: 14.5, color: C.body, lineHeight: 1.6, maxWidth: 760 }}>
-        כאן בונים את שיחת הוואטסאפ עם האורחים כמו תרשים: כל כרטיס הוא הודעה של הבוט, וכל חץ אומר "כשהאורח עונה כך - עושים את זה וממשיכים לשם".
+        {mode === 'simple'
+          ? 'כאן בונים את שיחת הוואטסאפ עם האורחים: לכל קטגוריה רשימת כללים פשוטה - "אם האורח ענה כך, אז עושים את זה ושולחים את ההודעה הזאת".'
+          : 'כאן בונים את שיחת הוואטסאפ עם האורחים כמו תרשים: כל כרטיס הוא הודעה של הבוט, וכל חץ אומר "כשהאורח עונה כך - עושים את זה וממשיכים לשם".'}
       </div>
     </div>
   );
-
-  if (isNarrow) {
-    return (
-      <div dir="rtl">
-        {header}
-        <Notice icon="desktop_windows" title="העריכה עובדת הכי טוב במחשב">
-          בונה השיחה הוא קנבס רחב עם גרירה וחיבורים. כדאי לפתוח את המסך הזה במחשב או בטאבלט במצב רוחב.
-        </Notice>
-      </div>
-    );
-  }
 
   const scopeBar = (
     <Card style={{ padding: '14px 16px', marginBottom: 12 }}>
@@ -517,6 +532,17 @@ function FlowBuilderInner() {
         <>
           {/* toolbar */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10, position: 'relative' }}>
+            <div role="radiogroup" aria-label="מצב עריכה" style={{ display: 'inline-flex', background: C.paperWarm, borderRadius: 12, padding: 3, gap: 2 }}>
+              {([['simple', 'פשוט', 'table_rows'], ['advanced', 'מתקדם (תרשים)', 'account_tree']] as [EditorMode, string, string][]).map(([m, label, icon]) => (
+                <button key={m} type="button" role="radio" aria-checked={mode === m} onClick={() => setMode(m)} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5, height: 34, padding: '0 12px', borderRadius: 10, border: 0, cursor: 'pointer',
+                  fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600,
+                  background: mode === m ? '#FFFFFF' : 'transparent', color: mode === m ? C.ink : C.body,
+                  boxShadow: mode === m ? '0 1px 2px rgba(22,21,15,.08)' : 'none',
+                }}><Ms size={17}>{icon}</Ms>{label}</button>
+              ))}
+            </div>
+            {mode === 'advanced' && !isNarrow && (<>
             <div style={{ position: 'relative' }}>
               <Btn kind="smallGhost" onClick={() => setAddOpen((v) => !v)} disabled={status !== 'ready'}><Ms size={18}>add</Ms>הוספת צומת</Btn>
               {addOpen && (
@@ -536,8 +562,9 @@ function FlowBuilderInner() {
               )}
             </div>
             <Btn kind="smallGhost" onClick={relayout} disabled={status !== 'ready' || !graph.nodes.length}><Ms size={18}>account_tree</Ms>סידור אוטומטי</Btn>
+            </>)}
             <Btn kind="smallGhost" onClick={validateNow} disabled={status !== 'ready'}><Ms size={18}>fact_check</Ms>בדיקת תקינות</Btn>
-            <Btn kind="smallGhost" onClick={() => { setPanel('sim'); setSelection(null); }} disabled={status !== 'ready'}
+            <Btn kind="smallGhost" onClick={() => { if (mode === 'simple' && panel === 'sim') { setPanel('inspect'); return; } setPanel('sim'); setSelection(null); }} disabled={status !== 'ready'}
               style={panel === 'sim' ? { borderColor: C.purple, color: C.purpleDark } : undefined}>
               <Ms size={18}>play_circle</Ms>ניסיון שיחה
             </Btn>
@@ -597,7 +624,7 @@ function FlowBuilderInner() {
                   const edgeId = Object.keys(one.edges)[0];
                   const target: Selection = nodeId ? { kind: 'node', id: nodeId } : edgeId ? { kind: 'edge', id: edgeId } : null;
                   return (
-                    <button key={i} type="button" disabled={!target} onClick={() => target && onSelect(target)} style={{
+                    <button key={i} type="button" disabled={!target} onClick={() => target && reveal(target)} style={{
                       display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 0, padding: '4px 0', textAlign: 'start',
                       cursor: target ? 'pointer' : 'default', fontFamily: 'inherit', fontSize: 13, color: it.w ? C.warn : C.err,
                     }}>
@@ -611,6 +638,38 @@ function FlowBuilderInner() {
             </Card>
           )}
 
+          {mode === 'simple' && (
+            <div style={{ display: 'flex', flexDirection: isNarrow ? 'column' : 'row', gap: 16, alignItems: 'flex-start' }}>
+              {panel === 'sim' && status === 'ready' && (
+                <aside style={{
+                  order: isNarrow ? 0 : 2, width: isNarrow ? '100%' : 360, flex: 'none', boxSizing: 'border-box', background: '#FFFFFF',
+                  border: `1.5px solid ${C.lineApp}`, borderRadius: radius.xl, padding: 16,
+                  ...(isNarrow ? {} : { position: 'sticky' as const, top: 12, maxHeight: 'calc(100dvh - 24px)', overflowY: 'auto' as const }),
+                }}>
+                  <Simulator graph={graph} meta={meta} onActiveNode={setSimNodeId}
+                    onSelectNode={(id) => setFocusReq({ kind: 'node', id, nonce: Date.now() })} onClose={() => setPanel('inspect')} />
+                </aside>
+              )}
+              <div style={{ order: 1, flex: 1, minWidth: 0, width: '100%' }}>
+                {status === 'loading' ? (
+                  <div style={{ padding: '40px 0', textAlign: 'center', fontSize: 14, color: C.body }}>טוען את השיחה…</div>
+                ) : (
+                  <SimpleFlowEditor graph={graph} meta={meta} errors={issueIndex} warns={warnIndex}
+                    simNodeId={panel === 'sim' ? simNodeId : null} focus={focusReq}
+                    setGraph={mutate} onDeleteNodes={deleteNodes} onDeleteEdges={deleteEdges} />
+                )}
+              </div>
+            </div>
+          )}
+
+          {mode === 'advanced' && isNarrow && (
+            <Notice icon="desktop_windows" title="התרשים עובד הכי טוב במחשב"
+              action={<Btn kind="smallGhost" onClick={() => setMode('simple')}><Ms size={18}>table_rows</Ms>מעבר למצב פשוט</Btn>}>
+              המצב המתקדם הוא קנבס רחב עם גרירה וחיבורים. במסך צר עדיף לערוך במצב הפשוט - הוא עורך בדיוק את אותה שיחה.
+            </Notice>
+          )}
+
+          {mode === 'advanced' && !isNarrow && (
           <div style={{
             display: 'flex', gap: 12, height: 'calc(100dvh - 300px)', minHeight: 560,
           }}>
@@ -685,6 +744,7 @@ function FlowBuilderInner() {
               )}
             </aside>
           </div>
+          )}
         </>
       )}
 

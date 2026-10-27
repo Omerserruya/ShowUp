@@ -118,3 +118,28 @@ export function insertAtCaret(el: HTMLTextAreaElement | HTMLInputElement | null,
   const next = value.slice(0, start) + insert + value.slice(end);
   return { next, caret: start + insert.length };
 }
+
+/** Textarea + "insert variable" chips ({guest_name} …) that insert at the caret. */
+export function VarTextarea({ value, onChange, variables, rows = 4, placeholder, style, ariaLabel, chipsStyle }: {
+  value: string; onChange: (v: string) => void; variables: { key: string; label: string }[];
+  rows?: number; placeholder?: string; style?: React.CSSProperties; ariaLabel?: string; chipsStyle?: React.CSSProperties;
+}) {
+  const ref = React.useRef<HTMLTextAreaElement>(null);
+  const insertVar = (key: string) => {
+    const { next, caret } = insertAtCaret(ref.current, value || '', `{${key}}`);
+    onChange(next);
+    requestAnimationFrame(() => {
+      const el = ref.current;
+      if (el) { el.focus(); el.setSelectionRange(caret, caret); }
+    });
+  };
+  return (
+    <>
+      <textarea ref={ref} rows={rows} style={{ ...inputBase, resize: 'vertical', ...style }} value={value}
+        aria-label={ariaLabel} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8, ...chipsStyle }}>
+        {variables.map((v) => <VarChip key={v.key} label={v.label} onClick={() => insertVar(v.key)} />)}
+      </div>
+    </>
+  );
+}

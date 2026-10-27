@@ -1,11 +1,12 @@
 /** Side panel for the selected edge: where it goes, when it fires, what it does. */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { color as C, radius } from '../../design/tokens';
 import { Btn, Ms } from '../v6/ui';
-import type { ActionType, EdgeKind, EdgeWhen, FlowAction, FlowEdge, FlowGraph, FlowMeta } from './types';
-import { ErrorLine, Field, IconBtn, PanelHeader, VarChip, inputBase, insertAtCaret, selectBase } from './controls';
-import { ACTION_ICON, ACTION_LABEL, DEFAULT_FIELDS, EDGE_KIND_LABEL, RSVP_LABEL } from './labels';
+import type { EdgeKind, EdgeWhen, FlowAction, FlowEdge, FlowGraph, FlowMeta } from './types';
+import { ErrorLine, Field, IconBtn, PanelHeader, inputBase, selectBase } from './controls';
+import { ACTION_ICON, ACTION_LABEL, EDGE_KIND_LABEL, RSVP_LABEL } from './labels';
 import { defaultWhen, edgeLabel } from './graph';
+import { ACTIONS, ActionEditor, RSVP_VALUES, WordsInput, metaFields, newAction } from './actions';
 
 interface Props {
   edge: FlowEdge;
@@ -18,72 +19,11 @@ interface Props {
   onClose: () => void;
 }
 
-const KINDS: EdgeKind[] = ['button', 'rsvp', 'number', 'number_invalid', 'text_contains', 'any_text', 'done'];
-const ACTIONS: ActionType[] = ['set_rsvp', 'set_field', 'add_tag', 'notify_host', 'stop_reminders'];
-const RSVP_VALUES = ['confirmed', 'declined', 'maybe'];
-const CUSTOM = '__custom__';
-
-const newAction = (type: ActionType, firstField: string): FlowAction => {
-  switch (type) {
-    case 'set_rsvp': return { type, value: 'confirmed' };
-    case 'set_field': return { type, field: firstField, value: '{answer}' };
-    case 'add_tag': return { type, tag: '' };
-    case 'notify_host': return { type, text: '' };
-    default: return { type: 'stop_reminders' };
-  }
-};
-
-function WordsInput({ edgeId, words, onChange }: { edgeId: string; words: string[]; onChange: (w: string[]) => void }) {
-  const [raw, setRaw] = useState(words.join(', '));
-  // Reset only when switching edges, so typing commas isn't fought.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { setRaw(words.join(', ')); }, [edgeId]);
-  return (
-    <input
-      style={inputBase}
-      value={raw}
-      placeholder="למשל: כן, מגיע, נגיע"
-      onChange={(e) => {
-        setRaw(e.target.value);
-        onChange(e.target.value.split(/[,،\n]/).map((w) => w.trim()).filter(Boolean));
-      }}
-    />
-  );
-}
-
-function SetFieldEditor({ action, fields, onChange }: {
-  action: Extract<FlowAction, { type: 'set_field' }>; fields: { value: string; label: string }[]; onChange: (a: FlowAction) => void;
-}) {
-  const valueRef = useRef<HTMLInputElement>(null);
-  const known = fields.some((f) => f.value === action.field);
-  const isCustom = !known;
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <select style={selectBase} value={known ? action.field : CUSTOM}
-        onChange={(e) => onChange({ ...action, field: e.target.value === CUSTOM ? 'custom:' : e.target.value })}>
-        {fields.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-        <option value={CUSTOM}>שדה מותאם אישית…</option>
-      </select>
-      {isCustom && (
-        <input style={inputBase} placeholder="שם השדה (באנגלית), למשל: meal" value={action.field.replace(/^custom:/, '')}
-          onChange={(e) => onChange({ ...action, field: `custom:${e.target.value.trim()}` })} />
-      )}
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        <input ref={valueRef} style={inputBase} placeholder="הערך לשמירה" value={action.value}
-          onChange={(e) => onChange({ ...action, value: e.target.value })} />
-        <VarChip label="התשובה" onClick={() => {
-          const { next } = insertAtCaret(valueRef.current, action.value || '', '{answer}');
-          onChange({ ...action, value: next });
-        }} />
-      </div>
-      <div style={{ fontSize: 12, color: C.muted }}>{'{answer}'} = מה שהאורח ענה (המספר, הטקסט או הכפתור).</div>
-    </div>
-  );
-}
+const KINDS: EdgeKind[] = ['button', 'rsvp', 'number', 'number_invalid', 'text_contains', 'any_text', 'done', 'answered'];
 
 export default function EdgePanel({ edge, graph, meta, errors, onChange, onDelete, onSelectNode, onClose }: Props) {
   const from = graph.nodes.find((n) => n.id === edge.from);
-  const fields = meta?.fields?.length ? meta.fields : DEFAULT_FIELDS;
+  const fields = metaFields(meta);
   const firstField = fields[0]?.value || 'guest_count';
   const [adding, setAdding] = useState(false);
 
@@ -152,7 +92,7 @@ export default function EdgePanel({ edge, graph, meta, errors, onChange, onDelet
         )}
         {w.kind === 'text_contains' && (
           <div style={{ marginTop: 8 }}>
-            <WordsInput edgeId={edge.id} words={w.words || []} onChange={(words) => setWhen({ kind: 'text_contains', words })} />
+            <WordsInput resetKey={edge.id} words={w.words || []} onChange={(words) => setWhen({ kind: 'text_contains', words })} />
             <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>מספיק שאחת המילים מופיעה בתשובה. הפרידו בפסיק.</div>
           </div>
         )}
@@ -177,19 +117,7 @@ export default function EdgePanel({ edge, graph, meta, errors, onChange, onDelet
                 <IconBtn icon="arrow_downward" label="למטה" size={28} onClick={() => moveAction(i, 1)} disabled={i === edge.actions.length - 1} />
                 <IconBtn icon="close" label="הסרת פעולה" size={28} tone="danger" onClick={() => removeAction(i)} />
               </div>
-              {a.type === 'set_rsvp' && (
-                <select style={selectBase} value={a.value} onChange={(e) => setAction(i, { ...a, value: e.target.value })}>
-                  {RSVP_VALUES.map((v) => <option key={v} value={v}>{RSVP_LABEL[v]}</option>)}
-                </select>
-              )}
-              {a.type === 'set_field' && <SetFieldEditor action={a} fields={fields} onChange={(x) => setAction(i, x)} />}
-              {a.type === 'add_tag' && (
-                <input style={inputBase} value={a.tag} placeholder="שם התגית, למשל: צמחוני" onChange={(e) => setAction(i, { ...a, tag: e.target.value })} />
-              )}
-              {a.type === 'notify_host' && (
-                <textarea rows={2} style={{ ...inputBase, resize: 'vertical' }} value={a.text}
-                  placeholder="למשל: {guest_name} ביקש/ה לדבר איתכם" onChange={(e) => setAction(i, { ...a, text: e.target.value })} />
-              )}
+              {a.type !== 'stop_reminders' && <ActionEditor action={a} meta={meta} onChange={(x) => setAction(i, x)} />}
             </div>
           ))}
         </div>
