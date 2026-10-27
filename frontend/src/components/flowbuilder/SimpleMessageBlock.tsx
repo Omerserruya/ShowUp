@@ -26,6 +26,7 @@ import {
   setAnswerMode, syncNumberInput, textConditionOptions, updateChoice, whenFromKey, insertEdge,
   type AnswerMode, type NodeMode, type RowTarget, type TreeBlock,
 } from './simpleTree';
+import { defaultFieldValue, fieldByRef, fieldRef, fieldValueLabel, graphFields, isFieldAction, ANSWER } from './fields';
 import NodePanel from './NodePanel';
 import ResendTemplateEditor from './ResendTemplateEditor';
 
@@ -48,6 +49,8 @@ export interface SimpleCtxValue {
   deleteEdge: (id: string) => void;
   /** Create a message/end node near `fromId` and point a rule at it via `link`. */
   newTarget: (fromId: string, type: 'message' | 'end', link: (to: string) => (g: FlowGraph) => FlowGraph, edgeId?: string) => void;
+  /** Insert a question asking for an extra field; its answers continue to `then`. */
+  newFieldQuestion: (fromId: string, fieldKey: string, link: (to: string) => (g: FlowGraph) => FlowGraph, edgeId: string | undefined, then: string | null) => void;
   flash: (key: string) => void;
   isCollapsed: (key: string, dflt?: boolean) => boolean;
   toggle: (key: string, dflt?: boolean) => void;
@@ -65,6 +68,7 @@ export const nestKey = (stage: string, edgeId: string) => `${stage}:${edgeId}`;
 const NEW_MESSAGE = '__new_message__';
 const NEW_END = '__new_end__';
 const STAY = '__stay__';
+const FIELD_Q = '__fieldq__:';
 const newEdgeId = () => uid('e');
 const newButtonId = () => uid('b');
 
@@ -188,6 +192,62 @@ function ActionsCell({ actions, onChange }: { actions: FlowAction[]; onChange: (
   );
 }
 
+// ---------------------------------------------------------------- field cell
+
+type SetField = Extract<FlowAction, { type: 'set_field' }>;
+const NO_FIELD = '__none__';
+
+/** "שמירה בשדה": which extra field(s) this rule stores the answer in, and what value. */
+function FieldCell({ acts, choiceLabel, onChange }: { acts: SetField[]; choiceLabel?: string; onChange: (a: SetField[]) => void }) {
+  const { graph } = useSimple();
+  const fields = graphFields(graph);
+  if (!fields.length) return <span className="sfe-quiet">—</span>;
+  const make = (key: string): SetField | null => {
+    const f = fields.find((x) => x.key === key);
+    return f ? { type: 'set_field', field: fieldRef(f.key), value: defaultFieldValue(f, choiceLabel) } : null;
+  };
+  const free = fields.filter((f) => !acts.some((a) => a.field === fieldRef(f.key)));
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {acts.map((a, i) => {
+        const f = fieldByRef(graph, a.field);
+        const values = f?.type === 'choice' ? f.options : [];
+        return (
+          <div key={`${a.field}-${i}`} className="sfe-fieldset">
+            <select className="sfe-cellsel" value={a.field} aria-label="שדה" style={{ fontWeight: 600 }}
+              onChange={(ev) => {
+                if (ev.target.value === NO_FIELD) { onChange(acts.filter((_, j) => j !== i)); return; }
+                const n = make(ev.target.value.slice(7));
+                if (n) onChange(acts.map((x, j) => (j === i ? n : x)));
+              }}>
+              {fields.filter((x) => x.key === f?.key || free.includes(x)).map((x) => <option key={x.key} value={fieldRef(x.key)}>{x.label || x.key}</option>)}
+              <option value={NO_FIELD}>בלי שמירה</option>
+            </select>
+            {f?.type === 'choice' ? (
+              <select className="sfe-cellsel" value={a.value} aria-label="ערך לשמירה"
+                style={{ color: values.includes(a.value) || a.value === ANSWER ? C.ink : C.err }}
+                onChange={(ev) => onChange(acts.map((x, j) => (j === i ? { ...x, value: ev.target.value } : x)))}>
+                {values.map((v) => <option key={v} value={v}>= {v}</option>)}
+                <option value={ANSWER}>= {fieldValueLabel(ANSWER)}</option>
+                {!values.includes(a.value) && a.value !== ANSWER && <option value={a.value}>= {a.value} (לא ברשימה)</option>}
+              </select>
+            ) : (
+              <span className="sfe-quiet" style={{ paddingInlineStart: 8 }}>= {fieldValueLabel(a.value)}</span>
+            )}
+          </div>
+        );
+      })}
+      {free.length > 0 && (
+        <select className="sfe-cellsel" value="" aria-label="שמירה בשדה" style={{ color: C.muted }}
+          onChange={(ev) => { const n = make(ev.target.value); if (n) onChange([...acts, n]); }}>
+          <option value="">{acts.length ? '+ עוד שדה' : 'לא נשמר'}</option>
+          {free.map((f) => <option key={f.key} value={f.key}>{f.label || f.key}</option>)}
+        </select>
+      )}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- generic row
 
 interface RowProps {
@@ -196,6 +256,8 @@ interface RowProps {
   target: RowTarget | null;
   index: number;
   condition: React.ReactNode;
+  /** The choice this row answers (preselects the matching field value). */
+  choiceLabel?: string;
   /** Patch to/actions of this row (creates the rule when edge is null). */
   onPatch: (patch: Partial<Pick<FlowEdge, 'to' | 'actions'>>) => void;
   /** Link a freshly created node: returns the graph update. */
@@ -220,7 +282,13 @@ function RuleRow(p: RowProps) {
   const target = to ? graph.nodes.find((n) => n.id === to) : undefined;
   const linkTo = p.target?.kind === 'link' ? p.target.nodeId : null;
 
+  const acts = e?.actions || [];
+  const fieldActs = acts.filter((a): a is SetField => isFieldAction(graph, a));
+  const otherActs = acts.filter((a) => !isFieldAction(graph, a));
+  const fields = graphFields(graph);
+
   const onTarget = (v: string) => {
+    if (v.startsWith(FIELD_Q)) { ctx.newFieldQuestion(p.node.id, v.slice(FIELD_Q.length), p.linkNew, e?.id, to); return; }
     if (v === NEW_MESSAGE || v === NEW_END) ctx.newTarget(p.node.id, v === NEW_END ? 'end' : 'message', p.linkNew, e?.id);
     else p.onPatch({ to: v === STAY ? null : v });
   };
@@ -243,7 +311,11 @@ function RuleRow(p: RowProps) {
         </div>
         <div className="sfe-cell" role="cell">
           <span className="sfe-cell-label">אז…</span>
-          <ActionsCell actions={e?.actions || []} onChange={(actions) => p.onPatch({ actions })} />
+          <ActionsCell actions={otherActs} onChange={(o) => p.onPatch({ actions: [...o, ...fieldActs] })} />
+        </div>
+        <div className="sfe-cell" role="cell">
+          <span className="sfe-cell-label">שמירה בשדה</span>
+          <FieldCell acts={fieldActs} choiceLabel={p.choiceLabel} onChange={(f) => p.onPatch({ actions: [...otherActs, ...f] })} />
         </div>
         <div className="sfe-cell" role="cell">
           <span className="sfe-cell-label">שלח</span>
@@ -269,6 +341,11 @@ function RuleRow(p: RowProps) {
                 <option value={NEW_MESSAGE}>+ הודעה חדשה</option>
                 <option value={NEW_END}>+ הודעת סיום חדשה</option>
               </optgroup>
+              {fields.length > 0 && (
+                <optgroup label={to ? 'שאלה על שדה (ואז ממשיכים לאותו מקום)' : 'שאלה על שדה'}>
+                  {fields.map((f) => <option key={f.key} value={`${FIELD_Q}${f.key}`}>+ שאלה על השדה: {f.label || f.key}</option>)}
+                </optgroup>
+              )}
             </select>
           </div>
           {linkTo && (
@@ -360,6 +437,7 @@ function RulesTable({ block, node }: { block: TreeBlock; node: FlowNode }) {
     const bad = c.buttonId ? (!c.label.trim() || c.label.length > maxLabel) : false;
     return (
       <RuleRow key={c.key} domKey={e?.id || `${node.id}-${c.key}`} node={node} edge={e} target={e ? targets.get(e.id) || null : null} index={idx++}
+        choiceLabel={c.label}
         onPatch={(patch) => mutate((g) => updateChoice(g, node.id, c.key, patch, newEdgeId))}
         linkNew={(to) => (g) => updateChoice(g, node.id, c.key, { to }, newEdgeId)}
         onUp={c.buttonId && i > 0 ? () => mutate((g) => moveChoice(g, node.id, c.buttonId as string, -1)) : undefined}
@@ -409,6 +487,7 @@ function RulesTable({ block, node }: { block: TreeBlock; node: FlowNode }) {
           <div className="sfe-cell" />
           <div className="sfe-cell">אם האורח…</div>
           <div className="sfe-cell">אז…</div>
+          <div className="sfe-cell">שמירה בשדה</div>
           <div className="sfe-cell">שלח</div>
           <div className="sfe-cell" />
         </div>
@@ -584,7 +663,7 @@ export const SIMPLE_CSS = `
 .sfe-details{border:1.5px solid ${C.tintBorder};background:${C.tint};border-radius:${radius.md}px;padding:12px 14px;margin:8px 0;}
 .sfe-details > div{background:transparent;}
 .sfe-rules{margin-top:4px;}
-.sfe-row{display:grid;grid-template-columns:46px minmax(170px,1.15fr) minmax(170px,1.35fr) minmax(170px,1fr) 64px;align-items:start;column-gap:10px;min-height:40px;padding:4px 4px;border-top:1px solid ${C.line2};border-radius:8px;}
+.sfe-row{display:grid;grid-template-columns:46px minmax(160px,1.1fr) minmax(140px,1.05fr) minmax(140px,.9fr) minmax(160px,1fr) 64px;align-items:start;column-gap:10px;min-height:40px;padding:4px 4px;border-top:1px solid ${C.line2};border-radius:8px;}
 .sfe-row:not(.sfe-thead):hover{background:var(--sfe-hover);}
 .sfe-row.bad{background:${C.errBg}55;}
 .sfe-row.flash{background:${C.tintApp};}
@@ -637,6 +716,14 @@ export const SIMPLE_CSS = `
 .sfe-subhead{font-size:12px;font-weight:600;color:${C.muted};padding:12px 4px 4px;letter-spacing:.02em;}
 .sfe-addline{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;}
 .sfe-fixed{display:inline-flex;align-items:center;gap:5px;font-size:13px;color:${C.body};}
+.sfe-fieldset{display:flex;flex-direction:column;gap:0;border-radius:9px;background:${C.tint};}
+.sfe-fields{background:#FFFFFF;border:1.5px solid ${C.lineApp};border-radius:${radius.lg}px;padding:10px 14px;margin-bottom:16px;}
+.sfe-frow{display:grid;grid-template-columns:minmax(150px,1fr) 150px minmax(200px,1.6fr) 130px 40px;align-items:start;column-gap:10px;padding:4px;border-top:1px solid ${C.line2};}
+.sfe-frow.sfe-thead{border-top:0;}
+.sfe-frow.bad{background:${C.errBg}55;}
+.sfe-frow .sfe-cellsel{border-color:${C.line2};}
+.sfe-finput{width:100%;height:32px;box-sizing:border-box;font-family:inherit;font-size:13.5px;font-weight:600;color:${C.ink};border:1.5px solid ${C.line2};border-radius:9px;padding:0 9px;outline:none;background:#FFFFFF;}
+.sfe-finput:focus{border-color:${C.purple};}
 .sfe-tabs{display:flex;gap:2px;flex-wrap:wrap;border-bottom:1.5px solid ${C.lineApp};margin-bottom:14px;}
 .sfe-tab{display:inline-flex;align-items:center;gap:6px;height:42px;padding:0 14px;border:0;background:none;font-family:inherit;font-size:14.5px;font-weight:600;color:${C.body};cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-1.5px;}
 .sfe-tab.on{color:${C.ink};border-bottom-color:${C.purple};}
@@ -652,6 +739,8 @@ export const SIMPLE_CSS = `
   .sfe-move button{height:28px;width:32px;}
   .sfe-rowctl{opacity:1;justify-content:flex-start;}
   .sfe-row-issues{grid-column:1;}
+  .sfe-frow{grid-template-columns:1fr;row-gap:6px;padding:10px;border:1.5px solid ${C.line2};border-radius:12px;margin-bottom:8px;}
+  .sfe-frow.sfe-thead{display:none;}
   .sfe-nest{padding-inline-start:12px;}
   .sfe-nest::before{inset-inline-start:3px;}
   .sfe-block{padding:12px 12px 8px;}

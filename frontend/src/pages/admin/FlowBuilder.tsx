@@ -25,6 +25,7 @@ import {
   autoLayout, cleanGraph, emptyGraph, handleForWhen, indexIssues, normalizeGraph, uid, whenForHandle,
 } from '../../components/flowbuilder/graph';
 import { EVENT_TYPES, NODE_TYPE_ICON, NODE_TYPE_LABEL } from '../../components/flowbuilder/labels';
+import { withGraphFields } from '../../components/flowbuilder/fields';
 import type {
   FlowEdge, FlowGraph, FlowMeta, FlowNode, GraphIssue, NodeType, Scope, ScopeRow, Selection, Stage, VersionRow,
 } from '../../components/flowbuilder/types';
@@ -124,6 +125,8 @@ function FlowBuilderInner() {
 
   const dirty = useMemo(() => status === 'ready' && JSON.stringify(cleanGraph(graph)) !== savedJson, [graph, savedJson, status]);
   const issueIndex = useMemo(() => indexIssues(issues, graph), [issues, graph]);
+  // Guest columns + this flow's extra fields, for every set_field picker/summary.
+  const fieldMeta = useMemo(() => withGraphFields(meta, graph), [meta, graph]);
   const warnIndex = useMemo(() => indexIssues(warnings, graph), [warnings, graph]);
   const issueCount = issues.length;
 
@@ -646,7 +649,7 @@ function FlowBuilderInner() {
                   border: `1.5px solid ${C.lineApp}`, borderRadius: radius.xl, padding: 16,
                   ...(isNarrow ? {} : { position: 'sticky' as const, top: 12, maxHeight: 'calc(100dvh - 24px)', overflowY: 'auto' as const }),
                 }}>
-                  <Simulator graph={graph} meta={meta} onActiveNode={setSimNodeId}
+                  <Simulator graph={graph} meta={fieldMeta} onActiveNode={setSimNodeId}
                     onSelectNode={(id) => setFocusReq({ kind: 'node', id, nonce: Date.now() })} onClose={() => setPanel('inspect')} />
                 </aside>
               )}
@@ -654,7 +657,7 @@ function FlowBuilderInner() {
                 {status === 'loading' ? (
                   <div style={{ padding: '40px 0', textAlign: 'center', fontSize: 14, color: C.body }}>טוען את השיחה…</div>
                 ) : (
-                  <SimpleFlowEditor graph={graph} meta={meta} errors={issueIndex} warns={warnIndex}
+                  <SimpleFlowEditor graph={graph} meta={fieldMeta} errors={issueIndex} warns={warnIndex}
                     simNodeId={panel === 'sim' ? simNodeId : null} focus={focusReq}
                     setGraph={mutate} onDeleteNodes={deleteNodes} onDeleteEdges={deleteEdges} />
                 )}
@@ -713,15 +716,15 @@ function FlowBuilderInner() {
               borderRadius: radius.xl, padding: 16, boxSizing: 'border-box',
             }}>
               {panel === 'sim' && status === 'ready' ? (
-                <Simulator graph={graph} meta={meta} onActiveNode={setSimNodeId}
+                <Simulator graph={graph} meta={fieldMeta} onActiveNode={setSimNodeId}
                   onSelectNode={(id) => setSelection({ kind: 'node', id })} onClose={() => setPanel('inspect')} />
               ) : selNode ? (
-                <NodePanel key={selNode.id} node={selNode} graph={graph} meta={meta} errors={issueIndex.nodes[selNode.id] || []}
+                <NodePanel key={selNode.id} node={selNode} graph={graph} meta={fieldMeta} errors={issueIndex.nodes[selNode.id] || []}
                   onChange={(p) => updateNode(selNode.id, p)} onSetEntry={setEntry}
                   onDelete={() => deleteNodes([selNode.id])} onDuplicate={() => duplicateNode(selNode.id)}
                   onSelectEdge={(id) => setSelection({ kind: 'edge', id })} onClose={() => setSelection(null)} />
               ) : selEdge ? (
-                <EdgePanel key={selEdge.id} edge={selEdge} graph={graph} meta={meta} errors={issueIndex.edges[selEdge.id] || []}
+                <EdgePanel key={selEdge.id} edge={selEdge} graph={graph} meta={fieldMeta} errors={issueIndex.edges[selEdge.id] || []}
                   onChange={(p) => updateEdge(selEdge.id, p)} onDelete={() => deleteEdges([selEdge.id])}
                   onSelectNode={(id) => setSelection({ kind: 'node', id })} onClose={() => setSelection(null)} />
               ) : (

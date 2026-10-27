@@ -14,6 +14,14 @@ export function normalizeGraph(g: any): FlowGraph {
     nodes: Array.isArray(g?.nodes) ? g.nodes : [],
     edges: Array.isArray(g?.edges) ? g.edges : [],
   };
+  if (Array.isArray(g?.fields)) {
+    graph.fields = g.fields.map((f: any) => ({
+      key: String(f.key ?? ''),
+      label: f.label ?? '',
+      type: f.type === 'choice' ? 'choice' : 'text',
+      options: Array.isArray(f.options) ? f.options.map(String) : [],
+    }));
+  }
   graph.nodes = graph.nodes.map((n: any) => ({
     ...n,
     id: String(n.id),
@@ -21,7 +29,7 @@ export function normalizeGraph(g: any): FlowGraph {
     title: n.title ?? '',
     text: n.text ?? '',
     input: n.input || 'none',
-    buttons: Array.isArray(n.buttons) ? n.buttons.map((b: any) => ({ id: String(b.id), label: b.label ?? '' })) : [],
+    buttons: Array.isArray(n.buttons) ? n.buttons.map((b: any) => ({ id: String(b.id), label: b.label ?? '', ...(b.hidden ? { hidden: true } : {}) })) : [],
   }));
   graph.edges = graph.edges.map((e: any, i: number) => ({
     ...e,

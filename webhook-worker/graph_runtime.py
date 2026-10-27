@@ -192,18 +192,42 @@ async def _add_tag(session: AsyncSession, conv: Conversation, guest_id: str, tag
         logger.warning("add_tag failed (tag=%s): %s", tag, exc)
 
 
-async def _set_field(session: AsyncSession, conv: Conversation, guest_id: str, fld: str, value: Optional[str]) -> None:
+async def _ensure_event_field(session: AsyncSession, conv: Conversation, key: str, spec: Dict[str, Any]) -> None:
+    """Create the event's field for a flow-declared extra field (first write)."""
+    choice = spec.get("type") == "choice"
+    await session.execute(
+        text("INSERT INTO event_field_defs (id, event_id, key, label, data_type, options, required, "
+             "applies_to_template, ask_in_rsvp, sort_order) VALUES (gen_random_uuid(), CAST(:e AS uuid), :k, :l, "
+             ":t, CAST(:o AS json), false, false, false, 100) ON CONFLICT (event_id, key) DO NOTHING"),
+        {"e": str(conv.event_id), "k": key, "l": spec.get("label") or key, "t": "enum" if choice else "text",
+         "o": json.dumps(spec.get("options") or [], ensure_ascii=False) if choice else None},
+    )
+    logger.info("Created event field %r from the flow graph (event=%s)", key, conv.event_id)
+
+
+async def _set_field(session: AsyncSession, conv: Conversation, guest_id: str, fld: str, value: Optional[str],
+                     declared: Optional[Dict[str, Dict[str, Any]]] = None) -> None:
     if value is None:
         return
     if fld.startswith(fg.CUSTOM_FIELD_PREFIX):
         key = fld[len(fg.CUSTOM_FIELD_PREFIX):]
-        row = (await session.execute(
-            text("SELECT id::text FROM event_field_defs WHERE CAST(event_id AS text) = :e AND key = :k"),
-            {"e": str(conv.event_id), "k": key},
-        )).first()
+        sql = text("SELECT id::text, data_type, options FROM event_field_defs "
+                   "WHERE CAST(event_id AS text) = :e AND key = :k")
+        args = {"e": str(conv.event_id), "k": key}
+        row = (await session.execute(sql, args)).first()
+        spec = (declared or {}).get(key)
+        if not row and spec and conv.event_id:
+            await _ensure_event_field(session, conv, key, spec)
+            row = (await session.execute(sql, args)).first()
         if not row:
             logger.info("set_field skipped: no custom field %r on this event", key)
             return
+        if row[1] == "enum" and spec and value:
+            opts = row[2] if isinstance(row[2], list) else (json.loads(row[2]) if isinstance(row[2], str) else [])
+            if value not in opts:
+                # Keep the event's answer list in step so the results page buckets it.
+                await session.execute(text("UPDATE event_field_defs SET options = CAST(:o AS json) WHERE id = CAST(:f AS uuid)"),
+                                      {"o": json.dumps(list(opts or []) + [value], ensure_ascii=False), "f": row[0]})
         await session.execute(
             text("INSERT INTO guest_custom_values (id, guest_id, field_def_id, value) VALUES "
                  "(gen_random_uuid(), CAST(:g AS uuid), CAST(:f AS uuid), CAST(:v AS json)) "
@@ -237,7 +261,8 @@ async def _set_field(session: AsyncSession, conv: Conversation, guest_id: str, f
 
 
 async def apply_step(session: AsyncSession, conv: Conversation, guest_id: Optional[str],
-                     effects: List[Dict[str, Any]], new_state: Optional[str], *, stamp: bool = True) -> List[Dict[str, Any]]:
+                     effects: List[Dict[str, Any]], new_state: Optional[str], *, stamp: bool = True,
+                     fields: Optional[Dict[str, Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     """Run the effects + state change in one transaction. Returns the effects
     that still need sending (notify_host -> notify_hosts)."""
     skipped: List[Dict[str, Any]] = []
@@ -261,7 +286,7 @@ async def apply_step(session: AsyncSession, conv: Conversation, guest_id: Option
                                           {"s": status, "g": guest_id})
                     logger.info("Guest status -> %s (graph node=%s)", status, eff.get("node_id"))
             elif t == "set_field":
-                await _set_field(session, conv, guest_id, str(eff.get("field") or ""), eff.get("value"))
+                await _set_field(session, conv, guest_id, str(eff.get("field") or ""), eff.get("value"), fields)
             elif t == "store_answer":
                 v = eff.get("value")
                 await session.execute(
@@ -488,7 +513,8 @@ async def run_graph(flow: Any, session: AsyncSession, conv: Conversation, resolv
     res = fg.step(graph, here, inbound, ctx, _DEFAULTS)
     logger.info("Graph transition %s -> %s (edges=%s, graph=%s/%s v%s)", here, res.node_id, res.edge_ids,
                 resolved.scope, resolved.scope_key, resolved.version)
-    pending = await apply_step(session, conv, guest_id, res.effects, res.node_id or here)
+    pending = await apply_step(session, conv, guest_id, res.effects, res.node_id or here,
+                               fields=fg.graph_fields(graph.data))
     await notify_hosts(flow, session, conv, guest_id, pending, cfg)
     await emit(flow, session, conv, res.sends, cfg, stale=stale)
 
@@ -502,7 +528,8 @@ async def continue_after_answer(flow: Any, session: AsyncSession, conv: Conversa
     guest_id = await target_guest_id(session, conv)
     ctx = await build_ctx(session, conv, graph, guest_id)
     res = fg.after_answer(graph, conv.current_state, ctx)
-    pending = await apply_step(session, conv, guest_id, res.effects, res.node_id or conv.current_state, stamp=False)
+    pending = await apply_step(session, conv, guest_id, res.effects, res.node_id or conv.current_state, stamp=False,
+                               fields=fg.graph_fields(graph.data))
     cfg = await load_flow_config(conv.event_id)
     await notify_hosts(flow, session, conv, guest_id, pending, cfg)
     await emit(flow, session, conv, res.sends, cfg, stale=stale)

@@ -84,6 +84,17 @@ GUEST_FIELDS: Dict[str, Dict[str, Any]] = {
 CUSTOM_FIELD_PREFIX = "custom:"
 _CUSTOM_KEY_RE = re.compile(r"^[A-Za-z0-9_\-]{1,50}$")
 
+# Flow-level extra fields ("שדות נוספים", e.g. shuttle): declared once in
+# graph["fields"] and written by set_field custom:<key>. The worker creates the
+# event's field (event_field_defs) on the first write, so the same flow works
+# for every event and the answers show up in the host's results.
+GRAPH_FIELD_TYPES = ("choice", "text")
+MAX_GRAPH_FIELDS = 30
+GRAPH_FIELD_LABEL_MAX = 100
+GRAPH_FIELD_MIN_OPTIONS = 2
+GRAPH_FIELD_MAX_OPTIONS = 10
+GRAPH_FIELD_OPTION_MAX = 24
+
 # {var} placeholders. BASE vars render from the event/guest (flow_config's
 # renderer); the rest are per-turn values.
 TURN_VARS = ("answer", "party_size", "min_count", "max_count")
@@ -478,6 +489,85 @@ def is_known_field(name: Any) -> bool:
     return name.startswith(CUSTOM_FIELD_PREFIX) and bool(_CUSTOM_KEY_RE.match(name[len(CUSTOM_FIELD_PREFIX):]))
 
 
+def graph_fields(graph: Any) -> Dict[str, Dict[str, Any]]:
+    """{key: {label, type, options}} of the graph's declared extra fields
+    (malformed entries skipped - validate_graph reports them)."""
+    out: Dict[str, Dict[str, Any]] = {}
+    raw = graph.get("fields") if isinstance(graph, dict) else None
+    for f in raw if isinstance(raw, list) else []:
+        if not isinstance(f, dict) or not isinstance(f.get("key"), str) or not _CUSTOM_KEY_RE.match(f["key"]):
+            continue
+        ftype = "choice" if f.get("type") == "choice" else "text"
+        opts = [str(o).strip() for o in (f.get("options") or []) if str(o).strip()] if ftype == "choice" else []
+        label = str(f.get("label") or "").strip()[:GRAPH_FIELD_LABEL_MAX] or f["key"]
+        out.setdefault(f["key"], {"label": label, "type": ftype, "options": opts})
+    return out
+
+
+def _validate_fields(graph: Dict[str, Any], edges: List[Any]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    errs: List[Dict[str, Any]] = []
+    warns: List[Dict[str, Any]] = []
+    raw = graph.get("fields")
+    if raw is None:
+        return errs, warns
+    if not isinstance(raw, list):
+        return [_issue("type", "fields חייב להיות רשימה", path="fields")], warns
+    if len(raw) > MAX_GRAPH_FIELDS:
+        errs.append(_issue("too_many", f"עד {MAX_GRAPH_FIELDS} שדות נוספים", path="fields"))
+    keys = set()
+    for i, f in enumerate(raw):
+        p = f"fields[{i}]"
+        if not isinstance(f, dict):
+            errs.append(_issue("type", "שדה חייב להיות אובייקט", path=p))
+            continue
+        key = f.get("key")
+        label = str(f.get("label") or "").strip()
+        name = label or str(key)
+        if not isinstance(key, str) or not _CUSTOM_KEY_RE.match(key):
+            errs.append(_issue("bad_field_key", f"מזהה שדה לא תקין: {key}", path=f"{p}.key"))
+        elif key in keys:
+            errs.append(_issue("duplicate_field", f"שדה כפול: {key}", path=f"{p}.key"))
+        else:
+            keys.add(key)
+        if not label or len(label) > GRAPH_FIELD_LABEL_MAX:
+            errs.append(_issue("bad_field_label", f"שם שדה 1-{GRAPH_FIELD_LABEL_MAX} תווים", path=f"{p}.label"))
+        if f.get("type") not in GRAPH_FIELD_TYPES:
+            errs.append(_issue("bad_field_type", f"סוג שדה: {' / '.join(GRAPH_FIELD_TYPES)}", path=f"{p}.type"))
+        elif f.get("type") == "choice":
+            opts = f.get("options")
+            if not isinstance(opts, list) or not all(isinstance(o, str) for o in opts):
+                errs.append(_issue("type", f"לשדה '{name}' חייבת להיות רשימת תשובות", path=f"{p}.options"))
+                continue
+            clean = [o.strip() for o in opts]
+            if any(not o for o in clean):
+                errs.append(_issue("bad_option", f"בשדה '{name}' יש תשובה ריקה", path=f"{p}.options"))
+            if not (GRAPH_FIELD_MIN_OPTIONS <= len(clean) <= GRAPH_FIELD_MAX_OPTIONS):
+                errs.append(_issue("bad_option", f"לשדה '{name}' צריך {GRAPH_FIELD_MIN_OPTIONS}-{GRAPH_FIELD_MAX_OPTIONS} תשובות",
+                                   path=f"{p}.options"))
+            if len(set(clean)) != len(clean):
+                errs.append(_issue("bad_option", f"בשדה '{name}' יש תשובה כפולה", path=f"{p}.options"))
+            long = [o for o in clean if len(o) > GRAPH_FIELD_OPTION_MAX]
+            if long:
+                errs.append(_issue("bad_option", f"התשובה '{long[0]}' ארוכה מ-{GRAPH_FIELD_OPTION_MAX} תווים",
+                                   path=f"{p}.options"))
+    # A literal value written to a choice field should be one of its answers.
+    reg = graph_fields(graph)
+    for e in edges:
+        if not isinstance(e, dict):
+            continue
+        for a in e.get("actions") or []:
+            if not isinstance(a, dict) or a.get("type") != "set_field":
+                continue
+            fld = str(a.get("field") or "")
+            spec = reg.get(fld[len(CUSTOM_FIELD_PREFIX):]) if fld.startswith(CUSTOM_FIELD_PREFIX) else None
+            v = a.get("value")
+            if (spec and spec["type"] == "choice" and isinstance(v, str) and not fc.variables_in(v)
+                    and v.strip() not in spec["options"]):
+                warns.append(_issue("value_not_option", f"הערך '{v}' הוא לא אחת התשובות של השדה '{spec['label']}'",
+                                    edge_id=e.get("id")))
+    return errs, warns
+
+
 def validate_graph(graph: Any) -> Dict[str, List[Dict[str, Any]]]:
     """{"errors": [...], "warnings": [...]}; each issue has path/code/message
     (+ node_id / edge_id). A graph with errors cannot be saved or run."""
@@ -569,6 +659,10 @@ def validate_graph(graph: Any) -> Dict[str, List[Dict[str, Any]]]:
         if ntype == "message" and listening and "done" in kinds:
             warnings.append(_issue("message_auto_advance",
                                    "הודעה עם חיבור 'המשך' ממשיכה מיד - החיבורים האחרים לא יופעלו", node_id=nid))
+
+    f_errs, f_warns = _validate_fields(graph, edges)
+    errors.extend(f_errs)
+    warnings.extend(f_warns)
 
     # Entry.
     entry = graph.get("entry")
@@ -1270,6 +1364,11 @@ def meta() -> Dict[str, Any]:
         "set_rsvp_values": list(SET_RSVP_VALUES),
         "fields": [{"field": k, "label": v["label"], "type": v["type"]} for k, v in GUEST_FIELDS.items()],
         "custom_field_prefix": CUSTOM_FIELD_PREFIX,
+        "graph_fields": {"types": list(GRAPH_FIELD_TYPES), "max": MAX_GRAPH_FIELDS,
+                         "label_max": GRAPH_FIELD_LABEL_MAX, "min_options": GRAPH_FIELD_MIN_OPTIONS,
+                         "max_options": GRAPH_FIELD_MAX_OPTIONS, "option_max": GRAPH_FIELD_OPTION_MAX,
+                         "note": "graph.fields = [{key, label, type: choice|text, options}]; "
+                                 "set_field custom:<key> creates the event's field on first write"},
         "variables": [{"name": v, "label": VARIABLE_LABELS_HE.get(v, v)} for v in VARIABLES],
         "set_field_variables": list(SET_FIELD_VARS),
         "entry_stages": [

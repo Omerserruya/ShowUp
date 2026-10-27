@@ -23,12 +23,13 @@ export default function GuestQuestionsInsights() {
       try {
         const res = await fetchWithAuth(`/api/events/${eventId}/fields`);
         const fields: QuestionField[] = res.ok ? await res.json() : [];
-        const qs = fields.filter((f) => isGuestQuestion(f) && f.ask_in_rsvp);
+        // Host questions, plus choice fields the conversation flow filled in (e.g. shuttle).
+        const qs = fields.filter(isGuestQuestion);
         const all = await Promise.all(qs.map(async (q) => {
           const r = await fetchWithAuth(`/api/events/${eventId}/fields/${q.id}/results`);
           return r.ok ? ((await r.json()) as QuestionResults) : null;
         }));
-        if (!off) setResults(all.filter((x): x is QuestionResults => !!x));
+        if (!off) setResults(all.filter((x): x is QuestionResults => !!x && (x.field.ask_in_rsvp || x.total_answered > 0)));
       } catch {
         if (!off) setResults([]);
       }

@@ -77,7 +77,7 @@ SCHEMA = [
     """CREATE TABLE event_field_defs (id UUID PRIMARY KEY, event_id UUID NOT NULL, key VARCHAR(50), label VARCHAR(100),
         data_type VARCHAR(20), options JSON, required BOOLEAN DEFAULT false, applies_to_template BOOLEAN DEFAULT false,
         ask_in_rsvp BOOLEAN NOT NULL DEFAULT false, sort_order INT NOT NULL DEFAULT 0,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT now())""",
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(), CONSTRAINT uq_field_event_key UNIQUE (event_id, key))""",
     """CREATE TABLE guest_custom_values (id UUID PRIMARY KEY, guest_id UUID NOT NULL, field_def_id UUID NOT NULL,
         value JSON, CONSTRAINT uq_value_guest_field UNIQUE (guest_id, field_def_id))""",
     """CREATE TABLE tags (id UUID PRIMARY KEY, account_id UUID NOT NULL, name VARCHAR(50) NOT NULL, color VARCHAR(20),
@@ -499,10 +499,65 @@ async def graph_features():
     await clear_graphs()
 
 
+async def declared_fields():
+    print("== graph.fields: the flow creates the event's field on first write ==")
+    g = {
+        "schema_version": 1,
+        "entry": {"default": "invite"},
+        "fields": [{"key": "shuttle", "label": "הסעות", "type": "choice",
+                    "options": ["סבידור מרכז", "קדימה צורן", "לא צריך"]}],
+        "nodes": [
+            {"id": "invite", "type": "template", "title": "הזמנה", "input": "none", "buttons": []},
+            {"id": "ask_bus", "type": "question", "title": "הסעות", "text": "צריכים הסעה?", "input": "buttons",
+             "buttons": [{"id": "b1", "label": "סבידור מרכז"}, {"id": "b2", "label": "קדימה צורן"},
+                         {"id": "b3", "label": "לא צריך"}]},
+            {"id": "bye", "type": "end", "title": "סוף", "text": "תודה!", "input": "none", "buttons": []},
+        ],
+        "edges": [
+            {"id": "f1", "from": "invite", "to": "ask_bus", "when": {"kind": "rsvp", "value": "confirmed"},
+             "actions": [{"type": "set_rsvp", "value": "confirmed"}]},
+            {"id": "f2", "from": "ask_bus", "to": "bye", "when": {"kind": "button", "button_id": "b1"},
+             "actions": [{"type": "set_field", "field": "custom:shuttle", "value": "סבידור מרכז"}]},
+            {"id": "f3", "from": "ask_bus", "to": "bye", "when": {"kind": "button", "button_id": "b2"},
+             "actions": [{"type": "set_field", "field": "custom:shuttle", "value": "{answer}"}]},
+            {"id": "f4", "from": "ask_bus", "to": "bye", "when": {"kind": "button", "button_id": "b3"},
+             "actions": [{"type": "set_field", "field": "custom:shuttle", "value": "לא צריך"}]},
+        ],
+    }
+    v = fg.validate_graph(g)
+    check("graph with fields validates", not v["errors"] and not v["warnings"], v)
+    bad = dict(g, fields=[{"key": "shuttle", "label": "הסעות", "type": "choice", "options": ["רק אחת"]}])
+    check("choice field needs 2+ answers", any(e["code"] == "bad_option" for e in fg.validate_graph(bad)["errors"]))
+    warn = fg.validate_graph(dict(g, edges=g["edges"][:1] + [dict(g["edges"][1], actions=[
+        {"type": "set_field", "field": "custom:shuttle", "value": "רכבת"}])] + g["edges"][2:]))
+    check("literal value outside the answers warns", any(w["code"] == "value_not_option" for w in warn["warnings"]))
+
+    await put_graph(g, enabled=True)
+    await reset()
+    await exec_sql("DELETE FROM event_field_defs")
+    sent.clear()
+    await inbound(CONFIRM)
+    check("confirm -> shuttle question", (await snapshot())["state"] == "ask_bus" and sent
+          and sent[-1].get("interactive", {}).get("type") == "button", sent)
+    await inbound(("tap", "קדימה צורן", "ask_bus__BTN_2"))
+    defs = await q_all("SELECT key, label, data_type, options::text, ask_in_rsvp FROM event_field_defs")
+    check("event field created from graph.fields", len(defs) == 1 and defs[0][:3] == ("shuttle", "הסעות", "enum")
+          and json.loads(defs[0][3]) == ["סבידור מרכז", "קדימה צורן", "לא צריך"] and defs[0][4] is False, defs)
+    vals = await q_all("SELECT v.value::text FROM guest_custom_values v JOIN event_field_defs f ON f.id = v.field_def_id "
+                       "WHERE f.key = 'shuttle'")
+    check("answer stored in the field", vals == [('"קדימה צורן"',)] and (await snapshot())["state"] == "bye", vals)
+    await exec_sql("UPDATE conversations SET current_state = 'ask_bus'")
+    await inbound(("tap", "סבידור מרכז", "ask_bus__BTN_1"))
+    n_defs = await q_all("SELECT count(*) FROM event_field_defs")
+    vals = await q_all("SELECT v.value::text FROM guest_custom_values v")
+    check("second answer reuses the field", n_defs == [(1,)] and vals == [('"סבידור מרכז"',)], (n_defs, vals))
+
+
 async def main():
     await setup()
     await equivalence()
     await graph_features()
+    await declared_fields()
     await engine.dispose()
 
 

@@ -19,6 +19,8 @@ import {
   MAX_NODES, addRuleTo, buildTree, cloneEntrySubtree, reachableFrom, unconnectedNodes, visibleEdges,
   type CategoryTree, type TreeBlock,
 } from './simpleTree';
+import FieldsPanel from './FieldsPanel';
+import { fieldQuestion, graphFields } from './fields';
 import { MessageBlock, SIMPLE_CSS, SimpleCtx, blockDomId, nestKey, rowDomId, type SimpleCtxValue } from './SimpleMessageBlock';
 
 export interface FocusRequest { kind: 'node' | 'edge'; id: string; nonce: number }
@@ -209,6 +211,18 @@ export default function SimpleFlowEditor({ graph, meta, errors, warns, simNodeId
       pendingScroll.current = { dom: blockDomId(stage, n.id), stage };
       flash(`node:${n.id}`);
     },
+    newFieldQuestion: (fromId, fieldKey, link, edgeId, then) => {
+      const f = graphFields(graph).find((x) => x.key === fieldKey);
+      if (!f) return;
+      if (graph.nodes.length >= MAX_NODES) { setNotice(`אפשר עד ${MAX_NODES} הודעות בשיחה אחת.`); return; }
+      const id = uid('n');
+      const ids = { edge: () => uid('e'), button: () => uid('b') };
+      setGraph((g) => link(id)(fieldQuestion(g, f, id, ids, then, g.nodes.find((x) => x.id === fromId))));
+      if (edgeId) setCollapsed((c) => ({ ...c, [nestKey(stage, edgeId)]: false }));
+      pendingScroll.current = { dom: blockDomId(stage, id), stage };
+      flash(`node:${id}`);
+      setNotice(then ? `נוצרה שאלה על "${f.label}". כל תשובה נשמרת בשדה, ואחריה השיחה ממשיכה כמו קודם.` : `נוצרה שאלה על "${f.label}". כל תשובה נשמרת בשדה.`);
+    },
     isCollapsed, toggle, jumpTo, jumpToEdge,
   };
 
@@ -242,6 +256,7 @@ export default function SimpleFlowEditor({ graph, meta, errors, warns, simNodeId
     <SimpleCtx.Provider value={ctx}>
       <style>{SIMPLE_CSS}</style>
       <div className="sfe-root" dir="rtl">
+        <FieldsPanel graph={graph} setGraph={setGraph} jumpToEdge={jumpToEdge} />
         <div className="sfe-tabs" role="tablist" aria-label="קטגוריות">
           {STAGES.map((s) => (
             <button key={s} type="button" role="tab" aria-selected={stage === s} className={`sfe-tab${stage === s ? ' on' : ''}`} onClick={() => setStage(s)}>

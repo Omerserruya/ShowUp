@@ -66,11 +66,23 @@ export interface FlowEdge {
   priority?: number;
 }
 
+/**
+ * A flow-level extra field ("שדות נוספים", e.g. shuttle). Rules write it with
+ * set_field `custom:<key>`; the worker creates the event's field on first write.
+ */
+export interface GraphField {
+  key: string;
+  label: string;
+  type: 'choice' | 'text';
+  options: string[];
+}
+
 export interface FlowGraph {
   schema_version: number;
   entry: Partial<Record<Stage, string>>;
   nodes: FlowNode[];
   edges: FlowEdge[];
+  fields?: GraphField[];
 }
 
 export type Scope = 'global' | 'event_type' | 'event';
