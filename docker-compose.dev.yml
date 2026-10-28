@@ -546,6 +546,42 @@ services:
       core-service:
         condition: service_started
 
+  voice-service:
+    <<: *defaults
+    build:
+      context: .
+      dockerfile: voice-service/Dockerfile
+    environment:
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+      - SENTRY_RELEASE=${SENTRY_RELEASE:-}
+      - PORT=8090
+      - DB_HOST=postgres
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - JWT_SECRET=${JWT_SECRET}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
+      # Automated RSVP phone calls. Without these the service runs but never dials.
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-}
+      - TWILIO_FROM_NUMBER=${TWILIO_FROM_NUMBER:-}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY:-}
+      - ELEVENLABS_VOICE_ID=${ELEVENLABS_VOICE_ID:-}
+      - VOICE_NAME=${VOICE_NAME:-Nimrod}
+      - VOICE_MAX_CONCURRENT=${VOICE_MAX_CONCURRENT:-5}
+      - VOICE_RETRY_MINUTES=${VOICE_RETRY_MINUTES:-120}
+      - VOICE_CALL_ROUNDS_JSON=${VOICE_CALL_ROUNDS_JSON:-}
+    volumes:
+      - voicedata:/data/clips
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=4)"]
+      <<: *hc-timing
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   webhook-worker:
     <<: *defaults
     build:
@@ -583,5 +619,6 @@ networks:
     driver: bridge
 volumes:
   pgdata:
+  voicedata:
   redisdata:
   rabbitmqdata:

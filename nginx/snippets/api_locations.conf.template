@@ -249,6 +249,19 @@
         include /etc/nginx/snippets/proxy_headers.conf;
     }
 
+    # ---- Automated RSVP phone calls (Twilio -> voice-service) ------------------
+    # Twilio webhooks (/twilio/*, signature-checked by the service), the audio
+    # clips Twilio plays (/clips/*), and the admin API (/admin/*, admin JWT).
+    # Resolved at request time so nginx still starts when voice-service is down.
+    location /api/voice/ {
+        limit_req zone=api_general burst=100 nodelay;
+        resolver 127.0.0.11 valid=30s ipv6=off;
+        set $voice_upstream http://voice-service:8090;
+        rewrite ^/api/voice(/.*)$ $1 break;
+        proxy_pass $voice_upstream;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+
     # ---- WhatsApp webhook (Meta -> webhook-hendler) -------------------------
     # Not rate limited: Meta bursts delivery receipts during campaigns and a
     # 429 makes it retry (and eventually disable the webhook).
