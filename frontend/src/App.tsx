@@ -16,6 +16,7 @@ import Guests from './pages/Guests';
 import Messages from './pages/Messages';
 import Recap from './pages/Recap';
 import Seating from './pages/Seating';
+import HostessMode from './pages/HostessMode';
 import SeatingList from './pages/SeatingList';
 import useViewportWidth from './design/useViewport';
 
@@ -71,6 +72,8 @@ function App() {
                 <Route path="/" element={<MarketingPage />} />
         {/* Public web invitation + open-form RSVP (no auth, no Layout) */}
         <Route path="/i/:slug" element={<PublicInvitation />} />
+        {/* Entrance hostess mode for venue staff (no auth - the link is the credential) */}
+        <Route path="/hostess/:token" element={<HostessMode />} />
         {/* Public no-auth demo invitation (landing-page demo CTA target) */}
         <Route path="/demo/invite" element={<DemoInvite />} />
         {/* Public entitlement redemption link (works logged-out) */}

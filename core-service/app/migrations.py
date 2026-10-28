@@ -900,6 +900,7 @@ def apply_schema_patches(engine: Engine) -> list:
         ensure_conversation_flow_configs,
         ensure_flow_graphs,
         ensure_custom_templates,
+        ensure_hostess,
     )
     failed = []
     for patch in patches:
@@ -1031,6 +1032,47 @@ def ensure_custom_templates(engine: Engine) -> None:
         "CREATE INDEX IF NOT EXISTS ix_custom_templates_status ON custom_templates (meta_status)",
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_custom_templates_meta_name ON custom_templates (meta_name) "
         "WHERE meta_name IS NOT NULL",
+    ]
+    with engine.begin() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))
+
+
+def ensure_hostess(engine: Engine) -> None:
+    """Entrance hostess mode (app/routers/hostess.py).
+
+    `hostess_links`: one shareable link per event - possession of the token is
+    the credential (venue staff have no account). `guest_checkins`: who arrived,
+    how many and where they sat. guest_id NULL = a walk-in who was never on the
+    list; kept out of `guests` so walk-ins never reach a WhatsApp audience.
+    """
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS hostess_links (
+            event_id UUID PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+            token VARCHAR(64) NOT NULL UNIQUE,
+            created_by UUID,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS guest_checkins (
+            id UUID PRIMARY KEY,
+            event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+            guest_id UUID REFERENCES guests(id) ON DELETE CASCADE,
+            name VARCHAR(100),
+            guest_group VARCHAR(100),
+            note TEXT,
+            arrived_count INTEGER NOT NULL CHECK (arrived_count > 0),
+            table_number INTEGER,
+            arrived_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT ck_checkin_walkin_name CHECK (guest_id IS NOT NULL OR name IS NOT NULL)
+        )
+        """,
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_guest_checkins_guest ON guest_checkins (guest_id) "
+        "WHERE guest_id IS NOT NULL",
+        "CREATE INDEX IF NOT EXISTS ix_guest_checkins_event ON guest_checkins (event_id)",
     ]
     with engine.begin() as conn:
         for stmt in statements:

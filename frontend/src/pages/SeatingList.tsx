@@ -5,6 +5,7 @@ import { useEvent } from '../contexts/EventContext';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
 import { Btn, Ms, EmptyNote, initialsOf } from '../components/v6/ui';
 import type { GuestRow } from '../adapters/eventSnapshot';
+import EntrancePanel from '../components/v6/EntrancePanel';
 
 /**
  * Seating as a list with fill bars (Mobile Flows 05): no hall map on a phone.
@@ -70,6 +71,7 @@ export default function SeatingList() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <EntrancePanel eventId={selectedEvent?.id} />
       {s.unseated.length > 0 && (
         <>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', borderRadius: 14, background: C.tintApp, border: `1.5px solid ${C.tintBorder}`, color: C.purpleDark, fontSize: 14, lineHeight: 1.5 }}>

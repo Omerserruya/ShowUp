@@ -65,6 +65,7 @@ import { Guest, Table, statusColors, statusLabels } from '../mocks/guestData';
 import { useEvent } from '../contexts/EventContext';
 import { useGuests } from '../hooks/useOverviewData';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
+import EntrancePanel from '../components/v6/EntrancePanel';
 
 // Map API guest to seating Guest (count = guest_count ?? import_count for capacity)
 function mapGuestFromAPI(apiGuest: any): Guest {
@@ -1070,6 +1071,9 @@ export default function Seating() {
       display: 'flex',
       flexDirection: 'column'
     }}>
+      <Box sx={{ mb: 1.5, flex: 'none' }}>
+        <EntrancePanel eventId={selectedEvent?.id} />
+      </Box>
       {/* Canvas Area - Fill Available Space */}
       <Box sx={{
         flex: 1,

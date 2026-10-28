@@ -398,6 +398,48 @@ def download_import_template(
     )
 
 
+@router.get("/export/seating")
+def export_for_venue_seating(
+    event_id: uuid.UUID = Query(...),
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Excel for the venue's seating system (iPlan and similar), whose own
+    entrance app (iPlan Hostess) syncs from there - iPlan has no public API.
+    Confirmed invitations only, one row per invitation with its party size."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from shared.domain.hostess import SEATING_EXPORT_HEADERS, seating_export_rows
+
+    _authorize_event(db, event_id, user_id, Action.GUEST_READ)
+    guests = db.query(Guest).filter(Guest.event_id == event_id).all()
+    rows = seating_export_rows(guests)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "הושבה"
+    ws.sheet_view.rightToLeft = True
+    ws.append(SEATING_EXPORT_HEADERS)
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="5A3DA6")
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+    for r in rows:
+        ws.append(r)
+    widths = [24, 14, 16, 14, 16, 12, 12, 30]
+    for i, w in enumerate(widths):
+        ws.column_dimensions[chr(ord("A") + i)].width = w
+    ws.freeze_panes = "A2"
+
+    out = io.BytesIO()
+    wb.save(out)
+    return Response(
+        content=out.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="seating_for_venue.xlsx"'},
+    )
+
+
 @router.get("/export")
 def export_guests(
     event_id: uuid.UUID = Query(...),
