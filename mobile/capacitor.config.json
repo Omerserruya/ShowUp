@@ -1,0 +1,38 @@
+{
+  "appId": "com.showuprsvp.app",
+  "appName": "ShowUp",
+  "webDir": "www",
+  "server": {
+    "url": "https://showup-rsvp.com/overview",
+    "androidScheme": "https",
+    "allowNavigation": [
+      "showup-rsvp.com",
+      "*.showup-rsvp.com",
+      "icount.co.il",
+      "*.icount.co.il"
+    ]
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1200,
+      "backgroundColor": "#F7F3EC",
+      "showSpinner": false
+    },
+    "PushNotifications": {
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "alert"
+      ]
+    },
+    "StatusBar": {
+      "backgroundColor": "#F7F3EC",
+      "style": "LIGHT",
+      "overlaysWebView": false
+    }
+  },
+  "appendUserAgent": "ShowUpApp/1.0"
+}
