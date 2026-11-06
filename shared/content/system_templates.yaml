@@ -35,7 +35,7 @@ templates:
       {{1}} הזמין/ה אותך להצטרף לצוות של "{{2}}" ב-ShowUp, בתפקיד {{3}}.
 
       נכנסים עם מספר הטלפון הזה - והאירוע כבר מחכה לך בפנים:
-      https://app.showup.co.il/login
+      https://showup-rsvp.com/login
 
       נתראה שם! 💜
 
@@ -142,3 +142,24 @@ templates:
       {{3}}
 
       את כל הפרטים אפשר לראות באפליקציה של ShowUp.
+
+  lead_alert:
+    # To every ShowUp ADMIN (users.role = admin) when a landing-page visitor asks
+    # for a sample WhatsApp message or a sample call (shared/domain/leads.py).
+    # Queued in owner_notifications, at most once a day per lead phone.
+    meta:
+      name: lead_alert
+      category: UTILITY
+    language: he
+    params:
+      "1": lead name
+      "2": lead phone (local, 05X-...)
+      "3": what they asked for (הודעת בדיקה בוואטסאפ / שיחת בדיקה)
+    body: |-
+      פנייה חדשה באתר ShowUp 🔔
+
+      שם: {{1}}
+      טלפון: {{2}}
+      ביקש/ה: {{3}}
+
+      כל הפניות מחכות במסך "פניות" בניהול המערכת.

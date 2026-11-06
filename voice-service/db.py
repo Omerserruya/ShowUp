@@ -10,18 +10,24 @@ from __future__ import annotations
 
 import os
 from contextlib import contextmanager
+from datetime import timedelta
 from typing import Any, Dict, Iterator, List, Optional
 
+import logging
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
 
 from shared.domain import voice_calls as vc
+from shared.domain.delivery import RETRY_LATER_CODES, RETRY_LATER_MAX
 from shared.domain.enums import GuestStatus
 from shared.domain.flow_graph import RSVP_DB_VALUE
 from shared.domain.optout import OPT_OUT_SQL_PREDICATE
 
 _pool: Optional[psycopg2.pool.ThreadedConnectionPool] = None
+
+# Who a phone round calls: still undecided - no answer yet, or answered "maybe".
+CALL_STATUSES = sorted(GuestStatus.pending_values() | GuestStatus.maybe_values())
 
 
 def _dsn() -> str:
@@ -105,6 +111,14 @@ CREATE TABLE IF NOT EXISTS voice_kv (
     v text NOT NULL,
     updated_at timestamptz NOT NULL DEFAULT now()
 );
+-- Automatic rounds (round_plan.call_rounds): created ahead of time, the guest
+-- list is taken when the round STARTS (populated=false until then), and they
+-- follow the event date until the owner moves one by hand (auto=false).
+ALTER TABLE voice_rounds ADD COLUMN IF NOT EXISTS auto boolean NOT NULL DEFAULT false;
+ALTER TABLE voice_rounds ADD COLUMN IF NOT EXISTS populated boolean NOT NULL DEFAULT true;
+ALTER TABLE voice_event_settings ADD COLUMN IF NOT EXISTS auto_planned_for timestamptz;
+-- a guest calling our number back (inbound) vs. a call we placed
+ALTER TABLE voice_calls ADD COLUMN IF NOT EXISTS direction text NOT NULL DEFAULT 'outbound';
 """
 
 # Call statuses: queued -> preparing -> dialing -> in_progress -> done
@@ -165,23 +179,35 @@ def rounds_used(event_id: str) -> int:
 # ---- audience ------------------------------------------------------------------------
 
 def _pending_guests_sql() -> str:
-    # Same "no response yet" rule as the WhatsApp reminders (campaign-worker
-    # audience.py NO_RESPONSE): pending status, a phone, not opted out, and not
-    # tagged no_reminders by the conversation flow.
+    # Guests still undecided: no answer yet OR answered "maybe" (like the
+    # WhatsApp follow-up rounds), with a phone, not opted out, and not tagged
+    # no_reminders by the conversation flow.
     return f"""
-        SELECT g.id, g.name, g.phone FROM guests g
+        SELECT g.id, g.name, g.phone,
+               EXISTS (SELECT 1 FROM messages_sent ms WHERE ms.guest_id = g.id AND ms.status = 'failed'
+                       AND ms.error_code = ANY(%s) AND ms.retry_count >= %s) AS wa_blocked
+        FROM guests g
         WHERE g.event_id = %s AND g.phone IS NOT NULL AND g.phone <> ''
           AND {OPT_OUT_SQL_PREDICATE}
           AND g.status = ANY(%s)
           AND NOT EXISTS (SELECT 1 FROM guest_tags gtn JOIN tags tn ON tn.id = gtn.tag_id
                           WHERE gtn.guest_id = g.id AND tn.name = 'no_reminders')
-        ORDER BY g.name
+        ORDER BY wa_blocked DESC, g.name
     """
+
+
+def _pending_args(event_id: str) -> tuple:
+    return (list(RETRY_LATER_CODES), RETRY_LATER_MAX, event_id, CALL_STATUSES)
+
+
+# Guests WhatsApp could not reach even after the retry (Meta's per-user marketing
+# cap) are dialled first: queued a minute earlier, and claim_due orders by next_at.
+BLOCKED_HEAD_START = timedelta(minutes=1)
 
 
 def pending_guests(event_id: str) -> List[Dict[str, Any]]:
     with tx() as cur:
-        cur.execute(_pending_guests_sql(), (event_id, list(GuestStatus.pending_values())))
+        cur.execute(_pending_guests_sql(), _pending_args(event_id))
         return list(cur.fetchall())
 
 
@@ -198,7 +224,8 @@ def create_round(event_id: str, start_at, created_by: Optional[str], guests: Lis
                 continue
             cur.execute("INSERT INTO voice_calls (round_id, event_id, guest_id, phone, guest_name, next_at) "
                         "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
-                        (rnd["id"], event_id, g["id"], phone, g.get("name"), start_at))
+                        (rnd["id"], event_id, g["id"], phone, g.get("name"),
+                         start_at - BLOCKED_HEAD_START if g.get("wa_blocked") else start_at))
             n += cur.rowcount
         cur.execute("UPDATE voice_rounds SET total = %s WHERE id = %s", (n, rnd["id"]))
         rnd["total"] = n
@@ -213,10 +240,33 @@ def create_test_call(phone: str, name: str, context: Dict[str, Any], event_id: O
         return cur.fetchone()
 
 
+def record_demo_lead(name: str, phone: str, ip_hash: str, user_agent: Optional[str]) -> None:
+    """Admin "פניות" list + WhatsApp alert. Never blocks the demo call."""
+    from shared.domain.leads import record_lead
+    try:
+        with tx() as cur:
+            record_lead(cur, "call", name, phone, ip_hash=ip_hash, user_agent=user_agent)
+    except Exception:  # pragma: no cover
+        logging.getLogger("voice").exception("demo lead not recorded")
+
+
+def demo_usage(phone: str, ip_hash: str) -> Dict[str, int]:
+    """Landing-page sample calls already requested (rate limits)."""
+    with tx() as cur:
+        cur.execute("""SELECT
+              count(*) FILTER (WHERE phone = %s AND created_at > now() - interval '1 day')  AS phone_day,
+              count(*) FILTER (WHERE phone = %s AND created_at > now() - interval '7 days') AS phone_week,
+              count(*) FILTER (WHERE test_context->>'ip' = %s AND created_at > now() - interval '1 day') AS ip_day,
+              count(*) FILTER (WHERE created_at > now() - interval '1 day') AS all_day
+            FROM voice_calls WHERE is_test AND direction = 'outbound' AND (test_context->>'demo')::boolean IS TRUE
+              AND created_at > now() - interval '7 days'""", (phone, phone, ip_hash))
+        return {k: int(v or 0) for k, v in cur.fetchone().items()}
+
+
 def list_rounds(event_id: str) -> List[Dict[str, Any]]:
     with tx() as cur:
         cur.execute("""
-            SELECT r.id, r.status, r.start_at, r.total, r.created_at, r.finished_at,
+            SELECT r.id, r.status, r.start_at, r.total, r.created_at, r.finished_at, r.auto, r.populated,
                    count(c.*) FILTER (WHERE c.result = 'confirmed') AS confirmed,
                    count(c.*) FILTER (WHERE c.result = 'declined') AS declined,
                    count(c.*) FILTER (WHERE c.result = 'maybe') AS maybe,
@@ -226,7 +276,7 @@ def list_rounds(event_id: str) -> List[Dict[str, Any]]:
                    coalesce(sum(c.duration_sec), 0) AS seconds,
                    coalesce(sum(c.price), 0) AS price
             FROM voice_rounds r LEFT JOIN voice_calls c ON c.round_id = r.id
-            WHERE r.event_id = %s GROUP BY r.id ORDER BY r.created_at DESC""", (event_id,))
+            WHERE r.event_id = %s GROUP BY r.id ORDER BY r.start_at""", (event_id,))
         return list(cur.fetchall())
 
 
@@ -248,10 +298,95 @@ def get_call(call_id: str) -> Optional[Dict[str, Any]]:
 
 # ---- dialer --------------------------------------------------------------------------
 
-def start_due_rounds() -> int:
+def start_due_rounds(phone_of=None) -> int:
+    """Start due rounds. A round created ahead of time takes its guest list NOW
+    - whoever still has not answered - so guests added or answering in the
+    meantime are handled correctly. A round with nobody left to call ends."""
     with tx() as cur:
-        cur.execute("UPDATE voice_rounds SET status = 'running' WHERE status = 'scheduled' AND start_at <= now()")
-        return cur.rowcount
+        cur.execute("SELECT id, event_id, populated FROM voice_rounds WHERE status = 'scheduled' AND start_at <= now() "
+                    "FOR UPDATE SKIP LOCKED")
+        due = list(cur.fetchall())
+        for r in due:
+            if not r["populated"]:
+                cur.execute(_pending_guests_sql(), _pending_args(str(r["event_id"])))
+                n = 0
+                for g in cur.fetchall():
+                    phone = phone_of(g["phone"]) if phone_of else g["phone"]
+                    if not phone:
+                        continue
+                    cur.execute("INSERT INTO voice_calls (round_id, event_id, guest_id, phone, guest_name, next_at) "
+                                "VALUES (%s, %s, %s, %s, %s, now() - %s) ON CONFLICT DO NOTHING",
+                                (r["id"], r["event_id"], g["id"], phone, g.get("name"),
+                                 BLOCKED_HEAD_START if g.get("wa_blocked") else timedelta(0)))
+                    n += cur.rowcount
+                if n == 0:
+                    cur.execute("UPDATE voice_rounds SET status = 'done', populated = true, total = 0, "
+                                "finished_at = now() WHERE id = %s", (r["id"],))
+                    continue
+                cur.execute("UPDATE voice_rounds SET populated = true, total = %s WHERE id = %s", (n, r["id"]))
+            cur.execute("UPDATE voice_rounds SET status = 'running' WHERE id = %s", (r["id"],))
+        return len(due)
+
+
+# ---- automatic / owner-scheduled rounds ------------------------------------------------
+
+def auto_plan_candidates() -> List[Dict[str, Any]]:
+    """Live events with a future date whose automatic call plan is missing or
+    was made for a different date."""
+    with tx() as cur:
+        cur.execute("""
+            SELECT e.id, e.event_type, e.plan_id, e.event_date, s.enabled AS override, s.auto_planned_for
+            FROM events e LEFT JOIN voice_event_settings s ON s.event_id = e.id
+            WHERE e.event_date > now() + interval '1 day' AND coalesce(e.state, 'active') = 'active'
+              AND (s.auto_planned_for IS NULL OR s.auto_planned_for <> e.event_date)""")
+        return list(cur.fetchall())
+
+
+def replace_auto_rounds(event_id: str, event_date, starts: List[Any], allowed: int) -> int:
+    """Drop not-yet-started automatic rounds and plan new ones, within what is
+    left of the allowance. Rounds the owner set by hand are kept."""
+    with tx() as cur:
+        cur.execute("DELETE FROM voice_rounds WHERE event_id = %s AND auto AND status = 'scheduled' AND NOT populated",
+                    (event_id,))
+        cur.execute("SELECT max(start_at) AS last, count(*) AS n FROM voice_rounds "
+                    "WHERE event_id = %s AND status <> 'canceled'", (event_id,))
+        row = cur.fetchone()
+        left = max(0, allowed - int(row["n"] or 0))
+        made = 0
+        for at in starts:
+            if made >= left:
+                break
+            if row["last"] is not None and at <= row["last"]:
+                continue
+            cur.execute("INSERT INTO voice_rounds (event_id, start_at, auto, populated) VALUES (%s, %s, true, false)",
+                        (event_id, at))
+            made += 1
+        cur.execute("INSERT INTO voice_event_settings (event_id, auto_planned_for) VALUES (%s, %s) "
+                    "ON CONFLICT (event_id) DO UPDATE SET auto_planned_for = EXCLUDED.auto_planned_for, "
+                    "updated_at = now()", (event_id, event_date))
+        return made
+
+
+def add_round(event_id: str, start_at, created_by: Optional[str]) -> Dict[str, Any]:
+    with tx() as cur:
+        cur.execute("INSERT INTO voice_rounds (event_id, start_at, created_by, auto, populated) "
+                    "VALUES (%s, %s, %s, false, false) RETURNING id, event_id, status, start_at",
+                    (event_id, start_at, created_by))
+        return cur.fetchone()
+
+
+def get_round(round_id: str) -> Optional[Dict[str, Any]]:
+    with tx() as cur:
+        cur.execute("SELECT * FROM voice_rounds WHERE id = %s", (round_id,))
+        return cur.fetchone()
+
+
+def move_round(round_id: str, start_at) -> bool:
+    """Move a round that has not started; it stops following the event date."""
+    with tx() as cur:
+        cur.execute("UPDATE voice_rounds SET start_at = %s, auto = false WHERE id = %s AND status = 'scheduled' "
+                    "AND NOT populated", (start_at, round_id))
+        return cur.rowcount == 1
 
 
 def active_count() -> int:
@@ -281,7 +416,7 @@ def claim_due(limit: int, in_window: bool) -> List[Dict[str, Any]]:
 def guest_still_pending(guest_id: str) -> bool:
     with tx() as cur:
         cur.execute(f"SELECT 1 FROM guests g WHERE g.id = %s AND g.status = ANY(%s) AND {OPT_OUT_SQL_PREDICATE}",
-                    (guest_id, list(GuestStatus.pending_values())))
+                    (guest_id, CALL_STATUSES))
         return cur.fetchone() is not None
 
 
@@ -306,8 +441,17 @@ def mark_canceled(call_id: str, reason: str) -> None:
 
 def mark_in_progress(call_id: str, answered_by: Optional[str]) -> None:
     with tx() as cur:
-        cur.execute("UPDATE voice_calls SET status = 'in_progress', answered_by = %s, updated_at = now() "
+        cur.execute("UPDATE voice_calls SET status = 'in_progress', answered_by = coalesce(%s, answered_by), "
+                    "updated_at = now() "
                     "WHERE id = %s AND status IN ('dialing', 'in_progress')", (answered_by, call_id))
+
+
+def set_answered_by(call_id: str, answered_by: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Async AMD verdict. Returns the row (digits tell whether a human already pressed)."""
+    with tx() as cur:
+        cur.execute("UPDATE voice_calls SET answered_by = %s, updated_at = now() WHERE id = %s "
+                    "RETURNING id, digits, result, twilio_sid", (answered_by, call_id))
+        return cur.fetchone()
 
 
 def record_digits(call_id: str, digits: str) -> None:
@@ -348,7 +492,7 @@ def finish_call(sid: str, call_status: str, answered_by: Optional[str], duration
         if result is None:
             result = vc.CallResult.NO_INPUT if (call_status or "").lower() == "completed" else vc.CallResult.FAILED
         retry = (c["result"] is None and result in vc.CallResult.RETRYABLE
-                 and c["attempt"] < max_attempts and not c["is_test"])
+                 and c["attempt"] < max_attempts and not c["is_test"] and c["direction"] == "outbound")
         if retry:
             cur.execute("UPDATE voice_calls SET status = 'queued', next_at = now() + make_interval(mins => %s), "
                         "answered_by = coalesce(%s, answered_by), duration_sec = coalesce(duration_sec, 0) + coalesce(%s, 0), "
@@ -386,3 +530,65 @@ def reap_stale(minutes: int = 15) -> int:
                     "WHERE status = ANY(%s) AND updated_at < now() - make_interval(mins => %s)",
                     (list(ACTIVE), minutes))
         return cur.rowcount
+
+
+# ---- calls back to our number ----------------------------------------------------------
+
+INBOUND_LOOKBACK_DAYS = 14
+
+
+def _phone_forms(e164_phone: str) -> List[str]:
+    """How a guest phone may be stored: +972..., 972..., 0... (canonical is +972)."""
+    d = e164_phone.lstrip("+")
+    forms = [e164_phone, d]
+    if d.startswith("972"):
+        forms.append("0" + d[3:])
+    return forms
+
+
+def recent_outbound_call(e164_phone: str) -> Optional[Dict[str, Any]]:
+    """The last call we placed to this number in the lookback window - a call back
+    is almost always about it. A guest call only counts while its event is ahead."""
+    with tx() as cur:
+        cur.execute("""
+            SELECT c.* FROM voice_calls c LEFT JOIN events e ON e.id = c.event_id
+            WHERE c.phone = %s AND c.direction = 'outbound'
+              AND c.created_at > now() - make_interval(days => %s)
+              AND (c.is_test OR (c.guest_id IS NOT NULL AND e.event_date > now() - interval '12 hours'))
+            ORDER BY c.created_at DESC LIMIT 1""", (e164_phone, INBOUND_LOOKBACK_DAYS))
+        return cur.fetchone()
+
+
+def guest_invitations(e164_phone: str, limit: int) -> List[Dict[str, Any]]:
+    """This number's invitations to events that are still ahead, soonest first."""
+    with tx() as cur:
+        cur.execute(f"""
+            SELECT g.id AS guest_id, g.name AS guest_name, g.event_id
+            FROM guests g JOIN events e ON e.id = g.event_id
+            WHERE g.phone = ANY(%s) AND e.event_date > now() - interval '12 hours' AND {OPT_OUT_SQL_PREDICATE}
+            ORDER BY e.event_date LIMIT %s""", (_phone_forms(e164_phone), limit))
+        return list(cur.fetchall())
+
+
+def get_invitation(guest_id: str) -> Optional[Dict[str, Any]]:
+    with tx() as cur:
+        cur.execute("SELECT g.id AS guest_id, g.name AS guest_name, g.event_id FROM guests g WHERE g.id = %s",
+                    (guest_id,))
+        return cur.fetchone()
+
+
+def create_inbound_call(sid: str, phone: str, *, guest_id: Optional[str], event_id: Optional[str],
+                        guest_name: str, is_test: bool, test_context: Optional[Dict[str, Any]],
+                        opening_clip: str, tone: str) -> Dict[str, Any]:
+    """The row for a call back, already answered (in_progress): the keypad
+    answer and Twilio's final status settle it like any other call."""
+    with tx() as cur:
+        cur.execute("""
+            INSERT INTO voice_calls (phone, guest_id, event_id, guest_name, is_test, test_context, status,
+                                     attempt, twilio_sid, opening_clip, tone, direction, answered_by)
+            VALUES (%s, %s, %s, %s, %s, %s, 'in_progress', 1, %s, %s, %s, 'inbound', 'human')
+            RETURNING *""",
+                    (phone, guest_id, event_id, guest_name, is_test,
+                     psycopg2.extras.Json(test_context) if test_context is not None else None,
+                     sid, opening_clip, tone))
+        return cur.fetchone()

@@ -39,7 +39,7 @@ SCHEMA = [
     "DROP TABLE IF EXISTS guest_custom_values, event_field_defs, messages_sent, campaigns, guests, events, "
     "inbound_seen, inbound_pending_choice, messages_log, conversations CASCADE",
     """CREATE TABLE events (id UUID PRIMARY KEY, name TEXT, event_date TIMESTAMPTZ, location TEXT,
-        inviters JSON, state TEXT DEFAULT 'active')""",
+        inviters JSON, subjects JSON, state TEXT DEFAULT 'active')""",
     """CREATE TABLE guests (id UUID PRIMARY KEY, event_id UUID, name TEXT, phone TEXT, status TEXT,
         guest_count INT, last_response TIMESTAMP, notes TEXT)""",
     """CREATE TABLE event_field_defs (id UUID PRIMARY KEY, event_id UUID NOT NULL, key VARCHAR(50), label VARCHAR(100),

@@ -47,6 +47,7 @@ class RedeemEventIn(BaseModel):
     event_type: Optional[str] = Field(None, validation_alias="eventType", serialization_alias="eventType")
     inviters: Optional[list[Inviter]] = None
     subjects: Optional[dict] = None
+    terms_version: Optional[str] = Field(None, max_length=20)   # required - see require_terms
 
     class Config:
         populate_by_name = True
@@ -89,6 +90,7 @@ def redeem_entitlement(
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """Consume the entitlement and create its event, owned by the caller."""
+    entitlement_service.require_terms(payload.terms_version)
     try:
         event_crud.validate_future_event_date(payload.event_date)
     except event_crud.EventDateError as e:
@@ -111,6 +113,8 @@ def redeem_entitlement(
             status_code=_REASON_STATUS.get(exc.reason, 409),
             detail={"code": f"entitlement_{exc.reason}"},
         )
+    except entitlement_service.MissingHostNames:
+        raise  # app.main's handler: the shared Hebrew 422
     except entitlement_service.EntitlementError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     event_crud.annotate_venue(db, [event])

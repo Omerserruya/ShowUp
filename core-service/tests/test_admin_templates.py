@@ -151,7 +151,7 @@ def test_validate_preview_variables(client, admin):
     v = client.get("/admin/templates/variables", headers=admin).json()
     names = {x["name"] for x in v["variables"]}
     assert {"guest_name", "event_date", "invitation_link"} <= names
-    assert {u["name"] for u in v["url_vars"]} == {"invitation_link", "rsvp_link", "nav_link"}
+    assert {u["name"] for u in v["url_vars"]} == {"invitation_link", "rsvp_link", "nav_link", "gift_link", "calendar_link"}
 
 
 def test_submit_sync_live_and_versioned_resubmit(client, admin, db):
@@ -305,3 +305,29 @@ def test_duplicate_from_catalog_system_custom(client, admin):
     assert r.json()["group"] == "flow" and r.json()["title"].endswith("(עותק)")
     assert client.post("/admin/templates/duplicate", json={"source": "catalog", "source_key": "nope"},
                        headers=admin).status_code == 404
+
+
+def test_meta_status_webhook_refreshes_custom_and_catalog(client, admin, db, monkeypatch):
+    """Meta's message_template_status_update (forwarded by webhook-hendler) makes
+    an approval live without anyone pressing "רענן"; internal secret required."""
+    monkeypatch.setenv("INTERNAL_API_SECRET", "s3cret")
+    _create(client, admin)
+    assert client.post("/admin/templates/garden_invite/submit", json={}, headers=admin).status_code == 200
+    FakeMeta.statuses["garden_invite"] = "APPROVED"
+    url = "/internal/meta/template-status"
+    assert client.post(url, json={"name": "garden_invite"}).status_code == 403
+    r = client.post(url, json={"name": "garden_invite", "event": "APPROVED"}, headers={"X-Internal-Secret": "s3cret"})
+    assert r.status_code == 200 and r.json()["updated"] == ["custom:garden_invite"], r.text
+    v = client.get("/admin/templates/garden_invite", headers=admin).json()
+    assert v["meta_status"] == "approved" and v["live"]["status"] == "approved"
+
+    # a catalog template is matched by its published Meta name
+    from shared.domain.messaging import published_name, select_templates
+    t = next(t for t in select_templates("all") if t.key == "invitation_funny__wedding")
+    FakeMeta.statuses[published_name(t)] = "REJECTED"
+    r = client.post(url, json={"name": published_name(t)}, headers={"X-Internal-Secret": "s3cret"})
+    assert r.json()["updated"] == ["catalog:invitation_funny__wedding"]
+    st = db.execute(text("SELECT meta_status, rejection_reason FROM messaging_template_state "
+                         "WHERE template_key = 'invitation_funny__wedding'")).first()
+    assert st == ("rejected", "INVALID_FORMAT")
+    assert client.post(url, json={"name": "nobody_knows_me"}, headers={"X-Internal-Secret": "s3cret"}).json() == {"updated": []}

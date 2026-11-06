@@ -8,3 +8,4 @@ PyYAML==6.0.2
 # Payment reconciliation calls aub's internal endpoint (payment_reconciliation.py).
 requests==2.32.3
 sentry-sdk==2.20.0
+google-auth==2.35.0

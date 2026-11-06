@@ -48,7 +48,7 @@ from urllib.parse import quote
 
 from .catalog import (
     Template, MetaMapping, MetaShape, MetaSlot, MetaButton, MetaConfig, DeliveryKind,
-    TemplateCategory, Tone, CtaType, QuickReplyButton, UrlButton,
+    TemplateCategory, Tone, CtaType, QuickReplyButton, UrlButton, Preview,
 )
 from .event_types import EVENT_TYPES
 from .stages import FlowStage, STAGE_ORDER, canonical_stage
@@ -106,10 +106,12 @@ NON_TEXT_VARS = frozenset({"header_image_url", "cover_image"})
 # Link variables a URL button may append as its single trailing `{{1}}`. At send
 # time meta_adapter passes the LAST path segment of the resolved link, so the
 # static base must end right before it.
-_PUBLIC_BASE = os.getenv("PUBLIC_BASE_URL", "https://app.showup.co.il").rstrip("/")
+_PUBLIC_BASE = os.getenv("PUBLIC_BASE_URL", "https://showup-rsvp.com").rstrip("/")
 BUTTON_URL_VARS: Dict[str, Dict[str, str]] = {
     "invitation_link": {"label_he": "דף ההזמנה האישי", "base": f"{_PUBLIC_BASE}/i/", "sample": "demo"},
     "rsvp_link": {"label_he": "דף אישור ההגעה", "base": f"{_PUBLIC_BASE}/r/", "sample": "demo"},
+    "gift_link": {"label_he": "מתנה (ביט / פייבוקס)", "base": f"{_PUBLIC_BASE}/g/", "sample": "demo"},
+    "calendar_link": {"label_he": "הוספה ליומן", "base": f"{_PUBLIC_BASE}/c/", "sample": "demo"},
     "nav_link": {"label_he": "ניווט ב-Waze", "base": "https://www.waze.com/",
                  "sample": "ul?q=" + quote("Tel Aviv") + "&navigate=yes"},
 }
@@ -221,6 +223,9 @@ def normalize_doc(raw: Any) -> Dict[str, Any]:
         "notes": _s(d.get("notes")).strip(),
         "event_types": sorted({_s(e).strip().lower() for e in ets if _s(e).strip()}),
         "samples": {str(k).strip(): _s(v) for k, v in samples_in.items() if str(k).strip()},
+        # Catalog template family this one stands in for once Meta approves it
+        # ("edit a built-in template"): core/app/template_placement.py.
+        "replaces": _s(d.get("replaces")).strip(),
     }
 
 
@@ -699,6 +704,9 @@ def template_from_doc(raw: Any, *, key: str, meta_name: Optional[str], deliverab
         variables=tuple(all_vars),
         version=int(version or 1),
         metadata=metadata,
+        # An event-sourced image header is picked per round (like catalog
+        # WITH_IMAGE templates), so the round editor must ask for it and show it.
+        preview=Preview(header="image" if h["type"] == "image" and h.get("source") != "fixed" else "none"),
         meta_config=MetaConfig(name=meta_name or doc["name"] or key, language=doc["language"],
                                category=doc["category"]),
         quick_replies=tuple(QuickReplyButton(label=b["text"], action=b.get("action") or "")

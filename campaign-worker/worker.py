@@ -17,6 +17,8 @@ from db import (
     fetch_event_by_id,
     fetch_wa_template,
     claim_message,
+    claim_retry,
+    fetch_replacement_ref,
     release_message_claim,
     mark_message_failed,
     mark_campaign_completed,
@@ -49,6 +51,7 @@ from shared.domain.messaging import (
     build_free_text,
     DeliveryKind,
 )
+from shared.domain.enums import GuestStatus
 
 
 def configure_logging():
@@ -203,7 +206,7 @@ def _record_ops(message, **kw):
 
 
 def process_campaign(conn, channel, campaign_id: str, limit: int = None, release_id: str = None,
-                     final: bool = False):
+                     final: bool = False, retry_guest_ids=None):
     """Send a campaign. When the planner released this as a batch, `limit` caps how
     many not-yet-messaged recipients go out now and `release_id` identifies the
     batch to mark done. Without them, legacy behaviour (send everyone) is kept.
@@ -211,8 +214,14 @@ def process_campaign(conn, channel, campaign_id: str, limit: int = None, release
     limit: it sends every remaining eligible guest, so a stale planned count can
     never leave guests un-messaged. The audience is always recomputed here at
     send time; already-messaged guests are skipped by the claim.
-    Workers NEVER decide timing/volume - they only execute what was released."""
+    Workers NEVER decide timing/volume - they only execute what was released.
+
+    `retry_guest_ids` (from scheduler-service/delivery_retry.py) re-sends this
+    round to just those guests after a retry-later failure (Meta's per-user
+    marketing cap). Same template/audience rules, claimed by `claim_retry`;
+    the round's status, releases, usage and follow-up are left untouched."""
     logger = logging.getLogger("worker")
+    retry = set(str(g) for g in retry_guest_ids) if retry_guest_ids else None
 
     campaign_data = fetch_campaign_by_id(conn, campaign_id)
     if not campaign_data:
@@ -225,7 +234,12 @@ def process_campaign(conn, channel, campaign_id: str, limit: int = None, release
     # there first - do not send.
     status = (campaign_data.get("status") or "").lower()
     expected = "pending" if release_id is not None else "processing"
-    if status != expected:
+    if retry is not None:
+        if status not in ("sent", "sending", "pending", "processing"):
+            log_json(logger, logging.INFO, "Retry skipped: round not active",
+                     campaign_id=campaign_id, status=status)
+            return
+    elif status != expected:
         log_json(logger, logging.INFO, "Campaign not in a sendable state; skipping",
                  campaign_id=campaign_id, status=status, expected=expected, release_id=release_id)
         if release_id is not None and status in ("paused", "draft"):
@@ -271,6 +285,17 @@ def process_campaign(conn, channel, campaign_id: str, limit: int = None, release
                 event_type=event_data.get("event_type"),
                 db_lookup=lambda ref: fetch_wa_template(conn, ref),
             )
+        # A built-in template the admin edited: its Meta-approved Studio copy
+        # goes out instead (also for rounds scheduled before the edit).
+        if template is not None:
+            swap_ref = fetch_replacement_ref(conn, template.key, event_data.get("event_type"))
+            if swap_ref:
+                swapped = resolve_template(swap_ref, event_type=event_data.get("event_type"),
+                                           db_lookup=lambda ref: fetch_wa_template(conn, ref))
+                if swapped is not None and swapped.is_usable:
+                    log_json(logger, logging.INFO, "Sending the edited copy of a built-in template",
+                             campaign_id=campaign_id, original=template.key, replacement=swap_ref)
+                    template = swapped
         if template is None:
             # The Messages page stores a CUSTOM (free-text) message in the `template`
             # field itself. If it looks like a written message, send it as free text.
@@ -291,6 +316,9 @@ def process_campaign(conn, channel, campaign_id: str, limit: int = None, release
 
     # Never message guests about an event that is over - except the thank-you.
     if stage != FlowStage.THANK_YOU and _event_date_passed(event_data.get("event_date")):
+        if retry is not None:
+            log_json(logger, logging.INFO, "Retry skipped: event date has passed", campaign_id=campaign_id)
+            return
         _stop(conn, campaign_id, release_id, "failed", "event date has passed", logger,
               event_date=event_data.get("event_date"))
         return
@@ -313,8 +341,20 @@ def process_campaign(conn, channel, campaign_id: str, limit: int = None, release
     except (psycopg2.OperationalError, psycopg2.InterfaceError):
         raise   # transient: bounded redelivery
     except Exception as e:
+        if retry is not None:
+            log_json(logger, logging.ERROR, "Retry audience selection failed", campaign_id=campaign_id, error=str(e))
+            return
         _stop(conn, campaign_id, release_id, "failed", f"audience selection failed: {e}", logger)
         return
+
+    if retry is not None:
+        # Only the guests asked for, still in this round's audience - and for an
+        # RSVP round, only those who still have not answered.
+        pending = set(GuestStatus.pending_values())
+        guests = [g for g in guests if str(g["id"]) in retry
+                  and (stage not in RSVP_STAGES or (g.get("status") or "pending") in pending)]
+        return _send_retries(conn, channel, campaign_id, event_id, guests, template, custom_message,
+                             var_resolver, stage, logger)
 
     # 0-guest guard: an invitation / save-the-date with nobody to send to (and
     # nothing sent before) is not "sent to 0" - it goes back to draft so the
@@ -451,6 +491,37 @@ def process_campaign(conn, channel, campaign_id: str, limit: int = None, release
     )
 
 
+def _send_retries(conn, channel, campaign_id, event_id, guests, template, custom_message,
+                  var_resolver, stage, logger) -> None:
+    """Retry mode of process_campaign: one more send per guest, nothing else."""
+    sent = 0
+    for guest in guests:
+        guest_id = str(guest["id"])
+        recipient = canonical_phone(guest.get("phone"))
+        if recipient is None or not guest_still_sendable(conn, guest_id):
+            continue
+        if not claim_retry(conn, campaign_id, guest_id):
+            continue
+        try:
+            if custom_message:
+                message = build_free_text(var_resolver.render_body(custom_message, guest), recipient=recipient,
+                                          event_id=event_id, campaign_id=campaign_id, guest_id=guest_id)
+            else:
+                message = build_meta_message(template, var_resolver.values_for(guest), recipient=recipient,
+                                             event_id=event_id, campaign_id=campaign_id, guest_id=guest_id)
+            if stage is not None:
+                message["stage"] = stage.value
+                if stage in RSVP_STAGES:
+                    message["log_state"] = "rsvp_invite"
+        except Exception as e:
+            mark_message_failed(conn, campaign_id, guest_id, "build_failed", str(e))
+            continue
+        publish_outpost(channel, OUTPOST_QUEUE, message)
+        sent += 1
+    log_json(logger, logging.INFO, "Retry-later messages re-sent", campaign_id=campaign_id,
+             asked=len(guests), sent=sent)
+
+
 class _State:
     conn = None
 
@@ -531,6 +602,7 @@ def main():
             limit = message.get("limit")
             release_id = message.get("release_id")
             final = bool(message.get("final"))
+            retry_guest_ids = message.get("retry_guest_ids") or None
             if not campaign_id:
                 log_json(logger, logging.ERROR, "Missing campaign_id in message")
                 ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -544,7 +616,7 @@ def main():
             conn = _ensure_conn(state, logger)
             process_campaign(conn, ch, campaign_id,
                              limit=int(limit) if limit is not None else None,
-                             release_id=release_id, final=final)
+                             release_id=release_id, final=final, retry_guest_ids=retry_guest_ids)
             ch.basic_ack(delivery_tag=method.delivery_tag)
         except Exception as e:
             log_json(logger, logging.ERROR, "Campaign processing failed", campaign_id=campaign_id,

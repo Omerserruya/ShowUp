@@ -225,7 +225,7 @@ export interface NodeRows {
   fixed: FlowEdge[];
 }
 
-const TEXT_ORDER: Record<string, number> = { button: 0, rsvp: 1, number: 2, number_invalid: 3, text_contains: 4, any_text: 5 };
+const TEXT_ORDER: Record<string, number> = { button: 0, rsvp: 1, number: 2, number_invalid: 3, text_is: 4, text_contains: 5, any_text: 6 };
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
 const hasChoiceInput = (n: FlowNode) => n.input === 'buttons' || n.input === 'list';
 const usesTemplateChoices = (n: FlowNode) => n.type === 'template' && !hasChoiceInput(n);
@@ -430,6 +430,7 @@ export function whenFromKey(key: string, prev?: EdgeWhen): EdgeWhen {
   if (key.startsWith('button:')) return { kind: 'button', button_id: key.slice(7) };
   if (key.startsWith('rsvp:')) return { kind: 'rsvp', value: key.slice(5) };
   if (key === 'text_contains') return { kind: 'text_contains', words: prev?.kind === 'text_contains' ? prev.words : [] };
+  if (key === 'text_is') return { kind: 'text_is', words: prev?.kind === 'text_is' ? prev.words : [] };
   return { kind: key as EdgeKind } as EdgeWhen;
 }
 
@@ -449,6 +450,7 @@ export function textConditionOptions(mode: NodeMode, current?: EdgeWhen, changeO
       out.push({ key: 'number', label: 'כתב מספר' }, { key: 'number_invalid', label: 'כתב מספר לא תקין' });
     }
     out.push(
+      { key: 'text_is', label: 'כתב בדיוק…' },
       { key: 'text_contains', label: 'כתב טקסט שמכיל…' },
       { key: 'rsvp:confirmed', label: changeOfMind ? 'כתב שבעצם כן מגיע' : 'כתב שהוא מגיע' },
       { key: 'rsvp:declined', label: changeOfMind ? 'כתב שבעצם לא יגיע' : 'כתב שלא יגיע' },

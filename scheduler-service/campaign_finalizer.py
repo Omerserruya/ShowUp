@@ -20,6 +20,7 @@ import os
 from typing import Any, Callable, Dict, Optional
 
 from shared.domain.delivery import MessageDeliveryStatus
+from push_events import queue_round_sent
 
 logger = logging.getLogger(__name__)
 
@@ -92,13 +93,17 @@ def finalize_campaigns(conn, outpost_backlog: Optional[Callable[[], Optional[int
             WHERE c.id = counts.campaign_id
               AND counts.in_flight = 0
               AND counts.total > 0
-            RETURNING c.id, c.status
+            RETURNING c.id, c.status, c.event_id, c.name, counts.ok
             """,
             (list(MessageDeliveryStatus.successful_values()), MessageDeliveryStatus.QUEUED.value),
         )
-        for _cid, status in cur.fetchall():
+        for cid, status, event_id, name, ok in cur.fetchall():
             if status == "sent":
                 finalized_sent += 1
+                try:  # the owners' app: "round X went out to N guests"
+                    queue_round_sent(cur, cid, event_id, name or "", int(ok or 0))
+                except Exception as exc:
+                    logger.warning("round-sent push not queued | campaign=%s: %s", cid, exc)
             else:
                 finalized_failed += 1
 

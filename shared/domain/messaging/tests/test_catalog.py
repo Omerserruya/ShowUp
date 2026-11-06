@@ -143,6 +143,7 @@ _wed = {
     "inviters": [{"fn": "אור", "ln": "כהן"}], "public_slug": "s",
     "subjects": {"p1": "נועה", "p2": "יונתן", "role1": "bride", "role2": "groom",
                  "parent1": "שרה", "parent2": "יעקב", "honoree": "אברהם"},
+    "gift": {"url": "https://links.payboxapp.com/x", "bit_phone": "", "code": "c0de"}, "share_code": "abc123",
 }
 _vals = VariableResolver(_wed).values_for({"name": "דוד כהן", "guest_count": 2, "table_number": 5})
 # Every send_available var resolves given complete data (company_name only exists

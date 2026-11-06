@@ -110,7 +110,7 @@ def _wa_template_row(db: Session, ref: str) -> Optional[dict]:
 
 def _require_deliverable_template(db: Session, template_ref: Optional[str],
                                   custom_message: Optional[str],
-                                  event_type: Optional[str] = None) -> None:
+                                  event_type: Optional[str] = None, event=None) -> None:
     """Reject a campaign whose template cannot actually be delivered. A custom
     free-text body sends as plain text (no Meta template needed); otherwise the
     template must resolve to a usable catalog template - one with an approved Meta
@@ -140,6 +140,16 @@ def _require_deliverable_template(db: Session, template_ref: Optional[str],
                 f"Template '{template_ref}' cannot be delivered yet: it has no approved "
                 f"Meta template mapping. Choose a sendable template or provide a custom message."
             ),
+        )
+    # A gift button needs the hosts' Bit/PayBox details, or it would send an empty link.
+    from shared.domain.gift import gift_ready
+    if (tmpl is not None and event is not None
+            and any(b.url_var == "gift_link" for b in (tmpl.url_buttons or ()))
+            and not gift_ready(getattr(event, "gift", None))):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "gift_missing",
+                    "message": "להודעה הזאת יש כפתור מתנה. הוסיפו קישור לביט או לפייבוקס בהגדרות האירוע לפני השליחה."},
         )
 
 
@@ -179,6 +189,28 @@ def rounds_status(
         "next_round_band_label": price["band_label"],
         "price_bands": all_bands(bands),
     }
+
+
+@router.get("/categories")
+def round_categories(
+    event_id: uuid.UUID = Query(...),
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """The categories an owner can pick for a round, each with who it reaches in
+    THIS event (the category decides the audience - app/round_categories.py)."""
+    event = event_crud.get_event(db, event_id)
+    require_event_permission(db, event, user_id, Action.CAMPAIGN_READ)
+    from app.audience import count_audience
+    from app.round_categories import list_categories, pair_of
+    out = []
+    for c in list_categories(db):
+        aud, flt = pair_of(c)
+        out.append({"id": c["id"], "base_stage": c["base_stage"], "title": c["title"],
+                    "description": c["description"], "builtin": c["builtin"],
+                    "audience": c["audience"], "audience_label": c["audience_label"],
+                    "recipients": count_audience(db, event_id, aud, flt)})
+    return out
 
 
 @router.get("", response_model=list[CampaignOut])
@@ -291,7 +323,7 @@ def create_campaigns(
         item.custom_message = campaign_crud.strip_custom_message(item.custom_message, context=item.name)
         # Block campaigns whose template can't actually be delivered (no Meta mapping).
         _require_deliverable_template(db, item.template, item.custom_message,
-                                      event_type=getattr(event, "event_type", None))
+                                      event_type=getattr(event, "event_type", None), event=event)
         to_create.append(item)
 
     from app.usage import record_usage
@@ -340,7 +372,7 @@ def update_campaign(
         _event = event_crud.get_event(db, campaign.event_id)
         _custom = campaign.custom_message if campaign_crud.custom_messages_allowed() else None
         _require_deliverable_template(db, payload.template, _custom,
-                                      event_type=getattr(_event, "event_type", None))
+                                      event_type=getattr(_event, "event_type", None), event=_event)
 
     # "Send now" goes out with the CURRENT template - it must be deliverable too
     # (a draft is often a draft precisely because its template was not).
@@ -348,7 +380,7 @@ def update_campaign(
         _event = event_crud.get_event(db, campaign.event_id)
         _custom = campaign.custom_message if campaign_crud.custom_messages_allowed() else None
         _require_deliverable_template(db, campaign.template, _custom,
-                                      event_type=getattr(_event, "event_type", None))
+                                      event_type=getattr(_event, "event_type", None), event=_event)
 
     try:
         campaign = campaign_crud.update_campaign(db, campaign, payload)

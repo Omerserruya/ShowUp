@@ -133,7 +133,7 @@ function Overview() {
 
       <FigureStrip
         items={[
-          { label: 'צפי לאולם', value: s.expected.max > s.expected.min ? `${s.expected.min}–${s.expected.max}` : String(s.expected.min), hint: 'לפי מי שאישר ומי שענה ״אולי״' },
+          { label: 'צפי לאולם', value: s.expected.max > s.expected.min ? `${s.expected.min}–${s.expected.max}` : String(s.expected.min), hint: 'מי שאישר ומי שענה ״אולי״, פחות 10% שבדרך כלל לא מגיעים' },
           { label: 'עוד לא ענו', value: inv.pending, hint: s.nextRound ? `${s.nextRound.name}: ${s.nextRound.whenLabel}` : 'אין סבב מתוזמן', color: inv.pending ? C.warn : C.ink },
           { label: 'בלי שולחן', value: s.unseated.length, hint: freeSeats ? `יש ${freeSeats} מקומות פנויים` : s.tables.length ? 'השולחנות מלאים' : 'עוד לא נוצרו שולחנות', color: s.unseated.length ? C.purple : C.ink },
           { label: 'עם בקשה מיוחדת', value: withNotes, hint: 'אישרו וכתבו הערה, למשל מנה או נגישות' },

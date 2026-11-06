@@ -73,7 +73,14 @@ check("decline + chatter stays (no invite re-send)", nxt(RsvpDeclineState, "תו
 print("== P2: completion states never fall through to re-sending the invite ==")
 check("done + 'תודה' stays", nxt(RsvpDoneState, "תודה!") == "rsvp_done")
 check("done + update button", nxt(RsvpDoneState, "לעדכן הגעה") == "rsvp_update")
-check("info question + chatter re-asks", nxt(RsvpInfoQuestionState, "?") == "rsvp_info_question")
+check("info question + 'nothing' -> done", nxt(RsvpInfoQuestionState, "?") == "rsvp_done"
+      and nxt(RsvpInfoQuestionState, "אין, תודה!") == "rsvp_done" and nxt(RsvpInfoQuestionState, "לא") == "rsvp_done")
+check("info question + typed note -> note_saved (no button needed)",
+      nxt(RsvpInfoQuestionState, "בעיית נגישות") == "note_saved"
+      and nxt(RsvpInfoQuestionState, "לא אוכל בשר") == "note_saved")
+check("info question + bare 'כן' -> asked to write it", nxt(RsvpInfoQuestionState, "כן") == "note_info")
+check("info question buttons still route", nxt(RsvpInfoQuestionState, "לכתוב לנו הערה") == "note_info"
+      and nxt(RsvpInfoQuestionState, "אין שום דבר מיוחד") == "rsvp_done")
 check("update + chatter re-asks", nxt(RsvpUpdateState, "?") == "rsvp_update")
 
 print("== 3.9 rsvp_done no longer writes a status ==")

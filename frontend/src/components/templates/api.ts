@@ -234,7 +234,7 @@ export const templatesApi = {
   submit: (key: string, dryRun: boolean) => call<SubmitResponse>(`${k(key)}/submit`, json('POST', { dry_run: dryRun })),
   sync: (key: string) => call<TemplateView>(`${k(key)}/sync`, { method: 'POST' }),
   syncAll: () => call<{ synced: number }>('/sync', { method: 'POST' }),
-  duplicate: (source: 'custom' | 'catalog' | 'system', sourceKey: string, extra: { name?: string; title?: string; group?: string } = {}) =>
+  duplicate: (source: 'custom' | 'catalog' | 'system', sourceKey: string, extra: { name?: string; title?: string; group?: string; replace?: boolean } = {}) =>
     call<TemplateView>('/duplicate', json('POST', { source, source_key: sourceKey, ...extra })),
   importDocs: (templates: unknown[], dryRun: boolean) =>
     call<ImportResult>('/import', json('POST', { templates, dry_run: dryRun })),

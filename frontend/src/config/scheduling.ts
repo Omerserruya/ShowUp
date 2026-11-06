@@ -62,10 +62,10 @@ const L = {
 
 // Reusable display titles (the label itself is sometimes English/technical).
 const T = {
-  invite: 'הזמנה',
-  reminder: 'תזכורת',
-  finalReminder: 'תזכורת אחרונה',
-  thankYou: 'תודה לאחר האירוע',
+  invite: 'אישור הגעה ראשוני',
+  reminder: 'אישור הגעה נוסף',
+  finalReminder: 'תזכורת לאירוע',
+  thankYou: 'תודה אחרי האירוע',
 } as const;
 
 /**
@@ -92,7 +92,7 @@ const SCHEDULES: Record<string, CampaignSpec[]> = {
   brit: [
     { stage: 'invitation', label: L.invite, title: T.invite, preferredOffsetDays: 5, minOffsetDays: 0, priority: 1, optional: false, time: '10:00', minTier: 0 },
     { stage: 'reminder', label: L.reminderWeek, title: T.reminder, preferredOffsetDays: 3, minOffsetDays: 1, priority: 4, optional: true, time: '10:00', minTier: 0 },
-    { stage: 'final_reminder', label: L.reminderDay, title: T.reminder, preferredOffsetDays: 1, minOffsetDays: 0, priority: 2, optional: false, time: '09:00', minTier: 0 },
+    { stage: 'final_reminder', label: L.reminderDay, title: T.finalReminder, preferredOffsetDays: 1, minOffsetDays: 0, priority: 2, optional: false, time: '09:00', minTier: 0 },
     { stage: 'thank_you', label: L.thankYou, title: T.thankYou, preferredOffsetDays: -1, minOffsetDays: -1, priority: 3, optional: true, time: '11:00', minTier: 1 },
   ],
   business: [
@@ -139,6 +139,38 @@ export function getSpecsForEvent(eventType: string, planId: string | null | unde
 function atTime(date: Dayjs, time: string): Dayjs {
   const [h = 0, m = 0] = time.split(':').map(Number);
   return date.hour(h).minute(m).second(0).millisecond(0);
+}
+
+// Anchored rounds - mirrors shared/domain/round_plan.py (event_reminder_time /
+// thank_you_time). The event reminder goes out the day before (moved earlier to
+// fit Friday until 14:00 / Saturday 20:00-21:00); the thank-you goes the next
+// morning at 10:00 after an evening event (from 16:00), else the same evening at
+// 20:30 (moved later to fit the same window).
+const FRI = 5;
+const SAT = 6;
+const hm = (d: Dayjs) => d.hour() * 60 + d.minute();
+
+function fitEarlier(t: Dayjs): Dayjs {
+  if (t.day() === FRI && hm(t) >= 14 * 60) return atTime(t, '12:00');
+  if (t.day() === SAT && !(hm(t) >= 20 * 60 && hm(t) < 21 * 60)) return atTime(t, '20:00');
+  return t;
+}
+
+function fitLater(t: Dayjs): Dayjs {
+  if ((t.day() === FRI && hm(t) >= 14 * 60) || (t.day() === SAT && hm(t) < 20 * 60)) {
+    return atTime(t.day() === SAT ? t : t.add(1, 'day'), '20:00');
+  }
+  if (t.day() === SAT && hm(t) >= 21 * 60) return atTime(t.add(1, 'day'), '10:00');
+  return t;
+}
+
+export function eventReminderAt(eventDate: Dayjs, time = '18:00'): Dayjs {
+  return fitEarlier(atTime(eventDate.subtract(1, 'day'), time));
+}
+
+export function thankYouAt(eventAt: Dayjs): Dayjs {
+  const t = hm(eventAt) >= 16 * 60 ? atTime(eventAt.add(1, 'day'), '10:00') : atTime(eventAt, '20:30');
+  return fitLater(t);
 }
 
 function offsetDaysBetween(eventDate: Dayjs, sendAt: Dayjs): number {
@@ -198,7 +230,9 @@ export function buildAdaptiveTimeline(params: BuildTimelineParams): ResolvedCamp
 
   for (const s of before) {
     const earliest = now.add(leadHoursFor(s), 'hour');
-    const ideal = atTime(eventDate.subtract(s.preferredOffsetDays, 'day'), s.time);
+    const ideal = s.stage === 'final_reminder'
+      ? eventReminderAt(eventDate, s.time)
+      : atTime(eventDate.subtract(s.preferredOffsetDays, 'day'), s.time);
     const latest = atTime(eventDate.subtract(s.minOffsetDays, 'day'), s.time);
     const cap = latest.isAfter(eventAt) ? eventAt : latest; // never after the event itself
     const lower = prev ? maxDate(earliest, prev.add(MIN_GAP_HOURS, 'hour')) : earliest;
@@ -236,7 +270,9 @@ export function buildAdaptiveTimeline(params: BuildTimelineParams): ResolvedCamp
   for (const s of after) {
     const enabledDefault = s.stage === 'thank_you' ? tier >= 2 : true;
     const earliest = now.add(BUFFER_HOURS, 'hour');
-    let sendAt = atTime(eventDate.subtract(s.preferredOffsetDays, 'day'), s.time); // subtract(neg) = after
+    let sendAt = s.stage === 'thank_you'
+      ? thankYouAt(eventAt)
+      : atTime(eventDate.subtract(s.preferredOffsetDays, 'day'), s.time); // subtract(neg) = after
     if (sendAt.isBefore(earliest)) sendAt = earliest;
     resolved.push({
       enabled: enabledDefault,

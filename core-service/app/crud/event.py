@@ -50,10 +50,12 @@ def validate_future_event_date(value: Any) -> None:
 
 def shift_pending_campaigns(db: Session, event: Event, old_date: Optional[dt.datetime],
                             new_date: Optional[dt.datetime]) -> List[dict]:
-    """Move every not-yet-sent campaign by the same delta the event moved, so
-    "reminder 3 days before" stays 3 days before. A campaign that the shift
-    would put in the past is PAUSED (never fired immediately by surprise); the
-    owner reschedules or resumes it explicitly. Caller commits.
+    """Move every not-yet-sent campaign with the event (shared round_plan.replan_time):
+    the event reminder and the thank-you are recomputed from their rules; every
+    other round moves by whole days and keeps its time of day, so "reminder 3
+    days before at 12:00" stays exactly that. A campaign that the move would put
+    in the past is PAUSED (never fired immediately by surprise); the owner
+    reschedules or resumes it explicitly. Caller commits.
     """
     if old_date is None or new_date is None:
         return []
@@ -70,8 +72,17 @@ def shift_pending_campaigns(db: Session, event: Event, old_date: Optional[dt.dat
         .all()
     )
     moved = []
+    from shared.domain.messaging import canonical_stage
+    from shared.domain.round_plan import replan_time
     for c in rows:
-        new_time = _aware(c.schedule_time) + delta
+        stage = canonical_stage(c.stage_id) or canonical_stage(c.template)
+        stage_id = stage.value if stage else None
+        if c.category_id:
+            from app.round_categories import get_category
+            cat = get_category(db, c.category_id)
+            stage_id = cat["base_stage"] if cat else stage_id
+        new_time = replan_time(stage_id, _aware(c.schedule_time),
+                               _aware(old_date), _aware(new_date))
         c.schedule_time = new_time
         paused = False
         if new_time <= now and c.status == "pending":
@@ -169,6 +180,31 @@ def get_event_by_slug(db: Session, slug: str) -> Optional[Event]:
 # only reads and non-entitlement updates.
 
 
+# The subjects the wizard captures (EventWizard EventSubjects); they feed the
+# message variables (couple_names, bride_name, baby_name, company_name ...).
+_SUBJECT_TEXT_KEYS = ("p1", "p2", "ln1", "ln2", "honoree", "parent1", "parent2", "company", "bizEventName", "age")
+_SUBJECT_ROLES = ("bride", "groom")
+
+
+class GiftError(ValueError):
+    """Invalid gift link / phone (code: gift_url_invalid | gift_phone_invalid)."""
+
+
+def merge_subjects(current: Optional[dict], patch: dict) -> dict:
+    """Owner edit of the event's subjects: known keys only, trimmed short text,
+    roles bride|groom; keys not in the patch keep their stored value."""
+    out = dict(current or {})
+    for k in _SUBJECT_TEXT_KEYS:
+        if k in patch:
+            out[k] = str(patch[k] or "").strip()[:40]
+    for k in ("role1", "role2"):
+        if patch.get(k) in _SUBJECT_ROLES:
+            out[k] = patch[k]
+    if "secretName" in patch:
+        out["secretName"] = bool(patch["secretName"])
+    return out
+
+
 def update_event(db: Session, event: Event, data: EventUpdate) -> Event:
     # `owners` is not accepted here - ownership changes go through the members
     # API, which enforces its own guards. See the note on EventUpdate.
@@ -192,6 +228,14 @@ def update_event(db: Session, event: Event, data: EventUpdate) -> Event:
     # `plan_id` / `payment_status` are deliberately NOT updatable here - see the
     # note above EventBase in schemas.py. Plan changes go through
     # app.provisioning.change_plan, driven by a verified paid order.
+    if data.subjects is not None:
+        event.subjects = merge_subjects(event.subjects, data.subjects)
+    if data.gift is not None:
+        from shared.domain.gift import merge_gift
+        try:
+            event.gift = merge_gift(event.gift, data.gift)
+        except ValueError as e:
+            raise GiftError(str(e))
     if data.seating_layout is not None:
         event.seating_layout = data.seating_layout
     if data.wa_image_url is not None:
@@ -199,6 +243,15 @@ def update_event(db: Session, event: Event, data: EventUpdate) -> Event:
     db.add(event)
     db.commit()
     db.refresh(event)
+    if data.event_date is not None:
+        # An event created before it had a date gets its round plan now (no-op
+        # when it already has rounds - those were shifted above instead).
+        try:
+            from app.default_rounds import ensure_default_rounds
+            ensure_default_rounds(db, event)
+        except Exception:  # noqa: BLE001
+            db.rollback()
+            logger.exception("default rounds failed for event %s", event.id)
     return event
 
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import WhatsAppIcon from '@mui/icons-material/WhatsApp';
+import PhoneInTalkIcon from '@mui/icons-material/PhoneInTalk';
 import { color as C } from '../../design/tokens';
 import useViewportWidth, { usePrefersReducedMotion } from '../../design/useViewport';
 import { plans as PLAN_TIERS } from '../../config/plans';
@@ -14,6 +15,10 @@ import { ASSISTANT_EXAMPLES, LANDING_EVENT_TYPES, MARQUEE_EVENTS } from './landi
  * Everything shown is backed by the real system:
  * - Prices / caps / rounds come from config/plans.ts (mirrors aub plans.json).
  * - "שלחו לי הזמנה לדוגמה" calls the existing POST /api/auth/demo/whatsapp.
+ * - "התקשרו אליי לדוגמה" calls POST /api/voice/public/demo-call (voice-service:
+ *   Israeli mobiles, 9:00-21:00, one call per number a day). The calls section
+ *   only states what the dialer really does (call window, 2 attempts, pending
+ *   guests only, voicemail hang-up) - see shared/domain/voice_calls.py.
  * - The assistant examples are limited to commands the WhatsApp assistant
  *   really executes (see landingContent.ts).
  * - Unverified claims and the placeholder testimonial sit behind featureFlags.
@@ -114,6 +119,8 @@ function StartCard() {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [sendErr, setSendErr] = useState<string | null>(null);
+  const [calling, setCalling] = useState(false);
+  const [calledFrom, setCalledFrom] = useState<string | null>(null);
 
   const digits = phone.replace(/\D/g, '');
   const phoneOk = /^0?5\d{8}$/.test(digits);
@@ -146,6 +153,35 @@ function StartCard() {
     }
   };
 
+  const callMe = async () => {
+    setSendErr(null);
+    if (!phoneOk) { setPhoneErr(true); return; }
+    if (!name.trim()) { setSendErr('רק צריך את השם שלכם כדי להתקשר'); return; }
+    setCalling(true);
+    try {
+      const res = await fetch('/api/voice/public/demo-call', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), phone: normalizePhoneNumber(digits, '+972') }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const code = body?.detail?.error;
+        setSendErr(
+          code === 'outside_hours' ? 'שיחות לדוגמה יוצאות בין 9:00 ל־21:00, בשישי עד 14:00 ולא בשבת. בינתיים אפשר לשמוע דוגמה למטה בעמוד.'
+          : code === 'already_called' ? 'כבר התקשרנו למספר הזה היום. אפשר לשמוע את הדוגמה למטה בעמוד.'
+          : code === 'israeli_mobile_required' ? 'שיחה לדוגמה אפשר לקבל רק לנייד ישראלי'
+          : 'לא הצלחנו להתקשר כרגע. נסו שוב מאוחר יותר');
+        return;
+      }
+      setCalledFrom(body?.from || '');
+    } catch {
+      setSendErr('לא הצלחנו להתקשר כרגע. נסו שוב מאוחר יותר');
+    } finally {
+      setCalling(false);
+    }
+  };
+
   const input: React.CSSProperties = { height: 48, padding: '0 14px', border: `1px solid ${C.fieldSignup}`, borderRadius: 11, background: C.paper, fontSize: 15, outline: 'none', width: '100%' };
   const label: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 6 };
   const labelT: React.CSSProperties = { fontSize: 13.5, fontWeight: 500 };
@@ -153,11 +189,20 @@ function StartCard() {
 
   return (
     <div style={{ flex: '1 1 360px', minWidth: 0, maxWidth: 460, background: '#FFFFFF', borderRadius: 20, padding: 24, border: `1px solid ${C.line}`, boxShadow: '0 24px 60px rgba(22,21,15,.08)', display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {!sent ? (
+      {calledFrom !== null ? (
+        <div role="status" style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '6px 0' }}>
+          <span style={{ width: 48, height: 48, borderRadius: '50%', background: LT, color: LD, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><PhoneInTalkIcon style={{ fontSize: 26 }} /></span>
+          <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em' }}>הטלפון שלכם עומד לצלצל</div>
+          <div style={{ fontSize: 14.5, lineHeight: 1.6, color: C.mutedSoft }}>
+            תוך חצי דקה בערך תקבלו שיחה{calledFrom ? <> מהמספר <span className="num" dir="ltr" style={{ color: C.ink, fontWeight: 600, whiteSpace: 'nowrap' }}>{calledFrom}</span></> : null}. ענו, תקשיבו, ונסו ללחוץ על מקש כמו שאורח היה עושה. זו רק דוגמה, אז שום דבר לא נרשם.
+          </div>
+          <button type="button" onClick={start} className="su-hover-lav" style={primary}>יוצאים לדרך<Ms style={{ fontSize: 20 }}>arrow_back</Ms></button>
+        </div>
+      ) : !sent ? (
         <>
           <div>
             <div style={{ fontSize: 21, fontWeight: 600, letterSpacing: '-0.02em' }}>יאללה, מתחילים</div>
-            <div style={{ fontSize: 14, lineHeight: 1.55, color: C.mutedSoft, marginTop: 5 }}>כמה פרטים, ויש לכם לוח הודעות מוכן לאירוע. רוצים טעימה קודם? נשלח לכם הודעה לדוגמה ישר לוואטסאפ.</div>
+            <div style={{ fontSize: 14, lineHeight: 1.55, color: C.mutedSoft, marginTop: 5 }}>כמה פרטים, ויש לכם לוח הודעות מוכן לאירוע. רוצים לראות קודם איך זה מרגיש אצל האורחים? נשלח לכם הודעה לדוגמה, או שנתקשר.</div>
           </div>
           <label style={label}>
             <span style={labelT}>שם מלא</span>
@@ -189,16 +234,28 @@ function StartCard() {
           <button type="button" onClick={start} className="su-hover-lav" style={{ ...primary, marginTop: 2 }}>
             יוצאים לדרך<Ms style={{ fontSize: 20 }}>arrow_back</Ms>
           </button>
-          <button
-            type="button"
-            onClick={sendSample}
-            disabled={sending}
-            className="su-hover-green"
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, height: 48, borderRadius: 12, background: '#FFFFFF', border: '1px solid #B9DFC6', color: '#1E6B3F', fontSize: 15, fontWeight: 600, cursor: sending ? 'wait' : 'pointer', opacity: sending ? 0.7 : 1 }}
-          >
-            <WhatsAppIcon style={{ fontSize: 19, color: C.waGreen }} />
-            {sending ? 'שולחים...' : 'שלחו לי הודעה לדוגמה'}
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={sendSample}
+              disabled={sending || calling}
+              className="su-hover-green"
+              style={{ flex: '1 1 170px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 48, borderRadius: 12, background: '#FFFFFF', border: '1px solid #B9DFC6', color: '#1E6B3F', fontSize: 14.5, fontWeight: 600, cursor: sending ? 'wait' : 'pointer', opacity: sending ? 0.7 : 1 }}
+            >
+              <WhatsAppIcon style={{ fontSize: 19, color: C.waGreen }} />
+              {sending ? 'שולחים...' : 'הודעה לדוגמה'}
+            </button>
+            <button
+              type="button"
+              onClick={callMe}
+              disabled={sending || calling}
+              className="su-hover-chip"
+              style={{ flex: '1 1 170px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 48, borderRadius: 12, background: '#FFFFFF', border: `1px solid ${LB}`, color: C.purpleDark, fontSize: 14.5, fontWeight: 600, cursor: calling ? 'wait' : 'pointer', opacity: calling ? 0.7 : 1 }}
+            >
+              <PhoneInTalkIcon style={{ fontSize: 19, color: LD }} />
+              {calling ? 'מחייגים...' : 'התקשרו אליי לדוגמה'}
+            </button>
+          </div>
           {sendErr && <span role="alert" style={{ fontSize: 13, fontWeight: 500, color: C.danger }}>{sendErr}</span>}
           <div style={{ fontSize: 12.5, lineHeight: 1.55, color: C.mutedSoft }}>בלי מנוי, משלמים פעם אחת לאירוע. ההודעות יוצאות מוואטסאפ העסקי הרשמי, והתשלום מאובטח.</div>
         </>
@@ -299,6 +356,111 @@ const MOMENTS = [
   { n: '04', t: 'שואלים, והוא עונה', note: 'לא צריך לחפש בטבלאות. שואלים את העוזר בוואטסאפ, ומקבלים מספרים. בלי להיכנס לשום מסך.', bullets: ['מכיר את האירוע שלכם'], V: ChatVisual },
 ];
 
+/* ---------- Phone calls ---------- */
+const CALL_FACTS: [string, string][] = [
+  ['record_voice_over', 'השיחה נפתחת ב״כאן ShowUp״ ובשמות שלכם, ככה שברור מהשנייה הראשונה מי מתקשר ולמה.'],
+  ['person_search', 'מתקשרים רק למי שעוד לא ענה. מי שכבר אישר או אמר שלא יגיע, לא יקבל טלפון.'],
+  ['schedule', 'בשעות סבירות: בין 10:00 ל־20:00, בשישי עד 13:00, ובשבת אף פעם.'],
+  ['voicemail', 'לא ענו? ננסה עוד פעם אחת, וזהו. לתא קולי לא משאירים הודעה.'],
+];
+
+function CallVisual() {
+  const reduce = usePrefersReducedMotion();
+  const audio = useRef<HTMLAudioElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [t, setT] = useState(0);
+  const toggle = () => {
+    const a = audio.current;
+    if (!a) return;
+    if (a.paused) { a.play().catch(() => setPlaying(false)); } else { a.pause(); }
+  };
+  const keys: [string, string, boolean][] = [['1', 'מגיעים', true], ['2', 'לא נגיע', false], ['3', 'עוד לא יודעים', false]];
+  return (
+    <div style={{ background: '#FFFFFF', border: `1px solid ${C.line}`, borderRadius: 22, overflow: 'hidden', boxShadow: '0 30px 70px rgba(90,61,166,.14)' }}>
+      <div style={{ background: LT, borderBottom: `1px solid ${LB}`, padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <span style={{ width: 46, height: 46, borderRadius: '50%', background: '#FFFFFF', border: `1px solid ${LB}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+          <img src="/brand/seal.png" alt="" style={{ width: 30, height: 30, objectFit: 'contain' }} />
+        </span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'block', fontSize: 16, fontWeight: 600 }}>ShowUp</span>
+          <span style={{ display: 'block', fontSize: 13, color: C.body }}>מתקשרים בשם דנה ויוסי</span>
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 500, color: '#1E6B3F', background: '#E7F4EC', borderRadius: 99, padding: '5px 10px', whiteSpace: 'nowrap' }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#25A35A', animation: reduce ? 'none' : 'su-pulse 2.6s ease-in-out infinite' }} />בשיחה
+        </span>
+      </div>
+      <div style={{ padding: '20px 20px 6px' }}>
+        <div style={{ fontSize: 15.5, lineHeight: 1.65, color: C.ink, borderInlineStart: `3px solid ${C.lavMid}`, paddingInlineStart: 14 }}>
+          ״היי שירה! כאן ShowUp, אני מתקשרת בשם דנה ויוסי, שמזמינים אתכם לחתונה שלהם ביום שלישי, ה־17 בנובמבר. אם אתם מגיעים, הקישו אחת...״
+        </div>
+        <button type="button" onClick={toggle} aria-label={playing ? 'עצירת ההקלטה' : 'השמעת דוגמה לשיחה'}
+          style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', marginTop: 18, padding: '10px 12px', borderRadius: 14, border: `1px solid ${LB}`, background: '#FFFFFF', cursor: 'pointer', textAlign: 'right', color: C.ink }}>
+          <span style={{ width: 40, height: 40, borderRadius: '50%', background: LD, color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+            <Ms style={{ fontSize: 24 }}>{playing ? 'pause' : 'play_arrow'}</Ms>
+          </span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 14.5, fontWeight: 600 }}>{playing ? 'מקשיבים...' : 'ככה זה נשמע'}</span>
+            <span aria-hidden="true" style={{ display: 'block', height: 4, borderRadius: 99, background: C.line2, marginTop: 8, overflow: 'hidden' }}>
+              <span style={{ display: 'block', height: '100%', width: `${Math.round(t * 100)}%`, background: LD, transition: 'width .25s linear' }} />
+            </span>
+          </span>
+          <span className="num" style={{ fontSize: 13, color: C.mutedSoft }}>0:19</span>
+        </button>
+        <audio ref={audio} src="/brand/call-sample.mp3" preload="none"
+          onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
+          onEnded={() => { setPlaying(false); setT(0); }}
+          onTimeUpdate={(e) => { const a = e.currentTarget; setT(a.duration ? a.currentTime / a.duration : 0); }} />
+      </div>
+      <div style={{ padding: '14px 20px 20px', display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 8 }}>
+        {keys.map(([k, l, on]) => (
+          <div key={k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '10px 4px', borderRadius: 14, background: on ? LD : '#F5F2EC', color: on ? '#FFFFFF' : C.ink }}>
+            <span className="num" style={{ fontSize: 22, fontWeight: 600, lineHeight: 1 }}>{k}</span>
+            <span style={{ fontSize: 12.5, textAlign: 'center' }}>{l}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ borderTop: `1px solid ${C.line2}`, padding: '13px 20px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 500, color: '#2E7D5B' }}>
+        <Ms style={{ fontSize: 19 }}>check_circle</Ms>שירה לחצה 1 ואז 2. ברשימה שלכם עכשיו: מגיעים, 2 אנשים.
+      </div>
+    </div>
+  );
+}
+
+function CallsSection({ compact }: { compact: boolean }) {
+  return (
+    <section id="calls" style={{ maxWidth: 1240, margin: '0 auto', padding: 'clamp(40px,6vw,72px) clamp(16px,2vw,24px) 0' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '36px 64px', alignItems: 'center' }}>
+        <div style={{ flex: '1 1 440px', minWidth: 0, maxWidth: 560 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '.04em', color: LD }}>שיחות טלפון</div>
+          <h2 style={{ margin: '14px 0 0', fontSize: 'clamp(32px,4vw,50px)', fontWeight: 600, letterSpacing: '-0.035em', lineHeight: 1.06, textWrap: 'balance' } as React.CSSProperties}>
+            ומי שלא ענה בוואטסאפ, <span style={{ color: LD }}>מקבל טלפון.</span>
+          </h2>
+          <p style={{ fontSize: 16.5, lineHeight: 1.7, color: C.body, margin: '18px 0 0' }}>
+            תמיד נשארים כמה. סבא שלא פותח הודעות, הדודה שהשתיקה את כל הקבוצות, החבר שראה ושכח לענות. אחרי התזכורות בוואטסאפ, מי שעדיין לא ענה מקבל מאיתנו שיחה קצרה. הוא שומע מי מתקשר ובשם מי, לוחץ על מקש בטלפון, והתשובה נכנסת לרשימה שלכם כמו כל אישור אחר.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 26 }}>
+            {CALL_FACTS.map(([i, txt]) => (
+              <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                <span style={{ width: 32, height: 32, borderRadius: 10, background: LT, color: LD, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><Ms style={{ fontSize: 18 }}>{i}</Ms></span>
+                <span style={{ fontSize: 15, lineHeight: 1.6, color: C.ink, paddingTop: 5 }}>{txt}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 14, lineHeight: 1.6, color: C.mutedSoft, marginTop: 24, paddingTop: 16, borderTop: `1px solid ${C.line2}` }}>
+            כלול ב־Plus (סבב שיחות אחד) וב־Pro (עד שלושה סבבים). את מועד השיחות קובעים יחד איתכם.
+          </div>
+          <a href="#top" className="su-hover-deep" style={{ display: compact ? 'flex' : 'inline-flex', justifyContent: 'center', alignItems: 'center', gap: 9, marginTop: 22, fontSize: 15, fontWeight: 600, background: LD, color: '#FFFFFF', borderRadius: 12, padding: '14px 22px' }}>
+            <PhoneInTalkIcon style={{ fontSize: 19 }} />רוצים לשמוע על עצמכם? נתקשר אליכם
+          </a>
+        </div>
+        <div style={{ flex: '1 1 380px', minWidth: 0, maxWidth: 480, marginInline: compact ? 'auto' : 0 }}>
+          <CallVisual />
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ---------- Assistant demo ---------- */
 function AssistantSection() {
   const ref = useRef<HTMLDivElement>(null);
@@ -367,7 +529,7 @@ function PricingSection() {
       <div style={{ textAlign: 'center' }}>
         <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '.04em', color: LD }}>תעריפים</div>
         <h2 style={{ margin: '12px auto 0', fontSize: 'clamp(36px,5vw,64px)', fontWeight: 600, letterSpacing: '-0.035em', lineHeight: 1.02 }}>מחיר אחד. בלי כוכביות.</h2>
-        <p style={{ fontSize: 17, lineHeight: 1.6, color: C.mutedSoft, margin: '18px auto 0', maxWidth: 560 }}>כל חבילה כוללת את כל היכולות. ההבדל היחיד הוא כמות האורחים וסבבי ההודעות. משלמים פעם אחת, בלי מנוי.</p>
+        <p style={{ fontSize: 17, lineHeight: 1.6, color: C.mutedSoft, margin: '18px auto 0', maxWidth: 560 }}>בכל חבילה יש את העוזר, ההזמנה, ההושבה וכל השאר. ההבדל הוא כמות האורחים, סבבי ההודעות ושיחות הטלפון. משלמים פעם אחת, בלי מנוי.</p>
       </div>
       <div style={{ display: 'flex', justifyContent: 'center', marginTop: 30 }}>
         <div style={{ width: 'min(100%,520px)', background: '#FFFFFF', border: `1px solid ${C.line}`, borderRadius: 16, padding: '16px 20px' }}>
@@ -419,7 +581,8 @@ function PricingSection() {
 const FAQS: [string, string][] = [
   ['ההודעות יוצאות מהמספר שלי?', 'לא. הן יוצאות ממספר וואטסאפ עסקי של ShowUp, עם השמות שלכם בתוך ההודעה. הטלפון שלכם נשאר שקט, והתשובות נכנסות ישר לרשימה.'],
   ['ומה אם סבתא לא תבין?', 'אין קישור לפתוח ואין טופס. ההזמנה מגיעה לוואטסאפ שהיא כבר מכירה, עם כפתורי תשובה. לוחצים, וזהו.'],
-  ['ומה עם מי שלא עונה?', 'תזכורות יוצאות לפי לוח השליחה. ואם צריך, שואלים את העוזר ״מי עוד לא ענה?״ ומקבלים רשימה.'],
+  ['ומה עם מי שלא עונה?', 'תזכורות יוצאות לפי לוח השליחה. ב־Plus וב־Pro, מי שעדיין לא ענה מקבל גם שיחת טלפון קצרה. ואם צריך, שואלים את העוזר ״מי עוד לא ענה?״ ומקבלים רשימה.'],
+  ['השיחה היא מבן אדם?', 'לא, זו שיחה אוטומטית, ואנחנו לא מנסים להסתיר את זה. היא נשמעת טבעית, אומרת שזה ShowUp ובשם מי, ומבקשת ללחוץ על מקש. לא צריך לדבר ולא צריך להבין בטכנולוגיה. רוצים לשמוע? בראש העמוד אפשר לבקש שנתקשר אליכם.'],
   ['איך מכניסים את רשימת האורחים?', 'מעלים קובץ אקסל, מוסיפים אחד אחד, או משתפים אנשי קשר בוואטסאפ למספר של ShowUp. מי שמגיע מוואטסאפ מחכה לאישור שלכם לפני שהוא נכנס לרשימה.'],
   ['מה זה סבב הודעות?', 'כל הודעה שיוצאת לרשימה: הזמנה, תזכורת, תזכורת אחרונה, תודה. Basic כולל 2 סבבים, Plus ו־Pro כוללים 4.'],
 ];
@@ -484,6 +647,7 @@ export default function Landing() {
             <nav aria-label="ראשי" style={{ display: w < 1060 ? 'none' : 'flex', alignItems: 'center', gap: 2 }}>
               <a href="#what" className="su-hover-nav" style={navLink}>מה מקבלים</a>
               <a href="#how" className="su-hover-nav" style={navLink}>איך זה עובד</a>
+              <a href="#calls" className="su-hover-nav" style={navLink}>שיחות טלפון</a>
               <a href="#assistant" className="su-hover-nav" style={navLink}>העוזר</a>
               <a href="#pricing" className="su-hover-nav" style={navLink}>תעריפים</a>
               <a href="#faq" className="su-hover-nav" style={navLink}>שאלות נפוצות</a>
@@ -601,6 +765,7 @@ export default function Landing() {
           </div>
         </section>
 
+        <CallsSection compact={compact} />
         <AssistantSection />
         <PricingSection />
 
@@ -666,7 +831,7 @@ export default function Landing() {
             </div>
             <div style={{ flex: '1 1 480px', minWidth: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))', gap: 24 }}>
               {[
-                { t: 'המוצר', items: [['מה מקבלים', '#what'], ['איך זה עובד', '#how'], ['העוזר', '#assistant'], ['תעריפים', '#pricing']] },
+                { t: 'המוצר', items: [['מה מקבלים', '#what'], ['איך זה עובד', '#how'], ['שיחות טלפון', '#calls'], ['העוזר', '#assistant'], ['תעריפים', '#pricing']] },
                 { t: 'עזרה', items: [['שאלות נפוצות', '#faq'], ['וואטסאפ אלינו', '/go/whatsapp']] },
                 { t: 'חשבון', items: [['התחברות', '/login'], ['יוצאים לדרך', '/wizard']] },
               ].map((col) => (

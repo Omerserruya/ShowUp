@@ -68,6 +68,7 @@ def test_button_payload_still_wins():
 
 def test_guest_count():
     assert parse_guest_count("3") == 3
+    assert parse_guest_count("-1") is None      # pilot: "-1" was read as 1
     assert parse_guest_count("3 אנשים") == 3
     assert parse_guest_count("אנחנו 4") == 4
     assert parse_guest_count("שניים") == 2
@@ -120,3 +121,12 @@ if __name__ == "__main__":
                 print(f"  [FAIL] {name}: {e}")
     print("RESULT:", "OK" if not failures else f"{failures} failed")
     sys.exit(1 if failures else 0)
+
+
+def test_host_name_falls_back_to_the_couple_when_no_inviters():
+    from shared.domain.messaging.resolver import VariableResolver
+    v = VariableResolver({"inviters": [], "subjects": {"p1": "שני", "p2": "עומר"}}, media_base="", public_base="")
+    assert v._event_values["host_name"] == "שני ועומר"
+    typed = VariableResolver({"inviters": [{"fn": "נועה", "ln": "כהן"}], "subjects": {"p1": "שני", "p2": "עומר"}},
+                             media_base="", public_base="")
+    assert typed._event_values["host_name"] == "נועה כהן"     # typed inviters still win

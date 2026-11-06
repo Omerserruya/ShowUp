@@ -72,6 +72,8 @@ import EmailIcon from '@mui/icons-material/Email';
 import PhoneIcon from '@mui/icons-material/Phone';
 import { usePlacesAutocomplete } from '../hooks/usePlacesAutocomplete';
 import { saveWizardDraft, loadWizardDraft, clearWizardDraft, draftHasProgress, WizardDraft } from '../utils/wizardDraft';
+import { TERMS_VERSION } from '../config/legal';
+import { EventSubjects, EMPTY_SUBJECTS, HOST_NAMES_HINT, joinHe, deriveEventFromSubjects, hasHostNames } from '../config/eventSubjects';
 
 /** The minimal shape the WhatsApp preview bubble needs - a catalog template or a
  * custom message both satisfy it, so preview and delivery share one definition. */
@@ -267,78 +269,9 @@ const EVENT_TYPE_SUBTITLES: Record<string, string> = {
 // brit/brita "secret name" flavor line into this one only.
 const INVITE_CAMPAIGN_LABEL = 'Save the date';
 
-// Contextual subjects captured per event type (couple / parents / honoree / company …).
-interface EventSubjects {
-  p1: string;
-  p2: string;
-  ln1: string;
-  ln2: string;
-  role1: 'bride' | 'groom';
-  role2: 'bride' | 'groom';
-  honoree: string; // baby / child / celebrant
-  parent1: string;
-  parent2: string;
-  company: string;
-  bizEventName: string;
-  age: string;
-  // Brit/Brita: parents often keep the baby's name a secret until the event.
-  // When true we don't require the name and derive a name-free event title.
-  secretName: boolean;
-}
 
-const EMPTY_SUBJECTS: EventSubjects = {
-  p1: '', p2: '', ln1: '', ln2: '', role1: 'bride', role2: 'groom',
-  honoree: '', parent1: '', parent2: '', company: '', bizEventName: '', age: '',
-  secretName: false,
-};
 
-const joinHe = (a: string, b: string): string => {
-  const x = (a || '').trim();
-  const y = (b || '').trim();
-  if (x && y) return `${x} ו${y}`;
-  return x || y || '';
-};
 
-// Derive the auto-generated event title + the inviter name (used in messages) from
-// the contextual subjects. Title stays editable; this only sets the suggestion.
-const deriveEventFromSubjects = (
-  type: string,
-  s: EventSubjects
-): { name: string; inviterName: string } => {
-  switch (type) {
-    case 'wedding': {
-      const couple = joinHe(s.p1, s.p2);
-      return { name: couple ? `החתונה של ${couple}` : '', inviterName: couple };
-    }
-    case 'brit':
-    case 'brita': {
-      const label = type === 'brit' ? 'הברית' : 'הבריתה';
-      const parents = joinHe(s.parent1, s.parent2);
-      // Name kept secret → derive a warm, name-free title from the parents.
-      if (s.secretName) {
-        return { name: parents ? `${label} של ${parents}` : `${label} שלנו`, inviterName: parents };
-      }
-      const baby = s.honoree.trim();
-      return { name: baby ? `${label} של ${baby}` : '', inviterName: parents };
-    }
-    case 'bar':
-    case 'bat': {
-      const label = type === 'bar' ? 'בר המצווה' : 'בת המצווה';
-      const child = s.honoree.trim();
-      return { name: child ? `${label} של ${child}` : '', inviterName: joinHe(s.parent1, s.parent2) };
-    }
-    case 'corporate':
-      return { name: s.bizEventName.trim(), inviterName: s.company.trim() };
-    case 'birthday': {
-      const who = s.honoree.trim();
-      const age = s.age.trim();
-      const name = who ? (age ? `יום ההולדת ה-${age} של ${who}` : `יום ההולדת של ${who}`) : '';
-      return { name, inviterName: who };
-    }
-    default:
-      return { name: '', inviterName: '' };
-  }
-};
 
 // Human-readable description of when a campaign fires, relative to the event.
 const describeCampaignTiming = (offsetDays: number, time: string): string => {
@@ -511,7 +444,7 @@ export default function EventWizard() {
   // Single source of truth: the messaging catalog. Templates are selected by the
   // campaign's canonical flow STAGE, narrowed to the event type - the same catalog
   // definitions the worker delivers, so the wizard preview cannot diverge.
-  const { catalog } = useCatalog();
+  const { catalog } = useCatalog(eventDetails.type);
   const templatesFor = (stage?: string) => templatesForStage(catalog, stage, eventDetails.type);
   const defaultFor = (stage?: string) => defaultTemplate(templatesFor(stage));
   // Event-type cards for step 1, derived from the catalog (excluding the free-text
@@ -759,7 +692,8 @@ export default function EventWizard() {
         eventDetails.time &&
         eventDetails.time.trim().length > 0 &&
         eventDetails.type && 
-        eventDetails.type.trim().length > 0
+        eventDetails.type.trim().length > 0 &&
+        hasHostNames(subjects)
       );
     }
     if (activeStep === 2) return true;
@@ -777,7 +711,7 @@ export default function EventWizard() {
       return !!(paymentData.firstName.trim() && paymentData.lastName.trim() && paymentData.phone.trim());
     }
     return true;
-  }, [activeStep, selectedPackageId, eventDetails, campaigns, selectedTemplates, agreedToTerms, user, paymentData, customMessages, customMsgValid]);
+  }, [activeStep, selectedPackageId, eventDetails, campaigns, selectedTemplates, agreedToTerms, user, paymentData, customMessages, customMsgValid, subjects]);
 
   const handleNext = () => {
     // אם עוברים משלב התבניות (שלב 3), וודא שכל קמפיין פעיל יש לו תבנית (דיפולטית או נבחרת)
@@ -838,6 +772,7 @@ export default function EventWizard() {
           .filter(inv => inv.fn || inv.ln)
           .map(inv => ({ fn: inv.fn, ln: inv.ln })),
         plan_id: selectedPackageId || 'free',
+        terms_version: TERMS_VERSION,
         payment_status: selectedPackageId && selectedPackageId !== 'free' ? 'paid' : 'free',
       };
 
@@ -946,6 +881,7 @@ export default function EventWizard() {
         // designer previews (bride/groom/parents/baby/…) also resolve when the
         // WhatsApp message is delivered.
         subjects,
+        terms_version: TERMS_VERSION,
         campaigns: campaignsPayload,
       };
       const orderBodyKey = JSON.stringify(orderBody);
@@ -1507,6 +1443,9 @@ export default function EventWizard() {
         {typeSelected && (
           <>
             {renderContextualFields()}
+            {!hasHostNames(subjects) && (
+              <Typography sx={{ fontSize: 13, color: DC.muted, mt: 1 }}>{HOST_NAMES_HINT}</Typography>
+            )}
 
             {/* Auto-generated event name (editable) */}
             <Box>

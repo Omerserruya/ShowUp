@@ -447,6 +447,16 @@ def ensure_events_subjects(engine: Engine) -> None:
             logger.warning("events.subjects skipped: %s", exc)
 
 
+def ensure_events_terms(engine: Engine) -> None:
+    """events.terms_version / terms_accepted_at - the terms the creator accepted."""
+    with engine.begin() as conn:
+        try:
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS terms_version VARCHAR(20)"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ"))
+        except Exception as exc:  # pragma: no cover
+            logger.warning("events.terms skipped: %s", exc)
+
+
 def ensure_events_event_type(engine: Engine) -> None:
     """Ensure events.event_type exists. Drives the adaptive timeline + template
     recommendations (wedding, brit, brita, bar, bat, corporate, birthday, other)."""
@@ -685,6 +695,78 @@ def ensure_events_wa_image(engine: Engine) -> None:
             logger.warning("events.wa_image_url add skipped: %s", exc)
 
 
+def ensure_events_gift(engine: Engine) -> None:
+    """events.gift - the hosts' Bit/PayBox gift link (shared/domain/gift.py)."""
+    with engine.begin() as conn:
+        try:
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS gift JSONB"))
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_events_gift_code ON events ((gift->>'code')) "
+                              "WHERE gift->>'code' IS NOT NULL"))
+        except Exception as exc:  # pragma: no cover
+            logger.warning("events.gift add skipped: %s", exc)
+
+
+def ensure_events_share_code(engine: Engine) -> None:
+    """events.share_code - random handle for /c/{code} (add to calendar). The
+    volatile default gives every existing row its own value."""
+    with engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE events ADD COLUMN IF NOT EXISTS share_code VARCHAR(16) "
+            "DEFAULT substr(md5(random()::text || clock_timestamp()::text), 1, 12)"))
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_events_share_code ON events (share_code)"))
+
+
+def ensure_round_categories(engine: Engine) -> None:
+    """round_categories + campaigns.category_id (shared/domain/round_categories.py).
+    Seeds the built-in category of each stage once and links existing rounds to
+    the category of their stage. Their stored audience is left as it was."""
+    import json as _json
+    from shared.domain.round_categories import builtin_rows
+    statements = [
+        """
+        CREATE TABLE IF NOT EXISTS round_categories (
+            id VARCHAR(60) PRIMARY KEY,
+            base_stage VARCHAR(40) NOT NULL,
+            title VARCHAR(80) NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            audience VARCHAR(40) NOT NULL,
+            audience_param VARCHAR(100),
+            sort_order INTEGER NOT NULL DEFAULT 100,
+            builtin BOOLEAN NOT NULL DEFAULT false,
+            archived BOOLEAN NOT NULL DEFAULT false,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+        """,
+        "ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS category_id VARCHAR(60)",
+    ]
+    with engine.begin() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))
+        for r in builtin_rows():
+            conn.execute(text(
+                "INSERT INTO round_categories (id, base_stage, title, description, audience, sort_order, builtin) "
+                "VALUES (:id, :base_stage, :title, :description, :audience, :sort_order, true) "
+                "ON CONFLICT (id) DO NOTHING"), r)
+        conn.execute(text(
+            "UPDATE campaigns SET category_id = stage_id WHERE category_id IS NULL "
+            "AND stage_id IN (SELECT id FROM round_categories WHERE builtin)"))
+        # Which category a template family sits in, when not its own stage's
+        # (app/template_placement.py). "האירוע ממש קרוב" asks guests to RSVP, so
+        # it is a further RSVP round, not the day-before event reminder.
+        conn.execute(text(
+            """
+            CREATE TABLE IF NOT EXISTS template_placements (
+                template_family VARCHAR(120) PRIMARY KEY,
+                category_id VARCHAR(60) NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """))
+        conn.execute(text(
+            "INSERT INTO template_placements (template_family, category_id) "
+            "VALUES ('final_reminder_gentle', 'reminder') ON CONFLICT DO NOTHING"))
+
+
 def ensure_team_invitations(engine: Engine) -> None:
     """Pending team invitations by phone. Unlike memberships, the invitee may
     not have a user account yet - the invitation is claimed (converted to an
@@ -875,6 +957,7 @@ def apply_schema_patches(engine: Engine) -> list:
         ensure_events_provisioning,
         ensure_events_event_type,
         ensure_events_subjects,
+        ensure_events_terms,
         ensure_campaign_custom_message,
         ensure_campaign_template_key,
         ensure_campaign_stage_variant,
@@ -884,6 +967,9 @@ def apply_schema_patches(engine: Engine) -> list:
         ensure_admin_ops_schema,
         ensure_messaging_template_state,
         ensure_events_wa_image,
+        ensure_events_gift,
+        ensure_events_share_code,
+        ensure_round_categories,
         ensure_team_invitations,
         ensure_owner_notifications,
         ensure_admin_support_sessions,

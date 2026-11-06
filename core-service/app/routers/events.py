@@ -65,6 +65,7 @@ def create_event(payload: EventCreate, db: Session = Depends(get_db), user_id: u
     tier; a paid tier only ever arrives through a PAYMENT (or admin/venue/beta)
     entitlement, never from this payload.
     """
+    entitlement_service.require_terms(payload.terms_version)
     try:
         event_crud.validate_future_event_date(payload.event_date)
     except event_crud.EventDateError as e:
@@ -92,6 +93,9 @@ def update_event(event_id: uuid.UUID, payload: EventUpdate, db: Session = Depend
     except event_crud.EventDateError as e:
         db.rollback()
         raise HTTPException(status_code=422, detail=str(e))
+    except event_crud.GiftError as e:
+        db.rollback()
+        raise HTTPException(status_code=422, detail={"code": str(e)})
     event_crud.annotate_venue(db, [event])
     # FastAPI will serialize using response_model, which uses model_dump(by_alias=True) via our override
     return event

@@ -26,7 +26,7 @@ from typing import Dict, Set
 from planner.config import PlannerConfig
 from planner.models import CampaignRequest, CampaignType, PlanContext, PlanResult
 from planner.windows import classify, resolve_window, default_priority
-from planner.send_window import adjust_minute_into_window, day_is_sendable, day_ranges
+from planner.send_window import adjust_minute_into_window, day_is_sendable, day_ranges, next_window_open
 import audience_sql
 
 logger = logging.getLogger("planner.runtime")
@@ -65,7 +65,8 @@ def local_now() -> datetime:
 
 
 def release_instant(day: date, schedule_time: Optional[datetime], *,
-                    event_day: Optional[date] = None, target: Optional[date] = None) -> datetime:
+                    event_day: Optional[date] = None, target: Optional[date] = None,
+                    now: Optional[datetime] = None) -> datetime:
     """The moment a batch planned for `day` is released: that day at the
     campaign's own local send time-of-day (Asia/Jerusalem), moved INSIDE the
     send window (SEND_WINDOW) when that time-of-day is outside it (next range
@@ -81,7 +82,19 @@ def release_instant(day: date, schedule_time: Optional[datetime], *,
     adjusted = adjust_minute_into_window(day, minute)
     if adjusted != minute or (local is None) or (event_day is not None and day == event_day and day != target):
         tod = dtime(adjusted // 60, adjusted % 60) if adjusted < 24 * 60 else dtime(23, 59)
-    return datetime.combine(day, tod, tzinfo=local_tz()).astimezone(timezone.utc)
+    out = datetime.combine(day, tod, tzinfo=local_tz()).astimezone(timezone.utc)
+    # A round whose own time is still ahead must never fire by surprise: when
+    # the window clamp lands in the past (e.g. 23:24 today -> 09:00 today, read
+    # at 15:00) it goes out at the window's next opening after its own time.
+    now = now or datetime.now(timezone.utc)
+    if schedule_time is not None and out <= now < _aware_utc(schedule_time):
+        nxt = next_window_open(_aware_utc(schedule_time))
+        out = nxt.astimezone(timezone.utc) if nxt is not None else _aware_utc(schedule_time)
+    return out
+
+
+def _aware_utc(value: datetime) -> datetime:
+    return (value if value.tzinfo else value.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
 
 
 def db_url() -> str:

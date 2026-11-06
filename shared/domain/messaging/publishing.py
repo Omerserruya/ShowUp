@@ -178,8 +178,8 @@ def _body_component(t: Template) -> dict:
 # is rejected). So links live in buttons - never as a full-URL variable, never in
 # the body. invitation → our web page base + slug; nav → Waze directly, with the
 # URL-encoded location as the trailing variable.
-_PUBLIC_BASE = os.getenv("PUBLIC_BASE_URL", "https://app.showup.co.il").rstrip("/")
-_WEB_PATH = {"invitation_link": "/i/", "rsvp_link": "/r/"}
+_PUBLIC_BASE = os.getenv("PUBLIC_BASE_URL", "https://showup-rsvp.com").rstrip("/")
+_WEB_PATH = {"invitation_link": "/i/", "rsvp_link": "/r/", "gift_link": "/g/", "calendar_link": "/c/"}
 _WAZE_NAV_URL = "https://www.waze.com/ul?navigate=yes&q={{1}}"
 _WAZE_NAV_EXAMPLE = "https://www.waze.com/ul?navigate=yes&q=Tel%20Aviv"
 

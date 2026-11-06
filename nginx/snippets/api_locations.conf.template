@@ -112,6 +112,13 @@
         proxy_pass $CORE_SERVICE_URL/members;
         include /etc/nginx/snippets/proxy_headers.conf;
     }
+    # Owners' mobile app: Firebase push token per phone.
+    location /api/push {
+        limit_req zone=api_general burst=20 nodelay;
+        limit_conn perip 50;
+        proxy_pass $CORE_SERVICE_URL/push;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
     # Plan -> feature entitlements matrix (public).
     location /api/catalog {
         limit_req zone=api_general burst=100 nodelay;
@@ -253,6 +260,17 @@
     # Twilio webhooks (/twilio/*, signature-checked by the service), the audio
     # clips Twilio plays (/clips/*), and the admin API (/admin/*, admin JWT).
     # Resolved at request time so nginx still starts when voice-service is down.
+    # Landing-page sample call: anyone can ask us to call a number, so it gets
+    # the strict public write budget (the service adds per-number/IP limits).
+    location /api/voice/public/ {
+        limit_req zone=public_write burst=3 nodelay;
+        resolver 127.0.0.11 valid=30s ipv6=off;
+        set $voice_upstream http://voice-service:8090;
+        rewrite ^/api/voice(/.*)$ $1 break;
+        proxy_pass $voice_upstream;
+        include /etc/nginx/snippets/proxy_headers.conf;
+    }
+
     location /api/voice/ {
         limit_req zone=api_general burst=100 nodelay;
         resolver 127.0.0.11 valid=30s ipv6=off;

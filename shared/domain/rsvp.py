@@ -210,6 +210,8 @@ def parse_guest_count(text: Optional[str]) -> Optional[int]:
     raw = str(text).strip()
     if _re.fullmatch(r"\d{1,12}", raw):
         return int(raw)
+    if _re.fullmatch(r"[-\u2212\u2013]\s*\d+", raw):
+        return None   # "-1": tokenizing drops the minus and would read it as 1
     tokens = tokenize_reply(raw)
     if not tokens or len(tokens) > 4:
         return None

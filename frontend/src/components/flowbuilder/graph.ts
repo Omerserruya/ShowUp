@@ -50,6 +50,7 @@ export const TARGET_HANDLE = 'in';
 export function handleForWhen(when: EdgeWhen): string {
   switch (when.kind) {
     case 'button': return `btn:${when.button_id}`;
+    case 'text_is':
     case 'text_contains':
     case 'any_text': return 'text';
     default: return when.kind;
@@ -110,6 +111,7 @@ export function defaultWhen(kind: EdgeKind, node: FlowNode | undefined): EdgeWhe
   switch (kind) {
     case 'button': return { kind: 'button', button_id: node?.buttons[0]?.id || '' };
     case 'rsvp': return { kind: 'rsvp', value: 'confirmed' };
+    case 'text_is': return { kind: 'text_is', words: [] };
     case 'text_contains': return { kind: 'text_contains', words: [] };
     default: return { kind } as EdgeWhen;
   }

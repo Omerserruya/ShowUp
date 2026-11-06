@@ -1,0 +1,22 @@
+{
+  "name": "showup-mobile",
+  "private": true,
+  "version": "1.0.0",
+  "description": "ShowUp owners' app: a native shell (Capacitor) that loads showup-rsvp.com and adds push notifications.",
+  "scripts": {
+    "sync": "cap sync android",
+    "apk": "cap sync android && cd android && ./gradlew assembleRelease"
+  },
+  "dependencies": {
+    "@capacitor-community/contacts": "6.1.1",
+    "@capacitor/android": "6.2.0",
+    "@capacitor/app": "^6.0.2",
+    "@capacitor/core": "6.2.0",
+    "@capacitor/push-notifications": "6.0.3",
+    "@capacitor/splash-screen": "6.0.3",
+    "@capacitor/status-bar": "6.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "6.2.0"
+  }
+}

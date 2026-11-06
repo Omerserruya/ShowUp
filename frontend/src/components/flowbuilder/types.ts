@@ -41,6 +41,7 @@ export type EdgeWhen =
   | { kind: 'rsvp'; value: RsvpValue | string; typed_only?: boolean }
   | { kind: 'number' }
   | { kind: 'number_invalid' }
+  | { kind: 'text_is'; words: string[]; no_words?: boolean }
   | { kind: 'text_contains'; words: string[] }
   | { kind: 'any_text' }
   | { kind: 'done' }

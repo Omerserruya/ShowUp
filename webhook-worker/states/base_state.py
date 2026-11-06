@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 import re
 from typing import Any, Dict, Optional, Tuple, List
 from datetime import datetime
@@ -47,29 +48,31 @@ def _location_name(loc: Any) -> str:
 
 
 def _format_event_date(event_date_str: str) -> str:
-    """Format date string (ISO format) to 'יום שלישי, ה־3.12.25' style."""
-    if not event_date_str:
-        return ""
-    if isinstance(event_date_str, datetime):
-        dt = event_date_str
-    else:
-        dt = datetime.fromisoformat(str(event_date_str).replace('Z', '+00:00'))
-    weekday = WEEKDAY_HEBREW.get(dt.weekday(), "יום")  # weekday() returns 0=Monday, 6=Sunday
-    day = dt.day
-    month = dt.month
-    year = str(dt.year)[-2:]
-    return f"{weekday}, ה־{day}.{month}.{year}"
+    """'יום שלישי, ה־3.12.25' in ISRAEL time - the shared formatter the message
+    templates use (formatting the UTC value said 17:30 for a 19:30 event)."""
+    from shared.domain.messaging.resolver import format_event_date
+    return format_event_date(event_date_str) if event_date_str else ""
 
 
 def _format_event_time(event_date_str: str) -> str:
-    """Extract just the time (HH:MM) from an ISO datetime string."""
-    if not event_date_str:
+    """HH:MM in Israel time (see _format_event_date)."""
+    from shared.domain.messaging.resolver import format_event_time
+    return format_event_time(event_date_str) if event_date_str else ""
+
+
+def _host_display(event_data: Dict[str, Any]) -> str:
+    from shared.domain.messaging.resolver import VariableResolver
+    subjects = event_data.get("subjects") or {}
+    if isinstance(subjects, str):
+        try:
+            subjects = json.loads(subjects)
+        except ValueError:
+            subjects = {}
+    try:
+        vals = VariableResolver({"subjects": subjects}, media_base="", public_base="")._resolve_subjects()
+    except Exception:
         return ""
-    if isinstance(event_date_str, datetime):
-        dt = event_date_str
-    else:
-        dt = datetime.fromisoformat(str(event_date_str).replace('Z', '+00:00'))
-    return dt.strftime("%H:%M")
+    return vals.get("host_display_name", "")
 
 
 def _format_inviters(inviters: List[Dict[str, str]]) -> str:
@@ -302,7 +305,7 @@ class BaseState:
             if is_uuid:
                 # Fetch event including inviters
                 result = await session.execute(
-                    text("SELECT id, name, event_date, location, inviters FROM events WHERE id = :event_id"),
+                    text("SELECT id, name, event_date, location, inviters, subjects FROM events WHERE id = :event_id"),
                     {"event_id": event_id}
                 )
                 event_row = result.first()
@@ -338,6 +341,10 @@ class BaseState:
                         replacements['event.inviters'] = _format_inviters(inviters if isinstance(inviters, list) else [])
                     else:
                         replacements['event.inviters'] = ' '  # Space for WhatsApp API compatibility
+                    if not replacements['event.inviters'].strip():
+                        # No inviters typed: the hosts named in the event details
+                        # (couple / company), as the message templates do.
+                        replacements['event.inviters'] = _host_display(event_data) or ' ' 
             
             # Fetch guest data
             if is_uuid:

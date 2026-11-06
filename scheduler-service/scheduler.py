@@ -27,6 +27,9 @@ from daily_summary import ensure_daily_summary_table, run_daily_summary_check
 from notifications import ensure_owner_notifications_table, dispatch_owner_notifications
 from payment_reconciliation import run_payment_reconciliation
 from campaign_finalizer import finalize_campaigns
+from push_events import ensure_tables as ensure_push_tables, queue_rsvp_pushes
+from shared.domain import push
+from delivery_retry import dispatch_retries
 from send_window import is_within_send_window, next_window_open
 
 
@@ -95,6 +98,7 @@ class _Ctx:
             self.conn = db_connect()
             ensure_daily_summary_table(self.conn)
             ensure_owner_notifications_table(self.conn)
+            ensure_push_tables(self.conn)
         return self.conn
 
     def reset_db(self):
@@ -247,6 +251,22 @@ def _iteration(ctx: _Ctx, logger, queue_name: str, outpost_queue: str, priority_
         log_json(logger, logging.ERROR, "Owner notifications cycle failed", error=str(e))
         _capture(e, "owner_notifications")
 
+    # The owners' mobile app: announce guest answers, then send every queued push
+    # (answers, finished rounds, daily summaries) through Firebase.
+    try:
+        queue_rsvp_pushes(conn)
+        push.dispatch(conn)
+    except (psycopg2.OperationalError, psycopg2.InterfaceError):
+        raise
+    except Exception as e:
+        try:  # never leave the autocommit connection inside an aborted BEGIN
+            with conn.cursor() as cur:
+                cur.execute("ROLLBACK")
+        except Exception:
+            pass
+        log_json(logger, logging.ERROR, "Push notifications cycle failed", error=str(e))
+        _capture(e, "push_notifications")
+
     # Resolve campaigns from real delivery outcomes: 'sending' becomes 'sent'
     # only if Meta accepted at least one message, else 'failed'. Never sweeps
     # 'queued' rows while outpost still has a backlog.
@@ -270,6 +290,18 @@ def _iteration(ctx: _Ctx, logger, queue_name: str, outpost_queue: str, priority_
     except Exception as e:
         log_json(logger, logging.ERROR, "Campaign finalization cycle failed", error=str(e))
         _capture(e, "campaign_finalization")
+
+    # Retry-later failures (Meta's per-user marketing cap): one more send once
+    # the cap has reset, only inside the send window (self-throttled).
+    try:
+        retried = dispatch_retries(conn, lambda m: publish_campaign(ctx.ensure_mq(), queue_name, m), in_window)
+        if retried:
+            log_json(logger, logging.INFO, "Retry-later messages requested", guests=retried)
+    except (psycopg2.OperationalError, psycopg2.InterfaceError):
+        raise
+    except Exception as e:
+        log_json(logger, logging.ERROR, "Retry-later cycle failed", error=str(e))
+        _capture(e, "delivery_retry")
 
     # Payment reconciliation (self-throttled; a no-op on most cycles).
     try:

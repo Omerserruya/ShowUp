@@ -8,7 +8,7 @@ actually sends, the planner only predicts how many it will send:
 
   * guests of the event with a non-empty phone, not opted out
   * audience everyone | confirmed | declined | no_response | custom
-  * custom filter keys: status, group, tag_id, table ('none' | 'any')
+  * custom filter keys: status, group, tag_id, tag_name, table ('none' | 'any'), skip_no_reminders
 
 "Remaining" = audience members with no messages_sent row for this campaign
 (the worker's claim table), i.e. who the next batch would still message.
@@ -73,6 +73,13 @@ def audience_where(event_id: str, audience, audience_filter=None) -> Tuple[str, 
             join = "JOIN guest_tags gt ON gt.guest_id = g.id"
             where.append("gt.tag_id = %s")
             params.append(f["tag_id"])
+        if f.get("tag_name"):
+            where.append("EXISTS (SELECT 1 FROM guest_tags gtt JOIN tags tt ON tt.id = gtt.tag_id "
+                         "WHERE gtt.guest_id = g.id AND tt.name = %s)")
+            params.append(f["tag_name"])
+        if f.get("skip_no_reminders"):
+            where.append("NOT EXISTS (SELECT 1 FROM guest_tags gtn JOIN tags tn ON tn.id = gtn.tag_id "
+                         "WHERE gtn.guest_id = g.id AND tn.name = 'no_reminders')")
         table = f.get("table")
         if table == "none":
             where.append("g.table_number IS NULL")

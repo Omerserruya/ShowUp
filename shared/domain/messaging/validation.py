@@ -82,7 +82,7 @@ def validate_catalog() -> List[str]:
     # 3b. Every quick-reply button carries a KNOWN semantic action (label is free;
     # the action is the business signal the engine consumes).
     from shared.domain.rsvp import CATALOG_BUTTON_ACTIONS
-    _URL_VARS = {"invitation_link", "nav_link", "rsvp_link"}
+    _URL_VARS = {"invitation_link", "nav_link", "rsvp_link", "gift_link", "calendar_link"}
     for t in all_templates:
         for b in t.quick_replies:
             if b.action not in CATALOG_BUTTON_ACTIONS:

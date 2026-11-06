@@ -74,6 +74,8 @@ import GuestTimeline from '../components/GuestTimeline';
 import BulkActionsBar from '../components/BulkActionsBar';
 import TagPickerDialog, { Tag } from '../components/TagPickerDialog';
 import CopyGuestsDialog from '../components/CopyGuestsDialog';
+import PhoneContactsPicker from '../components/PhoneContactsPicker';
+import { PhoneContact, canReadContacts } from '../native/app';
 import GuestsSummary from '../components/GuestsSummary';
 
 // POST /api/guests/bulk result (core GuestImportReport). One bad row never
@@ -262,7 +264,8 @@ function Guests() {
   const [importReport, setImportReport] = useState<ImportReport | null>(null);
   const [importReportDetails, setImportReportDetails] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [importTab, setImportTab] = useState<'whatsapp' | 'upload'>('whatsapp');
+  // Inside the mobile app the address book is the natural first choice.
+  const [importTab, setImportTab] = useState<'contacts' | 'whatsapp' | 'upload'>(canReadContacts() ? 'contacts' : 'whatsapp');
   const [importDragOver, setImportDragOver] = useState(false);
   const [deleteConfirmGuestId, setDeleteConfirmGuestId] = useState<string | null>(null);
   const [changeCountGuestId, setChangeCountGuestId] = useState<string | null>(null);
@@ -612,6 +615,37 @@ function Guests() {
       setSnackbar({ open: true, message: 'שגיאה בהורדת התבנית', severity: 'error' });
     }
   }, []);
+
+  // Guests picked from the phone's address book (mobile app) - same bulk import
+  // and report as a file.
+  const handleImportContacts = useCallback(async (picked: PhoneContact[]) => {
+    if (!selectedEvent?.id || !picked.length) return;
+    try {
+      setImporting(true);
+      const response = await fetchWithAuth(`/api/guests/bulk?event_id=${selectedEvent.id}`, {
+        method: 'POST',
+        body: JSON.stringify(picked.map((c) => ({ event_id: selectedEvent.id, name: c.name.slice(0, 100), phone: c.phone.slice(0, 20) }))),
+      });
+      if (!response.ok) {
+        setSnackbar({ open: true, message: await guestApiError(response, 'שגיאה בהוספת האורחים'), severity: 'error' });
+        return;
+      }
+      const report: ImportReport = await response.json();
+      setSnackbar({ open: true, message: importSummaryLine(report), severity: report.created > 0 ? 'success' : 'warning' });
+      setImportModalOpen(false);
+      if (report.skipped_duplicates.length || report.skipped_invalid.length || report.capacity_reached || report.created === 0) {
+        setImportReportDetails(false);
+        setImportReport(report);
+      }
+      setRefreshKey((prev) => prev + 1);
+      setStatsRefreshKey((prev) => prev + 1);
+    } catch (error) {
+      console.error('Error importing contacts:', error);
+      setSnackbar({ open: true, message: 'שגיאה בהוספת האורחים', severity: 'error' });
+    } finally {
+      setImporting(false);
+    }
+  }, [selectedEvent?.id]);
 
   // Import guests from CSV/XLSX
   // --- CSV preview & validation (gives users confidence before they commit) ---
@@ -3142,6 +3176,7 @@ function Guests() {
           {/* segmented control */}
           <Box sx={{ display: 'flex', gap: 0.5, p: '4px', bgcolor: alpha('#5A3DA6', 0.07), borderRadius: 2.5, mb: 3 }}>
             {([
+              ...(canReadContacts() ? [{ key: 'contacts' as const, label: 'אנשי קשר' }] : []),
               { key: 'whatsapp' as const, label: 'וואטסאפ' },
               { key: 'upload' as const, label: 'קובץ' },
             ]).map((t) => {
@@ -3156,6 +3191,10 @@ function Guests() {
               );
             })}
           </Box>
+
+          {importTab === 'contacts' ? (
+            <PhoneContactsPicker busy={importing} onAdd={handleImportContacts} />
+          ) : null}
 
           {importTab === 'whatsapp' ? (
             <Stack spacing={2.5} sx={{ pb: 1 }}>

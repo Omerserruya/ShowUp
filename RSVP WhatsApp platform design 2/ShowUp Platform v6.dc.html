@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20,300,0,0&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; background:#F5F1E9; color:#16150F; font-family:Heebo,sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#5A3DA6; font-weight:600; text-decoration:none; }
+  a:hover { color:#432C85; text-decoration:underline; }
+  button { font:inherit; color:inherit; }
+  :focus-visible { outline:3px solid #9D83E0; outline-offset:2px; }
+  .ms { font-family:'Material Symbols Rounded'; font-weight:300; line-height:1; display:inline-block; white-space:nowrap; direction:ltr; }
+  .ltr { direction:ltr; unicode-bidi:isolate; text-align:right; }
+  .num { font-variant-numeric:tabular-nums; }
+  .mono { font-family:'IBM Plex Mono',monospace; font-weight:500; }
+</style>
+</helmet>
+
+<div aria-hidden="true" style="position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;background:#F5F1E9">
+  <img src="assets/seal.png" alt="" style="position:absolute;top:50%;left:34%;width:120vmax;height:120vmax;margin:-60vmax 0 0 -60vmax;object-fit:contain;opacity:0.06;filter:grayscale(0.2)">
+  <div style="position:absolute;inset:0;opacity:0.3;background-image:radial-gradient(rgba(22,21,15,.09) .9px,transparent 1px);background-size:46px 46px"></div>
+</div>
+
+<div dir="rtl" lang="he" style="position:relative;z-index:1;display:flex;min-height:100vh">
+
+  <nav style="width:244px;flex:none;position:sticky;top:0;height:100vh;overflow:auto;padding:22px 16px 18px;display:flex;flex-direction:column;background:rgba(250,248,244,.9);border-left:1.5px solid #E6E2DA">
+    <div style="display:flex;align-items:center;gap:10px;padding:0 6px 22px">
+      <img src="assets/seal.png" alt="" style="width:34px;height:34px;object-fit:contain">
+      <span style="font-size:20px;font-weight:600;letter-spacing:-0.03em">ShowUp</span>
+    </div>
+
+    <button style="{{ eventSwitch }}" style-hover="border-color:#16150F">
+      <span style="flex:1;min-width:0;text-align:right">
+        <span class="mono" style="display:block;font-size:10px;letter-spacing:.18em;color:#5A3DA6">האירוע</span>
+        <span style="display:block;font-size:16px;font-weight:600;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">עומר ושני</span>
+        <span style="display:block;font-size:12.5px;color:#6B6660;margin-top:1px">אירוסין · 4 בספטמבר</span>
+      </span>
+      <span class="ms" style="font-size:19px;color:#6B6660">unfold_more</span>
+    </button>
+
+    <div style="display:flex;flex-direction:column;gap:3px;margin-top:18px">
+      <sc-for list="{{ nav }}" as="item" hint-placeholder-count="6">
+        <button onClick="{{ item.onClick }}" style="{{ item.style }}" style-hover="background:#F1EEE7">
+          <span class="ms" style="{{ item.iconStyle }}">{{ item.icon }}</span>
+          <span style="flex:1;text-align:right">{{ item.label }}</span>
+          <span class="mono num" style="{{ item.countStyle }}">{{ item.count }}</span>
+        </button>
+      </sc-for>
+    </div>
+
+    <div style="flex:1;min-height:22px"></div>
+
+    <div style="border:1.5px solid #DCD0F4;background:#FFFFFF;border-radius:18px;padding:16px">
+      <div class="mono" style="font-size:10px;letter-spacing:.18em;color:#5A3DA6">עוד 3 ימים</div>
+      <div style="font-size:15px;font-weight:600;line-height:1.4;margin-top:8px">5 מוזמנים עוד לא ענו</div>
+      <div style="font-size:13px;color:#4A4741;line-height:1.55;margin-top:4px">התזכורת השנייה מוכנה ומחכה לאישור</div>
+      <button onClick="{{ goCampaigns }}" style="{{ navCta }}" style-hover="background:#BBA6EE">לתזמון התזכורת</button>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px;margin-top:16px;padding:14px 6px 0;border-top:1.5px solid #E6E2DA">
+      <span style="width:34px;height:34px;flex:none;border-radius:50%;background:#F1ECFB;color:#432C85;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center">ד״כ</span>
+      <span style="flex:1;min-width:0">
+        <span style="display:block;font-size:13.5px;font-weight:600">דנה כהן</span>
+        <span class="ltr" style="display:block;font-size:12px;color:#6B6660;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">dana@showup.co.il</span>
+      </span>
+    </div>
+  </nav>
+
+  <main style="flex:1;min-width:0">
+    <header style="position:sticky;top:0;z-index:5;background:rgba(245,241,233,.9);backdrop-filter:blur(12px);border-bottom:1.5px solid #E6E2DA">
+      <div style="max-width:1240px;margin:0 auto;padding:18px 32px 16px;display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap">
+        <div style="min-width:0">
+          <div class="mono" style="font-size:10.5px;letter-spacing:.2em;color:#5A3DA6">{{ pageKicker }}</div>
+          <h1 style="font-size:clamp(24px,2.6vw,32px);line-height:1.12;letter-spacing:-0.032em;font-weight:600;margin:8px 0 0">{{ pageTitle }}</h1>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <label style="{{ searchBox }}">
+            <span class="ms" style="font-size:18px;color:#6B6660">search</span>
+            <span style="font-size:14px;color:#6B6660">חיפוש מוזמן או שולחן</span>
+          </label>
+          <button aria-label="התראות" style="{{ iconBtn }}" style-hover="border-color:#16150F"><span class="ms" style="font-size:19px">notifications</span></button>
+        </div>
+      </div>
+    </header>
+
+    <div style="max-width:1240px;margin:0 auto;padding:26px 32px 64px">
+
+      <sc-if value="{{ isHome }}" hint-placeholder-val="{{ true }}">
+        <div data-screen-label="סקירה" style="display:flex;flex-direction:column;gap:22px">
+
+          <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:22px;align-items:stretch">
+            <div style="display:flex;flex-direction:column;align-items:flex-start;padding:6px 0">
+              <h2 style="font-size:clamp(32px,4vw,50px);line-height:1.08;letter-spacing:-0.034em;font-weight:600;margin:0;max-width:16ch;text-wrap:balance">22 אנשים כבר אמרו שהם מגיעים</h2>
+              <p style="font-size:17px;line-height:1.6;color:#4A4741;margin:14px 0 0;max-width:44ch">14 מתוך 21 ההזמנות אישרו בוואטסאפ. עוד 5 לא ענו, ו־6 מחכים לשולחן</p>
+              <div style="display:flex;flex-wrap:wrap;gap:14px 18px;margin-top:18px">
+                <sc-for list="{{ eventMeta }}" as="m" hint-placeholder-count="3">
+                  <span style="display:inline-flex;align-items:center;gap:7px;font-size:14px;color:#4A4741;white-space:nowrap">
+                    <span class="ms" style="font-size:18px;color:#5A3DA6">{{ m.icon }}</span>{{ m.text }}
+                  </span>
+                </sc-for>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:24px">
+                <button onClick="{{ goCampaigns }}" style="{{ primaryBtn }}" style-hover="background:#BBA6EE">לתזמון התזכורת</button>
+                <a href="#" onClick="{{ goSeating }}" style="font-size:15.5px;border-bottom:1.5px solid #9D83E0;padding-bottom:1px" style-hover="text-decoration:none">שיבוץ 6 מוזמנים</a>
+              </div>
+            </div>
+
+            <div style="{{ heroCard }}">
+              <div class="mono" style="font-size:10.5px;letter-spacing:.2em;color:#5A3DA6">כמה מגיעים</div>
+              <div style="display:flex;align-items:baseline;gap:10px;margin-top:12px;flex-wrap:wrap">
+                <span class="num" style="font-size:64px;font-weight:600;letter-spacing:-0.05em;line-height:0.9">22</span>
+                <span style="font-size:17px;color:#4A4741">אנשים מתוך 34 שהוזמנו</span>
+              </div>
+              <div style="font-size:13.5px;color:#4A4741;margin-top:18px">ההזמנות לפי תשובה</div>
+              <div style="display:flex;height:12px;border-radius:99px;overflow:hidden;background:#F1EEE7;margin-top:8px;gap:3px">
+                <sc-for list="{{ mix }}" as="m" hint-placeholder-count="3">
+                  <span style="{{ m.seg }}"></span>
+                </sc-for>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:10px;margin-top:18px">
+                <sc-for list="{{ mix }}" as="m" hint-placeholder-count="3">
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <span style="{{ m.dot }}"></span>
+                    <span style="flex:1;font-size:14.5px;color:#4A4741">{{ m.label }}</span>
+                    <span class="num" style="font-size:16px;font-weight:600">{{ m.value }}</span>
+                    <span class="num mono" style="font-size:11.5px;color:#6B6660;width:38px;text-align:left">{{ m.pct }}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="margin-top:18px;padding-top:15px;border-top:1.5px solid #F0EDE7;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+                <span style="font-size:13.5px;color:#4A4741">צפי לערב האירוע: 26 עד 28 אנשים</span>
+                <a href="#" onClick="{{ goInsights }}" style="font-size:13.5px">לתמונת המצב</a>
+              </div>
+            </div>
+          </section>
+
+          <section style="display:flex;flex-wrap:wrap;gap:1.5px;background:#E6E2DA;border:1.5px solid #E6E2DA;border-radius:20px;overflow:hidden">
+            <sc-for list="{{ figures }}" as="f" hint-placeholder-count="4">
+              <div style="flex:1 1 200px;min-width:0;background:#FFFFFF;padding:18px 20px">
+                <div class="mono" style="font-size:10px;letter-spacing:.16em;color:#6B6660">{{ f.label }}</div>
+                <div class="num" style="{{ f.valueStyle }}">{{ f.value }}</div>
+                <div style="font-size:13px;color:#4A4741;line-height:1.5">{{ f.hint }}</div>
+              </div>
+            </sc-for>
+          </section>
+
+          <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:22px;align-items:start">
+            <div style="{{ card }}">
+              <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap">
+                <h3 style="font-size:20px;font-weight:600;letter-spacing:-0.02em;margin:0">מה מחכה לך</h3>
+                <span class="mono" style="font-size:10.5px;letter-spacing:.16em;color:#6B6660">3 פריטים</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:10px;margin-top:16px">
+                <sc-for list="{{ decisions }}" as="d" hint-placeholder-count="3">
+                  <button onClick="{{ d.onClick }}" style="{{ d.style }}" style-hover="border-color:#16150F">
+                    <span class="num" style="{{ d.stat }}">{{ d.statValue }}</span>
+                    <span style="flex:1;min-width:0;text-align:right">
+                      <span style="display:block;font-size:15px;font-weight:600">{{ d.title }}</span>
+                      <span style="display:block;font-size:13.5px;color:#4A4741;margin-top:3px;line-height:1.5">{{ d.detail }}</span>
+                    </span>
+                    <span style="font-size:13.5px;font-weight:600;color:#5A3DA6;white-space:nowrap">{{ d.ctaLabel }}</span>
+                  </button>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="{{ card }}">
+              <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap">
+                <h3 style="font-size:20px;font-weight:600;letter-spacing:-0.02em;margin:0">נכנס עכשיו בוואטסאפ</h3>
+                <span style="display:inline-flex;align-items:center;gap:7px;font-size:13px;color:#3F6323">
+                  <span style="width:7px;height:7px;border-radius:50%;background:#3F6323"></span>מחובר
+                </span>
+              </div>
+              <div style="margin-top:12px">
+                <sc-for list="{{ feed }}" as="m" hint-placeholder-count="5">
+                  <div style="display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1.5px solid #F0EDE7">
+                    <span class="mono num" style="font-size:11.5px;color:#6B6660">{{ m.time }}</span>
+                    <span style="min-width:0">
+                      <span style="display:block;font-size:14.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ m.name }}</span>
+                      <span style="display:block;font-size:13px;color:#4A4741;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ m.text }}</span>
+                    </span>
+                    <span style="{{ m.chip }}">{{ m.tag }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </section>
+
+          <section style="{{ card }}">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+              <h3 style="font-size:20px;font-weight:600;letter-spacing:-0.02em;margin:0">סבבי השליחה</h3>
+              <a href="#" onClick="{{ goCampaigns }}" style="font-size:13.5px">לכל הסבבים</a>
+            </div>
+            <div style="{{ roundsHead }}"><span>סבב</span><span>נשלח ל</span><span>ענו</span><span>סטטוס</span></div>
+            <sc-for list="{{ rounds }}" as="r" hint-placeholder-count="3">
+              <div style="{{ r.rowStyle }}" style-hover="background:#FBFAF7">
+                <div style="min-width:0">
+                  <div style="font-size:14.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.name }}</div>
+                  <div style="font-size:12.5px;color:#6B6660;margin-top:3px;white-space:nowrap">{{ r.when }}</div>
+                </div>
+                <span class="num" style="font-size:15px">{{ r.audience }}</span>
+                <span class="num" style="font-size:17px;font-weight:600">{{ r.replied }}</span>
+                <span style="{{ r.chip }}">{{ r.status }}</span>
+              </div>
+            </sc-for>
+          </section>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isInsights }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="תמונת מצב" style="display:flex;flex-direction:column;gap:22px">
+
+          <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:22px;align-items:start">
+            <div style="{{ card }}">
+              <div class="mono" style="font-size:10.5px;letter-spacing:.2em;color:#5A3DA6">אישורים מצטברים · צפי לערב</div>
+              <h3 style="font-size:20px;font-weight:600;letter-spacing:-0.02em;margin:8px 0 0">כמה יאשרו עד האירוע</h3>
+              <svg viewBox="0 0 560 168" preserveAspectRatio="none" style="display:block;width:100%;height:200px;margin-top:20px;overflow:visible">
+                <line x1="0" y1="42" x2="560" y2="42" stroke="#F0EDE7" stroke-width="1.5" vector-effect="non-scaling-stroke"></line>
+                <line x1="0" y1="84" x2="560" y2="84" stroke="#F0EDE7" stroke-width="1.5" vector-effect="non-scaling-stroke"></line>
+                <line x1="0" y1="126" x2="560" y2="126" stroke="#F0EDE7" stroke-width="1.5" vector-effect="non-scaling-stroke"></line>
+                <line x1="0" y1="168" x2="560" y2="168" stroke="#E6E2DA" stroke-width="1.5" vector-effect="non-scaling-stroke"></line>
+                <line x1="0" y1="{{ targetY }}" x2="560" y2="{{ targetY }}" stroke="#8E3418" stroke-width="1.5" stroke-dasharray="5 5" vector-effect="non-scaling-stroke"></line>
+                <path d="{{ curveArea }}" fill="rgba(157,131,224,0.18)"></path>
+                <path d="{{ curveLine }}" fill="none" stroke="#5A3DA6" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"></path>
+                <path d="{{ curveProj }}" fill="none" stroke="#9D83E0" stroke-width="2.5" stroke-dasharray="7 6" stroke-linecap="round" vector-effect="non-scaling-stroke"></path>
+              </svg>
+              <div style="display:flex;margin-top:8px">
+                <sc-for list="{{ curveLabels }}" as="l" hint-placeholder-count="14">
+                  <span class="mono num" style="{{ l.style }}">{{ l.text }}</span>
+                </sc-for>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:18px;margin-top:16px;padding-top:14px;border-top:1.5px solid #F0EDE7">
+                <span style="display:flex;align-items:center;gap:8px;font-size:13px;color:#4A4741"><span style="width:16px;height:2.5px;background:#5A3DA6"></span>אישרו עד היום</span>
+                <span style="display:flex;align-items:center;gap:8px;font-size:13px;color:#4A4741"><span style="width:16px;height:2.5px;background:repeating-linear-gradient(90deg,#9D83E0 0 6px,transparent 6px 10px)"></span>צפי</span>
+                <span style="display:flex;align-items:center;gap:8px;font-size:13px;color:#4A4741"><span style="width:16px;height:1.5px;background:repeating-linear-gradient(90deg,#8E3418 0 4px,transparent 4px 8px)"></span>מה שסיכמנו עם האולם: 19 הזמנות</span>
+              </div>
+            </div>
+
+            <div style="{{ card }}">
+              <div class="mono" style="font-size:10.5px;letter-spacing:.2em;color:#5A3DA6">מה כדאי לעשות</div>
+              <h3 style="font-size:20px;font-weight:600;letter-spacing:-0.02em;margin:8px 0 0">שלושה דברים לפני שישי</h3>
+              <div style="margin-top:12px">
+                <sc-for list="{{ insightNotes }}" as="n" hint-placeholder-count="3">
+                  <div style="display:grid;grid-template-columns:28px minmax(0,1fr);gap:12px;padding:15px 0;border-bottom:1.5px solid #F0EDE7">
+                    <span class="mono num" style="font-size:12px;color:#5A3DA6;padding-top:3px">{{ n.i }}</span>
+                    <span style="min-width:0">
+                      <span style="display:block;font-size:15px;font-weight:600;line-height:1.4">{{ n.title }}</span>
+                      <span style="display:block;font-size:13.5px;color:#4A4741;margin-top:5px;line-height:1.6">{{ n.detail }}</span>
+                    </span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </section>
+
+          <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:22px;align-items:start">
+            <div style="{{ card }}">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+                <div class="mono" style="font-size:10.5px;letter-spacing:.2em;color:#5A3DA6">בשביל הקייטרינג</div>
+                <a href="#" style="font-size:13.5px">שליחה לקייטרינג</a>
+              </div>
+              <h3 style="font-size:20px;font-weight:600;letter-spacing:-0.02em;margin:8px 0 12px">מה מגישים ולכמה</h3>
+              <sc-for list="{{ meals }}" as="m" hint-placeholder-count="6">
+                <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1.5px solid #F0EDE7">
+                  <span style="flex:1;min-width:0">
+                    <span style="display:block;font-size:15px;font-weight:600">{{ m.label }}</span>
+                    <span style="display:block;font-size:12.5px;color:#6B6660;margin-top:2px">{{ m.who }}</span>
+                  </span>
+                  <span class="num" style="font-size:22px;font-weight:600;letter-spacing:-0.04em">{{ m.n }}</span>
+                </div>
+              </sc-for>
+            </div>
+
+            <div style="{{ card }}">
+              <div class="mono" style="font-size:10.5px;letter-spacing:.2em;color:#5A3DA6">עדיף בטלפון</div>
+              <h3 style="font-size:20px;font-weight:600;letter-spacing:-0.02em;margin:8px 0 6px">למי כדאי להתקשר</h3>
+              <p style="font-size:13.5px;color:#4A4741;margin:0 0 10px;line-height:1.6">ראו את ההודעות ולא ענו, או שהמספר שלהם לא עובד</p>
+              <sc-for list="{{ calls }}" as="c" hint-placeholder-count="4">
+                <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1.5px solid #F0EDE7">
+                  <span style="flex:1;min-width:0">
+                    <span style="display:block;font-size:15px;font-weight:600">{{ c.name }}</span>
+                    <span style="display:block;font-size:12.5px;color:#6B6660;margin-top:2px">{{ c.why }}</span>
+                  </span>
+                  <a href="#" aria-label="{{ c.aria }}" style="{{ callBtn }}"><span class="ms" style="font-size:19px">call</span></a>
+                </div>
+              </sc-for>
+            </div>
+          </section>
+
+          <section style="{{ card }}">
+            <div class="mono" style="font-size:10.5px;letter-spacing:.2em;color:#5A3DA6">לפי קבוצה</div>
+            <h3 style="font-size:20px;font-weight:600;letter-spacing:-0.02em;margin:8px 0 16px">מי עונה ומי עדיין שותק</h3>
+            <div style="{{ segHead }}"><span>קבוצה</span><span>ענו</span><span>אחוז תשובות</span><span>שובצו</span></div>
+            <sc-for list="{{ segRows }}" as="s" hint-placeholder-count="4">
+              <div style="{{ s.rowStyle }}" style-hover="background:#FBFAF7">
+                <span style="display:flex;align-items:center;gap:8px;min-width:0">
+                  <span style="font-size:14.5px;font-weight:600;white-space:nowrap">{{ s.name }}</span>
+                  <span style="{{ s.flagStyle }}">{{ s.flag }}</span>
+                </span>
+                <span class="num" style="font-size:14px;color:#4A4741">{{ s.replied }}</span>
+                <span style="display:flex;align-items:center;gap:10px;min-width:0">
+                  <span style="flex:1;min-width:0;height:9px;border-radius:99px;background:#F1EEE7;overflow:hidden"><span style="{{ s.rateBar }}"></span></span>
+                  <span class="num" style="font-size:15px;font-weight:600;width:40px;text-align:left">{{ s.rate }}</span>
+                </span>
+                <span style="display:flex;align-items:center;gap:10px;min-width:0">
+                  <span style="flex:1;min-width:0;height:9px;border-radius:99px;background:#F1EEE7;overflow:hidden"><span style="{{ s.seatedBar }}"></span></span>
+                  <span class="num" style="font-size:13.5px;color:#4A4741;width:36px;text-align:left">{{ s.seated }}</span>
+                </span>
+              </div>
+            </sc-for>
+          </section>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isGuests }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="מוזמנים" style="display:flex;flex-direction:column;gap:18px">
+          <section style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
+            <div role="tablist" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <sc-for list="{{ filters }}" as="f" hint-placeholder-count="6">
+                <button role="tab" style="{{ f.style }}" style-hover="border-color:#16150F">{{ f.label }}<span class="mono num" style="{{ f.countStyle }}">{{ f.count }}</span></button>
+              </sc-for>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <button style="{{ ghostBtn }}" style-hover="border-color:#16150F">ייבוא מקובץ</button>
+              <button style="{{ primaryBtn }}" style-hover="background:#BBA6EE">מוזמן חדש</button>
+            </div>
+          </section>
+
+          <sc-if value="{{ hasPending }}" hint-placeholder-val="{{ true }}">
+            <section data-screen-label="ממתינים לאישור" style="background:#FFFFFF;border:1.5px solid #DCD0F4;border-radius:20px;padding:clamp(18px,2.2vw,24px)">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
+                <div style="min-width:0">
+                  <div class="mono" style="font-size:10.5px;letter-spacing:.2em;color:#5A3DA6">ממתינים לאישור · מוואטסאפ</div>
+                  <h3 style="font-size:20px;font-weight:600;letter-spacing:-0.02em;margin:8px 0 0">{{ pendingTitle }}</h3>
+                  <p style="font-size:14px;color:#4A4741;margin:6px 0 0;line-height:1.6;max-width:62ch">אנשי קשר ששלחתם בוואטסאפ למספר של ShowUp. הם נכנסים לרשימת המוזמנים רק אחרי שתאשרו או תתקנו</p>
+                </div>
+                <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+                  <a href="#" style="font-size:13.5px">איך שולחים איש קשר</a>
+                  <button onClick="{{ approveAll }}" style="{{ ghostBtn }}" style-hover="border-color:#16150F">אישור הכול</button>
+                </div>
+              </div>
+              <div style="margin-top:8px">
+                <sc-for list="{{ pending }}" as="p" hint-placeholder-count="4">
+                  <div style="{{ p.rowStyle }}">
+                    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+                      <span style="width:40px;height:40px;flex:none;border-radius:50%;background:#F3EFFC;color:#432C85;font-size:13.5px;font-weight:600;display:flex;align-items:center;justify-content:center">{{ p.ini }}</span>
+                      <span style="flex:1 1 220px;min-width:0">
+                        <span style="display:block;font-size:15px;font-weight:600">{{ p.name }}</span>
+                        <span style="display:flex;align-items:center;gap:8px;margin-top:3px;flex-wrap:wrap">
+                          <span class="ltr num" style="font-size:12.5px;color:#6B6660;white-space:nowrap">{{ p.phone }}</span>
+                          <span style="font-size:12.5px;color:#6B6660">{{ p.meta }}</span>
+                        </span>
+                      </span>
+                      <span style="flex:1 1 170px;min-width:0;display:flex;align-items:center;gap:7px;font-size:13px;color:#4A4741"><span class="ms" style="font-size:17px;color:#5A3DA6">forward_to_inbox</span>{{ p.from }}</span>
+                      <span style="{{ p.issueStyle }}">{{ p.issue }}</span>
+                      <div style="display:flex;gap:8px;align-items:center">
+                        <button onClick="{{ p.onEdit }}" style="{{ smallGhost }}" style-hover="border-color:#16150F">{{ p.editLabel }}</button>
+                        <button onClick="{{ p.onApprove }}" style="{{ smallPrimary }}" style-hover="background:#BBA6EE">אישור</button>
+                        <button aria-label="לא להוסיף" onClick="{{ p.onDismiss }}" style="{{ dismissBtn }}" style-hover="border-color:#8E3418;color:#8E3418"><span class="ms" style="font-size:18px">close</span></button>
+                      </div>
+                    </div>
+                    <sc-if value="{{ p.editing }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-top:14px;padding:18px;border-radius:16px;background:#FBFAF7;border:1.5px solid #E6E2DA;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:16px">
+                        <div style="display:flex;flex-direction:column;gap:7px">
+                          <span style="font-size:13.5px;font-weight:600">שם</span>
+                          <span style="display:flex;align-items:center;min-height:48px;padding:0 14px;border-radius:13px;background:#FFFFFF;border:1.5px solid #D8D3C9;font-size:15px">{{ p.name }}</span>
+                        </div>
+                        <div style="display:flex;flex-direction:column;gap:7px">
+                          <span style="font-size:13.5px;font-weight:600">טלפון</span>
+                          <span class="ltr num" style="{{ p.phoneBox }}">{{ p.phone }}</span>
+                          <span style="{{ p.phoneHintStyle }}">{{ p.phoneHint }}</span>
+                        </div>
+                        <div style="display:flex;flex-direction:column;gap:7px">
+                          <span style="font-size:13.5px;font-weight:600">כמה אנשים</span>
+                          <span style="display:flex;gap:6px">
+                            <sc-for list="{{ p.partyOpts }}" as="o" hint-placeholder-count="5"><span style="{{ o.style }}">{{ o.t }}</span></sc-for>
+                          </span>
+                        </div>
+                        <div style="display:flex;flex-direction:column;gap:7px">
+                          <span style="font-size:13.5px;font-weight:600">קבוצה</span>
+                          <span style="display:flex;gap:6px;flex-wrap:wrap">
+                            <sc-for list="{{ p.groupOpts }}" as="o" hint-placeholder-count="4"><span style="{{ o.style }}">{{ o.t }}</span></sc-for>
+                          </span>
+                        </div>
+                        <div style="grid-column:1/-1;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+                          <button onClick="{{ p.onApprove }}" style="{{ primaryBtn }}" style-hover="background:#BBA6EE">שמירה והוספה למוזמנים</button>
+                          <button onClick="{{ p.onEdit }}" style="{{ ghostBtn }}" style-hover="border-color:#16150F">ביטול</button>
+                          <span style="font-size:13px;color:#6B6660">לא נשלחת הודעה עד שתתזמנו סבב</span>
+                        </div>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </section>
+          </sc-if>
+          <sc-if value="{{ allApproved }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:10px;padding:13px 16px;border-radius:14px;background:#E7F0D4;border:1.5px solid #CFE0B0;color:#3F6323;font-size:14px;font-weight:600"><span class="ms" style="font-size:19px">check_circle</span>כל אנשי הקשר מוואטסאפ טופלו. מה שאושר נוסף לרשימה</div>
+          </sc-if>
+
+          <section style="background:#FFFFFF;border:1.5px solid #E6E2DA;border-radius:20px;overflow:hidden">
+            <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:13px 22px;background:#F3EFFC;border-bottom:1.5px solid #DCD0F4">
+              <span style="font-size:14px;font-weight:600;color:#432C85">3 מוזמנים נבחרו</span>
+              <a href="#" style="font-size:13.5px">שליחת תזכורת</a>
+              <a href="#" style="font-size:13.5px">שיוך לשולחן</a>
+              <a href="#" style="font-size:13.5px">הוספת תג</a>
+              <div style="flex:1"></div>
+              <a href="#" style="font-size:13.5px;color:#8E3418">מחיקה</a>
+            </div>
+            <div style="{{ guestHead }}"><span></span><span>מוזמן</span><span>אישור</span><span>נפשות</span><span>שולחן</span><span></span></div>
+            <sc-for list="{{ guests }}" as="g" hint-placeholder-count="10">
+              <div style="{{ g.rowStyle }}" style-hover="background:#FBFAF7">
+                <span style="{{ g.checkStyle }}"><span class="ms" style="{{ g.checkIconStyle }}">check</span></span>
+                <span style="min-width:0">
+                  <span style="display:block;font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ g.name }}</span>
+                  <span style="display:flex;align-items:center;gap:8px;margin-top:3px;min-width:0">
+                    <span class="ltr num" style="font-size:12.5px;color:#6B6660;white-space:nowrap">{{ g.phone }}</span>
+                    <span style="font-size:12.5px;color:#6B6660;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ g.meta }}</span>
+                  </span>
+                </span>
+                <span style="{{ g.chip }}">{{ g.status }}</span>
+                <span class="num" style="font-size:16px;font-weight:600">{{ g.party }}</span>
+                <span style="{{ g.tableStyle }}">{{ g.table }}</span>
+                <span class="ms" style="font-size:19px;color:#6B6660">more_horiz</span>
+              </div>
+            </sc-for>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:16px 22px">
+              <span class="num" style="font-size:13.5px;color:#4A4741">מוצגים 1 עד 10 מתוך 21</span>
+              <div style="display:flex;gap:8px">
+                <span class="num" style="{{ pageActive }}">1</span>
+                <span class="num" style="{{ pageBtn }}">2</span>
+                <span class="num" style="{{ pageBtn }}">3</span>
+              </div>
+            </div>
+          </section>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isCampaigns }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="שליחה" style="display:flex;flex-direction:column;gap:18px">
+          <section style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <sc-for list="{{ steps }}" as="s" hint-placeholder-count="3">
+                <span style="{{ s.style }}"><span class="mono" style="{{ s.numStyle }}">{{ s.i }}</span>{{ s.label }}</span>
+              </sc-for>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+              <span style="font-size:13px;color:#6B6660;white-space:nowrap">נשמר אוטומטית</span>
+              <button style="{{ ghostBtn }}" style-hover="border-color:#16150F">שליחת בדיקה אליי</button>
+              <button style="{{ primaryBtn }}" style-hover="background:#BBA6EE">תזמון הסבב</button>
+            </div>
+          </section>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:22px;align-items:start">
+            <div style="display:flex;flex-direction:column;gap:22px;min-width:0">
+
+              <section style="{{ card }}">
+                <div class="mono" style="font-size:10.5px;letter-spacing:.2em;color:#5A3DA6">שלב 1</div>
+                <h3 style="font-size:20px;font-weight:600;letter-spacing:-0.02em;margin:8px 0 0">איזו הודעה יוצאת</h3>
+                <p style="font-size:14px;color:#4A4741;margin:6px 0 0;line-height:1.6">השמות, התאריך והמקום נכנסים לבד מפרטי האירוע</p>
+                <div style="display:flex;flex-direction:column;gap:10px;margin-top:16px">
+                  <sc-for list="{{ templates }}" as="t" hint-placeholder-count="3">
+                    <label style="{{ t.style }}" style-hover="border-color:#16150F">
+                      <span style="{{ t.radio }}"></span>
+                      <span style="flex:1;min-width:0">
+                        <span style="display:block;font-size:15px;font-weight:600">{{ t.title }}</span>
+                        <span style="display:block;font-size:13px;color:#4A4741;margin-top:3px">{{ t.desc }}</span>
+                      </span>
+                      <span style="{{ t.chip }}">{{ t.state }}</span>
+                    </label>
+                  </sc-for>
+                </div>
+                </section>
+
+              <section style="{{ card }}">
+                <div class="mono" style="font-size:10.5px;letter-spacing:.2em;color:#5A3DA6">שלב 2</div>
+                <h3 style="font-size:20px;font-weight:600;letter-spacing:-0.02em;margin:8px 0 16px">למי שולחים</h3>
+                <div style="display:flex;flex-direction:column;gap:10px">
+                  <sc-for list="{{ segments }}" as="s" hint-placeholder-count="4">
+                    <label style="{{ s.style }}" style-hover="border-color:#16150F">
+                      <span style="{{ s.radio }}"></span>
+                      <span style="flex:1;min-width:0">
+                        <span style="display:block;font-size:15px;font-weight:600">{{ s.label }}</span>
+                        <span style="display:block;font-size:13px;color:#4A4741;margin-top:3px">{{ s.desc }}</span>
+                      </span>
+                      <span class="num" style="font-size:22px;font-weight:600;letter-spacing:-0.03em">{{ s.count }}</span>
+                    </label>
+                  </sc-for>
+                </div>
+              </section>
+
+              <section style="{{ card }}">
+                <div class="mono" style="font-size:10.5px;letter-spacing:.2em;color:#5A3DA6">שלב 3</div>
+                <h3 style="font-size:20px;font-weight:600;letter-spacing:-0.02em;margin:8px 0 0">מתי ומה קורה אחר כך</h3>
+                <p style="font-size:14px;color:#4A4741;margin:6px 0 20px;line-height:1.6">כל גל יוצא רק למי שלא ענה לקודם, ורק בין 09:00 ל־20:00</p>
+                <sc-for list="{{ waves }}" as="w" hint-placeholder-count="4">
+                  <div style="display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:start">
+                    <span style="display:flex;flex-direction:column;align-items:center">
+                      <span style="{{ w.node }}"></span>
+                      <span style="{{ w.line }}"></span>
+                    </span>
+                    <span style="padding-bottom:20px;min-width:0">
+                      <span style="display:block;font-size:15px;font-weight:600">{{ w.title }}</span>
+                      <span style="display:block;font-size:13px;color:#4A4741;margin-top:3px">{{ w.detail }}</span>
+                    </span>
+                    <span style="{{ w.chip }}">{{ w.tag }}</span>
+                  </div>
+                </sc-for>
+              </section>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:22px;min-width:0">
+              <section style="{{ card }}">
+                <div class="mono" style="font-size:10.5px;letter-spacing:.2em;color:#5A3DA6">תצוגה מקדימה</div>
+                <h3 style="font-size:20px;font-weight:600;letter-spacing:-0.02em;margin:8px 0 16px">ככה זה ייראה אצלם</h3>
+                <div style="border:1.5px solid #E2DCD2;border-radius:18px;overflow:hidden;background:#EFEAE2">
+                  <div style="display:flex;align-items:center;gap:11px;padding:10px 13px;background:#008069;color:#FFFFFF">
+                    <span style="width:36px;height:36px;border-radius:50%;background:#FFFFFF;display:flex;align-items:center;justify-content:center;flex:none;overflow:hidden"><img src="assets/seal.png" alt="" style="width:26px;height:26px;object-fit:contain"></span>
+                    <span style="flex:1;min-width:0">
+                      <span style="display:block;font-size:15px;font-weight:500;line-height:1.2">עומר ושני</span>
+                      <span style="display:block;font-size:12.5px;opacity:.88;margin-top:2px">חשבון עסקי</span>
+                    </span>
+                  </div>
+                  <div style="padding:16px 12px;display:flex;flex-direction:column;gap:7px;min-height:300px">
+                    <div style="align-self:flex-start;max-width:88%;background:#FFFFFF;border-radius:0 10px 10px 10px;padding:8px 11px 6px;box-shadow:0 1px 0.5px rgba(11,20,26,.13)">
+                      <div style="font-size:14.5px;line-height:1.5;color:#111B21">היי, תזכורת קטנה<br>עומר ושני חוגגים ב־4 בספטמבר בשעה 19:30 בגן האירועים<br>אפשר פשוט ללחוץ על אחת האפשרויות</div>
+                      <div class="num" style="font-size:11px;color:#667781;text-align:left;margin-top:3px">10:00</div>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:4px;align-self:flex-start;width:88%">
+                      <span style="{{ waBtn }}">מגיעים</span>
+                      <span style="{{ waBtn }}">לא נוכל להגיע</span>
+                      <span style="{{ waBtn }}">עוד לא יודעים</span>
+                    </div>
+                    <div style="align-self:flex-end;max-width:70%;background:#D9FDD3;border-radius:10px 0 10px 10px;padding:8px 11px 6px;box-shadow:0 1px 0.5px rgba(11,20,26,.13)">
+                      <div style="font-size:14.5px;color:#111B21">מגיעים</div>
+                      <div class="num" style="font-size:11px;color:#667781;text-align:left;margin-top:3px">10:04</div>
+                    </div>
+                    <div style="align-self:flex-start;max-width:88%;background:#FFFFFF;border-radius:0 10px 10px 10px;padding:8px 11px 6px;box-shadow:0 1px 0.5px rgba(11,20,26,.13)">
+                      <div style="font-size:14.5px;line-height:1.5;color:#111B21">איזה כיף. כמה מקומות לשמור לכם?</div>
+                      <div class="num" style="font-size:11px;color:#667781;text-align:left;margin-top:3px">10:04</div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section style="{{ card }}">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+                  <div class="mono" style="font-size:10.5px;letter-spacing:.2em;color:#5A3DA6">הסבב הקודם</div>
+                  <span style="{{ chipOk }}">פעיל</span>
+                </div>
+                <h3 style="font-size:20px;font-weight:600;letter-spacing:-0.02em;margin:8px 0 0">תזכורת ראשונה</h3>
+                <div style="font-size:13.5px;color:#4A4741;margin-top:4px">2 בספטמבר, 10:00 · 21 נמענים</div>
+                <div style="display:flex;flex-wrap:wrap;gap:1.5px;background:#E6E2DA;border:1.5px solid #E6E2DA;border-radius:14px;overflow:hidden;margin-top:16px">
+                  <sc-for list="{{ delivery }}" as="d" hint-placeholder-count="4">
+                    <div style="flex:1 1 110px;min-width:0;background:#FFFFFF;padding:13px 14px">
+                      <div class="mono" style="font-size:10px;letter-spacing:.14em;color:#6B6660">{{ d.label }}</div>
+                      <div style="display:flex;align-items:baseline;gap:6px;margin-top:6px">
+                        <span class="num" style="font-size:26px;font-weight:600;letter-spacing:-0.04em;line-height:1">{{ d.value }}</span>
+                        <span class="mono num" style="font-size:11px;color:#6B6660">{{ d.pct }}</span>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1.5px solid #F0EDE7">
+                  <span style="font-size:13.5px;color:#4A4741">מספר אחד לא תקין ולכן ההודעה לא נמסרה</span>
+                  <a href="#" onClick="{{ goGuests }}" style="font-size:13.5px">לתיקון</a>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isSeating }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="הושבה" style="display:flex;flex-direction:column;gap:18px">
+          <section style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+              <sc-for list="{{ seatLegend }}" as="l" hint-placeholder-count="3">
+                <span style="display:flex;align-items:center;gap:8px">
+                  <span style="{{ l.dot }}"></span>
+                  <span style="font-size:14px;color:#4A4741;white-space:nowrap">{{ l.label }}</span>
+                </span>
+              </sc-for>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <button style="{{ ghostBtn }}" style-hover="border-color:#16150F">שולחן חדש</button>
+              <button style="{{ ghostBtn }}" style-hover="border-color:#16150F">שיבוץ אוטומטי</button>
+              <button style="{{ primaryBtn }}" style-hover="background:#BBA6EE">שמירת המפה</button>
+            </div>
+          </section>
+
+          <div style="display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start">
+            <div style="flex:1 1 540px;min-width:0;background:#FFFFFF;border:1.5px solid #E6E2DA;border-radius:22px;padding:14px;box-shadow:0 18px 44px rgba(22,21,15,.07)">
+              <div style="position:relative;height:572px;border-radius:14px;background:#FBFAF7;border:1.5px solid #F0EDE7;overflow:hidden">
+                <div style="position:absolute;inset:0;opacity:0.5;background-image:radial-gradient(rgba(22,21,15,.12) .9px,transparent 1px);background-size:26px 26px"></div>
+                <div style="position:absolute;top:22px;left:50%;transform:translateX(-50%);width:220px;height:50px;border-radius:12px;background:#C9B8F3;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:#16150F">במה וחופה</div>
+                <div style="position:absolute;bottom:26px;left:50%;transform:translateX(-50%);width:220px;height:108px;border-radius:14px;border:1.5px dashed #D8D3C9;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:500;color:#4A4741">רחבת ריקודים</div>
+                <div style="position:absolute;bottom:26px;left:24px;width:86px;height:136px;border-radius:12px;background:#F1EEE7;border:1.5px solid #E6E2DA;display:flex;align-items:center;justify-content:center;font-size:13.5px;font-weight:500;color:#4A4741">בר</div>
+                <div style="position:absolute;bottom:26px;right:24px;width:86px;height:136px;border-radius:12px;background:#F1EEE7;border:1.5px solid #E6E2DA;display:flex;align-items:center;justify-content:center;font-size:13.5px;font-weight:500;color:#4A4741">מזנון</div>
+                <sc-for list="{{ tables }}" as="t" hint-placeholder-count="10">
+                  <div style="{{ t.ring }}">
+                    <div style="{{ t.inner }}">
+                      <span style="font-size:12px;font-weight:500;color:#4A4741">{{ t.name }}</span>
+                      <span class="num" style="{{ t.countStyle }}">{{ t.count }}</span>
+                    </div>
+                  </div>
+                </sc-for>
+                <div style="position:absolute;top:200px;right:36%;width:172px;padding:11px 13px;border-radius:13px;background:#FFFFFF;border:1.5px solid #16150F;box-shadow:0 14px 28px rgba(22,21,15,.14);transform:rotate(-2deg);display:flex;align-items:center;gap:10px">
+                  <span class="ms" style="font-size:18px;color:#6B6660">drag_indicator</span>
+                  <span style="min-width:0">
+                    <span style="display:block;font-size:14px;font-weight:600">יעל ורון ברק</span>
+                    <span style="display:block;font-size:12px;color:#4A4741;margin-top:1px">2 נפשות · צד כלה</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div style="flex:1 1 300px;min-width:0;max-width:400px;display:flex;flex-direction:column;gap:22px">
+              <section style="{{ card }}">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+                  <div class="mono" style="font-size:10.5px;letter-spacing:.2em;color:#5A3DA6">בלי שולחן</div>
+                  <span style="{{ chipLav }}">6</span>
+                </div>
+                <h3 style="font-size:20px;font-weight:600;letter-spacing:-0.02em;margin:8px 0 14px">מחכים לשיבוץ</h3>
+                <div style="display:flex;flex-direction:column;gap:8px">
+                  <sc-for list="{{ unseated }}" as="u" hint-placeholder-count="6">
+                    <div style="display:flex;align-items:center;gap:10px;padding:11px 12px;border:1.5px solid #E6E2DA;border-radius:13px;background:#FBFAF7;cursor:grab" style-hover="border-color:#16150F;background:#FFFFFF">
+                      <span class="ms" style="font-size:18px;color:#6B6660">drag_indicator</span>
+                      <span style="flex:1;min-width:0">
+                        <span style="display:block;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ u.name }}</span>
+                        <span style="display:block;font-size:12.5px;color:#4A4741;margin-top:1px">{{ u.meta }}</span>
+                      </span>
+                      <span style="{{ u.chip }}">{{ u.side }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </section>
+
+              <section style="{{ card }}">
+                <div class="mono" style="font-size:10.5px;letter-spacing:.2em;color:#5A3DA6">שווה לבדוק</div>
+                <div style="display:flex;flex-direction:column;gap:10px;margin-top:14px">
+                  <sc-for list="{{ conflicts }}" as="c" hint-placeholder-count="3">
+                    <div style="{{ c.style }}">
+                      <div style="font-size:14px;font-weight:600">{{ c.title }}</div>
+                      <div style="font-size:13px;line-height:1.55;margin-top:4px">{{ c.detail }}</div>
+                    </div>
+                  </sc-for>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="הגדרות" style="display:flex;flex-direction:column;gap:22px;max-width:980px">
+          <sc-for list="{{ settingsGroups }}" as="grp" hint-placeholder-count="4">
+            <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:22px;padding-bottom:22px;border-bottom:1.5px solid #E6E2DA">
+              <div>
+                <div class="mono" style="font-size:10.5px;letter-spacing:.2em;color:#5A3DA6">{{ grp.kicker }}</div>
+                <h3 style="font-size:20px;font-weight:600;letter-spacing:-0.02em;margin:8px 0 0">{{ grp.title }}</h3>
+                <p style="font-size:14px;color:#4A4741;margin:6px 0 0;line-height:1.6;max-width:32ch">{{ grp.desc }}</p>
+              </div>
+              <div style="grid-column:span 2;min-width:0;background:#FFFFFF;border:1.5px solid #E6E2DA;border-radius:20px;padding:6px 20px">
+                <sc-for list="{{ grp.rows }}" as="r" hint-placeholder-count="4">
+                  <div style="display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1.5px solid #F0EDE7">
+                    <span style="flex:1;min-width:0">
+                      <span style="display:block;font-size:13px;color:#6B6660">{{ r.label }}</span>
+                      <span style="{{ r.valueStyle }}">{{ r.value }}</span>
+                    </span>
+                    <span style="{{ r.track }}"><span style="{{ r.knob }}"></span></span>
+                    <span style="{{ r.chip }}">{{ r.chipText }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </section>
+          </sc-for>
+        </div>
+      </sc-if>
+
+    </div>
+  </main>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;density&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;comfortable&quot;,&quot;options&quot;:[&quot;comfortable&quot;,&quot;compact&quot;],&quot;tsType&quot;:&quot;\&quot;comfortable\&quot; | \&quot;compact\&quot;&quot;,&quot;section&quot;:&quot;טבלת מוזמנים&quot;}}">
+class Component extends DCLogic {
+  state = { page: 'home', done: [], editing: 'p4' };
+
+  renderVals() {
+    // GOTCHA language, lavender from the ShowUp seal in place of ink
+    const ink = '#16150F', body = '#4A4741', muted = '#6B6660';
+    const line = '#E6E2DA', line2 = '#F0EDE7', field = '#D8D3C9', soft = '#FBFAF7', warm = '#F1EEE7';
+    const L = '#C9B8F3', LH = '#BBA6EE', LM = '#9D83E0', LD = '#5A3DA6', LDD = '#432C85', LT = '#F3EFFC', LB = '#DCD0F4';
+    const OK = '#3F6323', OKT = '#E7F0D4', OKB = '#CFE0B0';
+    const WN = '#7E5410', WNT = '#F6EFD8', WNB = '#E9D9A8';
+    const ER = '#8E3418', ERT = '#F6E3DC', ERB = '#EBC5B6';
+
+    const cur = this.state.page;
+    const dense = (this.props.density ?? 'comfortable') === 'compact';
+    const go = (p) => (e) => { if (e && e.preventDefault) e.preventDefault(); this.setState({ page: p }); };
+
+    const chip = (bg, bc, fg) => ({ display:'inline-flex', alignItems:'center', justifyContent:'center', height:26, padding:'0 10px', borderRadius:9, border:'1.5px solid '+bc, background:bg, color:fg, fontSize:12.5, fontWeight:600, whiteSpace:'nowrap', flex:'none' });
+    const chipOk = chip(OKT, OKB, OK), chipWarn = chip(WNT, WNB, WN), chipErr = chip(ERT, ERB, ER);
+    const chipLav = chip(LT, LB, LDD), chipQuiet = chip(soft, line, body);
+    const dot = (c) => ({ width:10, height:10, borderRadius:'50%', background:c, display:'inline-block', flex:'none' });
+
+    const card = { background:'#FFFFFF', border:'1.5px solid '+line, borderRadius:20, padding:'clamp(18px,2.2vw,24px)', minWidth:0 };
+    const heroCard = { ...card, borderRadius:22, boxShadow:'0 18px 44px rgba(22,21,15,.07)' };
+
+    const btn = { display:'inline-flex', alignItems:'center', justifyContent:'center', gap:8, minHeight:48, padding:'0 20px', borderRadius:14, fontSize:15, fontWeight:600, whiteSpace:'nowrap', cursor:'pointer' };
+    const primaryBtn = { ...btn, background:L, color:ink, border:'1.5px solid '+L };
+    const ghostBtn = { ...btn, background:'#FFFFFF', color:ink, border:'1.5px solid '+field };
+    const iconBtn = { display:'inline-flex', alignItems:'center', justifyContent:'center', width:46, height:46, flex:'none', borderRadius:13, border:'1.5px solid '+field, background:'#FFFFFF', color:ink, cursor:'pointer' };
+    const searchBox = { display:'flex', alignItems:'center', gap:9, height:46, width:260, maxWidth:'42vw', border:'1.5px solid '+field, background:'#FFFFFF', padding:'0 14px', borderRadius:13, cursor:'text' };
+    const eventSwitch = { display:'flex', alignItems:'center', gap:10, width:'100%', padding:'13px 14px', border:'1.5px solid '+line, background:'#FFFFFF', cursor:'pointer', borderRadius:16, textAlign:'right' };
+    const navCta = { display:'flex', alignItems:'center', justifyContent:'center', width:'100%', minHeight:44, marginTop:14, border:'none', cursor:'pointer', fontSize:14, fontWeight:600, color:ink, background:L, borderRadius:12 };
+
+    const navDefs = [
+      { icon:'home', label:'סקירה', id:'home', count:'' },
+      { icon:'insights', label:'תמונת מצב', id:'insights', count:'' },
+      { icon:'groups', label:'מוזמנים', id:'guests', count: this.state.done.length >= 4 ? '21' : '21 · +'+(4 - this.state.done.length) },
+      { icon:'send', label:'סבבי שליחה', id:'campaigns', count:'2' },
+      { icon:'table_bar', label:'הושבה', id:'seating', count:'6' },
+      { icon:'tune', label:'הגדרות', id:'settings', count:'' }
+    ];
+    const nav = navDefs.map(n => {
+      const on = n.id === cur;
+      return { icon:n.icon, label:n.label, count:n.count, onClick: go(n.id),
+        style: { display:'flex', alignItems:'center', gap:11, width:'100%', minHeight:44, padding:'0 12px', borderRadius:12, border:'none', cursor:'pointer', fontSize:15, fontWeight: on ? 600 : 500, background: on ? LT : 'transparent', color: on ? LDD : body, boxShadow: on ? 'inset 0 0 0 1.5px '+LB : 'none' },
+        iconStyle: { fontSize:21, color: on ? LD : muted },
+        countStyle: { fontSize:11.5, color: on ? LDD : muted } };
+    });
+
+    const titles = {
+      home: ['4 בספטמבר · גן האירועים, הרצליה', 'עומר ושני'],
+      insights: ['לקראת 4 בספטמבר', 'תמונת מצב'],
+      guests: ['21 מוזמנים · 34 נפשות', 'רשימת המוזמנים'],
+      campaigns: ['תזכורת שנייה · וואטסאפ', 'סבב שליחה'],
+      seating: ['אולם ראשי · 10 שולחנות', 'מפת ההושבה'],
+      settings: ['אירוע, וואטסאפ, שיחה וצוות', 'הגדרות']
+    };
+
+    const eventMeta = [
+      { icon:'event', text:'שישי, 4 בספטמבר · 19:30' },
+      { icon:'location_on', text:'גן האירועים, הרצליה' },
+      { icon:'groups', text:'21 מוזמנים · 34 נפשות' }
+    ];
+    const counts = [
+      { label:'אישרו הגעה', n:14, color:LD },
+      { label:'עוד לא ענו', n:5, color:L },
+      { label:'לא יגיעו', n:2, color:'#D8D3C9' }
+    ];
+    const total = counts.reduce((a, c) => a + c.n, 0);
+    const mix = counts.map(c => ({ label:c.label, value:String(c.n), pct: Math.round(c.n/total*100)+'%', dot:dot(c.color),
+      seg: { display:'block', width:(c.n/total*100).toFixed(1)+'%', background:c.color, borderRadius:99 } }));
+
+    const figures = [
+      { label:'צפי לקייטרינג', value:'26–28', hint:'לפי מי שאישר ומי שעוד עשוי לאשר', color:ink },
+      { label:'עוד לא ענו', value:'5', hint:'התזכורת יוצאת מחר ב־10:00', color:WN },
+      { label:'בלי שולחן', value:'6', hint:'יש מקום בשולחנות 2 ו־5', color:LD },
+      { label:'מנות מיוחדות', value:'4', hint:'2 צמחוני, טבעוני אחד, ללא גלוטן אחד', color:ink }
+    ].map(f => ({ ...f, valueStyle:{ fontSize:36, fontWeight:600, letterSpacing:'-0.045em', lineHeight:1, color:f.color, margin:'10px 0 6px' } }));
+
+    const decisions = [
+      { statValue:'5', title:'מוזמנים שלא ענו לאף הודעה', detail:'התזכורת השנייה כתובה ומחכה רק לאישור שלך', ctaLabel:'לתזמון', c:WN, t:WNT, onClick: go('campaigns') },
+      { statValue:'6', title:'אישרו הגעה ועדיין בלי שולחן', detail:'יש 11 מקומות פנויים בשולחנות 2, 5 ו־8', ctaLabel:'למפה', c:LDD, t:LT, onClick: go('seating') },
+      { statValue:'1', title:'מספר טלפון לא תקין', detail:'ההודעה לגיא אשד לא נמסרה מאז 18 באוגוסט', ctaLabel:'לתיקון', c:ER, t:ERT, onClick: go('guests') }
+    ].map(d => ({ ...d,
+      style: { display:'flex', alignItems:'center', gap:14, width:'100%', padding:'14px 16px', borderRadius:16, cursor:'pointer', textAlign:'right', background:'#FFFFFF', border:'1.5px solid '+line },
+      stat: { fontSize:24, fontWeight:600, letterSpacing:'-0.04em', color:d.c, width:46, height:46, flex:'none', borderRadius:13, background:d.t, display:'flex', alignItems:'center', justifyContent:'center' } }));
+
+    const feed = [
+      { time:'10:04', name:'שירה לוי', text:'2 נפשות · ללא גלוטן', tag:'מגיעים', chip:chipOk },
+      { time:'09:52', name:'אבי מזרחי', text:'מזל טוב, נחגוג בפעם הבאה', tag:'לא יגיע', chip:chipErr },
+      { time:'09:38', name:'רותם בן־חיים', text:'4 נפשות · צריך כיסא תינוק', tag:'מגיעים', chip:chipOk },
+      { time:'09:23', name:'טל פרידמן', text:'יעדכן עד יום ראשון', tag:'אולי', chip:chipWarn },
+      { time:'08:51', name:'דנה אלמוג', text:'2 נפשות · מגיעה מהעבודה', tag:'מגיעים', chip:chipOk }
+    ];
+
+    const rCols = 'minmax(160px,1.9fr) 72px 60px 96px';
+    const roundsHead = { display:'grid', gridTemplateColumns:rCols, gap:12, alignItems:'center', padding:'0 12px 10px', borderBottom:'1.5px solid '+line, fontSize:12.5, fontWeight:600, color:muted };
+    const roundRow = { display:'grid', gridTemplateColumns:rCols, gap:12, alignItems:'center', padding:'14px 12px', borderBottom:'1.5px solid '+line2 };
+    const rounds = [
+      { name:'הזמנה ראשונה', when:'18 באוגוסט', template:'wedding_simple', audience:'21', read:'19', replied:'14', status:'הסתיים', chip:chipQuiet, rowStyle:roundRow },
+      { name:'תזכורת ראשונה', when:'2 בספטמבר', template:'reminder_soft', audience:'7', read:'6', replied:'2', status:'פעיל', chip:chipOk, rowStyle:roundRow },
+      { name:'תזכורת שנייה', when:'מחר, 10:00', template:'reminder_soft', audience:'5', read:'', replied:'טרם', status:'מתוזמן', chip:chipLav, rowStyle:roundRow }
+    ];
+
+    // insights
+    const fSteps = [
+      { label:'נשלחו', value:21, note:'כל הרשימה' },
+      { label:'נמסרו', value:20, note:'מספר אחד לא תקין' },
+      { label:'נקראו', value:19, note:'סימון קריאה בוואטסאפ' },
+      { label:'השיבו', value:16, note:'לחצו על אחת האפשרויות' },
+      { label:'אישרו הגעה', value:14, note:'2 לא יגיעו' }
+    ];
+    const funnel = fSteps.map((s, i) => {
+      const pct = Math.round(s.value/21*100);
+      const prev = i ? fSteps[i-1].value : s.value;
+      return { label:s.label, note:s.note, value:String(s.value),
+        conv: i ? pct+'% · '+Math.round(s.value/prev*100)+'% מהשלב הקודם' : '100% · בסיס',
+        drop: i ? '−'+(prev - s.value) : '', dropStyle: { fontSize:12, color:ER, textAlign:'left', visibility: i ? 'visible' : 'hidden' },
+        bar: { display:'block', width:pct+'%', height:'100%', borderRadius:99, background: i===4 ? LD : i===3 ? LM : L },
+        valueStyle: { fontSize:24, fontWeight:600, letterSpacing:'-0.04em', color: i===4 ? LD : ink } };
+    });
+
+    const CW = 560, CH = 168, CAP = 21;
+    const series = [6,9,11,12,13,13,13,13,14,14,15,16], proj = [17,18];
+    const n = series.length + proj.length;
+    const xAt = (i) => +(CW - (i/(n-1))*CW).toFixed(1);
+    const yAt = (v) => +(CH - (v/CAP)*CH).toFixed(1);
+    const curveLine = 'M' + series.map((v,i) => xAt(i)+','+yAt(v)).join(' L');
+    const curveArea = curveLine + ' L' + xAt(series.length-1) + ',' + CH + ' L' + xAt(0) + ',' + CH + ' Z';
+    const curveProj = 'M' + [series[series.length-1]].concat(proj).map((v,i) => xAt(series.length-1+i)+','+yAt(v)).join(' L');
+    const targetY = yAt(19);
+    const curveLabels = ['18.8','','20.8','','22.8','','','27.8','','29.8','1.9','2.9','','4.9']
+      .map((t, i) => ({ text:t, style:{ flex:1, minWidth:0, fontSize:10.5, color: i===13 ? LD : muted, textAlign:'center' } }));
+
+    const insightNotes = [
+      { i:'01', title:'לסגור מספר עם האולם עד רביעי', detail:'כרגע 22 אנשים אישרו. לפי הקצב כדאי להזמין ל־28 כדי לא להיתקע' },
+      { i:'02', title:'להתקשר לשלושה שראו ולא ענו', detail:'אחרי שתי הודעות, שיחה אישית עובדת יותר טוב מעוד תזכורת' },
+      { i:'03', title:'לשבץ את 6 האחרונים', detail:'יש מקום בשולחנות 2 ו־5, וסבתא זהבה ביקשה לשבת ליד הבמה' }
+    ];
+    const meals = [
+      { label:'מנה רגילה', who:'מבוגרים', n:'16' },
+      { label:'צמחוני', who:'הילה כץ ועוד אחד', n:'2' },
+      { label:'טבעוני', who:'דנה אלמוג', n:'1' },
+      { label:'ללא גלוטן', who:'שירה לוי', n:'1' },
+      { label:'מנת ילדים', who:'משפחות אלמוג ובן־חיים', n:'3' },
+      { label:'כיסא תינוק', who:'רותם בן־חיים', n:'1' }
+    ];
+    const calls = [
+      { name:'טל פרידמן', why:'ענה ״עוד לא יודעים״ לפני 5 ימים' },
+      { name:'נועם שגיא', why:'ראה את שתי ההודעות ולא ענה' },
+      { name:'משפחת שוורץ', why:'אישרו בלי לומר כמה יגיעו' },
+      { name:'גיא ומיכל אשד', why:'המספר לא תקין, ההודעה לא הגיעה' }
+    ].map(c => ({ ...c, aria:'התקשרות אל '+c.name }));
+    const callBtn = { width:44, height:44, flex:'none', borderRadius:12, background:'#F3EFFC', border:'1.5px solid #DCD0F4', color:'#432C85', display:'inline-flex', alignItems:'center', justifyContent:'center' };
+
+    const waveRoi = [
+      { label:'הזמנה ראשונה', value:'14', share:'67%', w:'100%', c:LD, cost:'21 הודעות · 0.67 תשובות להודעה' },
+      { label:'תזכורת ראשונה', value:'+2', share:'+10%', w:'29%', c:LM, cost:'7 הודעות · 0.29 תשובות להודעה' },
+      { label:'תזכורת שנייה, צפי', value:'+2', share:'+9%', w:'40%', c:L, cost:'5 הודעות · 0.40 בצפי' },
+      { label:'שיחה אישית', value:'+1', share:'+5%', w:'33%', c:'#D8D3C9', cost:'3 שיחות · יקר פי 8 מהודעה' }
+    ].map(w => ({ ...w, bar:{ width:w.w, height:'100%', borderRadius:99, background:w.c } }));
+
+    const segCols = 'minmax(130px,1.1fr) 64px minmax(0,1.5fr) minmax(0,1.2fr)';
+    const segHead = { display:'grid', gridTemplateColumns:segCols, gap:14, alignItems:'center', padding:'0 12px 10px', borderBottom:'1.5px solid '+line, fontSize:12.5, fontWeight:600, color:muted };
+    const segRow = { display:'grid', gridTemplateColumns:segCols, gap:14, alignItems:'center', padding:'14px 12px', borderBottom:'1.5px solid '+line2 };
+    const segRows = [
+      { name:'צד כלה', invited:7, replied:6, avg:'2.4', seated:71 },
+      { name:'צד חתן', invited:6, replied:4, avg:'2.8', seated:50 },
+      { name:'חברים', invited:4, replied:3, avg:'2.5', seated:75 },
+      { name:'עבודה', invited:4, replied:2, avg:'1.3', seated:25 }
+    ].map(s => {
+      const rate = Math.round(s.replied/s.invited*100);
+      return { name:s.name, replied:s.replied+'/'+s.invited, avg:s.avg, rate:rate+'%', seated:s.seated+'%', rowStyle:segRow,
+        rateBar:{ display:'block', width:rate+'%', height:'100%', borderRadius:99, background: rate>=70 ? LD : rate>=55 ? LM : L },
+        seatedBar:{ display:'block', width:s.seated+'%', height:'100%', borderRadius:99, background: s.seated>=70 ? OK : '#C9B98F' },
+        flag: rate < 60 ? 'לטיפול' : '', flagStyle:{ ...chipWarn, height:22, fontSize:11.5, padding:'0 8px', display: rate < 60 ? 'inline-flex' : 'none' } };
+    });
+
+    const hourData = [['08',0],['09',1],['10',6],['11',4],['12',2],['13',1],['14',1],['15',0],['16',1],['17',0],['18',1],['19',2],['20',1],['21',0]];
+    const hours = hourData.map(([h, c]) => {
+      const t = c / 6, top = t >= 0.8;
+      return { hour:h, count: c ? String(c) : '',
+        cell: { flex:1, minWidth:0, height:48, borderRadius:11, display:'flex', alignItems:'center', justifyContent:'center', fontSize:13.5, fontWeight:600,
+          background: c === 0 ? warm : top ? LD : 'rgba(157,131,224,'+(0.18 + t*0.5).toFixed(2)+')', color: top ? '#FFFFFF' : ink },
+        labelStyle: { flex:1, minWidth:0, fontSize:10.5, textAlign:'center', color: top ? LD : muted } };
+    });
+
+    // guests
+    const filterStyle = (on) => ({ display:'inline-flex', alignItems:'center', gap:8, minHeight:42, padding:'0 15px', borderRadius:12, cursor:'pointer', fontSize:14, fontWeight:600, whiteSpace:'nowrap', border:'1.5px solid '+(on ? LB : field), background: on ? LT : '#FFFFFF', color: on ? LDD : ink });
+    const filters = [
+      { label:'כולם', count:'21', on:true }, { label:'אישרו', count:'14' }, { label:'לא ענו', count:'5' },
+      { label:'לא יגיעו', count:'2' }, { label:'בלי שולחן', count:'6' }, { label:'מספר שגוי', count:'1' }
+    ].map(f => ({ ...f, style:filterStyle(!!f.on), countStyle:{ fontSize:11.5, color: f.on ? LD : muted } }));
+
+    const gCols = '36px minmax(200px,2fr) 96px 56px 92px 26px';
+    const guestHead = { display:'grid', gridTemplateColumns:gCols, gap:14, alignItems:'center', padding:'12px 22px', borderBottom:'1.5px solid '+line, fontSize:12.5, fontWeight:600, color:muted, background:soft };
+    const rows = [
+      ['שירה ואיתי לוי','054-772-1180','אישרו','2','שולחן 4','צד כלה','ללא גלוטן לשירה',true],
+      ['אבי מזרחי','052-330-9914','לא יגיע','0','','עבודה','שולח מתנה',false],
+      ['רותם בן־חיים','050-641-2277','אישרו','4','שולחן 7','צד חתן','כיסא תינוק',true],
+      ['טל פרידמן','053-812-4409','לא ענה','2','','חברים','יעדכן עד יום ראשון',false],
+      ['משפחת אלמוג','054-119-8802','אישרו','5','שולחן 2','צד כלה','',true],
+      ['נועם שגיא','058-224-7710','לא ענה','1','','עבודה','קיבל 2 תזכורות',false],
+      ['יעל ורון ברק','052-908-3341','אישרו','2','','צד כלה','מגיעים מחיפה',false],
+      ['אורי דגן','050-447-1195','לא יגיע','0','','צד חתן','בחו״ל בתאריך',false],
+      ['הילה כץ','054-661-0284','אישרו','3','שולחן 11','חברים','צמחונית',false],
+      ['גיא ומיכל אשד','052-773-6650','לא ענה','2','','צד חתן','מספר לא תקין',false]
+    ];
+    const sChip = (s) => s==='אישרו' ? chipOk : s==='לא יגיע' ? chipErr : chipWarn;
+    const guests = rows.map(r => ({
+      name:r[0], phone:r[1], status:r[2], party:r[3], table: r[4] || 'לא שובץ',
+      meta: r[6] ? r[5]+' · '+r[6] : r[5], chip:sChip(r[2]),
+      checkStyle: { display:'inline-flex', alignItems:'center', justifyContent:'center', width:20, height:20, flex:'none', borderRadius:6, border:'1.5px solid '+(r[7] ? LD : field), background: r[7] ? LD : '#FFFFFF' },
+      checkIconStyle: { fontSize:15, color:'#FFFFFF', opacity: r[7] ? 1 : 0 },
+      tableStyle: r[4] ? { ...chipLav, justifySelf:'start' } : { fontSize:13, color:muted },
+      rowStyle: { display:'grid', gridTemplateColumns:gCols, gap:14, alignItems:'center', padding:(dense ? '10px' : '15px')+' 22px', borderBottom:'1.5px solid '+line2, background: r[7] ? '#FBF9FE' : '#FFFFFF' }
+    }));
+    const pageBtn = { minWidth:40, height:40, display:'inline-flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:600, border:'1.5px solid '+field, borderRadius:11, background:'#FFFFFF' };
+    const pageActive = { ...pageBtn, background:L, border:'1.5px solid '+L };
+
+    // campaigns
+    const steps = [
+      { i:'01', label:'הודעה', on:true }, { i:'02', label:'נמענים', on:true }, { i:'03', label:'תזמון', on:false }
+    ].map(s => ({ i:s.i, label:s.label,
+      style: { display:'inline-flex', alignItems:'center', gap:9, minHeight:42, padding:'0 15px', borderRadius:12, fontSize:14, fontWeight:600, whiteSpace:'nowrap', border:'1.5px solid '+(s.on ? LB : field), background: s.on ? LT : '#FFFFFF', color: s.on ? LDD : body },
+      numStyle: { fontSize:11, color: s.on ? LD : muted } }));
+
+    const opt = (on) => ({ display:'flex', alignItems:'center', gap:13, padding:'14px 15px', borderRadius:15, cursor:'pointer', border:'1.5px solid '+(on ? LD : line), background: on ? LT : '#FFFFFF' });
+    const radio = (on) => ({ width:20, height:20, borderRadius:'50%', flex:'none', border: on ? '6px solid '+LD : '1.5px solid '+field, background:'#FFFFFF', display:'inline-block' });
+    const templates = [
+      { title:'תזכורת קצרה', name:'reminder_soft', desc:'שורה אחת ושלושה כפתורי תשובה', state:'אושרה', on:true, chip:chipOk },
+      { title:'הזמנה מלאה', name:'wedding_simple', desc:'תאריך, שעה, מקום ושמות המזמינים', state:'אושרה', chip:chipOk },
+      { title:'יום לפני', name:'day_before', desc:'שעת הגעה, חניה ומספר השולחן', state:'בבדיקה', chip:chipWarn }
+    ].map(t => ({ ...t, style:opt(!!t.on), radio:radio(!!t.on) }));
+    const pCols = '76px minmax(0,1fr) minmax(0,1.3fr)';
+    const paramHead = { display:'grid', gridTemplateColumns:pCols, gap:12, padding:'10px 14px', background:soft, fontSize:12.5, fontWeight:600, color:muted };
+    const paramRow = { display:'grid', gridTemplateColumns:pCols, gap:12, padding:'12px 14px', borderTop:'1.5px solid '+line2, alignItems:'center' };
+    const params = [
+      { slot:'{{1}}', meaning:'תאריך', value:'4 בספטמבר 2026' },
+      { slot:'{{2}}', meaning:'שעה', value:'19:30' },
+      { slot:'{{3}}', meaning:'מקום', value:'גן האירועים, הרצליה' },
+      { slot:'{{4}}', meaning:'המזמינים', value:'עומר ושני' }
+    ];
+    const segments = [
+      { label:'מי שעוד לא ענה', desc:'לא הגיבו להזמנה ולתזכורת הראשונה', count:'5', on:true },
+      { label:'מי שענה ״עוד לא יודעים״', desc:'לחצו על האפשרות השלישית', count:'3' },
+      { label:'אישרו בלי מספר נפשות', desc:'חסר לנו מידע בשביל ההושבה', count:'2' },
+      { label:'כל הרשימה', desc:'כולל מי שכבר אישר או סירב', count:'21' }
+    ].map(s => ({ ...s, style:opt(!!s.on), radio:radio(!!s.on) }));
+    const node = (c, hollow) => ({ width:14, height:14, borderRadius:'50%', flex:'none', marginTop:4, background: hollow ? '#FFFFFF' : c, border:'2px solid '+c });
+    const vline = (show) => ({ width:1.5, flex:1, minHeight:26, background: show ? line : 'transparent' });
+    const waves = [
+      { title:'השליחה עצמה', detail:'מחר, 3 בספטמבר ב־10:00 · 5 נמענים', tag:'מתוזמן', node:node(LD), line:vline(true), chip:chipLav },
+      { title:'גל שני', detail:'שלושה ימים אחרי, רק למי שלא ענה', tag:'אוטומטי', node:node(LM, true), line:vline(true), chip:chipQuiet },
+      { title:'גל אחרון', detail:'יומיים לפני האירוע ב־20:00', tag:'אוטומטי', node:node(field, true), line:vline(true), chip:chipQuiet },
+      { title:'שיחה אישית', detail:'מי שעדיין שותק עובר לשיחת טלפון', tag:'גיבוי', node:node(WN, true), line:vline(false), chip:chipWarn }
+    ];
+    const delivery = [
+      { label:'ענו', value:'16', pct:'76%' }, { label:'ראו ולא ענו', value:'3', pct:'14%' },
+      { label:'עוד לא ראו', value:'1', pct:'5%' }, { label:'לא קיבלו', value:'1', pct:'5%' }
+    ];
+    const waBtn = { display:'block', background:'#FFFFFF', color:'#027EB5', textAlign:'center', fontSize:14.5, fontWeight:500, padding:'9px', borderRadius:9, boxShadow:'0 1px 0.5px rgba(11,20,26,.13)' };
+
+    // seating
+    const seatLegend = [ { label:'מלא', dot:dot(OK) }, { label:'יש מקומות', dot:dot(LD) }, { label:'ריק', dot:dot(field) } ];
+    const tdefs = [
+      ['1',10,10,14,26], ['2',10,7,31,20], ['3',12,12,50,24], ['4',10,5,69,20], ['5',10,0,86,26],
+      ['6',12,12,14,50], ['7',10,9,31,46], ['8',10,4,50,50], ['9',12,12,69,46], ['10',10,6,86,50]
+    ];
+    const tables = tdefs.map(([name, cap, taken, x, y]) => {
+      const full = taken >= cap, empty = taken === 0;
+      const size = cap >= 12 ? 92 : 82;
+      const pct = Math.round(taken/cap*100);
+      const c = full ? OK : empty ? field : LD;
+      return { name:'שולחן '+name, count: taken+'/'+cap,
+        countStyle: { fontSize:17, fontWeight:600, letterSpacing:'-0.03em', lineHeight:1.1, color: full ? OK : empty ? muted : LDD },
+        ring: { position:'absolute', right:x+'%', top:y+'%', transform:'translate(50%,-50%)', width:size, height:size, borderRadius:'50%', padding:4, cursor:'grab',
+          background:'conic-gradient('+c+' 0 '+pct+'%, '+line+' '+pct+'% 100%)' },
+        inner: { width:'100%', height:'100%', borderRadius:'50%', background: full ? OKT : empty ? '#FFFFFF' : LT, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' } };
+    });
+    const sideChip = (s) => s==='צד כלה' ? chipLav : s==='צד חתן' ? chip('#EAF0F7', '#CCD9EA', '#2E4A6B') : chipQuiet;
+    const unseated = [
+      { name:'יעל ורון ברק', meta:'2 נפשות · מגיעים מחיפה', side:'צד כלה' },
+      { name:'משפחת שוורץ', meta:'5 נפשות · 2 ילדים', side:'צד חתן' },
+      { name:'הילה כץ', meta:'3 נפשות · צמחונית', side:'חברים' },
+      { name:'דור אביטן', meta:'נפש אחת', side:'עבודה' },
+      { name:'מיכל וגיא אשד', meta:'2 נפשות', side:'צד חתן' },
+      { name:'סבתא זהבה', meta:'נפש אחת · קרוב לבמה', side:'צד כלה' }
+    ].map(u => ({ ...u, chip:sideChip(u.side) }));
+    const box = (bg, bc, fg) => ({ padding:'13px 15px', borderRadius:14, background:bg, border:'1.5px solid '+bc, color:fg });
+    const conflicts = [
+      { title:'שולחן 3 מלא', detail:'12 מתוך 12, ושני אורחים נוספים משויכים אליו', style:box(ERT, ERB, '#6E2812') },
+      { title:'סבתא זהבה ביקשה לשבת קרוב לבמה', detail:'בשולחנות 2 ו־4 נשארו מקומות בשורה הראשונה', style:box(WNT, WNB, '#5E3F0C') },
+      { title:'שולחן 5 עדיין ריק', detail:'מקום טוב להעביר אליו את העודף משולחן 3', style:box(OKT, OKB, '#2F4A1A') }
+    ];
+
+    // settings
+    const track = (on) => ({ display: on === null ? 'none' : 'inline-flex', alignItems:'center', width:46, height:26, borderRadius:999, padding:3, flex:'none', background: on ? LD : field });
+    const knob = (on) => ({ width:20, height:20, borderRadius:'50%', background:'#FFFFFF', display:'block', marginLeft: on ? 'auto' : 0, boxShadow:'0 1px 2px rgba(22,21,15,.2)' });
+    const vStrong = { display:'block', fontSize:15.5, fontWeight:600, marginTop:3 };
+    const vMono = { display:'block', fontSize:13.5, fontWeight:500, marginTop:4, fontFamily:"'IBM Plex Mono',monospace", direction:'ltr', unicodeBidi:'isolate', textAlign:'right' };
+    const row = (label, value, opts = {}) => ({ label, value, valueStyle: opts.mono ? vMono : vStrong,
+      track: track(opts.toggle ?? null), knob: knob(!!opts.toggle),
+      chipText: opts.chip || '', chip: opts.chip ? (opts.chipKind === 'ok' ? chipOk : chipQuiet) : { display:'none' } });
+    const settingsGroups = [
+      { kicker:'האירוע', title:'פרטי האירוע', desc:'הפרטים האלה נכנסים להודעות שיוצאות למוזמנים', rows:[
+        row('שם האירוע', 'עומר ושני · מסיבת אירוסין'),
+        row('תאריך ושעה', 'שישי, 4 בספטמבר 2026 · 19:30'),
+        row('מקום', 'גן האירועים, רח׳ הנדיב 12, הרצליה'),
+        row('סגירת הרשימה', '2 בספטמבר 2026')
+      ]},
+      { kicker:'וואטסאפ', title:'החיבור לוואטסאפ', desc:'המספר שממנו יוצאות ההודעות ואליו חוזרות התשובות', rows:[
+        row('המספר שממנו שולחים', '+972 52-540-1686', { mono:true, chip:'מחובר', chipKind:'ok' }),
+        row('השם שהמוזמנים רואים', 'עומר ושני'),
+        row('שעות שליחה', 'בין 09:00 ל־20:00, לא בשבת'),
+        row('תשובות שלא הבנו', 'נשלחות אליך לוואטסאפ האישי', { toggle:true })
+      ]},
+      { kicker:'השיחה', title:'מה שואלים אחרי אישור', desc:'השאלות נשאלות אוטומטית בצ׳אט אחרי שמישהו מאשר הגעה', rows:[
+        row('מספר נפשות', 'מיד אחרי האישור', { toggle:true }),
+        row('שמות המלווים', 'בשביל כרטיסי ההושבה', { toggle:true }),
+        row('העדפת מנה', 'רגיל, צמחוני, טבעוני או ללא גלוטן', { toggle:true }),
+        row('הסעה מאורגנת', 'תל אביב, חיפה או ירושלים', { toggle:false })
+      ]},
+      { kicker:'צוות', title:'מי עובד על האירוע', desc:'מי רואה את הרשימה ומי יכול לשלוח הודעות', rows:[
+        row('דנה כהן', 'dana@showup.co.il', { mono:true, chip:'בעלים' }),
+        row('עומר', 'omer@gmail.com', { mono:true, chip:'עריכה' }),
+        row('שני', 'shani@gmail.com', { mono:true, chip:'עריכה' }),
+        row('גן האירועים', 'ops@gan-events.co.il', { mono:true, chip:'צפייה' })
+      ]}
+    ];
+
+    // pending from WhatsApp
+    const optPill = (on) => ({ display:'inline-flex', alignItems:'center', justifyContent:'center', minWidth:40, height:40, padding:'0 12px', borderRadius:11, fontSize:14, fontWeight:600, whiteSpace:'nowrap', border:'1.5px solid '+(on ? LD : field), background: on ? LT : '#FFFFFF', color: on ? LDD : ink });
+    const pendDefs = [
+      { id:'p1', ini:'ר״א', name:'רונית אברהם', phone:'054-338-2210', from:'את שלחת · היום 10:12', party:'2', group:'צד כלה' },
+      { id:'p2', ini:'ד״ג', name:'דוד ושרה גולן', phone:'052-661-4093', from:'שני שלחה · אתמול 21:40', party:'2', group:'צד חתן' },
+      { id:'p3', ini:'מ״ל', name:'משה לוי', phone:'+1 646-555-0192', from:'עומר שלח · אתמול 18:05', party:'1', group:'צד חתן', issue:'מספר מחו״ל', kind:'warn' },
+      { id:'p4', ini:'ל״ש', name:'ליאת שמש', phone:'050-123-45', from:'את שלחת · אתמול 09:30', party:'', group:'', issue:'מספר חסר', kind:'err' }
+    ];
+    const done = this.state.done;
+    const finish = (id) => (e) => { if (e && e.preventDefault) e.preventDefault(); this.setState(s => ({ done: s.done.concat(id), editing: s.editing === id ? null : s.editing })); };
+    const pending = pendDefs.filter(p => !done.includes(p.id)).map(p => {
+      const editing = this.state.editing === p.id, bad = p.kind === 'err';
+      return { ...p, editing,
+        meta: p.party ? p.party+' אנשים · '+p.group : 'לא צוין כמה אנשים',
+        issueStyle: p.issue ? (bad ? chipErr : chipWarn) : { display:'none' },
+        editLabel: editing ? 'סגירה' : 'עריכה',
+        onEdit: (e) => { if (e && e.preventDefault) e.preventDefault(); this.setState(s => ({ editing: s.editing === p.id ? null : p.id })); },
+        onApprove: finish(p.id), onDismiss: finish(p.id),
+        rowStyle: { padding:'14px 0', borderBottom:'1.5px solid '+line2 },
+        phoneBox: { display:'flex', alignItems:'center', minHeight:48, padding:'0 14px', borderRadius:13, background:'#FFFFFF', fontSize:15, border: bad ? '2px solid '+ER : '1.5px solid '+field },
+        phoneHint: bad ? 'חסרות 2 ספרות במספר' : p.kind === 'warn' ? 'ההודעות יישלחו גם למספר מחו״ל' : '',
+        phoneHintStyle: { fontSize:12.5, color: bad ? ER : muted, display: p.kind ? 'block' : 'none' },
+        partyOpts: ['1','2','3','4','5+'].map(t => ({ t, style:optPill(t === (p.party || '2')) })),
+        groupOpts: ['צד כלה','צד חתן','חברים','עבודה'].map(t => ({ t, style:optPill(t === (p.group || 'חברים')) })) };
+    });
+    const smallBtn = { display:'inline-flex', alignItems:'center', justifyContent:'center', minHeight:40, padding:'0 14px', borderRadius:12, fontSize:14, fontWeight:600, whiteSpace:'nowrap', cursor:'pointer' };
+    const smallGhost = { ...smallBtn, background:'#FFFFFF', color:ink, border:'1.5px solid '+field };
+    const smallPrimary = { ...smallBtn, background:L, color:ink, border:'1.5px solid '+L };
+    const dismissBtn = { ...smallBtn, width:40, padding:0, background:'#FFFFFF', color:muted, border:'1.5px solid '+field };
+    const approveAll = (e) => { if (e && e.preventDefault) e.preventDefault(); this.setState({ done: pendDefs.map(p => p.id), editing:null }); };
+
+    return {
+      pending, hasPending: pending.length > 0, allApproved: pending.length === 0,
+      pendingTitle: pending.length === 1 ? 'איש קשר אחד הגיע מוואטסאפ' : pending.length+' אנשי קשר הגיעו מוואטסאפ',
+      smallGhost, smallPrimary, dismissBtn, approveAll,
+      nav, navCta, eventSwitch, searchBox, iconBtn, primaryBtn, ghostBtn, card, heroCard,
+      chipOk, chipLav,
+      pageKicker: titles[cur][0], pageTitle: titles[cur][1],
+      isHome: cur==='home', isInsights: cur==='insights', isGuests: cur==='guests',
+      isCampaigns: cur==='campaigns', isSeating: cur==='seating', isSettings: cur==='settings',
+      goCampaigns: go('campaigns'), goGuests: go('guests'), goSeating: go('seating'), goInsights: go('insights'),
+      eventMeta, mix, figures, decisions, feed, roundsHead, rounds,
+      curveLine, curveArea, curveProj, curveLabels, targetY, insightNotes, meals, calls, callBtn, segHead, segRows,
+      filters, guestHead, guests, pageBtn, pageActive,
+      steps, templates, paramHead, paramRow, params, segments, waves, delivery, waBtn,
+      seatLegend, tables, unseated, conflicts, settingsGroups
+    };
+  }
+}
+</script>
+</body>
+</html>

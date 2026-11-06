@@ -74,8 +74,8 @@ export default function Insights() {
     notes.push({
       title: d <= 14 ? 'לסגור מספר עם האולם' : 'המספר לאולם, נכון להיום',
       detail: s.expected.max > s.expected.min
-        ? `כרגע ${s.people.confirmed} אנשים אישרו, ועוד ${s.people.maybe} ענו ״אולי״. כדאי לתכנן בין ${s.expected.min} ל־${s.expected.max}`
-        : `כרגע ${s.people.confirmed} אנשים אישרו${s.invitations.pending ? `, ועוד ${s.invitations.pending} הזמנות לא נענו` : ''}`,
+        ? `כרגע ${s.people.confirmed} אנשים אישרו, ועוד ${s.people.maybe} ענו ״אולי״. אחרי 10% שבדרך כלל לא מגיעים, כדאי לתכנן בין ${s.expected.min} ל־${s.expected.max}`
+        : `כרגע ${s.people.confirmed} אנשים אישרו${s.invitations.pending ? `, ועוד ${s.invitations.pending} הזמנות לא נענו` : ''}. אחרי 10% שבדרך כלל לא מגיעים, הצפי הוא ${s.expected.min}`,
     });
   }
   const callCount = s.maybe.length + s.noPartySize.length;

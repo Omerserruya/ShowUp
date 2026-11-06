@@ -43,6 +43,7 @@ class World:
         w.fetch_campaign_by_id = lambda conn, cid: self.campaign
         w.fetch_event_by_id = lambda conn, eid: self.event
         w.fetch_wa_template = lambda conn, ref: None
+        w.fetch_replacement_ref = lambda conn, key, et: None
         w.select_guests_by_audience = lambda conn, eid, a, f: list(self.guests)
         w.guest_still_sendable = lambda conn, gid: gid not in self.opted_out
         w.claim_message = lambda conn, c, g: (self.claimed.append(g) or True)
@@ -206,6 +207,38 @@ w = World(camp(template="custom__nope", custom_message=None, stage_id=None, camp
 worker.process_campaign(None, None, "c1")
 check("missing custom template -> failed, no fallback send",
       not w.published and w.finished and w.finished[0][0] == "failed")
+
+# an edited built-in template: its approved Studio copy goes out instead
+w = World(camp(template="reminder_friendly", custom_message=None, stage_id=None), ev(), G[:1]).install()
+worker.fetch_replacement_ref = lambda conn, key, et: "custom__garden_invite" if key.startswith("reminder_friendly") else None
+worker.fetch_wa_template = lambda conn, ref: _CROW if ref == "custom__garden_invite" else None
+worker.process_campaign(None, None, "c1")
+check("replaced built-in -> sends the approved copy", w.published and w.published[0].get("template") == "garden_invite")
+worker.fetch_replacement_ref = lambda conn, key, et: None
+
+# retry mode (Meta per-user marketing cap): only the asked guests, still unanswered,
+# claimed via claim_retry; the round itself is not touched
+RG = [{"id": "g1", "name": "A", "phone": "050-1234567", "status": "pending"},
+      {"id": "g2", "name": "B", "phone": "052 7654321", "status": "attending"},
+      {"id": "g4", "name": "D", "phone": "053 1111111", "status": "pending"}]
+w = World(camp(status="sent"), ev(), RG).install()
+_retried = []
+worker.claim_retry = lambda conn, c, g: (_retried.append(g) or True)
+worker.process_campaign(None, None, "c1", retry_guest_ids=["g1", "g2"])
+check("retry sends only asked + unanswered guests", [m["guest_id"] for m in w.published] == ["g1"])
+check("retry claims through claim_retry, not a new row", _retried == ["g1"] and not w.claimed)
+check("retry leaves round status/usage alone", not (w.finished or w.status_set or w.completed or w.follow_ups))
+w = World(camp(status="sent"), ev(), RG).install()
+worker.claim_retry = lambda conn, c, g: False
+worker.process_campaign(None, None, "c1", retry_guest_ids=["g1"])
+check("retry already taken -> nothing sent", not w.published)
+w = World(camp(status="paused"), ev(), RG).install()
+worker.claim_retry = lambda conn, c, g: True
+worker.process_campaign(None, None, "c1", retry_guest_ids=["g1"])
+check("paused round -> no retry", not w.published)
+w = World(camp(status="sent"), ev(event_date=PAST), RG).install()
+worker.process_campaign(None, None, "c1", retry_guest_ids=["g1"])
+check("event over -> no retry and round not failed", not w.published and not w.finished)
 
 print("FAILED" if FAIL else "ALL PASSED")
 sys.exit(1 if FAIL else 0)

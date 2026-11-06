@@ -136,6 +136,7 @@ const PATHS_TABS: { id: string; label: string }[] = [
 const BUTTON_KEY_LABELS: Record<string, string> = {
   no_notes: 'אין הערות',
   write_note: 'כתיבת הערה',
+  another_note: 'הערה נוספת',
   update: 'עדכון הגעה',
   add_note: 'הוספת הערה',
   decline: 'ביטול / סירוב',
@@ -691,6 +692,8 @@ function ConversationFlows() {
                   {renderText('after_confirm.ask_notes.text')}
                   {renderButtons('after_confirm.ask_notes.buttons')}
                   {renderText('after_confirm.ask_notes.note_prompt_text')}
+                  {renderText('after_confirm.ask_notes.saved.text')}
+                  {renderButtons('after_confirm.ask_notes.saved.buttons')}
                 </>), !on('after_confirm.ask_notes.enabled'))}
                 {sub('סיום', (<>
                   {renderText('after_confirm.done_message.text')}

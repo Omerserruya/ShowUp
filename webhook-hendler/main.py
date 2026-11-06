@@ -71,6 +71,11 @@ OTP_WA_PHONE_ID = (os.getenv("OTP_WA_PHONE_ID") or "").strip()
 ASSISTANT_INBOUND_QUEUE = os.getenv("ASSISTANT_INBOUND_QUEUE", "assistant_inbound_queue")
 
 PORT = int(os.getenv("PORT") or 8000)
+# Template review updates (field `message_template_status_update`) go to core,
+# which re-reads the status from Meta and makes approved templates sendable.
+CORE_SERVICE_URL = (os.getenv("CORE_SERVICE_URL") or "").rstrip("/")
+INTERNAL_API_SECRET = os.getenv("INTERNAL_API_SECRET") or ""
+TEMPLATE_STATUS_FIELDS = {"message_template_status_update"}
 
 # Message types we route to a consumer. Everything else Meta may send
 # (reaction, sticker, location, unsupported, system, order, request_welcome,
@@ -499,6 +504,27 @@ def _plan_change(value: Dict[str, Any]) -> Tuple[List[Tuple[str, Dict[str, Any],
     return jobs, ignored
 
 
+def _post_template_status(value: Dict[str, Any]) -> bool:
+    import urllib.request
+    name = str(value.get("message_template_name") or "").strip()
+    if not name:
+        return True  # nothing actionable; don't make Meta retry
+    if not (CORE_SERVICE_URL and INTERNAL_API_SECRET):
+        logger.error("template status update for %s dropped: CORE_SERVICE_URL/INTERNAL_API_SECRET not set", name)
+        return True
+    body = json.dumps({"name": name, "event": str(value.get("event") or "")[:40],
+                       "meta_id": str(value.get("message_template_id") or "")[:64] or None}).encode("utf-8")
+    req = urllib.request.Request(f"{CORE_SERVICE_URL}/internal/meta/template-status", data=body, method="POST",
+                                 headers={"Content-Type": "application/json", "X-Internal-Secret": INTERNAL_API_SECRET})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            logger.info("template status forwarded name=%s event=%s -> %s", name, value.get("event"), r.status)
+            return 200 <= r.status < 300
+    except Exception as e:
+        logger.error("template status forward failed name=%s: %s", name, e)
+        return False
+
+
 @app.post("/")
 async def handle_whatsapp_webhook(request: Request):
     body = await request.body()
@@ -521,11 +547,15 @@ async def handle_whatsapp_webhook(request: Request):
         raise HTTPException(status_code=400, detail="Invalid message schema")
 
     jobs: List[Tuple[str, Dict[str, Any], Optional[str]]] = []
+    template_updates: List[Dict[str, Any]] = []
     ignored = 0
     for entry in data.get("entry") or []:
         for change in (entry.get("changes") or []) if isinstance(entry, dict) else []:
             value = (change or {}).get("value") or {}
             if not isinstance(value, dict):
+                continue
+            if (change or {}).get("field") in TEMPLATE_STATUS_FIELDS:
+                template_updates.append(value)
                 continue
             wa_phone_number_id = (value.get("metadata") or {}).get("phone_number_id")
             n_msgs, n_stat = len(value.get("messages") or []), len(value.get("statuses") or [])
@@ -542,7 +572,8 @@ async def handle_whatsapp_webhook(request: Request):
             ignored += change_ignored
 
     results = await asyncio.gather(*(enqueue_to_rabbitmq(t, p, q) for t, p, q in jobs)) if jobs else []
-    failed = sum(1 for ok in results if not ok)
+    tpl_results = await asyncio.gather(*(asyncio.to_thread(_post_template_status, v) for v in template_updates))
+    failed = sum(1 for ok in results if not ok) + sum(1 for ok in tpl_results if not ok)
     if failed:
         # Meta retries non-2xx deliveries; downstream dedupes by wamid, so the
         # items that DID enqueue are safe to receive twice.

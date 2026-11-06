@@ -1,0 +1,1208 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,300,0,0&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; background:#EDE8DE; color:#16150F; font-family:Heebo,sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#5A3DA6; font-weight:600; text-decoration:none; }
+  a:hover { color:#432C85; }
+  .ms { font-family:'Material Symbols Rounded'; font-weight:300; line-height:1; display:inline-block; white-space:nowrap; direction:ltr; }
+  .ltr { direction:ltr; unicode-bidi:isolate; }
+  .num { font-variant-numeric:tabular-nums; }
+  .mono { font-family:'IBM Plex Mono',monospace; font-weight:500; }
+</style>
+</helmet>
+
+<div dir="rtl" style="padding:48px 56px 16px">
+  <div class="mono" style="font-size:11px;letter-spacing:.2em;color:#5A3DA6">SHOWUP · כל המסכים במובייל</div>
+  <h1 style="font-size:36px;font-weight:600;letter-spacing:-0.032em;margin:10px 0 6px">מהכניסה הראשונה ועד השולחן האחרון</h1>
+  <p style="font-size:16px;color:#4A4741;margin:0;max-width:64ch;line-height:1.6">כל כפתור, טופס, חלון ומצב, מסודרים לפי זרימות. המספר בכל תג הוא מזהה המסך</p>
+</div>
+
+<sc-for list="{{ groups }}" as="g" hint-placeholder-count="2">
+  <section dir="rtl" style="padding:34px 56px 30px">
+    <div style="display:flex;align-items:baseline;gap:14px;margin-bottom:22px;padding-bottom:14px;border-bottom:1.5px solid #D8D3C9">
+      <span class="mono" style="font-size:13px;color:#5A3DA6">{{ g.n }}</span>
+      <h2 style="font-size:26px;font-weight:600;letter-spacing:-0.03em;margin:0">{{ g.t }}</h2>
+      <span style="font-size:14.5px;color:#4A4741">{{ g.s }}</span>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:36px;align-items:flex-start">
+      <sc-for list="{{ g.screens }}" as="s" hint-placeholder-count="3">
+        <div id="{{ s.id }}" data-screen-label="{{ s.label }}" style="display:flex;flex-direction:column;gap:10px">
+          <span class="mono" style="align-self:flex-start;font-size:12px;letter-spacing:.06em;color:#432C85;background:#FFFFFF;border:1.5px solid #DCD0F4;border-radius:9px;padding:5px 10px">{{ s.label }}</span>
+          <div style="{{ phone }}">
+            <div style="{{ statusBar }}"><span class="num">9:41</span><span class="ms" style="font-size:16px">signal_cellular_alt</span></div>
+            <div style="{{ s.outer }}">
+              <div style="{{ s.inner }}">
+                <sc-for list="{{ s.blocks }}" as="b" hint-placeholder-count="5">
+
+                  <sc-if value="{{ b.isHandle }}" hint-placeholder-val="{{ false }}">
+                    <span style="{{ b.wrap }}"></span>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isTop }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <span class="ms" style="font-size:24px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;margin-inline-start:-10px">{{ b.back }}</span>
+                      <span style="flex:1;min-width:0;font-size:18px;font-weight:600;letter-spacing:-0.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ b.t }}</span>
+                      <span style="{{ b.actStyle }}">{{ b.act }}</span>
+                      <span class="ms" style="{{ b.actIconStyle }}">{{ b.actIcon }}</span>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isEvent }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <img src="assets/seal.png" alt="" style="width:32px;height:32px;object-fit:contain">
+                      <span style="flex:1;min-width:0">
+                        <span style="display:flex;align-items:center;gap:4px;font-size:16px;font-weight:600">{{ b.t }}<span class="ms" style="font-size:20px;color:#6B6660">expand_more</span></span>
+                        <span style="display:block;font-size:12.5px;color:#6B6660">{{ b.s }}</span>
+                      </span>
+                      <span style="position:relative;width:44px;height:44px;border-radius:13px;border:1.5px solid #E6E2DA;background:#FFFFFF;display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:22px">notifications</span><span style="position:absolute;top:9px;left:10px;width:8px;height:8px;border-radius:50%;background:#8E3418;border:1.5px solid #FFFFFF"></span></span>
+                      <span style="width:44px;height:44px;border-radius:13px;border:1.5px solid #E6E2DA;background:#FFFFFF;display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:22px">settings</span></span>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isH }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <span class="mono" style="{{ b.kStyle }}">{{ b.k }}</span>
+                      <span style="{{ b.tStyle }}">{{ b.t }}</span>
+                      <span style="{{ b.sStyle }}">{{ b.s }}</span>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isSteps }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <span style="font-size:13px;font-weight:600;color:#432C85">{{ b.t }}</span>
+                      <span style="display:flex;gap:4px">
+                        <sc-for list="{{ b.segs }}" as="x" hint-placeholder-count="4"><span style="{{ x }}"></span></sc-for>
+                      </span>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isSec }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}"><span>{{ b.t }}</span><span style="{{ b.aStyle }}">{{ b.a }}</span></div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isField }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <span style="font-size:14px;font-weight:600">{{ b.l }}</span>
+                      <span style="{{ b.box }}">
+                        <span style="{{ b.vStyle }}">{{ b.v }}</span>
+                        <span class="ms" style="{{ b.iStyle }}">{{ b.i }}</span>
+                      </span>
+                      <span style="{{ b.hStyle }}">{{ b.h }}</span>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isSeg }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <span style="{{ b.lStyle }}">{{ b.l }}</span>
+                      <span style="{{ b.optsWrap }}">
+                        <sc-for list="{{ b.opts }}" as="o" hint-placeholder-count="3"><span style="{{ o.style }}">{{ o.t }}</span></sc-for>
+                      </span>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isRow }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <span style="{{ b.leadStyle }}"><span class="ms" style="{{ b.leadIconStyle }}">{{ b.leadIcon }}</span>{{ b.leadText }}</span>
+                      <span style="flex:1;min-width:0">
+                        <span style="{{ b.tStyle }}">{{ b.t }}</span>
+                        <span style="{{ b.sStyle }}">{{ b.s }}</span>
+                      </span>
+                      <span class="num" style="{{ b.valStyle }}">{{ b.val }}</span>
+                      <span style="{{ b.chipStyle }}">{{ b.chip }}</span>
+                      <span class="ms" style="{{ b.trailStyle }}">{{ b.trail }}</span>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isStat }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <span class="mono" style="display:block;font-size:10px;letter-spacing:.18em;color:#5A3DA6">{{ b.k }}</span>
+                      <span style="display:flex;align-items:baseline;gap:8px;margin-top:8px">
+                        <span class="num" style="font-size:52px;font-weight:600;letter-spacing:-0.05em;line-height:0.9">{{ b.n }}</span>
+                        <span style="font-size:15px;color:#4A4741">{{ b.t }}</span>
+                      </span>
+                      <span style="{{ b.barWrap }}">
+                        <sc-for list="{{ b.segs }}" as="x" hint-placeholder-count="3"><span style="{{ x }}"></span></sc-for>
+                      </span>
+                      <span style="{{ b.legStyle }}">{{ b.leg }}</span>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isQuad }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <sc-for list="{{ b.cells }}" as="c" hint-placeholder-count="4">
+                        <span style="{{ c.style }}">
+                          <span style="display:block;font-size:12.5px;color:#4A4741">{{ c.l }}</span>
+                          <span class="num" style="display:block;font-size:26px;font-weight:600;letter-spacing:-0.04em;margin-top:4px">{{ c.v }}</span>
+                        </span>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isBar }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <span style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">
+                        <span style="font-size:15px;font-weight:600">{{ b.t }}</span>
+                        <span class="num" style="{{ b.cStyle }}">{{ b.c }}</span>
+                      </span>
+                      <span style="display:block;height:7px;border-radius:99px;background:#F1EEE7;margin-top:8px;overflow:hidden"><span style="{{ b.bar }}"></span></span>
+                      <span style="display:block;font-size:12.5px;color:#6B6660;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ b.s }}</span>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isWa }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:#008069;color:#FFFFFF">
+                        <span style="width:30px;height:30px;border-radius:50%;background:#FFFFFF;display:flex;align-items:center;justify-content:center"><img src="assets/seal.png" alt="" style="width:21px;height:21px;object-fit:contain"></span>
+                        <span style="font-size:14.5px;font-weight:500">עומר ושני</span>
+                      </div>
+                      <div style="padding:10px;display:flex;flex-direction:column;gap:5px">
+                        <div style="align-self:flex-start;max-width:92%;background:#FFFFFF;border-radius:0 10px 10px 10px;padding:8px 10px;box-shadow:0 1px 0.5px rgba(11,20,26,.13);font-size:13.5px;line-height:1.5;color:#111B21"><span style="{{ b.imgStyle }}"><img src="assets/seal.png" alt="" style="width:64px;height:64px;object-fit:contain"></span>{{ b.t }}</div>
+                        <sc-for list="{{ b.opts }}" as="o" hint-placeholder-count="3">
+                          <span style="display:block;width:92%;background:#FFFFFF;color:#027EB5;text-align:center;font-size:13.5px;font-weight:500;padding:7px;border-radius:9px;box-shadow:0 1px 0.5px rgba(11,20,26,.13)">{{ o }}</span>
+                        </sc-for>
+                      </div>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isCal }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <div style="display:flex;align-items:center;justify-content:space-between">
+                        <span class="ms" style="font-size:22px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;color:#4A4741">chevron_right</span>
+                        <span style="font-size:16px;font-weight:600">{{ b.t }}</span>
+                        <span class="ms" style="font-size:22px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;color:#4A4741">chevron_left</span>
+                      </div>
+                      <div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px">
+                        <sc-for list="{{ b.cells }}" as="c" hint-placeholder-count="35"><span class="num" style="{{ c.style }}">{{ c.v }}</span></sc-for>
+                      </div>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isMedia }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <span style="width:56px;height:56px;border-radius:16px;background:#FFFFFF;display:flex;align-items:center;justify-content:center;margin-bottom:4px"><span class="ms" style="font-size:30px;color:#5A3DA6">add_photo_alternate</span></span>
+                      <span style="font-size:16px;font-weight:600;color:#432C85">{{ b.t }}</span>
+                      <span style="font-size:13px;color:#4A4741">{{ b.s }}</span>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isOtp }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <sc-for list="{{ b.cells }}" as="c" hint-placeholder-count="6"><span class="num" style="{{ c.style }}">{{ c.v }}</span></sc-for>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isArt }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <span style="{{ b.artStyle }}">
+                        <img src="assets/seal.png" alt="" style="{{ b.imgStyle }}">
+                        <span class="ms" style="{{ b.iconStyle }}">{{ b.icon }}</span>
+                      </span>
+                      <span style="{{ b.tStyle }}">{{ b.t }}</span>
+                      <span style="font-size:15px;color:#4A4741;line-height:1.6;max-width:30ch">{{ b.s }}</span>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isProfile }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <span style="width:64px;height:64px;border-radius:50%;background:#F3EFFC;color:#432C85;font-size:21px;font-weight:600;display:flex;align-items:center;justify-content:center">{{ b.ini }}</span>
+                      <span style="font-size:22px;font-weight:600;letter-spacing:-0.025em;margin-top:6px">{{ b.t }}</span>
+                      <span class="ltr num" style="font-size:14px;color:#4A4741">{{ b.s }}</span>
+                      <span style="{{ b.chipStyle }}">{{ b.chip }}</span>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isActions }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <sc-for list="{{ b.items }}" as="a" hint-placeholder-count="3">
+                        <span style="{{ a.style }}"><span class="ms" style="font-size:22px">{{ a.i }}</span><span style="font-size:12.5px;font-weight:600">{{ a.t }}</span></span>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isTl }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:grid;grid-template-columns:56px 14px minmax(0,1fr);column-gap:10px">
+                      <div style="padding-top:12px">
+                        <div class="num" style="font-size:13px;font-weight:600">{{ b.date }}</div>
+                        <div style="font-size:11.5px;color:#6B6660;line-height:1.35;margin-top:1px">{{ b.rel }}</div>
+                      </div>
+                      <div style="position:relative;display:flex;justify-content:center"><span style="{{ b.lt }}"></span><span style="{{ b.lb }}"></span><span style="{{ b.node }}"></span></div>
+                      <div style="{{ b.card }}">
+                        <span style="flex:1;min-width:0"><span style="{{ b.tStyle }}">{{ b.t }}</span><span style="display:block;font-size:12.5px;color:#4A4741;margin-top:2px;line-height:1.35">{{ b.aud }}</span></span>
+                        <span style="{{ b.endStyle }}">{{ b.end }}</span>
+                        <span class="ms" style="{{ b.togStyle }}">{{ b.tog }}</span>
+                      </div>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isNote }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}"><span class="ms" style="{{ b.iStyle }}">{{ b.i }}</span><span style="flex:1;min-width:0">{{ b.t }}</span></div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isChips }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <sc-for list="{{ b.opts }}" as="o" hint-placeholder-count="3"><span style="{{ o.style }}">{{ o.t }}</span></sc-for>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isTiles }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <span style="{{ b.lStyle }}">{{ b.l }}</span>
+                      <div style="{{ b.grid }}">
+                        <sc-for list="{{ b.items }}" as="o" hint-placeholder-count="6">
+                          <span style="{{ o.style }}">
+                            <span style="{{ o.iconWrap }}"><sc-for list="{{ o.icons }}" as="ic" hint-placeholder-count="1"><span class="ms" style="{{ o.iconStyle }}">{{ ic }}</span></sc-for></span>
+                            <span>{{ o.t }}</span>
+                          </span>
+                        </sc-for>
+                      </div>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isPlan }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <span style="display:flex;align-items:center;gap:10px">
+                        <span style="{{ b.radioStyle }}"></span>
+                        <span class="ms" style="{{ b.iStyle }}">{{ b.i }}</span>
+                        <span style="flex:1;min-width:0;font-size:16.5px;font-weight:600">{{ b.t }}</span>
+                        <span style="{{ b.badgeStyle }}">{{ b.badge }}</span>
+                        <span class="num" style="font-size:20px;font-weight:600;letter-spacing:-0.03em">{{ b.price }}</span>
+                      </span>
+                      <span style="{{ b.tagStyle }}">{{ b.tag }}</span>
+                      <span style="font-size:13px;color:#4A4741;padding-inline-start:32px">{{ b.cap }}</span>
+                      <span style="{{ b.featsStyle }}">
+                        <sc-for list="{{ b.feats }}" as="f" hint-placeholder-count="3"><span style="display:flex;align-items:flex-start;gap:7px;font-size:13.5px;line-height:1.45"><span class="ms" style="font-size:17px;color:#5A3DA6">check</span><span style="flex:1;min-width:0">{{ f }}</span></span></sc-for>
+                      </span>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isPending }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">
+                      <span style="display:flex;align-items:center;gap:12px">
+                        <span style="width:40px;height:40px;flex:none;border-radius:50%;background:#F3EFFC;color:#432C85;display:flex;align-items:center;justify-content:center;font-size:13.5px;font-weight:600">{{ b.ini }}</span>
+                        <span style="flex:1;min-width:0">
+                          <span style="display:block;font-size:15px;font-weight:600">{{ b.t }}</span>
+                          <span class="ltr num" style="display:block;font-size:13px;color:#6B6660;text-align:right">{{ b.s }}</span>
+                        </span>
+                        <span style="{{ b.issueStyle }}">{{ b.issue }}</span>
+                      </span>
+                      <span style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:#6B6660"><span class="ms" style="font-size:16px;color:#5A3DA6">forward_to_inbox</span>{{ b.from }}</span>
+                      <span style="display:grid;grid-template-columns:1fr 1fr 44px;gap:8px">
+                        <span style="display:flex;align-items:center;justify-content:center;min-height:44px;border-radius:12px;background:#FFFFFF;border:1.5px solid #D8D3C9;font-size:14.5px;font-weight:600">עריכה</span>
+                        <span style="display:flex;align-items:center;justify-content:center;min-height:44px;border-radius:12px;background:#C9B8F3;border:1.5px solid #C9B8F3;font-size:14.5px;font-weight:600">אישור</span>
+                        <span class="ms" style="display:flex;align-items:center;justify-content:center;min-height:44px;border-radius:12px;background:#FFFFFF;border:1.5px solid #D8D3C9;font-size:19px;color:#6B6660">close</span>
+                      </span>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isBtn }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}"><span class="ms" style="{{ b.iStyle }}">{{ b.i }}</span>{{ b.t }}</div>
+                  </sc-if>
+
+                  <sc-if value="{{ b.isFine }}" hint-placeholder-val="{{ false }}">
+                    <div style="{{ b.wrap }}">{{ b.t }} <span style="color:#5A3DA6;font-weight:600">{{ b.link }}</span></div>
+                  </sc-if>
+
+                </sc-for>
+              </div>
+            </div>
+            <sc-if value="{{ s.hasTab }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ tabBar }}">
+                <sc-for list="{{ s.tabs }}" as="t" hint-placeholder-count="4">
+                  <span style="{{ t.style }}"><span class="ms" style="font-size:24px">{{ t.icon }}</span><span style="font-size:11px">{{ t.label }}</span></span>
+                </sc-for>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+</sc-for>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const ink = '#16150F', body = '#4A4741', muted = '#6B6660', line = '#E6E2DA', line2 = '#F0EDE7', field = '#D8D3C9', soft = '#FBFAF7';
+    const L = '#C9B8F3', LM = '#9D83E0', LD = '#5A3DA6', LDD = '#432C85', LT = '#F3EFFC', LB = '#DCD0F4';
+    const K = { ok:['#E7F0D4','#CFE0B0','#3F6323'], warn:['#F6EFD8','#E9D9A8','#7E5410'], err:['#F6E3DC','#EBC5B6','#8E3418'], lav:[LT,LB,LDD], quiet:[soft,line,body] };
+    const chipCss = (k) => { const c = K[k||'quiet']; return { display:'inline-flex', alignItems:'center', height:26, padding:'0 9px', borderRadius:9, border:'1.5px solid '+c[1], background:c[0], color:c[2], fontSize:12.5, fontWeight:600, whiteSpace:'nowrap', flex:'none' }; };
+    const hide = { display:'none' };
+
+    // ---- block constructors
+    const top = (t, o={}) => ({ type:'top', t, ...o });
+    const ev = (t, s) => ({ type:'event', t, s });
+    const h = (t, s='', o={}) => ({ type:'h', t, s, ...o });
+    const steps = (n, of, label='') => ({ type:'steps', n, of, label });
+    const tl = (date, rel, t, aud, o={}) => ({ type:'tl', date, rel, t, aud, ...o });
+    const sec = (t, a='') => ({ type:'sec', t, a });
+    const fld = (l, v, o={}) => ({ type:'field', l, v, ...o });
+    const seg = (l, opts, sel, o={}) => ({ type:'seg', l, opts, sel, ...o });
+    const row = (t, s='', o={}) => ({ type:'row', t, s, ...o });
+    const stat = (k, n, t, segs, leg) => ({ type:'stat', k, n, t, segs, leg });
+    const quad = (cells) => ({ type:'quad', cells });
+    const bar = (t, taken, cap, s, o={}) => ({ type:'bar', t, taken, cap, s, ...o });
+    const wa = (t, o={}) => ({ type:'wa', t, opts: o.opts || ['מגיעים','לא נוכל להגיע','עוד לא יודעים'], ...o });
+    const cal = (t, offset, days, sel) => ({ type:'cal', t, offset, days, sel });
+    const media = (t, s) => ({ type:'media', t, s });
+    const otp = (digits) => ({ type:'otp', digits });
+    const art = (kind, t, s) => ({ type:'art', kind, t, s });
+    const profile = (ini, t, s, chip, kind) => ({ type:'profile', ini, t, s, chip, kind });
+    const actions = (items, o={}) => ({ type:'actions', items, ...o });
+    const note = (t, kind='lav', i='info') => ({ type:'note', t, kind, i });
+    const chips = (opts, sel) => ({ type:'chips', opts, sel });
+    const btn = (t, o={}) => ({ type:'btn', t, ...o });
+    const fine = (t, link='') => ({ type:'fine', t, link });
+    const tiles = (l, opts, sel, o={}) => ({ type:'tiles', l, opts, sel, ...o });
+    const plan = (t, price, cap, o={}) => ({ type:'plan', t, price, cap, feats:o.feats || [], ...o });
+    const pend = (ini, t, s, from, o={}) => ({ type:'pending', ini, t, s, from, ...o });
+
+    // ---- block normalizer
+    const lead = (o) => {
+      if (o.radio !== undefined) return { leadStyle:{ width:22, height:22, borderRadius:'50%', flex:'none', border: o.radio ? '7px solid '+LD : '1.5px solid '+field, background:'#FFFFFF' }, leadIconStyle:hide };
+      if (o.check !== undefined) return { leadStyle:{ width:24, height:24, borderRadius:7, flex:'none', border:'1.5px solid '+(o.check ? LD : field), background: o.check ? LD : '#FFFFFF', display:'flex', alignItems:'center', justifyContent:'center' }, leadIcon: o.check ? 'check' : '', leadIconStyle:{ fontSize:17, color:'#FFFFFF' } };
+      if (o.num) { const c = K[o.numKind || 'lav']; return { leadText:o.num, leadStyle:{ width:44, height:44, flex:'none', borderRadius:12, background:c[0], color:c[2], display:'flex', alignItems:'center', justifyContent:'center', fontSize:19, fontWeight:600 }, leadIconStyle:hide }; }
+      if (o.ini) return { leadText:o.ini, leadStyle:{ width:40, height:40, flex:'none', borderRadius:'50%', background:LT, color:LDD, display:'flex', alignItems:'center', justifyContent:'center', fontSize:13.5, fontWeight:600 }, leadIconStyle:hide };
+      if (o.icon) { const c = K[o.iconKind || 'lav']; return { leadIcon:o.icon, leadStyle:{ width:42, height:42, flex:'none', borderRadius:12, background:c[0], color:c[2], display:'flex', alignItems:'center', justifyContent:'center' }, leadIconStyle:{ fontSize:22 } }; }
+      return { leadStyle:hide, leadIconStyle:hide };
+    };
+    const trailMap = { chevron:['chevron_left', muted, 22], call:['call', LDD, 20], check:['check', LD, 22], on:['toggle_on', LD, 38], off:['toggle_off', field, 38], close:['close', muted, 20], more:['more_horiz', muted, 20], expand:['expand_more', muted, 22] };
+
+    const norm = (b) => {
+      const push = b.push ? { marginTop:'auto' } : {};
+      const out = { ...b, ['is'+b.type[0].toUpperCase()+b.type.slice(1)]: true };
+      switch (b.type) {
+        case 'handle': out.wrap = { alignSelf:'center', width:40, height:5, borderRadius:99, background:field, margin:'2px 0 4px' }; break;
+        case 'top':
+          out.wrap = { display:'flex', alignItems:'center', gap:6, minHeight:48, ...push };
+          out.back = b.close ? 'close' : 'arrow_forward';
+          out.actStyle = b.act ? { fontSize:15, fontWeight:600, color: b.actDim ? muted : LD, whiteSpace:'nowrap' } : hide;
+          out.actIconStyle = b.actIcon ? { fontSize:24, width:44, height:44, display:'flex', alignItems:'center', justifyContent:'center' } : hide;
+          break;
+        case 'event': out.wrap = { display:'flex', alignItems:'center', gap:9, minHeight:48 }; break;
+        case 'h':
+          out.wrap = { display:'flex', flexDirection:'column', gap:5, paddingTop: b.pad ? 6 : 0, ...push };
+          out.kStyle = b.k ? { display:'block', fontSize:10.5, letterSpacing:'.18em', color:LD } : hide;
+          out.tStyle = { display:'block', fontSize: b.small ? 21 : 27, fontWeight:600, letterSpacing:'-0.03em', lineHeight:1.15 };
+          out.sStyle = b.s ? { display:'block', fontSize:15, color:body, lineHeight:1.55 } : hide;
+          break;
+        case 'steps':
+          out.wrap = { display:'flex', flexDirection:'column', gap:7 };
+          out.segs = Array.from({ length:b.of }, (_, i) => ({ flex:1, height:4, borderRadius:99, background: i < b.n - 1 ? LD : i === b.n - 1 ? LM : line }));
+          out.t = 'שלב '+b.n+' מתוך '+b.of+(b.label ? ' · '+b.label : '');
+          break;
+        case 'sec':
+          out.wrap = { display:'flex', alignItems:'baseline', justifyContent:'space-between', fontSize:16.5, fontWeight:600, letterSpacing:'-0.02em', marginTop:4, ...push };
+          out.aStyle = b.a ? { fontSize:13.5, fontWeight:600, color:LD } : hide;
+          break;
+        case 'field': {
+          const st = b.error ? 'err' : b.focus ? 'focus' : 'idle';
+          out.wrap = { display:'flex', flexDirection:'column', gap:7, ...push };
+          out.box = { display:'flex', alignItems: b.multi ? 'flex-start' : 'center', gap:8, minHeight: b.multi ? 96 : 52, padding: b.multi ? '13px 14px' : '0 14px', borderRadius:13, background: st==='idle' ? soft : '#FFFFFF',
+            border: st==='err' ? '2px solid #8E3418' : st==='focus' ? '2px solid '+LD : '1.5px solid '+field, boxShadow: st==='focus' ? '0 0 0 4px rgba(157,131,224,.22)' : 'none' };
+          out.vStyle = { flex:1, minWidth:0, fontSize:16, lineHeight:1.5, color: b.ph ? muted : ink, direction: b.ltr ? 'ltr' : 'rtl', textAlign:'right' };
+          out.iStyle = b.i ? { fontSize:21, color:muted } : hide;
+          out.hStyle = b.h ? { fontSize:13, lineHeight:1.5, color: b.error ? '#8E3418' : muted } : hide;
+          break;
+        }
+        case 'seg':
+          out.wrap = { display:'flex', flexDirection:'column', gap:8, ...push };
+          out.lStyle = b.l ? { fontSize:14, fontWeight:600 } : hide;
+          out.optsWrap = { display:'flex', flexWrap: b.nowrap ? 'nowrap' : 'wrap', gap:8, overflow:'hidden' };
+          out.opts = b.opts.map((t, i) => { const on = Array.isArray(b.sel) ? b.sel.includes(i) : i === b.sel;
+            return { t, style:{ display:'inline-flex', alignItems:'center', justifyContent:'center', minHeight:42, padding:'0 14px', borderRadius:12, fontSize:14.5, fontWeight:600, whiteSpace:'nowrap', flex: b.fill ? '1 1 0' : 'none',
+              border:'1.5px solid '+(on ? LD : field), background: on ? LT : '#FFFFFF', color: on ? LDD : ink } }; });
+          break;
+        case 'row': {
+          const card = !!b.card, sel = !!b.sel;
+          out.wrap = { display:'flex', alignItems:'center', gap:12, minHeight: b.tall ? 72 : 60, padding: card ? '10px 14px' : '10px 0',
+            ...(card ? { background: sel ? LT : '#FFFFFF', border:'1.5px solid '+(sel ? LD : line), borderRadius:16 } : { borderBottom:'1.5px solid '+line2 }), ...push };
+          Object.assign(out, lead(b));
+          out.tStyle = { display:'block', fontSize:15, fontWeight:600, lineHeight:1.35, color: b.danger ? '#8E3418' : ink, overflow:'hidden', textOverflow:'ellipsis', whiteSpace: b.wrapT ? 'normal' : 'nowrap' };
+          out.sStyle = b.s ? { display:'block', fontSize:13, color: b.sKind ? K[b.sKind][2] : muted, marginTop:2, lineHeight:1.45 } : hide;
+          out.valStyle = b.val ? { fontSize: b.valBig ? 20 : 15, fontWeight:600, color:ink, whiteSpace:'nowrap', letterSpacing: b.valBig ? '-0.03em' : 0 } : hide;
+          out.chipStyle = b.chip ? chipCss(b.chipKind) : hide;
+          const tm = trailMap[b.trail];
+          out.trail = tm ? tm[0] : '';
+          out.trailStyle = tm ? { fontSize:tm[2], color:tm[1], flex:'none', ...(b.trail==='call' ? { width:44, height:44, borderRadius:12, background:LT, border:'1.5px solid '+LB, display:'flex', alignItems:'center', justifyContent:'center' } : {}) } : hide;
+          break;
+        }
+        case 'stat': {
+          const tot = b.segs.reduce((a, x) => a + x[0], 0);
+          out.wrap = { background:'#FFFFFF', border:'1.5px solid '+line, borderRadius:20, padding:18, boxShadow:'0 14px 34px rgba(22,21,15,.07)' };
+          out.barWrap = b.segs.length ? { display:'flex', height:10, gap:3, marginTop:16 } : hide;
+          out.segs = b.segs.map(x => ({ display:'block', width:(x[0]/tot*100).toFixed(1)+'%', background:x[1], borderRadius:99 }));
+          out.legStyle = b.leg ? { display:'block', fontSize:13.5, color:body, marginTop:12 } : hide;
+          break;
+        }
+        case 'quad':
+          out.wrap = { display:'grid', gridTemplateColumns:'1fr 1fr', gap:1.5, background:line, border:'1.5px solid '+line, borderRadius:16, overflow:'hidden' };
+          out.cells = b.cells.map(([l, v, on]) => ({ l, v, style:{ display:'block', padding:'12px 14px', background: on ? LT : '#FFFFFF' } }));
+          break;
+        case 'bar': {
+          const full = b.taken >= b.cap;
+          out.wrap = { display:'block', padding:'12px 14px', background:'#FFFFFF', borderRadius:16, border:'1.5px '+(b.hint ? 'dashed '+LD : 'solid '+line), ...push };
+          out.c = b.taken+'/'+b.cap;
+          out.cStyle = { fontSize:14, fontWeight:600, color: full ? '#3F6323' : LDD };
+          out.bar = { display:'block', width:Math.round(b.taken/b.cap*100)+'%', height:'100%', borderRadius:99, background: full ? '#3F6323' : LD };
+          break;
+        }
+        case 'wa':
+          out.wrap = { border:'1.5px solid #E2DCD2', borderRadius:16, overflow:'hidden', background:'#EFEAE2', ...push };
+          out.imgStyle = b.img ? { display:'flex', alignItems:'center', justifyContent:'center', height:132, borderRadius:7, background:'#EDE7F8', marginBottom:7 } : hide;
+          break;
+        case 'cal': {
+          out.wrap = { background:'#FFFFFF', border:'1.5px solid '+line, borderRadius:18, padding:'6px 10px 12px' };
+          const wd = ['א','ב','ג','ד','ה','ו','ש'].map(v => ({ v, style:{ height:28, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, color:muted, fontWeight:500 } }));
+          const blanks = Array.from({ length:b.offset }, () => ({ v:'', style:{ height:42 } }));
+          const days = Array.from({ length:b.days }, (_, i) => { const d = i+1, on = d===b.sel, sat = (b.offset+i)%7===6;
+            return { v:String(d), style:{ height:42, borderRadius:12, display:'flex', alignItems:'center', justifyContent:'center', fontSize:15, fontWeight: on ? 600 : 400,
+              background: on ? LD : 'transparent', color: on ? '#FFFFFF' : sat ? muted : ink } }; });
+          out.cells = wd.concat(blanks, days);
+          break;
+        }
+        case 'media':
+          out.wrap = { display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:4, height:250, border:'2px dashed '+LM, borderRadius:18, background:LT, textAlign:'center' };
+          break;
+        case 'otp':
+          out.wrap = { display:'flex', gap:8, direction:'ltr', justifyContent:'center' };
+          out.cells = b.digits.map((v, i) => ({ v, style:{ width:46, height:56, borderRadius:13, display:'flex', alignItems:'center', justifyContent:'center', fontSize:24, fontWeight:600,
+            background:'#FFFFFF', border: i === b.digits.findIndex(d => d==='') ? '2px solid '+LD : '1.5px solid '+field } }));
+          break;
+        case 'art': {
+          const ok = b.kind === 'ok';
+          out.wrap = { display:'flex', flexDirection:'column', alignItems:'center', textAlign:'center', gap:10, padding: b.kind==='hero' ? '26px 0 6px' : '40px 0 10px' };
+          out.artStyle = { width: b.kind==='hero' ? 120 : 96, height: b.kind==='hero' ? 120 : 96, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:6, background: ok ? '#E7F0D4' : 'transparent' };
+          out.imgStyle = ok ? hide : { width:'100%', height:'100%', objectFit:'contain', opacity: b.kind==='empty' ? 0.55 : 1 };
+          out.icon = ok ? 'check' : '';
+          out.iconStyle = ok ? { fontSize:52, color:'#3F6323' } : hide;
+          out.tStyle = { fontSize: b.kind==='hero' ? 29 : 24, fontWeight:600, letterSpacing:'-0.03em', lineHeight:1.15, maxWidth:'16ch' };
+          break;
+        }
+        case 'profile':
+          out.wrap = { display:'flex', flexDirection:'column', alignItems:'center', gap:4, padding:'6px 0 2px' };
+          out.chipStyle = { ...chipCss(b.kind), marginTop:8 };
+          break;
+        case 'actions':
+          out.wrap = { display:'grid', gridTemplateColumns:'repeat('+b.items.length+',1fr)', gap:8, ...push };
+          out.items = b.items.map(([i, t, k]) => ({ i, t, style:{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:5, minHeight:70, borderRadius:15,
+            background: k==='primary' ? L : '#FFFFFF', border:'1.5px solid '+(k==='primary' ? L : k==='danger' ? '#EBC5B6' : field), color: k==='danger' ? '#8E3418' : ink } }));
+          break;
+        case 'note': {
+          const c = K[b.kind];
+          out.wrap = { display:'flex', alignItems:'flex-start', gap:10, padding:'12px 14px', borderRadius:14, background:c[0], border:'1.5px solid '+c[1], color: b.kind==='lav' ? LDD : c[2], fontSize:14, lineHeight:1.55, fontWeight:500, ...push };
+          out.iStyle = { fontSize:20, flex:'none', marginTop:1 };
+          break;
+        }
+        case 'chips':
+          out.wrap = { display:'flex', gap:8, overflow:'hidden' };
+          out.opts = b.opts.map((t, i) => ({ t, style:{ display:'inline-flex', alignItems:'center', minHeight:40, padding:'0 13px', borderRadius:11, fontSize:14, fontWeight:600, whiteSpace:'nowrap', flex:'none',
+            border:'1.5px solid '+(i===b.sel ? LD : field), background: i===b.sel ? LT : '#FFFFFF', color: i===b.sel ? LDD : ink } }));
+          break;
+        case 'btn': {
+          const k = b.kind || 'primary';
+          const base = { display:'flex', alignItems:'center', justifyContent:'center', gap:8, minHeight: k==='text' ? 44 : 54, borderRadius:15, fontSize:16.5, fontWeight:600, whiteSpace:'nowrap', ...push };
+          out.wrap = { ...base, ...(k==='primary' ? { background:L, border:'1.5px solid '+L, color:ink }
+            : k==='disabled' ? { background:'#EFEBE3', border:'1.5px solid #EFEBE3', color:'#8A857C' }
+            : k==='danger' ? { background:'#8E3418', border:'1.5px solid #8E3418', color:'#FFFFFF' }
+            : k==='dangerText' ? { color:'#8E3418', minHeight:44 }
+            : k==='text' ? { color:LD }
+            : { background:'#FFFFFF', border:'1.5px solid '+field, color:ink }) };
+          out.iStyle = b.i ? { fontSize:21 } : hide;
+          break;
+        }
+        case 'tiles': {
+          const cols = b.cols || 3, pair = b.pair;
+          out.wrap = { display:'flex', flexDirection:'column', gap:8, ...push };
+          out.lStyle = b.l ? { fontSize:14, fontWeight:600 } : hide;
+          out.grid = { display:'grid', gridTemplateColumns:'repeat('+cols+',minmax(0,1fr))', gap:8 };
+          out.items = b.opts.map(([ic, t], i) => { const on = i === b.sel;
+            return { t, icons:Array.isArray(ic) ? ic : [ic],
+              style:{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:6, minHeight: pair ? 74 : 82, padding:'8px 4px', borderRadius:14, textAlign:'center', fontSize:13.5, fontWeight:600, lineHeight:1.2,
+                border: on ? '2px solid '+LD : '1.5px solid '+field, background: on ? LT : '#FFFFFF', color: on ? LDD : ink },
+              iconWrap:{ display:'flex', alignItems:'center', justifyContent:'center', height:36, minWidth:36, padding:'0 4px', borderRadius:99, background: on ? '#FFFFFF' : '#F6F3EE', color: on ? LD : body },
+              iconStyle:{ fontSize: pair ? 19 : 21, margin: pair ? '0 -3px' : 0 } }; });
+          break;
+        }
+        case 'plan':
+          out.iStyle = b.i ? { fontSize:20, color:LD } : hide;
+          out.tagStyle = b.tag ? { fontSize:13, color:LDD, fontWeight:500, paddingInlineStart:32 } : hide;
+          out.wrap = { display:'flex', flexDirection:'column', gap:6, padding:'13px 15px', borderRadius:17, background: b.sel ? LT : '#FFFFFF', border: b.sel ? '2px solid '+LD : '1.5px solid '+line, ...push };
+          out.radioStyle = { width:22, height:22, borderRadius:'50%', flex:'none', border: b.sel ? '7px solid '+LD : '1.5px solid '+field, background:'#FFFFFF' };
+          out.badgeStyle = b.badge ? { ...chipCss('lav'), background:'#FFFFFF' } : hide;
+          out.featsStyle = b.feats.length ? { display:'flex', flexDirection:'column', gap:5, paddingInlineStart:32, marginTop:2 } : hide;
+          break;
+        case 'pending':
+          out.wrap = { display:'flex', flexDirection:'column', gap:10, padding:'13px 14px', background:'#FFFFFF', border:'1.5px solid '+line, borderRadius:16, ...push };
+          out.issueStyle = b.issue ? chipCss(b.issueKind || 'warn') : hide;
+          break;
+        case 'tl': {
+          const on = !!b.on, up = !!b.up, sel = !!b.sel;
+          out.lt = { position:'absolute', top:-12, height:30, width:2, background: b.first ? 'transparent' : line2 };
+          out.lb = { position:'absolute', top:30, bottom:-12, width:2, background: b.last ? 'transparent' : line2 };
+          out.node = { position:'relative', marginTop:18, width:12, height:12, borderRadius:'50%', background: on ? LD : '#FFFFFF', border: on ? '2px solid '+LD : '2px '+(up ? 'dashed ' : 'solid ')+field, boxShadow: sel ? '0 0 0 4px #EAE3FA' : 'none' };
+          out.card = { display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:12, border:'1px '+(up ? 'dashed ' : 'solid ')+(sel ? LD : up ? field : line), background: up ? '#FBFAF7' : sel ? '#FBF9FE' : '#FFFFFF', boxShadow: sel ? '0 0 0 1px '+LD : 'none' };
+          out.tStyle = { display:'block', fontSize:14.5, fontWeight:600, color: on ? ink : muted };
+          out.end = b.locked ? 'תמיד' : up ? 'בפרימיום' : '';
+          out.endStyle = b.locked ? { fontSize:12, fontWeight:500, color:muted, whiteSpace:'nowrap' } : up ? { fontSize:12.5, fontWeight:600, color:LD, whiteSpace:'nowrap' } : hide;
+          out.tog = b.locked || up ? '' : on ? 'toggle_on' : 'toggle_off';
+          out.togStyle = b.locked || up ? hide : { fontSize:36, color: on ? LD : field, flex:'none' };
+          break;
+        }
+        case 'fine': out.wrap = { textAlign:'center', fontSize:13.5, color:muted, lineHeight:1.55, ...push }; break;
+      }
+      return out;
+    };
+
+    const tabDefs = [{ icon:'home', label:'בית' }, { icon:'groups', label:'מוזמנים' }, { icon:'send', label:'שליחה' }, { icon:'table_bar', label:'שולחנות' }];
+    const mkTabs = (a) => tabDefs.map((t, i) => ({ ...t, style:{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:3, minWidth:66, minHeight:50, borderRadius:14,
+      color: i===a ? LDD : muted, fontWeight: i===a ? 600 : 400, background: i===a ? LT : 'transparent' } }));
+
+    const screen = (id, name, blocks, o={}) => {
+      const mode = o.mode || 'page';
+      const backdrop = 'linear-gradient(rgba(22,21,15,.4),rgba(22,21,15,.4)), #FAF8F4';
+      const outer = mode==='page' ? { flex:1, minHeight:0, overflow:'hidden', display:'flex', flexDirection:'column' }
+        : mode==='sheet' ? { flex:1, minHeight:0, overflow:'hidden', display:'flex', flexDirection:'column', justifyContent:'flex-end', background:backdrop }
+        : { flex:1, minHeight:0, overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center', padding:'0 22px', background:backdrop };
+      const inner = mode==='page' ? { flex:1, minHeight:0, display:'flex', flexDirection:'column', gap:12, padding:'4px 18px '+(o.tab === undefined ? 30 : 12)+'px' }
+        : mode==='sheet' ? { display:'flex', flexDirection:'column', gap:12, padding:'10px 18px 32px', background:'#FAF8F4', borderRadius:'26px 26px 0 0', maxHeight:'92%' }
+        : { width:'100%', display:'flex', flexDirection:'column', gap:12, padding:22, background:'#FAF8F4', borderRadius:22 };
+      const bl = (mode==='sheet' ? [{ type:'handle' }] : []).concat(blocks).map(norm);
+      return { id, label:id+' · '+name, outer, inner, blocks:bl, hasTab: o.tab !== undefined, tabs: o.tab !== undefined ? mkTabs(o.tab) : [] };
+    };
+
+    const P = LD, PL = L, G = '#D8D3C9';
+    const invite = 'היי שירה, עומר ושני שמחים להזמין אתכם לחגוג איתם את האירוסין. שישי, 4 בספטמבר ב־19:30 בגן האירועים, הרצליה';
+    const groups = [
+      { n:'00', t:'הרשמת אירוע', s:'חבילה, פרטי האירוע, הודעות ותשלום', screens:[
+        screen('0.1', 'חבילה', [
+          top('אירוע חדש', { close:true }), steps(1, 4, 'חבילה'),
+          h('איזו חבילה מתאימה לאירוע שלכם?', 'משלמים פעם אחת, בלי מנוי. אפשר לשדרג עד שההזמנה הראשונה יוצאת', { small:true }),
+          seg('כמה אורחים, בערך?', ['150','250','350','600'], 1, { fill:true }),
+          plan('בסיסית', '₪249', 'עד 150 אורחים · הזמנה ותזכורת אחת'),
+          plan('מלאה', '₪449', 'עד 350 אורחים', { sel:true, badge:'מומלצת לכם', feats:['הזמנה ושתי תזכורות אוטומטיות','כמה מגיעים ומה אוכלים, בתוך השיחה','דוח מוכן לקייטרינג'] }),
+          plan('פרימיום', '₪690', 'עד 600 · הושבה, יום האירוע ותודה'),
+          btn('המשך לפרטי האירוע', { push:true })
+        ]),
+        screen('0.2', 'מה חוגגים', [
+          top('אירוע חדש', {}), steps(2, 4, 'פרטי האירוע'),
+          h('מה חוגגים?', 'לפי זה נתאים את נוסח ההזמנה ואת השאלות לאורחים', { small:true }),
+          tiles('', [['favorite','חתונה'],['diamond','אירוסין'],['local_florist','חינה'],['menu_book','בר מצווה'],['auto_awesome','בת מצווה'],['child_care','ברית'],['cake','יום הולדת'],['apartment','אירוע חברה'],['celebration','אחר']], 0),
+          btn('המשך', { push:true })
+        ]),
+        screen('0.3', 'מי מתחתנים', [
+          top('אירוע חדש', {}), steps(2, 4, 'פרטי האירוע'),
+          h('מי מתחתנים?', 'השמות יופיעו בראש כל הודעה, בדיוק כמו שתכתבו', { small:true }),
+          tiles('', [[['woman','man'],'כלה וחתן'],[['man','man'],'חתן וחתן'],[['woman','woman'],'כלה וכלה']], 0, { pair:true }),
+          fld('שם הכלה', 'שני'),
+          fld('שם החתן', 'עומר', { focus:true }),
+          note('ההזמנה תיפתח כך: ״שני ועומר מתחתנים ורוצים אתכם איתם״', 'lav', 'chat'),
+          btn('המשך', { push:true })
+        ]),
+        screen('0.4', 'מתי ואיפה', [
+          top('אירוע חדש', {}), steps(2, 4, 'פרטי האירוע'),
+          h('מתי ואיפה?', '', { small:true }),
+          fld('תאריך', 'שישי, 4 בספטמבר 2026', { i:'calendar_month' }),
+          fld('קבלת פנים', '19:30', { i:'schedule' }),
+          fld('מקום האירוע', 'גן האירועים, הרצליה', { i:'location_on', focus:true, h:'נמצא במפות: השונית 3, הרצליה' }),
+          seg('עד מתי מקבלים תשובות', ['שבוע לפני','3 ימים','יומיים'], 1, { fill:true }),
+          btn('המשך להודעות', { push:true })
+        ]),
+        screen('0.5', 'לוח השליחה', [
+          top('אירוע חדש', {}), steps(3, 4, 'הודעות'),
+          h('מה יוצא לאורחים, ומתי', 'לוח שליחה לפי התאריך שלכם', { small:true }),
+          tl('כשתאשרו', '3–4 שבועות לפני', 'ההזמנה', 'כל האורחים ברשימה', { on:true, locked:true, sel:true, first:true }),
+          tl('+4 ימים', 'אחרי ההזמנה', 'תזכורת ראשונה', 'רק מי שעוד לא ענה', { on:true }),
+          tl('31.8', 'יום לפני הסגירה', 'תזכורת אחרונה', 'רק מי שעוד לא ענה', { on:true }),
+          tl('4.9', 'בבוקר, 10:00', 'ביום האירוע', 'רק מי שאישר הגעה', { up:true }),
+          tl('5.9', 'למחרת', 'תודה', 'כל מי שאישר הגעה', { up:true, last:true }),
+          btn('לתצוגה מקדימה', { push:true })
+        ]),
+        screen('0.6', 'נוסח ותצוגה', [
+          top('ההזמנה', {}), steps(3, 4, 'הודעות'),
+          seg('סגנון הנוסח', ['רשמי','אישי','קצר'], 0, { fill:true }),
+          wa('שלום שירה, שני ועומר מתחתנים ורוצים אתכם איתם. שישי, 4 בספטמבר 2026 ב־19:30, גן האירועים, הרצליה. נשמח לדעת אם תגיעו', { img:true, opts:['בטח שמגיעים','לא נוכל הפעם','עוד לא יודעים'] }),
+          row('ההזמנה המעוצבת', 'JPG, PNG או PDF, עד 5MB', { icon:'upload', trail:'chevron' }),
+          btn('המשך לתשלום', { push:true })
+        ]),
+        screen('0.7', 'סיכום', [
+          top('סיכום', {}), steps(4, 4, 'תשלום'),
+          h('הכול נראה נכון?', 'לחיצה על שורה פותחת אותה לעריכה', { small:true }),
+          row('חבילה מלאה', 'עד 350 אורחים', { icon:'workspace_premium', trail:'chevron' }),
+          row('חתונה · שני ועומר', 'כלה וחתן', { icon:'favorite', trail:'chevron' }),
+          row('שישי, 4 בספטמבר · 19:30', 'תשובות עד 1 בספטמבר', { icon:'event', trail:'chevron' }),
+          row('גן האירועים, הרצליה', 'אולם הגפן', { icon:'location_on', trail:'chevron' }),
+          row('3 הודעות', 'הזמנה ושתי תזכורות · נוסח רשמי', { icon:'chat', trail:'chevron' }),
+          row('לתשלום', 'כולל מע״מ 18%', { val:'₪449', valBig:true }),
+          btn('המשך לתשלום', { push:true }),
+          fine('החזר מלא עד שההזמנה הראשונה יוצאת')
+        ]),
+        screen('0.8', 'תשלום', [
+          top('תשלום מאובטח', {}), steps(4, 4, 'תשלום'),
+          seg('', ['כרטיס אשראי','ביט','Apple Pay'], 0, { fill:true }),
+          fld('מספר כרטיס', '0000 0000 0000 0000', { ltr:true, ph:true, i:'lock', focus:true }),
+          fld('תוקף', 'MM/YY', { ltr:true, ph:true }),
+          fld('3 ספרות בגב', 'CVV', { ltr:true, ph:true }),
+          fld('ת״ז בעל הכרטיס', '9 ספרות', { ph:true }),
+          row('קראתי ואני מאשר/ת את תנאי השימוש ומדיניות הפרטיות', '', { check:true, wrapT:true }),
+          btn('תשלום ₪449 ופתיחת האירוע', { push:true, i:'lock' })
+        ]),
+        screen('0.9', 'שדרוג חבילה', [
+          h('הודעה ביום האירוע', 'נכללת בחבילת פרימיום, יחד עם הושבה בשולחנות והודעת תודה', { small:true }),
+          row('תוספת לחבילה שלכם', 'מ־₪449 ל־₪690', { val:'₪241', valBig:true }),
+          btn('שדרוג לפרימיום'),
+          btn('לא עכשיו', { kind:'ghost' })
+        ], { mode:'dialog' }),
+        screen('0.10', 'האירוע נפתח', [
+          art('ok', 'האירוע של שני ועומר פתוח', 'החשבונית בדרך למייל. שום הודעה לא יוצאת לפני שתאשרו'),
+          sec('השלב הבא: מוסיפים אורחים'),
+          row('ייבוא מאקסל', 'קובץ עם שם וטלפון', { card:true, sel:true, icon:'upload_file', chip:'הכי מהיר', chipKind:'lav', trail:'chevron', tall:true }),
+          row('מוואטסאפ', 'כל איש קשר מחכה לאישור שלכם', { card:true, icon:'forward_to_inbox', trail:'chevron', tall:true }),
+          row('מאנשי הקשר בטלפון', 'בוחרים ומסמנים', { card:true, icon:'contacts', trail:'chevron', tall:true }),
+          btn('לבית האירוע', { kind:'ghost', push:true })
+        ])
+      ]},
+
+      { n:'01', t:'כניסה ויצירת אירוע', s:'מההורדה ועד ההזמנה הראשונה, כל שלב', screens:[
+        screen('1.1', 'כניסה', [
+          art('hero', 'אישורי הגעה בוואטסאפ, בלי לרדוף אחרי אף אחד', 'שולחים הזמנה, והתשובות מסתדרות לבד'),
+          fld('מספר הטלפון שלך', '052-540-1686', { ltr:true, focus:true, i:'smartphone' }),
+          btn('שליחת קוד', { push:true }),
+          fine('בהמשך אנחנו מסכימים לתנאי השימוש ולמדיניות הפרטיות')
+        ]),
+        screen('1.2', 'קוד אימות', [
+          top('', {}), h('הזנת הקוד', 'שלחנו קוד בן 6 ספרות ל־052-540-1686'),
+          otp(['4','8','1','','','']),
+          fine('לא הגיע?', 'שליחה חוזרת בעוד 0:24'),
+          btn('המשך', { kind:'disabled', push:true })
+        ]),
+        screen('1.3', 'איך מתחילים', [
+          top('אירוע חדש', { close:true }),
+          h('איך מתחילים?', 'כמה דקות, ושומרים הכול בדרך', { small:true }),
+          row('אירוע חדש מאפס', 'שלב אחרי שלב', { card:true, icon:'add', trail:'chevron', tall:true }),
+          row('שכפול מאירוע קודם', 'אותו נוסח, אותן שאלות והגדרות', { card:true, icon:'content_copy', trail:'chevron', tall:true }),
+          row('להמשיך טיוטה', 'בר המצווה של יונתן · נשמר אתמול', { card:true, icon:'edit_note', iconKind:'warn', chip:'טיוטה', chipKind:'warn', tall:true })
+        ]),
+        screen('1.4', 'מה חוגגים', [
+          top('אירוע חדש', { close:true }), steps(1, 6),
+          h('מה חוגגים?', 'נתאים את הנוסח ואת השאלות לשמחה', { small:true }),
+          tiles('', [['favorite','חתונה'],['diamond','אירוסין'],['menu_book','בר מצווה'],['auto_awesome','בת מצווה'],['child_care','ברית'],['cake','יום הולדת'],['local_florist','חינה'],['work','אירוע חברה'],['celebration','אחר']], 1),
+          btn('המשך', { push:true })
+        ]),
+        screen('1.5', 'של מי השמחה', [
+          top('אירוע חדש', {}), steps(1, 6),
+          h('מי מתארסים?', '', { small:true }),
+          tiles('', [[['woman','man'],'כלה וחתן'],[['man','man'],'חתן וחתן'],[['woman','woman'],'כלה וכלה']], 0, { pair:true }),
+          fld('הכלה', 'שני'),
+          fld('החתן', 'עומר', { focus:true }),
+          note('ההודעה תיפתח כך: ״שני ועומר מתארסים ורוצים אתכם איתם...״', 'lav', 'chat'),
+          btn('המשך', { push:true })
+        ]),
+        screen('1.6', 'תאריך', [
+          top('אירוע חדש', {}), steps(2, 6),
+          h('מתי חוגגים?', '', { small:true }),
+          cal('ספטמבר 2026', 2, 30, 4),
+          row('עוד לא סגרנו תאריך', 'אפשר להשלים לפני השליחה', { trail:'off' }),
+          btn('המשך · שישי, 4 בספטמבר', { push:true })
+        ]),
+        screen('1.7', 'שעה', [
+          top('אירוע חדש', {}), steps(2, 6),
+          h('באיזו שעה?', 'השעה שתופיע בהזמנה', { small:true }),
+          seg('קבלת פנים', ['18:30','19:00','19:30','20:00','20:30'], 2),
+          fld('שעה אחרת', 'למשל 19:45', { ph:true, i:'schedule' }),
+          row('להוסיף שעת טקס', 'חופה, נאומים או הדלקת נרות', { trail:'off' }),
+          row('להוסיף שעת סיום', '', { trail:'off' }),
+          btn('המשך', { push:true })
+        ]),
+        screen('1.8', 'עד מתי לאשר', [
+          top('אירוע חדש', {}), steps(2, 6),
+          h('עד מתי מקבלים תשובות?', 'אחרי התאריך הזה לא יוצאות תזכורות', { small:true }),
+          seg('', ['שבוע לפני','3 ימים לפני','יומיים לפני'], 2, { fill:true }),
+          sec('תזכורות אוטומטיות'),
+          row('תזכורת ראשונה', '4 ימים אחרי ההזמנה', { trail:'on' }),
+          row('תזכורת אחרונה', 'יום לפני הדדליין', { trail:'on' }),
+          row('הודעה ביום האירוע', 'שעה, ניווט ומספר שולחן', { trail:'on' }),
+          note('תזכורות יוצאות רק למי שעוד לא ענה', 'lav', 'info'),
+          btn('המשך', { push:true })
+        ]),
+        screen('1.9', 'מקום · חיפוש', [
+          top('אירוע חדש', {}), steps(3, 6),
+          h('איפה חוגגים?', '', { small:true }),
+          fld('', 'גן הא', { focus:true, i:'search' }),
+          row('גן האירועים', 'הרצליה · השונית 3', { icon:'location_on', trail:'chevron' }),
+          row('גני האירועים הדר', 'ראשון לציון · הרדוף 12', { icon:'location_on', trail:'chevron' }),
+          row('גן ארבל', 'גבעת שמואל · הזית 8', { icon:'location_on', trail:'chevron' }),
+          row('בבית או במקום פרטי', 'מקלידים כתובת', { icon:'home', iconKind:'quiet', trail:'chevron' })
+        ]),
+        screen('1.10', 'מקום · פרטים', [
+          top('אירוע חדש', {}), steps(3, 6),
+          row('גן האירועים', 'הרצליה · השונית 3', { card:true, sel:true, icon:'location_on', trail:'close', tall:true }),
+          fld('אולם או אזור', 'אולם הגפן'),
+          fld('הוראות הגעה', 'חניה חינם בכניסה הצפונית', { multi:true, focus:true }),
+          row('קישור לוויז ולגוגל מפות', 'יופיע בהודעה', { trail:'on' }),
+          btn('המשך', { push:true })
+        ]),
+        screen('1.11', 'תמונת הזמנה', [
+          top('אירוע חדש', {}), steps(4, 6),
+          h('יש לכם הזמנה מעוצבת?', 'היא תופיע בראש ההודעה בוואטסאפ', { small:true }),
+          media('העלאת תמונה או PDF', 'JPG, PNG או PDF · עד 5MB'),
+          row('לבחור מהגלריה', '', { icon:'photo_library', trail:'chevron' }),
+          btn('המשך', { kind:'disabled', push:true }),
+          btn('בלי תמונה', { kind:'text' })
+        ]),
+        screen('1.12', 'נוסח ההודעה', [
+          top('אירוע חדש', {}), steps(4, 6),
+          h('מה כתוב בהודעה', '', { small:true }),
+          seg('סגנון', ['חגיגי','קליל','קצר'], 0, { fill:true }),
+          fld('', 'היי {שם}, עומר ושני שמחים להזמין אתכם לחגוג איתם את האירוסין. שישי, 4 בספטמבר ב־19:30 בגן האירועים, הרצליה', { multi:true, focus:true }),
+          chips(['+ שם המוזמן','+ תאריך','+ מקום','+ ניווט'], -1),
+          fine('שלושת כפתורי התשובה מתווספים לבד'),
+          btn('לתצוגה מקדימה', { push:true })
+        ]),
+        screen('1.13', 'תצוגה מקדימה', [
+          top('כך זה ייראה', {}),
+          wa('היי שירה, עומר ושני שמחים להזמין אתכם לחגוג איתם את האירוסין. שישי, 4 בספטמבר ב־19:30 בגן האירועים, הרצליה', { img:true }),
+          note('ההודעה עוברת אישור של וואטסאפ. זה לוקח בדרך כלל כמה דקות', 'lav', 'schedule'),
+          btn('שליחת בדיקה אליי', { kind:'ghost', i:'send', push:true }),
+          btn('נראה טוב, המשך')
+        ]),
+        screen('1.14', 'שאלות בשיחה', [
+          top('אירוע חדש', {}), steps(5, 6),
+          h('מה לשאול אחרי ״מגיעים״', 'שאלה אחת בכל פעם, בתוך הוואטסאפ', { small:true }),
+          row('כמה אנשים מגיעים', 'מיד אחרי האישור', { trail:'on' }),
+          row('שמות המלווים', 'בשביל כרטיסי ההושבה', { trail:'on' }),
+          row('העדפת מנה', 'רגיל, צמחוני, טבעוני, ללא גלוטן', { trail:'on' }),
+          row('הסעה מאורגנת', 'מאיזו עיר', { trail:'off' }),
+          row('ברכה לזוג', 'שאלה פתוחה בסוף', { trail:'off' }),
+          btn('המשך', { push:true })
+        ]),
+        screen('1.15', 'מאיזה מספר', [
+          top('אירוע חדש', {}), steps(5, 6),
+          h('מאיזה מספר שולחים', '', { small:true }),
+          row('המספר של ShowUp', 'הכי מהיר, בלי שום הגדרה', { card:true, sel:true, radio:true, tall:true }),
+          row('המספר העסקי שלי', 'צריך חשבון WhatsApp Business', { card:true, radio:false, tall:true }),
+          fld('השם שהמוזמנים יראו', 'עומר ושני'),
+          fld('שעות שליחה', 'בין 09:00 ל־20:00, לא בשבת', { i:'schedule' }),
+          btn('המשך', { push:true })
+        ]),
+        screen('1.16', 'מוזמנים', [
+          top('אירוע חדש', {}), steps(6, 6),
+          h('איך מוסיפים מוזמנים', '', { small:true }),
+          row('מאנשי הקשר בטלפון', 'בוחרים ומסמנים', { card:true, icon:'contacts', trail:'chevron', tall:true }),
+          row('מקובץ אקסל', 'שם, טלפון וכמה אנשים', { card:true, icon:'upload_file', trail:'chevron', tall:true }),
+          row('אחד אחד', 'מקלידים שם וטלפון', { card:true, icon:'edit', trail:'chevron', tall:true }),
+          row('קישור להרשמה', 'המוזמנים ממלאים לבד', { card:true, icon:'link', trail:'chevron', tall:true }),
+          row('שיתוף איש קשר בוואטסאפ', 'מחכה לאישור שלך לפני שנכנס', { card:true, icon:'forward_to_inbox', trail:'chevron', tall:true }),
+          btn('אוסיף אחר כך', { kind:'text', push:true })
+        ]),
+        screen('1.17', 'בחירת אנשי קשר', [
+          top('אנשי קשר', { act:'בחירת הכול' }),
+          fld('', 'חיפוש', { ph:true, i:'search' }),
+          sec('נבחרו 14', 'ניקוי'),
+          row('אבי מזרחי', '052-330-9914', { check:true }),
+          row('אורי דגן', '050-447-1195', { check:true }),
+          row('אלמוג, דנה', '054-119-8802', { check:true }),
+          row('אמא', '054-221-0098', { check:false }),
+          row('בן־חיים, רותם', '050-641-2277', { check:true }),
+          btn('הוספת 14 מוזמנים', { push:true })
+        ]),
+        screen('1.18', 'ייבוא מקובץ', [
+          top('ייבוא מקובץ', {}),
+          note('נמצאו 21 שורות בקובץ guests.xlsx', 'ok', 'check_circle'),
+          sec('מה יש בכל עמודה'),
+          row('שם', 'עמודה A · שם מלא', { trail:'expand' }),
+          row('טלפון', 'עמודה B · נייד', { trail:'expand' }),
+          row('כמה אנשים', 'עמודה C · כמות', { trail:'expand' }),
+          row('קבוצה', 'עמודה D · צד', { trail:'expand' }),
+          note('2 מספרים נראים לא תקינים. נסמן אותם כדי שתבדקו', 'warn', 'warning'),
+          btn('ייבוא 21 מוזמנים', { push:true })
+        ]),
+        screen('1.19', 'סיכום', [
+          top('סיכום', {}),
+          h('הכול נראה נכון?', 'לחיצה על שורה פותחת אותה לעריכה', { small:true }),
+          row('אירוסין · שני ועומר', 'כלה וחתן', { icon:'diamond', trail:'chevron' }),
+          row('שישי, 4 בספטמבר · 19:30', 'תשובות עד 2 בספטמבר', { icon:'event', trail:'chevron' }),
+          row('גן האירועים, הרצליה', 'אולם הגפן', { icon:'location_on', trail:'chevron' }),
+          row('הזמנה עם תמונה', 'נוסח חגיגי', { icon:'mail', trail:'chevron' }),
+          row('3 שאלות בשיחה', 'כמות, מלווים, מנה', { icon:'quiz', trail:'chevron' }),
+          row('21 מוזמנים', '2 מספרים לבדיקה', { icon:'groups', sKind:'warn', trail:'chevron' }),
+          btn('יצירת האירוע', { push:true })
+        ]),
+        screen('1.20', 'האירוע מוכן', [
+          art('ok', 'האירוע מוכן', '21 מוזמנים מחכים להזמנה הראשונה'),
+          wa('היי, עומר ושני שמחים להזמין אתכם. שישי, 4 בספטמבר ב־19:30 בגן האירועים. תגיעו?'),
+          btn('לשלוח את ההזמנה עכשיו', { push:true }),
+          btn('אשלח אחר כך', { kind:'text' })
+        ]),
+        screen('1.21', 'יציאה באמצע', [
+          h('לצאת באמצע?', 'שמרנו את מה שמילאתם כטיוטה. אפשר להמשיך בדיוק מאותה נקודה', { small:true }),
+          btn('להמשיך למלא'),
+          btn('יציאה ושמירת טיוטה', { kind:'ghost' }),
+          btn('מחיקת הטיוטה', { kind:'dangerText' })
+        ], { mode:'dialog' })
+      ]},
+
+      { n:'02', t:'בית', s:'המסך שפותחים הכי הרבה', screens:[
+        screen('2.1', 'בית', [
+          ev('עומר ושני', 'עוד 3 ימים · שישי 19:30'),
+          stat('כמה מגיעים', '22', 'אנשים מתוך 34', [[14,P],[5,PL],[2,G]], '14 אישרו · 5 לא ענו · 2 לא יגיעו'),
+          sec('מה מחכה לך'),
+          row('לשלוח תזכורת למי שלא ענה', 'מוכנה, רק לאשר', { card:true, num:'5', numKind:'warn', trail:'chevron' }),
+          row('לשבץ בשולחנות', 'יש מקום בשולחנות 2 ו־5', { card:true, num:'6', numKind:'lav', trail:'chevron' }),
+          row('מספר לא עובד', 'גיא ומיכל אשד', { card:true, num:'1', numKind:'err', trail:'chevron' }),
+          sec('ענו לאחרונה', 'הכול'),
+          row('שירה לוי', '2 אנשים · ללא גלוטן', { chip:'מגיעים', chipKind:'ok' })
+        ], { tab:0 }),
+        screen('2.2', 'החלפת אירוע', [
+          h('האירועים שלי', '', { small:true }),
+          row('עומר ושני', 'אירוסין · 4 בספטמבר', { card:true, sel:true, trail:'check', tall:true }),
+          row('בר המצווה של יונתן', '12 בנובמבר · עוד לא נשלח', { card:true, chip:'טיוטה', tall:true }),
+          row('יום ההולדת של סבתא', '3 ביוני', { card:true, chip:'הסתיים', tall:true }),
+          btn('אירוע חדש', { kind:'ghost', i:'add' })
+        ], { mode:'sheet' }),
+        screen('2.3', 'התראות', [
+          top('התראות', { act:'סימון כנקרא' }),
+          sec('היום'),
+          row('שירה לוי אישרה', '2 אנשים · לפני 5 דקות', { icon:'check', iconKind:'ok' }),
+          row('אבי מזרחי לא יגיע', 'כתב מזל טוב · 09:52', { icon:'close', iconKind:'err' }),
+          row('התזכורת יצאה', 'ל־7 מוזמנים · 10:00', { icon:'send', iconKind:'lav' }),
+          sec('אתמול'),
+          row('טל פרידמן ענה ״עוד לא יודעים״', '20:14', { icon:'help', iconKind:'warn' }),
+          row('ההודעה לגיא אשד לא נמסרה', 'כדאי לבדוק את המספר', { icon:'error', iconKind:'err', trail:'chevron' })
+        ])
+      ]},
+
+      { n:'03', t:'מוזמנים', s:'רשימה, כרטיס, הוספה ועריכה', screens:[
+        screen('3.1', 'רשימת מוזמנים', [
+          top('מוזמנים', { actIcon:'person_add' }),
+          fld('', 'חיפוש לפי שם', { ph:true, i:'search' }),
+          chips(['כולם 21','לא ענו 5','אישרו 14','בלי שולחן 6'], 0),
+          row('4 אנשי קשר מחכים לאישור', 'הגיעו מוואטסאפ', { card:true, num:'4', numKind:'warn', trail:'chevron' }),
+          row('שירה ואיתי לוי', '2 אנשים · שולחן 4', { chip:'מגיעים', chipKind:'ok' }),
+          row('טל פרידמן', 'ענה ״עוד לא יודעים״', { chip:'לא ענה', chipKind:'warn', trail:'call' }),
+          row('רותם בן־חיים', '4 אנשים · שולחן 7', { chip:'מגיעים', chipKind:'ok' }),
+          row('נועם שגיא', 'ראה ולא ענה', { chip:'לא ענה', chipKind:'warn', trail:'call' }),
+          row('אבי מזרחי', 'שולח מתנה', { chip:'לא יגיע', chipKind:'err' })
+        ], { tab:1 }),
+        screen('3.2', 'סינון', [
+          h('סינון', '', { small:true }),
+          seg('תשובה', ['כולם','אישרו','לא ענו','לא יגיעו'], 2),
+          seg('קבוצה', ['צד כלה','צד חתן','חברים','עבודה'], [1,2]),
+          seg('שולחן', ['הכול','בלי שולחן','משובצים'], 0),
+          btn('הצגת 3 מוזמנים'),
+          btn('ניקוי הסינון', { kind:'text' })
+        ], { mode:'sheet' }),
+        screen('3.3', 'כרטיס מוזמן', [
+          top('', { actIcon:'more_horiz' }),
+          profile('ט״פ', 'טל פרידמן', '053-812-4409', 'לא ענה', 'warn'),
+          actions([['call','התקשרות','primary'],['chat','וואטסאפ'],['edit','עריכה']]),
+          sec('פרטים'),
+          row('כמה אנשים', '', { val:'2' }),
+          row('קבוצה', '', { val:'חברים' }),
+          row('שולחן', '', { val:'עוד לא' }),
+          sec('מה קרה עד עכשיו'),
+          row('ענה ״עוד לא יודעים״', '20 באוגוסט · ״נעדכן עד יום ראשון״', { icon:'help', iconKind:'warn' }),
+          row('ההזמנה נשלחה ונקראה', '18 באוגוסט', { icon:'done_all', iconKind:'lav' })
+        ]),
+        screen('3.4', 'מוזמן חדש', [
+          top('מוזמן חדש', { close:true, act:'שמירה', actDim:true }),
+          fld('שם', 'משפחת כהן', { focus:true }),
+          fld('טלפון', '050-12', { ltr:true, error:true, h:'חסרות ספרות במספר' }),
+          seg('כמה אנשים', ['1','2','3','4','5+'], 3, { fill:true }),
+          seg('קבוצה', ['צד כלה','צד חתן','חברים','עבודה'], 0),
+          fld('הערה', 'למשל: צמחוני, מגיעים מחיפה', { ph:true, multi:true }),
+          btn('הוספה', { kind:'disabled', push:true })
+        ]),
+        screen('3.5', 'עריכת מוזמן', [
+          top('עריכה', { act:'שמירה' }),
+          fld('שם', 'שירה ואיתי לוי'),
+          fld('טלפון', '054-772-1180', { ltr:true }),
+          seg('תשובה', ['מגיעים','לא יגיעו','עוד לא ענו'], 0, { fill:true }),
+          seg('כמה אנשים', ['1','2','3','4','5+'], 1, { fill:true }),
+          fld('הערה', 'ללא גלוטן לשירה', { multi:true }),
+          fine('שינוי ידני לא שולח הודעה למוזמן'),
+          btn('מחיקת המוזמן', { kind:'dangerText', push:true })
+        ]),
+        screen('3.6', 'בחירה מרובה', [
+          top('3 נבחרו', { close:true, act:'בחירת הכול' }),
+          row('טל פרידמן', 'לא ענה', { check:true }),
+          row('נועם שגיא', 'לא ענה', { check:true }),
+          row('רותם בן־חיים', 'מגיעים · שולחן 7', { check:false }),
+          row('גיא ומיכל אשד', 'לא ענה', { check:true }),
+          row('אבי מזרחי', 'לא יגיע', { check:false }),
+          actions([['send','תזכורת','primary'],['table_bar','שיבוץ'],['delete','מחיקה','danger']], { push:true })
+        ]),
+        screen('3.7', 'אישור מחיקה', [
+          h('למחוק 3 מוזמנים?', 'הם לא יקבלו יותר הודעות. אפשר להוסיף אותם שוב מתי שרוצים', { small:true }),
+          btn('מחיקה', { kind:'danger' }),
+          btn('ביטול', { kind:'ghost' })
+        ], { mode:'dialog' }),
+        screen('3.8', 'אין עדיין מוזמנים', [
+          top('מוזמנים', {}),
+          art('empty', 'עוד אין מוזמנים', 'מוסיפים מאנשי הקשר, מקובץ או אחד אחד'),
+          btn('הוספת מוזמנים', { i:'person_add' }),
+          btn('שיתוף קישור הרשמה', { kind:'ghost', i:'link' })
+        ], { tab:1 }),
+        screen('3.9', 'ממתינים לאישור', [
+          top('ממתינים לאישור', { act:'אישור הכול' }),
+          note('אנשי קשר ששלחתם בוואטסאפ למספר של ShowUp. הם נכנסים למוזמנים רק אחרי אישור', 'lav', 'forward_to_inbox'),
+          pend('ר״א', 'רונית אברהם', '054-338-2210', 'את שלחת · היום 10:12'),
+          pend('ד״ג', 'דוד ושרה גולן', '052-661-4093', 'שני שלחה · אתמול 21:40'),
+          pend('ל״ש', 'ליאת שמש', '050-123-45', 'את שלחת · אתמול 09:30', { issue:'מספר חסר', issueKind:'err' })
+        ]),
+        screen('3.10', 'עריכה לפני אישור', [
+          h('ליאת שמש', 'הגיעה מוואטסאפ · את שלחת אתמול', { small:true }),
+          fld('שם', 'ליאת שמש'),
+          fld('טלפון', '050-123-45', { ltr:true, error:true, h:'חסרות 2 ספרות. אפשר לתקן כאן' }),
+          seg('כמה אנשים', ['1','2','3','4','5+'], 1, { fill:true }),
+          seg('קבוצה', ['צד כלה','צד חתן','חברים','עבודה'], 2),
+          btn('שמירה והוספה למוזמנים'),
+          btn('לא להוסיף', { kind:'dangerText' })
+        ], { mode:'sheet' }),
+        screen('3.11', 'הוספה מוואטסאפ', [
+          top('הוספה מוואטסאפ', {}),
+          h('שולחים איש קשר, ואנחנו מכינים אותו', '', { small:true }),
+          row('שומרים את המספר של ShowUp', '03-555-0142', { num:'1' }),
+          row('בוואטסאפ: שיתוף איש קשר', 'אפשר כמה בבת אחת', { num:'2' }),
+          row('מאשרים או מתקנים כאן', 'ורק אז הם נכנסים לרשימה', { num:'3' }),
+          note('גם עומר ושני יכולים לשלוח. כל מה שנשלח מחכה לאישור שלך', 'lav', 'group'),
+          btn('פתיחת וואטסאפ', { i:'chat', push:true }),
+          btn('העתקת המספר', { kind:'text' })
+        ])
+      ]},
+
+      { n:'04', t:'שליחה', s:'הזמנות ותזכורות', screens:[
+        screen('4.1', 'סבבי שליחה', [
+          top('שליחה', {}),
+          row('תזכורת שנייה', 'מחר 10:00 · 5 מוזמנים', { card:true, icon:'schedule', chip:'מתוזמן', chipKind:'lav', tall:true }),
+          row('תזכורת ראשונה', '2 בספטמבר · 7 מוזמנים', { card:true, icon:'send', chip:'2 ענו', chipKind:'quiet', trail:'chevron', tall:true }),
+          row('הזמנה', '18 באוגוסט · 21 מוזמנים', { card:true, icon:'mail', chip:'14 אישרו', chipKind:'ok', trail:'chevron', tall:true }),
+          btn('סבב חדש', { i:'add', push:true })
+        ], { tab:2 }),
+        screen('4.2', 'סבב חדש · הודעה', [
+          top('סבב חדש', { close:true }), steps(1, 3), h('איזו הודעה', '', { small:true }),
+          row('תזכורת קצרה', 'שורה אחת ושלושה כפתורים', { card:true, sel:true, radio:true }),
+          row('הזמנה מלאה', 'תאריך, שעה, מקום ושמות', { card:true, radio:false }),
+          row('יום לפני', 'שעת הגעה, חניה ושולחן', { card:true, radio:false, chip:'בבדיקה', chipKind:'warn' }),
+          wa('היי, תזכורת קטנה. עומר ושני חוגגים בשישי, 4 בספטמבר ב־19:30'),
+          btn('המשך', { push:true })
+        ]),
+        screen('4.3', 'סבב חדש · נמענים', [
+          top('סבב חדש', {}), steps(2, 3), h('למי שולחים', '', { small:true }),
+          row('מי שעוד לא ענה', 'לא הגיבו להזמנה ולתזכורת', { card:true, sel:true, radio:true, val:'5', valBig:true }),
+          row('ענו ״עוד לא יודעים״', 'לחצו על האפשרות השלישית', { card:true, radio:false, val:'3', valBig:true }),
+          row('אישרו בלי מספר אנשים', 'חסר מידע להושבה', { card:true, radio:false, val:'2', valBig:true }),
+          row('כל הרשימה', 'כולל מי שכבר ענה', { card:true, radio:false, val:'21', valBig:true }),
+          row('בחירה ידנית', '', { icon:'checklist', trail:'chevron' }),
+          btn('המשך', { push:true })
+        ]),
+        screen('4.4', 'סבב חדש · מתי', [
+          top('סבב חדש', {}), steps(3, 3), h('מתי לשלוח', '', { small:true }),
+          seg('', ['עכשיו','מחר בבוקר','תאריך אחר'], 1, { fill:true }),
+          fld('יום', 'רביעי, 3 בספטמבר', { i:'calendar_month' }),
+          fld('שעה', '10:00', { i:'schedule' }),
+          sec('אם לא יענו'),
+          row('עוד תזכורת אחת', 'יומיים לפני האירוע ב־20:00', { trail:'on' }),
+          row('להעביר לשיחה אישית', 'נזכיר לך להתקשר', { trail:'off' }),
+          btn('לסיכום', { push:true })
+        ]),
+        screen('4.5', 'סיכום ואישור', [
+          top('סיכום', {}),
+          row('5 מוזמנים שעוד לא ענו', 'טל, נועם, גיא ומיכל ועוד 2', { card:true, icon:'groups', trail:'chevron' }),
+          wa('היי, תזכורת קטנה. עומר ושני חוגגים בשישי, 4 בספטמבר ב־19:30 בגן האירועים'),
+          row('מתי', 'מחר, 10:00 בבוקר', { icon:'schedule', trail:'chevron' }),
+          btn('לתזמן ל־5 מוזמנים', { push:true }),
+          btn('לשלוח אליי קודם לבדיקה', { kind:'text' })
+        ]),
+        screen('4.6', 'תוזמן', [
+          art('ok', 'התזכורת מתוזמנת', 'מחר ב־10:00 היא תצא ל־5 מוזמנים. נעדכן אותך ברגע שיענו'),
+          btn('חזרה לבית', { push:true }),
+          btn('ביטול התזמון', { kind:'dangerText' })
+        ]),
+        screen('4.7', 'פרטי סבב', [
+          top('תזכורת ראשונה', { actIcon:'more_horiz' }),
+          quad([['ענו','2'],['ראו ולא ענו','3',true],['עוד לא ראו','1'],['לא קיבלו','1']]),
+          sec('ראו ולא ענו'),
+          row('נועם שגיא', 'ראה ב־10:12', { trail:'call' }),
+          row('טל פרידמן', 'ראה ב־11:40', { trail:'call' }),
+          row('משפחת שוורץ', 'ראו ב־14:03', { trail:'call' }),
+          btn('תזכורת רק לשלושה האלה', { kind:'ghost', push:true })
+        ])
+      ]},
+
+      { n:'05', t:'שולחנות', s:'הושבה בלי מפה מסובכת', screens:[
+        screen('5.1', 'שולחנות', [
+          top('שולחנות', { actIcon:'add' }),
+          note('6 אורחים מחכים לשולחן. לוחצים על שם ואז על שולחן', 'lav', 'touch_app'),
+          chips(['יעל ורון ברק','משפחת שוורץ','הילה כץ'], 0),
+          bar('שולחן 2', 7, 10, 'משפחת אלמוג ועוד 2', { hint:true }),
+          bar('שולחן 5', 0, 10, 'ריק', { hint:true }),
+          bar('שולחן 4', 5, 10, 'שירה ואיתי, דנה ועוד 1'),
+          bar('שולחן 3', 12, 12, 'מלא'),
+          bar('שולחן 7', 9, 10, 'רותם, נועה ועוד 5')
+        ], { tab:3 }),
+        screen('5.2', 'שולחן פתוח', [
+          top('שולחן 4', { act:'עריכה' }),
+          bar('5 מתוך 10 מקומות', 5, 10, 'עגול · ליד הבמה'),
+          sec('יושבים כאן'),
+          row('שירה ואיתי לוי', '2 אנשים', { ini:'ש״ל', trail:'close' }),
+          row('דנה אלמוג', 'אדם אחד', { ini:'ד״א', trail:'close' }),
+          row('עידו ומאיה', '2 אנשים', { ini:'ע״מ', trail:'close' }),
+          btn('הוספת אורחים לשולחן', { kind:'ghost', i:'add', push:true })
+        ]),
+        screen('5.3', 'הושבה בשולחן', [
+          h('להושיב בשולחן 4', 'נשארו 5 מקומות', { small:true }),
+          row('יעל ורון ברק', '2 אנשים · צד כלה', { check:true }),
+          row('סבתא זהבה', 'אדם אחד · ביקשה ליד הבמה', { check:true }),
+          row('משפחת שוורץ', '5 אנשים · לא נכנסים', { check:false, sKind:'err' }),
+          row('הילה כץ', '3 אנשים · חברים', { check:false }),
+          btn('להושיב 3 אנשים')
+        ], { mode:'sheet' }),
+        screen('5.4', 'שולחן חדש', [
+          top('שולחן חדש', { close:true }),
+          fld('שם', 'שולחן 11', { focus:true }),
+          seg('צורה', ['עגול','מלבני','אבירים'], 0, { fill:true }),
+          seg('כמה מקומות', ['8','10','12','14'], 1, { fill:true }),
+          fld('איפה באולם', 'למשל: ליד הבמה', { ph:true }),
+          btn('הוספת השולחן', { push:true })
+        ]),
+        screen('5.5', 'שיבוץ אוטומטי', [
+          top('שיבוץ אוטומטי', { close:true }),
+          note('שיבצנו לפי קבוצה ובקשות. אפשר לשנות כל אחד לפני שמירה', 'lav', 'auto_awesome'),
+          row('יעל ורון ברק', 'שולחן 2 · ליד המשפחה', { check:true }),
+          row('סבתא זהבה', 'שולחן 4 · ביקשה ליד הבמה', { check:true }),
+          row('משפחת שוורץ', 'שולחן 5 · צד חתן', { check:true }),
+          row('הילה כץ', 'שולחן 8 · עם החברים', { check:true }),
+          row('דור אביטן', 'שולחן 8 · מהעבודה', { check:true }),
+          btn('לאשר את כל ה־6', { push:true }),
+          btn('אשבץ לבד', { kind:'text' })
+        ])
+      ]},
+
+      { n:'06', t:'תמונת מצב', s:'מה לסגור עם האולם והקייטרינג', screens:[
+        screen('6.1', 'תמונת מצב', [
+          top('תמונת מצב', {}),
+          stat('צפי לערב האירוע', '26–28', 'אנשים', [], 'לפי 22 שאישרו ומי שעוד עשוי לאשר'),
+          sec('מה מגישים', 'שליחה לקייטרינג'),
+          row('מנה רגילה', 'מבוגרים', { val:'16' }),
+          row('צמחוני', 'הילה כץ ועוד אחד', { val:'2' }),
+          row('טבעוני', 'דנה אלמוג', { val:'1' }),
+          row('ללא גלוטן', 'שירה לוי', { val:'1' }),
+          row('מנת ילדים', 'אלמוג ובן־חיים', { val:'3' })
+        ]),
+        screen('6.2', 'שליחה לקייטרינג', [
+          h('שליחה לקייטרינג', '', { small:true }),
+          row('קייטרינג גורמה', '052-610-4471', { card:true, icon:'restaurant', trail:'expand' }),
+          seg('איך לשלוח', ['וואטסאפ','PDF','מייל'], 0, { fill:true }),
+          fld('ההודעה', 'היי, עדכון לשישי: 28 סועדים. 16 רגיל, 2 צמחוני, טבעוני אחד, ללא גלוטן אחד ו־3 מנות ילדים', { multi:true }),
+          btn('שליחה')
+        ], { mode:'sheet' }),
+        screen('6.3', 'למי כדאי להתקשר', [
+          top('למי כדאי להתקשר', {}),
+          fine('ראו את ההודעות ולא ענו, או שהמספר שלהם לא עובד'),
+          row('טל פרידמן', 'ענה ״עוד לא יודעים״ לפני 5 ימים', { trail:'call', tall:true }),
+          row('נועם שגיא', 'ראה שתי הודעות ולא ענה', { trail:'call', tall:true }),
+          row('משפחת שוורץ', 'אישרו בלי לומר כמה יגיעו', { trail:'call', tall:true }),
+          row('גיא ומיכל אשד', 'המספר לא תקין', { trail:'call', tall:true, sKind:'err' })
+        ])
+      ]},
+
+      { n:'07', t:'הגדרות', s:'אירוע, וואטסאפ, שאלות וצוות', screens:[
+        screen('7.1', 'הגדרות', [
+          top('הגדרות', {}),
+          row('פרטי האירוע', 'עומר ושני · 4 בספטמבר', { icon:'event', trail:'chevron' }),
+          row('וואטסאפ', 'השם, המספר ושעות השליחה', { icon:'chat', chip:'מחובר', chipKind:'ok', trail:'chevron' }),
+          row('מה שואלים בשיחה', '3 שאלות פעילות', { icon:'quiz', trail:'chevron' }),
+          row('צוות', '4 אנשים', { icon:'group', trail:'chevron' }),
+          row('התראות', 'על כל תשובה', { icon:'notifications', trail:'chevron' }),
+          row('יציאה מהחשבון', '', { danger:true, push:true })
+        ]),
+        screen('7.2', 'פרטי האירוע', [
+          top('פרטי האירוע', { act:'שמירה' }),
+          fld('שם', 'עומר ושני'),
+          fld('תאריך', 'שישי, 4 בספטמבר 2026', { i:'calendar_month' }),
+          fld('שעה', '19:30', { i:'schedule' }),
+          fld('מקום', 'גן האירועים, הרצליה', { i:'location_on' }),
+          fld('עד מתי לאשר', '2 בספטמבר', { i:'event' }),
+          btn('מחיקת האירוע', { kind:'dangerText', push:true })
+        ]),
+        screen('7.3', 'מה שואלים בשיחה', [
+          top('מה שואלים בשיחה', {}),
+          fine('נשאל אוטומטית אחרי שמישהו מאשר הגעה'),
+          row('כמה אנשים מגיעים', 'מיד אחרי האישור', { trail:'on' }),
+          row('שמות המלווים', 'בשביל כרטיסי ההושבה', { trail:'on' }),
+          row('העדפת מנה', 'רגיל, צמחוני, טבעוני, ללא גלוטן', { trail:'on' }),
+          row('הסעה מאורגנת', 'תל אביב, חיפה או ירושלים', { trail:'off' }),
+          row('ברכה לזוג', 'שאלה פתוחה בסוף', { trail:'off' }),
+          btn('שאלה חדשה', { kind:'ghost', i:'add', push:true })
+        ]),
+        screen('7.4', 'צוות', [
+          top('צוות', {}),
+          row('דנה כהן', 'את', { ini:'ד״כ', chip:'בעלים', chipKind:'lav' }),
+          row('עומר', 'omer@gmail.com', { ini:'ע', chip:'עריכה' }),
+          row('שני', 'shani@gmail.com', { ini:'ש', chip:'עריכה' }),
+          row('גן האירועים', 'רואים רק את הרשימה', { ini:'ג״א', chip:'צפייה' }),
+          btn('הזמנת חבר צוות', { i:'person_add', push:true })
+        ]),
+        screen('7.5', 'הזמנת חבר צוות', [
+          h('הזמנת חבר צוות', '', { small:true }),
+          fld('טלפון או מייל', '054-', { ltr:true, focus:true }),
+          seg('מה יוכל לעשות', ['לראות','לערוך','הכול'], 1, { fill:true }),
+          fine('יוכל להוסיף מוזמנים ולשבץ, אבל לא לשלוח הודעות'),
+          btn('שליחת הזמנה')
+        ], { mode:'sheet' }),
+        screen('7.6', 'וואטסאפ', [
+          top('וואטסאפ', {}),
+          row('המספר של ShowUp', 'ההודעות יוצאות בשם שלכם', { card:true, icon:'chat', iconKind:'ok', chip:'מחובר', chipKind:'ok', tall:true }),
+          fld('השם שהמוזמנים רואים', 'עומר ושני'),
+          fld('שעות שליחה', 'בין 09:00 ל־20:00, לא בשבת', { i:'schedule' }),
+          row('תשובות שלא הבנו', 'נשלחות אליך לוואטסאפ האישי', { trail:'on' }),
+          row('מעבר למספר העסקי שלי', '', { trail:'chevron' })
+        ])
+      ]},
+
+      { n:'08', t:'תקלות ומצבים', s:'כשמשהו לא הולך חלק', screens:[
+        screen('8.1', 'תיקון מספר', [
+          top('תיקון מספר', {}),
+          note('ההודעה לגיא ומיכל אשד לא נמסרה. כנראה שיש טעות במספר', 'warn', 'warning'),
+          fld('המספר ששמור', '052-773-665', { ltr:true, error:true, h:'חסרה ספרה אחת' }),
+          fld('המספר הנכון', '052-773-6650', { ltr:true, focus:true }),
+          btn('שמירה ושליחה מחדש', { push:true })
+        ]),
+        screen('8.2', 'אין חיבור', [
+          ev('עומר ושני', 'עוד 3 ימים · שישי 19:30'),
+          note('אין חיבור לאינטרנט. התשובות שמגיעות עכשיו יופיעו כשהחיבור יחזור', 'err', 'wifi_off'),
+          stat('כמה מגיעים', '22', 'אנשים מתוך 34', [[14,P],[5,PL],[2,G]], 'עודכן לאחרונה ב־10:04'),
+          btn('לנסות שוב', { kind:'ghost', i:'refresh' })
+        ], { tab:0 }),
+        screen('8.3', 'אחרי האירוע', [
+          art('ok', 'היה מושלם', '26 אנשים הגיעו לחגוג איתכם'),
+          row('לשלוח תודה לכל האורחים', 'הודעה אחת בוואטסאפ', { card:true, icon:'favorite', trail:'chevron', tall:true }),
+          row('להוריד את רשימת האורחים', 'קובץ אקסל', { card:true, icon:'download', trail:'chevron', tall:true }),
+          btn('אירוע חדש', { kind:'ghost', i:'add', push:true })
+        ])
+      ]}
+    ];
+
+    const phone = { width:390, height:844, borderRadius:44, background:'#FAF8F4', border:'1.5px solid #D8D3C9', boxShadow:'0 30px 60px rgba(22,21,15,.14)', overflow:'hidden', display:'flex', flexDirection:'column', direction:'rtl', flex:'none' };
+    const statusBar = { height:50, flex:'none', display:'flex', alignItems:'flex-end', justifyContent:'space-between', padding:'0 30px 8px', fontSize:15, fontWeight:600, direction:'ltr' };
+    const tabBar = { flex:'none', display:'flex', justifyContent:'space-around', padding:'8px 8px 26px', background:'rgba(250,248,244,.96)', borderTop:'1.5px solid '+line };
+
+    return { groups, phone, statusBar, tabBar };
+  }
+}
+</script>
+</body>
+</html>

@@ -306,6 +306,8 @@ services:
       - DAILY_SUMMARY_TZ=${DAILY_SUMMARY_TZ:-Asia/Jerusalem}
       - WA_DAILY_SUMMARY_TEMPLATE_NAME=${WA_DAILY_SUMMARY_TEMPLATE_NAME:-}
       - WA_DAILY_SUMMARY_LANG=${WA_DAILY_SUMMARY_LANG:-he}
+      # Owners' mobile app push (Firebase service-account JSON, base64). Empty = off.
+      - FCM_SERVICE_ACCOUNT_B64=${FCM_SERVICE_ACCOUNT_B64:-}
       # Payment reconciliation: recovers orders whose iCount IPN was lost.
       - AUB_SERVICE_URL=${AUB_SERVICE_URL:-http://aub-service:8000}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
@@ -537,6 +539,8 @@ services:
       - VOICE_NAME=${VOICE_NAME:-Nimrod}
       - VOICE_MAX_CONCURRENT=${VOICE_MAX_CONCURRENT:-5}
       - VOICE_RETRY_MINUTES=${VOICE_RETRY_MINUTES:-120}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+      - CORE_SERVICE_URL=${BACKEND_PROTOCOL}://${CORE_SERVICE_HOST}:${CORE_SERVICE_PORT}
       - VOICE_CALL_ROUNDS_JSON=${VOICE_CALL_ROUNDS_JSON:-}
     volumes:
       - voicedata:/data/clips

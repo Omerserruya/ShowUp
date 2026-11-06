@@ -1,0 +1,5 @@
+node_modules/
+# Secrets - CI writes these from GitHub secrets
+android/app/google-services.json
+*.keystore
+*.jks

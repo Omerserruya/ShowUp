@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.crud.event import merge_subjects
 from app.db import get_db
 from app.crud import event as event_crud
 from app.models.models import Account, Membership, Event, Guest
@@ -219,6 +220,9 @@ class VenueEventCreate(BaseModel):
     name: str = Field(..., max_length=100)
     event_date: Optional[datetime] = None
     location: Optional[str] = None
+    # Who is hosting (EventSubjects keys: p1/p2, parent1/2, honoree, company ...).
+    # Required in practice: an event cannot be created without host names.
+    subjects: Optional[dict] = None
     owner_first_name: str = Field(..., max_length=100)
     owner_last_name: Optional[str] = Field("", max_length=100)
     owner_phone: str = Field(..., max_length=20)
@@ -274,6 +278,7 @@ def create_venue_event(
             "event_type": payload.event_type,
             "event_date": payload.event_date,
             "location": payload.location,
+            "subjects": merge_subjects(None, payload.subjects) if payload.subjects else None,
         },
         metadata={"venue_id": str(venue_id), "created_via": "venue_direct"},
     )

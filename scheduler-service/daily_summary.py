@@ -34,6 +34,8 @@ from zoneinfo import ZoneInfo
 import psycopg2
 import psycopg2.extras
 
+from push_events import queue_daily_summary
+
 logger = logging.getLogger("daily_summary")
 
 SUMMARY_HOUR = int(os.getenv("DAILY_SUMMARY_HOUR", "20"))
@@ -288,6 +290,11 @@ def run_daily_summary_check(conn, publish) -> int:
             continue
 
         sent_events += 1
+        try:  # the owners' app gets the same summary as a push
+            with conn.cursor() as cur:
+                queue_daily_summary(cur, event, [str(o["id"]) for o in owners], deltas, summary_date)
+        except Exception as e:
+            logger.warning("Daily summary push not queued | event=%s error=%s", event["id"], e)
         logger.info(
             "Daily summary sent | event=%s attending=%s declined=%s pending=%s owners=%s/%s",
             event["id"], counts["attending"], counts["declined"], counts["pending"],

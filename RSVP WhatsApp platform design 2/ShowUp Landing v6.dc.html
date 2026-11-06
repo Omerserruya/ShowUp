@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&amp;family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20,300,0,0&amp;display=swap" rel="stylesheet">
+<meta property="og:title" content="ShowUp · אתם מזמינים. אנחנו דואגים שכולם יגיעו.">
+<meta property="og:description" content="אישורי הגעה בוואטסאפ. התזכורות יוצאות לבד, האישורים נאספים לבד, ואתם רואים כמה באים בזמן אמת.">
+<meta property="og:image" content="assets/og-table.png">
+<style>
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body { margin:0; background:#FAF8F4; color:#16150F; font-family:Heebo,sans-serif; -webkit-font-smoothing:antialiased; overflow-x:hidden; }
+  a { color:#5A3DA6; font-weight:600; text-decoration:none; }
+  a:hover { color:#432C85; }
+  ::selection { background:#E4DAFA; color:#16150F; }
+  button, input, select { font:inherit; color:inherit; }
+  input::placeholder { color:#8E887C; }
+  :focus-visible { outline:3px solid #9D83E0; outline-offset:2px; }
+  .ms { font-family:'Material Symbols Rounded'; font-weight:300; line-height:1; display:inline-block; white-space:nowrap; direction:ltr; }
+  .num { font-variant-numeric:tabular-nums; }
+  @keyframes gken { from { transform:scale(1) translate3d(0,0,0); } to { transform:scale(1.07) translate3d(1.2%,-1%,0); } }
+  @keyframes gmarqRtl { from { transform:translateX(0); } to { transform:translateX(50%); } }
+  @keyframes gpulse { 0%,100% { opacity:.3; } 50% { opacity:1; } }
+  @keyframes gpopIn { from { opacity:0; transform:translateY(8px) scale(.97); } to { opacity:1; transform:none; } }
+  @keyframes tdot { 0%,60%,100% { opacity:.35; transform:translateY(0); } 30% { opacity:1; transform:translateY(-3px); } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; } }
+</style>
+</helmet>
+
+<div dir="rtl" lang="he" style="background:#FAF8F4;min-height:100vh">
+
+  <header style="position:fixed;top:0;left:0;right:0;z-index:90;padding:14px 0;pointer-events:none">
+    <div style="max-width:1240px;margin:0 auto;padding:0 clamp(12px,2vw,24px)">
+      <div style="pointer-events:auto;background:rgba(253,251,247,.74);backdrop-filter:blur(20px) saturate(1.7);-webkit-backdrop-filter:blur(20px) saturate(1.7);border:1px solid rgba(22,21,15,.08);border-radius:20px;box-shadow:0 8px 30px rgba(22,21,15,.1);padding:0 22px 0 14px;height:62px;display:flex;align-items:center;gap:4px">
+        <a href="#top" style="display:flex;align-items:center;gap:9px;color:#16150F;margin-inline-end:18px;flex:none" style-hover="color:#16150F">
+          <img src="assets/seal.png" alt="" style="width:30px;height:30px;object-fit:contain">
+          <span style="font-size:19px;font-weight:600;letter-spacing:-0.03em">ShowUp</span>
+        </a>
+        <nav aria-label="ראשי" style="{{ navStyle }}">
+          <a href="#what" style="font-size:14px;font-weight:500;color:#16150F;padding:8px 12px;border-radius:11px;white-space:nowrap" style-hover="background:#F5F2EC;color:#16150F">מה מקבלים</a>
+          <a href="#how" style="font-size:14px;font-weight:500;color:#16150F;padding:8px 12px;border-radius:11px;white-space:nowrap" style-hover="background:#F5F2EC;color:#16150F">איך זה עובד</a>
+          <a href="#assistant" style="font-size:14px;font-weight:500;color:#16150F;padding:8px 12px;border-radius:11px;white-space:nowrap" style-hover="background:#F5F2EC;color:#16150F">העוזר</a>
+          <a href="#pricing" style="font-size:14px;font-weight:500;color:#16150F;padding:8px 12px;border-radius:11px;white-space:nowrap" style-hover="background:#F5F2EC;color:#16150F">תעריפים</a>
+          <a href="#faq" style="font-size:14px;font-weight:500;color:#16150F;padding:8px 12px;border-radius:11px;white-space:nowrap" style-hover="background:#F5F2EC;color:#16150F">שאלות נפוצות</a>
+        </nav>
+        <span style="flex:1"></span>
+        <div style="display:flex;align-items:center;gap:14px;flex:none">
+          <a href="ShowUp Platform v6.dc.html" style="font-size:13.5px;font-weight:500;color:#16150F;border-bottom:1px solid #C8C2B6;padding-bottom:1px;white-space:nowrap" style-hover="color:#16150F;border-color:#16150F">התחברות</a>
+          <a href="ShowUp Event Signup v2.dc.html" style="font-size:13.5px;font-weight:600;background:#C9B8F3;color:#16150F;border-radius:11px;padding:10px 16px;white-space:nowrap" style-hover="background:#BBA6EE;color:#16150F">יוצאים לדרך</a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section id="top" data-screen-label="01 Hero" style="position:relative;overflow:hidden;background:#FAF8F4">
+    <div aria-hidden="true" style="position:absolute;inset:0;background-image:radial-gradient(rgba(90,61,166,.13) 1px,transparent 1px);background-size:26px 26px;pointer-events:none"></div>
+    <div aria-hidden="true" style="position:absolute;top:-180px;left:-160px;width:640px;height:640px;border-radius:50%;background:radial-gradient(circle,rgba(201,184,243,.55),rgba(201,184,243,0) 70%);pointer-events:none"></div>
+        <div style="position:absolute;left:0;right:0;bottom:0;height:150px;background:linear-gradient(to bottom,rgba(250,248,244,0),#FAF8F4 88%);pointer-events:none"></div>
+    <div style="{{ heroInner }}">
+      <div style="max-width:760px"><div>
+        <h1 style="margin:0;font-size:clamp(42px,6vw,76px);font-weight:600;letter-spacing:-0.035em;line-height:1.0;color:#16150F;text-wrap:balance">אתם מזמינים.<br>אנחנו דואגים <span style="color:#5A3DA6">שכולם יגיעו.</span></h1>
+        <p style="font-size:clamp(17px,1.6vw,19px);line-height:1.6;color:#4A4741;margin:24px 0 0;max-width:500px;text-wrap:pretty">שולחים את ההזמנות, ומי ששכח כבר יקבל תזכורת. האישורים נאספים לבד, בתוך וואטסאפ. אנחנו נרדוף אחרי האישורים, אתם תרדפו אחרי הרחבה.</p>
+        <div style="display:flex;align-items:center;gap:8px 18px;margin-top:24px;flex-wrap:wrap">
+          <span style="display:flex;align-items:center;gap:7px;font-size:13.5px;color:#4A4741;white-space:nowrap"><span style="width:5px;height:5px;border-radius:50%;background:#9D83E0"></span>בלי התחייבות ובלי מנוי</span>
+          <span style="display:flex;align-items:center;gap:7px;font-size:13.5px;color:#4A4741;white-space:nowrap"><span style="width:5px;height:5px;border-radius:50%;background:#9D83E0"></span>וואטסאפ העסקי הרשמי</span>
+          <span style="display:flex;align-items:center;gap:7px;font-size:13.5px;color:#4A4741;white-space:nowrap"><span style="width:5px;height:5px;border-radius:50%;background:#9D83E0"></span>החזר מלא תוך 14 יום</span>
+        </div>
+      </div>
+      </div>
+
+      <div style="display:flex;flex-wrap:wrap;align-items:stretch;gap:24px;margin-top:36px">
+      <div style="flex:1 1 360px;min-width:0;max-width:460px;background:#FFFFFF;border-radius:20px;padding:24px;border:1px solid #E8E3D9;box-shadow:0 24px 60px rgba(22,21,15,.08);display:flex;flex-direction:column;gap:12px">
+        <sc-if value="{{ notSent }}" hint-placeholder-val="{{ true }}">
+          <div>
+            <div style="font-size:21px;font-weight:600;letter-spacing:-0.02em">יאללה, מתחילים</div>
+            <div style="font-size:14px;line-height:1.55;color:#5B564D;margin-top:5px">כמה פרטים, ויש לכם לוח הודעות מוכן לאירוע. רוצים טעימה קודם? נשלח לכם הזמנה לדוגמה ישר לוואטסאפ.</div>
+          </div>
+          <label style="display:flex;flex-direction:column;gap:6px">
+            <span style="font-size:13.5px;font-weight:500">שם מלא</span>
+            <input value="{{ name }}" onChange="{{ onName }}" autoComplete="name" style="height:48px;padding:0 14px;border:1px solid #E3DED4;border-radius:11px;background:#FAF8F4;font-size:15px;outline:none" style-focus="border-color:#5A3DA6;background:#FFFFFF">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:6px">
+            <span style="font-size:13.5px;font-weight:500">איזה אירוע?</span>
+            <select value="{{ evType }}" onChange="{{ onEvType }}" style="height:48px;padding:0 12px;border:1px solid #E3DED4;border-radius:11px;background:#FAF8F4;font-size:15px;outline:none;cursor:pointer">
+              <sc-for list="{{ evTypes }}" as="t" hint-placeholder-count="6"><option value="{{ t }}">{{ t }}</option></sc-for>
+            </select>
+          </label>
+          <label style="display:flex;flex-direction:column;gap:6px">
+            <span style="font-size:13.5px;font-weight:500">טלפון נייד</span>
+            <span style="display:flex;gap:8px;direction:ltr">
+              <span class="num" style="display:flex;align-items:center;height:48px;padding:0 12px;border:1px solid #E3DED4;border-radius:11px;background:#F5F2EC;font-size:15px;color:#5B564D">+972</span>
+              <input value="{{ phone }}" onChange="{{ onPhone }}" placeholder="50-000-0000" inputMode="tel" autoComplete="tel-national" class="num" style="{{ phoneStyle }}" style-focus="border-color:#5A3DA6;background:#FFFFFF">
+            </span>
+          </label>
+          <sc-if value="{{ phoneErr }}" hint-placeholder-val="{{ false }}">
+            <span role="alert" style="font-size:13px;font-weight:500;color:#A33A2B">צריך מספר נייד ישראלי תקין</span>
+          </sc-if>
+          <a href="ShowUp Event Signup v2.dc.html" style="display:flex;align-items:center;justify-content:center;gap:8px;height:52px;border-radius:12px;background:#C9B8F3;color:#16150F;font-size:16px;margin-top:2px" style-hover="background:#BBA6EE;color:#16150F">יוצאים לדרך<span class="ms" style="font-size:20px">arrow_back</span></a>
+          <button onClick="{{ sendSample }}" style="display:flex;align-items:center;justify-content:center;gap:9px;height:48px;border-radius:12px;background:#FFFFFF;border:1px solid #B9DFC6;color:#1E6B3F;font-size:15px;font-weight:600;cursor:pointer" style-hover="background:#F1FAF4"><img src="https://cdn.simpleicons.org/whatsapp/25D366" alt="" width="18" height="18">שלחו לי הזמנה לדוגמה</button>
+          <div style="font-size:12.5px;line-height:1.55;color:#5B564D">בלי התחייבות, אפשר לעצור מתי שבא לכם. ההודעות יוצאות מוואטסאפ העסקי הרשמי, והתשלום מאובטח.</div>
+        </sc-if>
+        <sc-if value="{{ sent }}" hint-placeholder-val="{{ false }}">
+          <div role="status" style="display:flex;flex-direction:column;gap:12px;padding:6px 0">
+            <span style="width:48px;height:48px;border-radius:50%;background:#E7F4EC;color:#1E6B3F;display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:28px;font-weight:500">check</span></span>
+            <div style="font-size:20px;font-weight:600;letter-spacing:-0.02em">ההזמנה בדרך לוואטסאפ שלכם</div>
+            <div style="font-size:14.5px;line-height:1.55;color:#5B564D">פתחו את הוואטסאפ ולחצו על תשובה, כמו שהאורחים יעשו. אהבתם? פותחים אירוע בכמה דקות.</div>
+            <a href="ShowUp Event Signup v2.dc.html" style="display:flex;align-items:center;justify-content:center;gap:8px;height:52px;border-radius:12px;background:#C9B8F3;color:#16150F;font-size:16px" style-hover="background:#BBA6EE;color:#16150F">יוצאים לדרך<span class="ms" style="font-size:20px">arrow_back</span></a>
+          </div>
+        </sc-if>
+      </div>
+
+      <div id="demo" style="flex:1 1 340px;min-width:0;max-width:400px;align-self:center;border-radius:26px;overflow:hidden;background:#EFEAE2;box-shadow:0 30px 70px rgba(90,61,166,.16);border:1px solid #E2DCD2">
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:#F0F2F5;border-bottom:1px solid #E2DCD2">
+          <span style="width:38px;height:38px;border-radius:50%;background:#5A3DA6;color:#FFFFFF;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;flex:none">ד</span>
+          <span style="flex:1;min-width:0"><span style="display:block;font-size:15px;font-weight:600;color:#111B21">דנה ויוסי</span><span style="display:block;font-size:12px;color:#54656F">WhatsApp Business</span></span>
+        </div>
+        <div style="{{ waBody }}">
+          <span style="align-self:center;font-size:12px;color:#54656F;background:#FFFFFF;border-radius:8px;padding:4px 10px;margin-bottom:4px;box-shadow:0 1px 0.5px rgba(11,20,26,.13)">היום</span>
+          <sc-if value="{{ wa.invite }}" hint-placeholder-val="{{ true }}">
+            <div style="align-self:flex-start;max-width:86%;background:#FFFFFF;border-radius:10px 0 10px 10px;padding:5px;box-shadow:0 1px 0.5px rgba(11,20,26,.13);animation:gpopIn .38s cubic-bezier(.2,.8,.2,1) both;transform-origin:top right">
+              <img src="assets/invite.png" alt="ההזמנה המעוצבת" style="display:block;width:100%;height:150px;object-fit:cover;border-radius:7px">
+              <div style="padding:7px 6px 0;font-size:14.5px;line-height:1.5;color:#111B21"><b style="font-weight:600">היי שירה, מוזמנים לחתונה של דנה ויוסי 💍</b><br>יום שלישי, 19:30 · אולמי הגן, ראשון לציון</div>
+              <span class="num" style="display:block;font-size:11px;color:#667781;text-align:left;padding:2px 6px 0">10:00</span>
+            </div>
+            <span style="display:block;width:86%;background:#FFFFFF;color:#027EB5;text-align:center;font-size:14.5px;font-weight:500;padding:9px 8px;border-radius:9px;box-shadow:0 1px 0.5px rgba(11,20,26,.13);animation:gpopIn .38s cubic-bezier(.2,.8,.2,1) both;animation-delay:0.12s">כן, באים 🎉</span>
+            <span style="display:block;width:86%;background:#FFFFFF;color:#027EB5;text-align:center;font-size:14.5px;font-weight:500;padding:9px 8px;border-radius:9px;box-shadow:0 1px 0.5px rgba(11,20,26,.13);animation:gpopIn .38s cubic-bezier(.2,.8,.2,1) both;animation-delay:0.2s">לא נצליח הפעם</span>
+          </sc-if>
+          <sc-if value="{{ wa.reply }}" hint-placeholder-val="{{ true }}">
+            <div style="align-self:flex-end;max-width:72%;background:#D9FDD3;border-radius:0 10px 10px 10px;padding:7px 10px 5px;margin-top:6px;font-size:14.5px;color:#111B21;box-shadow:0 1px 0.5px rgba(11,20,26,.13);animation:gpopIn .38s cubic-bezier(.2,.8,.2,1) both;transform-origin:top left">כן, באים 🎉<span class="num" style="display:block;font-size:11px;color:#667781;text-align:left;margin-top:2px">10:04 <span style="{{ wa.ticks }}">✓✓</span></span></div>
+          </sc-if>
+          <sc-if value="{{ wa.dayChip }}" hint-placeholder-val="{{ true }}">
+            <span style="align-self:center;font-size:12px;color:#54656F;background:#FFFFFF;border-radius:8px;padding:4px 10px;margin:8px 0 4px;box-shadow:0 1px 0.5px rgba(11,20,26,.13);animation:gpopIn .38s cubic-bezier(.2,.8,.2,1) both">ביום האירוע</span>
+          </sc-if>
+          {{ waTyping }}
+          <sc-if value="{{ wa.day }}" hint-placeholder-val="{{ true }}">
+            <div style="align-self:flex-start;max-width:86%;background:#FFFFFF;border-radius:10px 0 10px 10px;padding:7px 10px 0;font-size:14.5px;line-height:1.5;color:#111B21;box-shadow:0 1px 0.5px rgba(11,20,26,.13);animation:gpopIn .38s cubic-bezier(.2,.8,.2,1) both;transform-origin:top right">
+              מתרגשים לקראת הערב. מזכירים: היום ב־19:30, אולמי הגן. וכדי שלא תתעכבו בדרך:
+              <span class="num" style="display:block;font-size:11px;color:#667781;text-align:left;margin-top:2px">10:00</span>
+              <span style="display:flex;align-items:center;justify-content:center;gap:6px;margin:6px -10px 0;padding:9px;border-top:1px solid #E9EDEF;color:#027EB5;font-size:14px;font-weight:500"><span class="ms" style="font-size:17px">near_me</span>ניווט עם Waze</span>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+      </div>
+    </div>
+  </section>
+
+  <div style="max-width:1240px;margin:0 auto;padding:44px clamp(16px,2vw,24px) 0">
+    <div style="display:flex;align-items:center;gap:28px">
+      <span style="{{ marqLabel }}">מתאים לכל שמחה</span>
+      <div style="flex:1;min-width:0;overflow:hidden;mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);-webkit-mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)">
+        {{ marquee }}
+      </div>
+    </div>
+  </div>
+
+  <section id="what" data-screen-label="03 מה מקבלים" style="max-width:1240px;margin:0 auto;padding:clamp(72px,9vw,104px) clamp(16px,2vw,24px) 0">
+    <div style="font-size:13px;font-weight:600;letter-spacing:.04em;color:#5A3DA6">מה באמת מקבלים פה</div>
+    <h2 style="margin:12px 0 0;font-size:clamp(28px,3vw,38px);font-weight:600;letter-spacing:-0.03em;line-height:1.15;text-wrap:balance">זאת לא עוד תוכנה. זה שקט נפשי.</h2>
+    <p style="font-size:17px;line-height:1.7;color:#5B564D;margin:14px 0 0;max-width:600px;text-wrap:pretty">תכף תרגישו שיש לכם צוות שלם מאחורי הקלעים. כזה שזוכר הכול, רודף אחרי האישורים במקומכם, ולא נלחץ אפילו יומיים לפני.</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:36px 32px;margin-top:56px">
+      <sc-for list="{{ features }}" as="f" hint-placeholder-count="4">
+        <div style="border-top:1px solid #E3DED4;padding-top:24px;display:flex;flex-direction:column;align-items:flex-start;gap:10px">
+          <span style="width:40px;height:40px;border-radius:11px;background:#F1EDFB;color:#5A3DA6;display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:21px;font-weight:400">{{ f.i }}</span></span>
+          <div style="font-size:18px;font-weight:600;letter-spacing:-0.015em;margin-top:18px">{{ f.t }}</div>
+          <div style="font-size:15px;line-height:1.75;color:#5B564D;text-wrap:pretty">{{ f.d }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="how" data-screen-label="04 איך זה עובד" style="max-width:1240px;margin:0 auto;padding:clamp(72px,9vw,104px) clamp(16px,2vw,24px) 0">
+    <div style="text-align:center">
+      <div style="font-size:13px;font-weight:600;letter-spacing:.04em;color:#5A3DA6">הכול קורה בוואטסאפ</div>
+      <h2 style="margin:12px auto 0;font-size:clamp(36px,5vw,64px);font-weight:600;letter-spacing:-0.035em;line-height:1.02;max-width:820px;text-wrap:balance">אתם מארגנים אירוע, לא מערכת.</h2>
+      <p style="font-size:17px;line-height:1.6;color:#5B564D;margin:18px auto 0;max-width:600px;text-wrap:pretty">המעקב, התזכורות והתשובות לאורחים? עלינו. אתם פשוט רואים איך האישורים נכנסים, אחד אחרי השני.</p>
+    </div>
+    <div style="margin-top:64px">
+      <sc-for list="{{ moments }}" as="mo" hint-placeholder-count="4">
+        <div style="{{ mo.row }}">
+          <div style="{{ mo.vis }}">
+            <div style="width:100%;max-width:560px">
+              <sc-if value="{{ mo.isInvite }}" hint-placeholder-val="{{ true }}">
+                <div style="background:#FFFFFF;border:1px solid #E8E3D9;border-radius:18px;padding:22px;display:flex;flex-direction:column;gap:14px;box-shadow:0 30px 70px rgba(22,21,15,.10)">
+                  <div style="align-self:flex-start;max-width:88%;background:#F5F2EC;border-radius:14px 14px 4px 14px;padding:14px 16px;border-inline-start:3px solid #9D83E0">
+                    <div style="font-size:16px;font-weight:600">החתונה של דנה ויוסי 💍</div>
+                    <div style="font-size:13.5px;color:#5B564D;margin-top:4px">יום שלישי, 19:30 · אולמי הגן, ראשון לציון</div>
+                    <div style="display:flex;gap:7px;margin-top:12px;flex-wrap:wrap">
+                      <span style="font-size:13.5px;font-weight:600;background:#FFFFFF;border:1px solid #DCD0F4;color:#432C85;border-radius:9px;padding:7px 12px">כן, אני מגיע 🎉</span>
+                      <span style="font-size:13.5px;font-weight:500;background:#FFFFFF;border:1px solid #E3DED4;border-radius:9px;padding:7px 12px">לא אוכל הפעם</span>
+                    </div>
+                  </div>
+                  <div style="align-self:flex-end;background:#D9FDD3;color:#111B21;border-radius:14px 14px 14px 4px;padding:10px 16px;font-size:14.5px;box-shadow:0 1px 0.5px rgba(11,20,26,.13)">כן, אני מגיע 🎉</div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ mo.isStat }}" hint-placeholder-val="{{ false }}">
+                <div style="background:#C9B8F3;border-radius:18px;padding:30px 32px;color:#16150F;display:flex;align-items:center;gap:24px 32px;flex-wrap:wrap">
+                  <div style="flex:1 1 180px">
+                    <div style="font-size:14px;font-weight:600">מצב אישורי הגעה</div>
+                    <div class="num" style="font-size:clamp(64px,7vw,104px);font-weight:600;letter-spacing:-0.05em;line-height:.9;margin-top:10px">84%</div>
+                    <div style="font-size:15px;margin-top:8px">כבר ענו</div>
+                  </div>
+                  <div style="flex:1 1 180px;display:flex;flex-direction:column;background:rgba(255,255,255,.55);border-radius:14px;padding:6px 16px">
+                    <sc-for list="{{ statRows }}" as="sr" hint-placeholder-count="3">
+                      <div style="{{ sr.style }}"><span style="{{ sr.dot }}"></span><span style="flex:1;font-size:14.5px">{{ sr.l }}</span><span class="num" style="font-size:20px;font-weight:600">{{ sr.n }}</span></div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ mo.isSeq }}" hint-placeholder-val="{{ false }}">
+                <div style="background:#FFFFFF;border:1px solid #E8E3D9;border-radius:18px;padding:20px 22px;box-shadow:0 30px 70px rgba(22,21,15,.10)">
+                  <sc-for list="{{ seq }}" as="q" hint-placeholder-count="4">
+                    <div style="display:grid;grid-template-columns:36px minmax(0,1fr) auto;column-gap:12px;align-items:center">
+                      <div style="position:relative;display:flex;justify-content:center;align-self:stretch">
+                        <span style="{{ q.line }}"></span>
+                        <span style="position:relative;margin:10px 0;width:36px;height:36px;border-radius:50%;background:#F6F2FD;color:#5A3DA6;display:flex;align-items:center;justify-content:center"><span class="ms" style="font-size:19px">{{ q.i }}</span></span>
+                      </div>
+                      <span style="font-size:15.5px;font-weight:600">{{ q.t }}</span>
+                      <span style="font-size:13px;color:#5B564D;background:#F5F2EC;border-radius:99px;padding:4px 11px;white-space:nowrap">{{ q.when }}</span>
+                    </div>
+                  </sc-for>
+                  <div style="display:flex;align-items:center;gap:7px;margin-top:10px;padding-top:12px;border-top:1px solid #F0EDE7;font-size:13.5px;font-weight:500;color:#5A3DA6"><span class="ms" style="font-size:18px">schedule</span>מתכוונן לבד לזמן שנשאר עד האירוע</div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ mo.isChat }}" hint-placeholder-val="{{ false }}">
+                <div style="background:#F6F2FD;border:1px solid #DCD0F4;border-radius:18px;padding:18px 18px 16px;display:flex;flex-direction:column;gap:9px;box-shadow:0 30px 70px rgba(90,61,166,.14)">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                    <span style="width:7px;height:7px;border-radius:50%;background:#25A35A"></span>
+                    <span style="font-size:13.5px;font-weight:600;color:#16150F">עוזר האירוע</span>
+                    <span style="font-size:12.5px;color:#4A4741">מחובר</span>
+                  </div>
+                  <div style="display:flex;justify-content:flex-end"><div style="max-width:80%;background:#D9FDD3;color:#111B21;border-radius:14px 14px 14px 4px;padding:10px 14px;font-size:14px;line-height:1.5;box-shadow:0 1px 0.5px rgba(11,20,26,.13)">מי עוד לא ענה?</div></div>
+                  <div style="display:flex"><div style="max-width:88%;background:#FFFFFF;color:#111B21;border-radius:14px 14px 4px 14px;padding:11px 14px;font-size:14px;line-height:1.55;box-shadow:0 1px 0.5px rgba(11,20,26,.13)">63 אורחים. הנה הם, לפי משפחות. רוצים שאשלח להם תזכורת עכשיו?</div></div>
+                  <div style="display:flex;justify-content:flex-end"><div style="max-width:80%;background:#D9FDD3;color:#111B21;border-radius:14px 14px 14px 4px;padding:10px 14px;font-size:14px;line-height:1.5;box-shadow:0 1px 0.5px rgba(11,20,26,.13)">כן, תשלח</div></div>
+                  <div style="display:flex"><div style="max-width:88%;background:#FFFFFF;color:#111B21;border-radius:14px 14px 4px 14px;padding:11px 14px;font-size:14px;line-height:1.55;box-shadow:0 1px 0.5px rgba(11,20,26,.13)">יצא! שלחתי ל־63 האורחים.</div></div>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+          <div style="{{ mo.spine }}">
+            <span style="width:2px;background:#E8E3D9"></span>
+            <span style="position:absolute;top:calc(50% - 38px);width:11px;height:11px;border-radius:50%;background:#5A3DA6;box-shadow:0 0 0 4px #FAF8F4"></span>
+          </div>
+          <div style="{{ mo.txt }}">
+            <div style="max-width:400px;display:flex;flex-direction:column;gap:12px">
+              <span class="num" style="font-size:15px;font-weight:600;color:#5A3DA6">{{ mo.n }}</span>
+              <div style="font-size:clamp(26px,2.6vw,36px);font-weight:600;letter-spacing:-0.03em;line-height:1.08">{{ mo.t }}</div>
+              <div style="font-size:15.5px;line-height:1.65;color:#5B564D">{{ mo.note }}</div>
+              <div style="display:flex;flex-direction:column;gap:9px;margin-top:6px">
+                <sc-for list="{{ mo.bullets }}" as="b" hint-placeholder-count="2">
+                  <span style="display:flex;align-items:center;gap:10px;font-size:15px;font-weight:500"><span style="width:22px;height:22px;border-radius:50%;background:#F6F2FD;color:#5A3DA6;display:flex;align-items:center;justify-content:center;flex:none"><span class="ms" style="font-size:15px;font-weight:500">check</span></span>{{ b }}</span>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="assistant" data-screen-label="05 העוזר" style="max-width:1240px;margin:0 auto;padding:clamp(40px,6vw,64px) clamp(16px,2vw,24px) 0">
+    <div style="background:#FFFFFF;border:1px solid #E8E3D9;border-radius:26px;overflow:hidden;display:flex;flex-wrap:wrap">
+      <div style="flex:1 1 440px;min-width:0;padding:clamp(28px,4.5vw,52px)">
+        <div style="font-size:13px;font-weight:600;letter-spacing:.04em;color:#5A3DA6">העוזר של ShowUp</div>
+        <h2 style="margin:14px 0 0;font-size:clamp(32px,4vw,50px);font-weight:600;letter-spacing:-0.035em;line-height:1.05;text-wrap:balance">לא צ׳אטבוט. <span style="color:#5A3DA6">עוזר אישי לאירוע.</span></h2>
+        <p style="font-size:16px;line-height:1.7;color:#4A4741;margin:18px 0 0;max-width:500px;text-wrap:pretty">שואלים, מבקשים, והוא פשוט עושה. הוא מכיר את האירוע שלכם וזוכר כל פרט קטן. כל הניהול קורה בתוך וואטסאפ. בלי מסכים, בלי טפסים, בלי לחפש איפה לחצתם פעם שעברה.</p>
+        <div style="font-size:14px;font-weight:600;margin-top:28px">פשוט אומרים לו, לחצו לנסות:</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
+          <sc-for list="{{ askChips }}" as="ch" hint-placeholder-count="6">
+            <button onClick="{{ ch.onClick }}" style="{{ ch.style }}" style-hover="border-color:#5A3DA6;color:#432C85;background:#F6F2FD">״{{ ch.q }}״</button>
+          </sc-for>
+        </div>
+        <p style="font-size:14.5px;line-height:1.6;color:#4A4741;margin:24px 0 0;max-width:480px">במקום ללמוד עוד מערכת, פשוט מדברים. הוא זוכר את ההקשר ועושה את העבודה. אתם מרוויחים שעות.</p>
+        <a href="ShowUp Event Signup v2.dc.html" style="display:inline-flex;align-items:center;gap:9px;margin-top:26px;font-size:15px;font-weight:600;background:#5A3DA6;color:#FFFFFF;border-radius:12px;padding:14px 22px" style-hover="background:#432C85;color:#FFFFFF"><img src="https://cdn.simpleicons.org/whatsapp/FFFFFF" alt="" width="17" height="17">בואו תכירו אותו</a>
+      </div>
+      <div style="flex:1 1 420px;min-width:0;background:linear-gradient(160deg,#9D83E0 0%,#B9A6F0 55%,#D4C7F7 100%);padding:clamp(20px,3vw,32px);display:flex;flex-direction:column;position:relative">
+        <div aria-hidden="true" style="position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,.22) 1px,transparent 1px);background-size:18px 18px;pointer-events:none"></div>
+        <div style="position:relative;display:flex;align-items:center;gap:9px;padding:10px 12px;background:rgba(255,255,255,.82);border-radius:14px">
+          <span style="width:32px;height:32px;border-radius:50%;background:#FFFFFF;display:flex;align-items:center;justify-content:center;border:1px solid #DCD0F4"><img src="assets/seal.png" alt="" style="width:22px;height:22px;object-fit:contain"></span>
+          <span><span style="display:block;font-size:14px;font-weight:600">עוזר האירוע</span><span style="display:flex;align-items:center;gap:6px;font-size:12px;color:#4A4741"><span style="width:6px;height:6px;border-radius:50%;background:#25A35A;animation:gpulse 2.6s ease-in-out infinite"></span>מחובר בוואטסאפ</span></span>
+        </div>
+        <div ref="{{ asstRef }}" style="position:relative;flex:1;min-height:380px;max-height:440px;overflow:auto;display:flex;flex-direction:column;gap:9px;padding-top:16px">
+          <sc-for list="{{ asstMsgs }}" as="m" hint-placeholder-count="6">
+            <div style="{{ m.wrap }}"><div style="{{ m.style }}">{{ m.t }}</div></div>
+          </sc-for>
+          {{ asstTyping }}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="pricing" data-screen-label="08 תעריפים" style="max-width:1240px;margin:0 auto;padding:clamp(72px,9vw,104px) clamp(16px,2vw,24px) 0">
+    <div style="text-align:center">
+      <div style="font-size:13px;font-weight:600;letter-spacing:.04em;color:#5A3DA6">תעריפים</div>
+      <h2 style="margin:12px auto 0;font-size:clamp(36px,5vw,64px);font-weight:600;letter-spacing:-0.035em;line-height:1.02;text-wrap:balance">מחיר אחד. בלי כוכביות.</h2>
+      <p style="font-size:17px;line-height:1.6;color:#5B564D;margin:18px auto 0;max-width:560px;text-wrap:pretty">כל חבילה כוללת את כל היכולות. ההבדל היחיד הוא כמות האורחים וסבבי ההודעות. משלמים פעם אחת, בלי מנוי.</p>
+    </div>
+    <div style="display:flex;justify-content:center;margin-top:30px">
+      <div style="width:min(100%,520px);background:#FFFFFF;border:1px solid #E8E3D9;border-radius:16px;padding:16px 20px">
+        <label for="guests-range" style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><span style="font-size:14.5px;font-weight:600">כמה אורחים אתם מזמינים?</span><span class="num" style="font-size:24px;font-weight:600;letter-spacing:-0.03em">{{ guestsLabel }}</span></label>
+        <input id="guests-range" type="range" min="10" max="600" step="10" value="{{ guests }}" onChange="{{ onGuests }}" style="width:100%;margin:12px 0 2px;accent-color:#5A3DA6;height:24px;cursor:pointer">
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:14px;margin-top:22px;align-items:stretch">
+      <sc-for list="{{ plans }}" as="p" hint-placeholder-count="3">
+        <div style="{{ p.style }}">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+            <span style="font-size:20px;font-weight:600;letter-spacing:-0.02em" dir="ltr">{{ p.t }}</span>
+            <span style="{{ p.badgeStyle }}">{{ p.badge }}</span>
+          </div>
+          <div style="font-size:14.5px;color:#5B564D;margin-top:4px">{{ p.desc }}</div>
+          <div style="display:flex;align-items:baseline;gap:8px;margin-top:20px"><span class="num" style="font-size:48px;font-weight:600;letter-spacing:-0.045em;line-height:1">{{ p.price }}</span><span style="font-size:14px;color:#5B564D">לאירוע</span></div>
+          <div style="font-size:15px;font-weight:600;color:#5A3DA6;margin-top:10px">{{ p.cap }}</div>
+          <div style="display:flex;flex-direction:column;gap:11px;margin-top:20px;padding-top:18px;border-top:1px solid #F0EDE7">
+            <sc-for list="{{ p.feats }}" as="f" hint-placeholder-count="3">
+              <span style="display:flex;gap:9px;align-items:center;font-size:15px"><span style="width:22px;height:22px;border-radius:50%;background:#F6F2FD;color:#5A3DA6;display:flex;align-items:center;justify-content:center;flex:none"><span class="ms" style="font-size:15px;font-weight:500">check</span></span>{{ f }}</span>
+            </sc-for>
+          </div>
+          <a href="ShowUp Event Signup v2.dc.html" style="{{ p.cta }}" style-hover="filter:brightness(.96);color:#16150F">יוצאים לדרך</a>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display:flex;justify-content:center;flex-wrap:wrap;gap:10px 32px;margin-top:26px;font-size:14px;color:#3A3833">
+      <span style="display:flex;align-items:center;gap:7px"><span class="ms" style="font-size:18px;color:#5A3DA6">verified_user</span>החזר כספי מלא תוך 14 יום</span>
+      <span style="display:flex;align-items:center;gap:7px"><span class="ms" style="font-size:18px;color:#5A3DA6">lock</span>תשלום מאובטח, בלי לשמור פרטי אשראי</span>
+      <span style="display:flex;align-items:center;gap:7px"><span class="ms" style="font-size:18px;color:#5A3DA6">check</span>תשלום חד־פעמי, בלי מנוי</span>
+    </div>
+  </section>
+
+  <section data-screen-label="09 אמון" style="margin-top:clamp(72px,9vw,96px);background:#F5F2EC;border-top:1px solid #E8E3D9;border-bottom:1px solid #E8E3D9">
+    <div style="max-width:1240px;margin:0 auto;padding:56px clamp(16px,2vw,24px)">
+      <div style="display:flex;align-items:stretch;gap:12px;flex-wrap:wrap">
+        <div style="flex:1.35 1 420px;min-width:0;background:#FFFFFF;border:1px solid #E4DFD4;border-radius:20px;padding:26px 30px;display:flex;align-items:center;gap:22px;flex-wrap:wrap">
+          <span style="width:76px;height:76px;border-radius:20px;background:#E9F6EE;display:flex;align-items:center;justify-content:center;flex:none"><img src="https://cdn.simpleicons.org/whatsapp/25D366" alt="WhatsApp" width="40" height="40" style="display:block"></span>
+          <div style="flex:1 1 260px;min-width:0">
+            <div style="font-size:21px;font-weight:600;letter-spacing:-0.02em">וואטסאפ העסקי הרשמי</div>
+            <div style="font-size:14.5px;color:#5B564D;line-height:1.55;margin-top:6px;max-width:440px">ההודעות יוצאות ממספר עסקי של ShowUp, עם השמות שלכם בראש ההודעה. לא מהטלפון הפרטי שלכם.</div>
+          </div>
+        </div>
+        <div style="flex:1 1 330px;min-width:0;background:#FFFFFF;border:1px solid #E4DFD4;border-radius:20px;padding:22px 26px;display:flex;flex-direction:column;gap:16px">
+          <div style="display:flex;align-items:flex-start;gap:13px">
+            <span style="width:34px;height:34px;border-radius:10px;background:#EDF4E7;color:#2E7D5B;display:flex;align-items:center;justify-content:center;flex:none"><span class="ms" style="font-size:19px">shield</span></span>
+            <div><div style="font-size:15px;font-weight:600">הרשימה שלכם</div><div style="font-size:13.5px;color:#5B564D;line-height:1.55;margin-top:3px">משמשת רק לשליחת מה שאישרתם, ולא עוברת לאף אחד.</div></div>
+          </div>
+          <div style="height:1px;background:#F0EDE7"></div>
+          <div style="display:flex;align-items:flex-start;gap:13px">
+            <span style="width:34px;height:34px;border-radius:10px;background:#EFEBFA;color:#4B3E8E;display:flex;align-items:center;justify-content:center;flex:none"><span class="ms" style="font-size:19px">lock</span></span>
+            <div><div style="font-size:15px;font-weight:600">תשלום מאובטח</div><div style="font-size:13.5px;color:#5B564D;line-height:1.55;margin-top:3px">פרטי האשראי לא נשמרים אצלנו, וחשבונית נשלחת למייל.</div></div>
+          </div>
+        </div>
+      </div>
+      <sc-if value="{{ showQuote }}" hint-placeholder-val="{{ true }}">
+        <figure style="margin:44px 0 0;display:flex;flex-wrap:wrap;align-items:center;gap:20px 32px">
+          <blockquote style="flex:1 1 520px;min-width:0;margin:0;font-size:clamp(22px,2.6vw,32px);line-height:1.35;letter-spacing:-0.02em;font-weight:500;text-wrap:balance">״שלחנו ביום ראשון, ועד שישי ענו כמעט כולם. בשבוע האחרון הרמנו טלפון לשבעה אנשים, לא לשבעים.״</blockquote>
+          <figcaption style="display:flex;align-items:center;gap:14px">
+            <img src="assets/quote-avatar.png" alt="" style="width:52px;height:52px;border-radius:50%;object-fit:cover">
+            <span><span style="display:block;font-size:16px;font-weight:600">שם הלקוחה</span><span style="display:block;font-size:14px;color:#5B564D">חתונה, 320 אורחים</span></span>
+          </figcaption>
+        </figure>
+      </sc-if>
+    </div>
+  </section>
+
+  <section id="faq" data-screen-label="10 שאלות" style="max-width:1240px;margin:0 auto;padding:clamp(80px,10vw,128px) clamp(16px,2vw,24px) 0">
+    <div style="display:flex;gap:32px 56px;align-items:flex-start;flex-wrap:wrap">
+      <div style="{{ faqSide }}">
+        <h2 style="margin:0;font-size:40px;font-weight:600;letter-spacing:-0.032em;line-height:1.08">שאלות נפוצות.</h2>
+        <div style="font-size:15px;color:#5B564D;line-height:1.6;margin-top:16px">בעיקר גרסאות של ״ומה אם סבתא לא תבין?״. שאלה הוגנת.</div>
+        <a href="#" style="display:inline-flex;align-items:center;gap:8px;margin-top:20px;font-size:14.5px;color:#16150F;border-bottom:1px solid #C8C2B6;padding-bottom:2px" style-hover="color:#16150F;border-color:#16150F">שאלה אחרת? כתבו לנו בוואטסאפ</a>
+      </div>
+      <div style="flex:1 1 460px;min-width:0;border-top:1px solid #E8E3D9">
+        <sc-for list="{{ faqs }}" as="f" hint-placeholder-count="6">
+          <div style="border-bottom:1px solid #E8E3D9">
+            <button onClick="{{ f.toggle }}" aria-expanded="{{ f.open }}" style="display:flex;align-items:baseline;gap:20px;width:100%;padding:21px 4px;border:none;background:transparent;cursor:pointer;text-align:right">
+              <span style="font-size:18px;font-weight:500;flex:1;line-height:1.35">{{ f.q }}</span>
+              <span style="font-size:20px;color:#6B6660;line-height:1;flex:none">{{ f.sign }}</span>
+            </button>
+            <div style="{{ f.body }}">
+              <div style="font-size:15px;line-height:1.7;color:#5B564D;padding:0 4px 22px;max-width:640px">{{ f.a }}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <section id="cta" data-screen-label="11 סיום" style="max-width:1240px;margin:0 auto;padding:clamp(72px,9vw,104px) clamp(16px,2vw,24px) 0">
+    <div style="background:#5A3DA6;color:#FFFFFF;border-radius:26px;overflow:hidden;display:flex;flex-wrap:wrap">
+      <div style="flex:1 1 460px;min-width:0;padding:clamp(28px,5vw,56px) clamp(22px,4.5vw,52px)">
+        <div style="font-size:19px;color:#E4DAFA;font-weight:500">אנחנו נרדוף אחרי האישורים.</div>
+        <h2 style="margin:12px 0 0;font-size:clamp(34px,4.4vw,56px);font-weight:600;letter-spacing:-0.04em;line-height:1.02;max-width:560px">אתם תרדפו אחרי הרחבה.</h2>
+        <div style="font-size:16px;color:#EDE6FB;line-height:1.6;margin-top:18px;max-width:480px">כמה פרטים, ויש לכם לוח הודעות מוכן לאירוע. שום דבר לא יוצא עד שתאשרו.</div>
+        <div style="display:flex;gap:12px;margin-top:30px;flex-wrap:wrap">
+          <a href="ShowUp Event Signup v2.dc.html" style="display:inline-flex;align-items:center;gap:9px;font-size:16px;font-weight:600;background:#FFFFFF;color:#432C85;border-radius:12px;padding:15px 26px" style-hover="background:#F1ECFC;color:#432C85">יוצאים לדרך<span class="ms" style="font-size:20px">arrow_back</span></a>
+          <a href="#top" style="display:inline-flex;align-items:center;gap:9px;font-size:15px;font-weight:500;color:#FFFFFF;border:1px solid rgba(255,255,255,.5);border-radius:12px;padding:15px 22px" style-hover="background:rgba(255,255,255,.12);color:#FFFFFF"><img src="https://cdn.simpleicons.org/whatsapp/FFFFFF" alt="" width="18" height="18">שלחו לי הזמנה לדוגמה</a>
+        </div>
+        <div style="display:flex;gap:6px 18px;margin-top:22px;flex-wrap:wrap;font-size:13.5px;color:#E4DAFA"><span>החל מ־₪39 לאירוע</span><span>בלי מנוי</span><span>החזר מלא תוך 14 יום</span></div>
+      </div>
+      <div style="flex:1 1 360px;min-width:0;min-height:300px;position:relative">
+        <img src="assets/guest-phone.png" alt="אורחת מאשרת הגעה מהטלפון" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
+      </div>
+    </div>
+  </section>
+
+  <footer style="margin-top:clamp(72px,9vw,104px);background:#F6F2FD;border-top:1px solid #DCD0F4">
+    <div style="max-width:1240px;margin:0 auto;padding:44px clamp(16px,2vw,24px) 0">
+      <div style="display:flex;gap:32px 56px;padding-bottom:34px;flex-wrap:wrap">
+        <div style="flex:0 1 300px;min-width:0;display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;align-items:center;gap:10px"><img src="assets/seal.png" alt="" style="width:28px;height:28px;object-fit:contain"><span style="font-size:18px;font-weight:600;letter-spacing:-0.03em">ShowUp</span></div>
+          <div style="font-size:14px;color:#4A4741;line-height:1.6">אתם מזמינים. אנחנו דואגים שכולם יגיעו. אישורי הגעה בוואטסאפ לחתונות, בר ובת מצווה, בריתות ואירועי חברה.</div>
+        </div>
+        <div style="flex:1 1 480px;min-width:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:24px">
+          <sc-for list="{{ footer }}" as="col" hint-placeholder-count="3">
+            <div style="min-width:0">
+              <div style="font-size:13px;font-weight:600;letter-spacing:.04em;color:#432C85">{{ col.t }}</div>
+              <div style="display:flex;flex-direction:column;gap:10px;margin-top:14px">
+                <sc-for list="{{ col.items }}" as="li" hint-placeholder-count="3">
+                  <a href="{{ li.href }}" style="font-size:14px;font-weight:400;color:#4A4741;line-height:1.35" style-hover="color:#5A3DA6">{{ li.t }}</a>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="padding:20px 0 26px;border-top:1px solid #DCD0F4;display:flex;align-items:center;gap:12px 22px;flex-wrap:wrap">
+        <span style="font-size:13px;color:#4A4741">© 2026 ShowUp</span>
+        <a href="#" style="font-size:13px;font-weight:400;color:#4A4741" style-hover="color:#5A3DA6">תנאי שימוש</a>
+        <a href="#" style="font-size:13px;font-weight:400;color:#4A4741" style-hover="color:#5A3DA6">פרטיות</a>
+        <a href="#" style="font-size:13px;font-weight:400;color:#4A4741" style-hover="color:#5A3DA6">הצהרת נגישות</a>
+        <span style="flex:1"></span>
+        
+      </div>
+    </div>
+  </footer>
+
+  <sc-if value="{{ compact }}" hint-placeholder-val="{{ false }}">
+    <div style="position:sticky;bottom:0;z-index:30;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:rgba(250,248,244,.96);backdrop-filter:blur(10px);border-top:1px solid #E8E3D9;display:flex;align-items:center;gap:12px">
+      <span style="flex:1;min-width:0;font-size:13.5px;line-height:1.35;color:#5B564D">החל מ־₪39 לאירוע<br>בלי מנוי</span>
+      <a href="ShowUp Event Signup v2.dc.html" style="display:inline-flex;align-items:center;height:48px;padding:0 20px;border-radius:12px;background:#C9B8F3;color:#16150F;font-size:15.5px;white-space:nowrap" style-hover="color:#16150F">יוצאים לדרך</a>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showQuote&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;תוכן&quot;}}">
+class Component extends DCLogic {
+  state = { wa:0, w:1280, d:[], typing:false, asst:[0,1,2], asstTyping:false, perm:{ invite:1, rem1:0, rem2:0, dayof:0, newc:1 }, guests:180, open:0, name:'', evType:'חתונה', phone:'', phoneErr:false, sent:false };
+  chatRef = React.createRef();
+  asstRef = React.createRef();
+  componentDidMount() {
+    this.onR = () => this.setState({ w:window.innerWidth }); this.onR(); window.addEventListener('resize', this.onR);
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) { this.setState({ wa:5 }); return; }
+    const dur = [1300, 2300, 900, 1500, 1300, 4200];
+    const tick = () => { this.waT = setTimeout(() => { this.setState(s => ({ wa:(s.wa + 1) % 6 })); tick(); }, dur[this.state.wa]); };
+    tick();
+  }
+  componentWillUnmount() { window.removeEventListener('resize', this.onR); clearTimeout(this.tt); clearTimeout(this.ta); clearTimeout(this.waT); }
+  componentDidUpdate(_, ps) {
+    const sc = (r) => { if (r.current) r.current.scrollTo({ top:r.current.scrollHeight, behavior:'smooth' }); };
+    if (ps.d.length !== this.state.d.length || ps.typing !== this.state.typing) sc(this.chatRef);
+    if (ps.asst.length !== this.state.asst.length || ps.asstTyping !== this.state.asstTyping) sc(this.asstRef);
+  }
+
+  renderVals() {
+    const st = this.state, compact = st.w < 820, ink = '#16150F', LD = '#5A3DA6', LT = '#F6F2FD', LB = '#DCD0F4', hide = { display:'none' };
+    const E = React.createElement;
+    const dots = (bg, c) => E('div', { style:{ alignSelf:'flex-start', background:bg, borderRadius:'10px 0 10px 10px', boxShadow:'0 1px 0.5px rgba(11,20,26,.13)', padding:'13px 15px', display:'flex', gap:4 } },
+      [0,1,2].map(i => E('span', { key:i, style:{ width:7, height:7, borderRadius:'50%', background:c, animation:'tdot 1.2s '+(i * 0.16)+'s infinite ease-in-out' } })));
+
+    const heroImg = E('img', { src:'assets/og-table.png', alt:'', style:{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'cover', objectPosition:'50% 55%', animation:'gken 30s ease-in-out infinite alternate', transformOrigin:'40% 50%' } });
+    const events = ['חתונות','בר מצווה','בת מצווה','בריתות','חינות','אירוסין','ימי הולדת','אירועי חברה'];
+    const mrow = (k) => E('div', { key:k, 'aria-hidden': k ? 'true' : undefined, style:{ display:'flex', alignItems:'center', gap:46, paddingInlineEnd:46 } },
+      events.map((t, i) => E('span', { key:i, style:{ fontSize:17, fontWeight:600, color:ink, whiteSpace:'nowrap', display:'flex', alignItems:'center', gap:46 } }, t, E('span', { style:{ width:4, height:4, borderRadius:'50%', background:'#C9B8F3' } }))));
+    const marquee = E('div', { style:{ display:'flex', width:'max-content', alignItems:'center', opacity:.8, animation:'gmarqRtl 26s linear infinite' } }, mrow(0), mrow(1));
+
+    // guest demo
+    const d = st.d;
+    const push = (x) => () => { this.setState(s => ({ d:[...s.d, x], typing:true })); clearTimeout(this.tt); this.tt = setTimeout(() => this.setState({ typing:false }), 1000); };
+    const IN = (t, meta, o={}) => ({ t, meta, waze:!!o.waze, wrap:{ display:'flex', flexDirection:'column', gap:4, alignItems:'flex-start' },
+      style:{ maxWidth:'86%', background:'#FFFFFF', borderRadius:'10px 0 10px 10px', padding:'7px 10px 5px', fontSize:14.5, lineHeight:1.5, color:'#111B21', boxShadow:'0 1px 0.5px rgba(11,20,26,.13)' } });
+    const OUT = (t, meta) => ({ out:true, t, meta, waze:false, wrap:{ display:'flex', flexDirection:'column', gap:4, alignItems:'flex-end' },
+      style:{ maxWidth:'72%', background:'#D9FDD3', color:'#111B21', borderRadius:'0 10px 10px 10px', padding:'7px 10px 5px', fontSize:14.5, lineHeight:1.5, boxShadow:'0 1px 0.5px rgba(11,20,26,.13)', marginTop:4 } });
+    const chat = [IN('היי שירה, מוזמנים לחתונה של דנה ויוסי 💍\nיום שלישי, 19:30 · אולמי הגן, ראשון לציון', '10:00')];
+    let opts = [], path = d[0];
+    const YES = 'כן, באים 🎉', NO = 'לא נצליח הפעם', MAY = 'עוד לא בטוחים';
+    if (!path) opts = [YES, NO, MAY];
+    else {
+      chat.push(OUT(path, '10:04 ✓✓'));
+      if (path === NO) chat.push(IN('חבל, אבל תודה שעדכנתם. נמסור לדנה ויוסי', '10:04'));
+      else if (path === MAY) chat.push(IN('אין בעיה. נזכיר לכם בעוד כמה ימים', '10:04'));
+      else {
+        chat.push(IN('איזה כיף! כמה תהיו, כולל אתכם?', '10:04'));
+        if (!d[1]) opts = ['1','2','3','4+'];
+        else {
+          chat.push(OUT(d[1], '10:05 ✓✓'));
+          chat.push(IN('ומה תרצו לאכול?', '10:05'));
+          if (!d[2]) opts = ['רגיל','צמחוני','טבעוני'];
+          else {
+            chat.push(OUT(d[2], '10:05 ✓✓'));
+            chat.push(IN('רשמנו '+(d[1] === '1' ? 'אורח אחד' : d[1].replace('+','')+' אורחים')+', '+d[2]+'. נתראה בחתונה!', '10:05'));
+            chat.push(IN('מתרגשים לקראת הערב. מזכירים: היום ב־19:30, אולמי הגן. וכדי שלא תתעכבו בדרך:', 'ביום האירוע · 10:00', { waze:true }));
+          }
+        }
+      }
+    }
+    if (st.typing) { let li = -1; chat.forEach((c, i) => { if (c.out) li = i; }); chat.splice(li + 1); opts = []; }
+    const yes = path === YES, no = path === NO, maybe = path === MAY, n = d[1] ? parseInt(d[1], 10) : 0;
+    const tr = (t, r, on) => ({ t, r, row:{ display:'flex', gap:11, alignItems:'baseline', opacity: on ? 1 : .38, transition:'opacity .45s ease' }, dot:{ width:6, height:6, borderRadius:'50%', flex:'none', background: on ? LD : '#CFC8BA', transform:'translateY(-2px)' } });
+    let trace;
+    if (yes) trace = [tr('ההזמנה נשלחה לשירה','10:00',1), tr('שירה אישרה הגעה','10:04',1), tr(d[1] ? 'נספרו '+n+' אנשים' : 'מחכים לכמות אנשים', d[1] ? '10:05' : '', !!d[1]), tr(d[2] ? 'מנה '+d[2]+' נוספה לדוח הקייטרינג' : 'מחכים לבחירת מנה', d[2] ? '10:05' : '', !!d[2]), tr('התזכורות לשירה בוטלו, היא כבר ענתה', d[2] ? '10:05' : '', !!d[2])];
+    else if (no) trace = [tr('ההזמנה נשלחה לשירה','10:00',1), tr('שירה לא תגיע','10:04',1), tr('התזכורות לשירה בוטלו','10:04',1)];
+    else if (maybe) trace = [tr('ההזמנה נשלחה לשירה','10:00',1), tr('שירה עוד לא בטוחה','10:04',1), tr('תזכורת נקבעה, רק לה','10:04',1)];
+    else trace = [tr('ההזמנה נשלחה לשירה','10:00',1), tr('מחכים לתשובה','',0), tr('סופרים אנשים ומנות','',0), tr('מבטלים תזכורות שכבר לא צריך','',0)];
+    const hl = (on) => ({ padding:'8px 9px 7px', borderRadius:10, border:'1px solid '+(on ? LD : '#E8E3D9'), background: on ? LT : '#FFFFFF', transition:'all .25s' });
+    const counted = (yes && !!d[1]) || no;
+    const tally = [{ n:248 + (yes ? n : 0), l:'מגיעים', style:hl(yes && !!d[1]) }, { n:63 - (counted ? 1 : 0), l:'טרם ענו', style:hl(counted) }, { n:29 + (no ? 1 : 0), l:'לא יגיעו', style:hl(no) }];
+    const finished = d.length > 0 && opts.length === 0 && !st.typing;
+
+    // moments
+    const M = [
+      { n:'01', t:'הזמנה שמרגישה אישית', note:'כל אורח מקבל הזמנה ישר לוואטסאפ, ומאשר בלחיצה. ככה עונים יותר אנשים, ובאמת. כי כולם כבר שם, כל היום.', bullets:['בצ׳אט שכולם מכירים','גם בחירת מנה, באותה שיחה'], kind:'invite' },
+      { n:'02', t:'אתם תמיד יודעים כמה באים', note:'מי אישר, מי עוד מתלבט, וכמה בדיוק יושבים מול האולם. הכול מתעדכן לבד, בזמן אמת. סוף סוף אפשר לנשום.', bullets:['עדכון חי עד הרגע האחרון','מספר מדויק לקייטרינג ולהושבה'], kind:'stat' },
+      { n:'03', t:'הם ישכחו. אנחנו לא.', note:'אנחנו בונים לבד את כל רצף ההודעות: הזמנה, תזכורת, תזכורת אחרונה ותודה שאחרי. גם הדודה הרחוקה תקבל תזכורת בזמן. אתם מאשרים פעם אחת, ושוכחים מזה.', bullets:['רק מי שלא ענה מקבל תזכורת','אתם מאשרים כל סבב לפני שהוא יוצא'], kind:'seq' },
+      { n:'04', t:'שואלים, והוא עושה', note:'לא צריך לחפש בטבלאות. שואלים בוואטסאפ, ומקבלים מספרים. אתם מחליטים, הוא רץ. בלי להיכנס לשום מסך.', bullets:['הוא זוכר הכול, ומבצע מיד'], kind:'chat' }
+    ];
+    const moments = M.map((m, i) => { const visFirst = i % 2 === 0;
+      return { ...m, isInvite:m.kind === 'invite', isStat:m.kind === 'stat', isSeq:m.kind === 'seq', isChat:m.kind === 'chat',
+        row:{ display:'grid', gridTemplateColumns: compact ? 'minmax(0,1fr)' : 'minmax(0,1fr) 58px minmax(0,1fr)', alignItems:'center' },
+        vis:{ order: compact ? 2 : (visFirst ? 1 : 3), padding: compact ? '0 0 48px' : '0 0 72px', display:'flex', justifyContent: compact ? 'stretch' : (visFirst ? 'flex-end' : 'flex-start') },
+        txt:{ order: compact ? 1 : (visFirst ? 3 : 1), padding: compact ? '0 0 18px' : '0 0 72px', display:'flex', justifyContent: compact ? 'flex-start' : (visFirst ? 'flex-start' : 'flex-end') },
+        spine: compact ? hide : { order:2, position:'relative', display:'flex', justifyContent:'center', alignSelf:'stretch' } }; });
+    const statRows = [['מגיעים','248','#2E7D5B'],['טרם ענו','63','#C98A1B'],['לא יגיעו','29','#8E887C']].map(([l, nn, c], i) => ({ l, n:nn,
+      style:{ display:'flex', alignItems:'center', gap:10, padding:'11px 0', borderTop: i ? '1px solid rgba(22,21,15,.1)' : 'none' }, dot:{ width:9, height:9, borderRadius:'50%', background:c } }));
+    const seqDef = [['mail','הזמנה','30 יום לפני'],['notifications','תזכורת','שבוע לפני'],['notifications_active','תזכורת אחרונה','יום לפני'],['celebration','תודה','אחרי האירוע']];
+    const seq = seqDef.map(([i, t, when], k) => ({ i, t, when, line:{ position:'absolute', top: k === 0 ? '50%' : 0, bottom: k === seqDef.length - 1 ? '50%' : 0, width:2, background:LB } }));
+
+    // assistant
+    const AQ = [
+      ['תוסיף את דנה כהן ויוסי לוי לרשימה','הוספתי 👍 דנה ויוסי כבר ברשימת המוזמנים.'],
+      ['כמה אישרו עד עכשיו?','248 אישרו הגעה, 63 עדיין לא ענו ו־29 לא יגיעו.'],
+      ['תשלח תזכורת למי שלא ענה','יצא! שלחתי תזכורת ל־63 האורחים שטרם השיבו.'],
+      ['מי הצמחונים?','64 אורחים בחרו צמחוני. שלחתי לכם את הרשימה המלאה, לפי שולחנות.'],
+      ['שנה את שעת האירוע ל־20:00','עדכנתי ל־20:00. לשלוח עדכון לכל מי שאישר?'],
+      ['תעלה את הקבוצה הזו לרשימה','קיבלתי 23 אנשי קשר מהקבוצה. הם מחכים לאישור שלכם לפני שהם נכנסים לרשימה.']
+    ];
+    const qS = { maxWidth:'82%', background:'#D9FDD3', color:'#111B21', boxShadow:'0 1px 0.5px rgba(11,20,26,.13)', borderRadius:'14px 14px 14px 4px', padding:'10px 14px', fontSize:14.5, lineHeight:1.5 };
+    const aS = { maxWidth:'88%', background:'#FFFFFF', color:'#111B21', boxShadow:'0 1px 0.5px rgba(11,20,26,.13)', borderRadius:'14px 14px 4px 14px', padding:'11px 14px', fontSize:14.5, lineHeight:1.55 };
+    const asstMsgs = [];
+    st.asst.forEach((qi, k) => {
+      asstMsgs.push({ t:AQ[qi][0], wrap:{ display:'flex', justifyContent:'flex-end' }, style:qS });
+      if (!(st.asstTyping && k === st.asst.length - 1)) asstMsgs.push({ t:AQ[qi][1], wrap:{ display:'flex' }, style:aS });
+    });
+    const askChips = AQ.map(([q], i) => ({ q, onClick:() => { if (st.asstTyping) return; this.setState(s => ({ asst:[...s.asst, i], asstTyping:true })); clearTimeout(this.ta); this.ta = setTimeout(() => this.setState({ asstTyping:false }), 900); },
+      style:{ display:'inline-flex', alignItems:'center', gap:6, background:'#FFFFFF', border:'1px solid #DCD0F4', borderRadius:99, padding:'8px 14px', fontSize:14, color:'#16150F', cursor:'pointer', transition:'border-color .2s ease,color .2s ease' } }));
+
+    // permissions
+    const pdef = [['invite','ההזמנה','לכל הרשימה, 30 יום לפני'],['rem1','תזכורת','שבוע לפני, רק למי שלא ענה'],['rem2','תזכורת אחרונה','יום לפני, רק למי שלא ענה'],['dayof','הודעה ביום האירוע','שעה, כתובת וניווט'],['newc','אורח חדש מוואטסאפ','מישהו שיתף איש קשר למספר של ShowUp']];
+    const perms = pdef.map(([k, t, nn], pi) => ({ t, n:nn,
+      rowStyle:{ padding:'15px clamp(18px,2.6vw,28px)', display:'flex', alignItems:'center', gap:'12px 20px', flexWrap:'wrap', borderBottom: pi === pdef.length - 1 ? 'none' : '1px solid #F0EDE7' },
+      opts:['לבד','לשאול אותי','לא לשלוח'].map((o, i) => { const on = st.perm[k] === i;
+        return { t:o, on, onClick:() => this.setState(s => ({ perm:{ ...s.perm, [k]:i } })),
+          style:{ fontSize:13, border:'none', borderRadius:8, padding:'8px 13px', whiteSpace:'nowrap', cursor:'pointer', fontWeight: on ? 600 : 500,
+            background: on ? (i === 2 ? '#FBEAE6' : '#FFFFFF') : 'transparent', color: on ? (i === 2 ? '#A33A2B' : ink) : '#4A4741', boxShadow: on ? '0 1px 2px rgba(22,21,15,.12)' : 'none' } }; }) }));
+    const askCount = Object.values(st.perm).filter(v => v === 1).length;
+
+    // pricing (from live site)
+    const planDefs = [
+      { t:'Basic', desc:'בשביל להתחיל בקטן', price:'₪39', max:50, cap:'עד 50 אורחים', feats:['עד 50 אורחים','2 סבבי הודעות כלולים','כל היכולות כלולות'] },
+      { t:'Plus', desc:'הבחירה של רוב המארחים', price:'₪99', max:250, cap:'עד 250 אורחים', pop:true, feats:['עד 250 אורחים','4 סבבי הודעות כלולים','כל היכולות כלולות'] },
+      { t:'Pro', desc:'לאירועים הכי גדולים', price:'₪199', max:1e9, cap:'ללא הגבלת אורחים', feats:['ללא הגבלת אורחים','4 סבבי הודעות כלולים','כל היכולות כלולות'] }
+    ];
+    const fit = planDefs.find(p => st.guests <= p.max);
+    const plans = planDefs.map(p => { const on = p === fit;
+      return { ...p, badge: on ? 'מתאימה לכם' : (p.pop ? 'הבחירה של רוב המארחים' : ''),
+        badgeStyle: on || p.pop ? { fontSize:12, fontWeight:600, borderRadius:7, padding:'4px 9px', whiteSpace:'nowrap', background: on ? LD : LT, color: on ? '#FFFFFF' : '#432C85', border:'1px solid '+(on ? LD : LB) } : hide,
+        style:{ display:'flex', flexDirection:'column', padding:26, borderRadius:22, background:'#FFFFFF', border: on ? '1.5px solid '+ink : '1px solid #E8E3D9', boxShadow: on ? '0 22px 50px rgba(22,21,15,.10)' : 'none', transition:'box-shadow .25s, border-color .25s' },
+        cta:{ display:'flex', alignItems:'center', justifyContent:'center', height:50, marginTop:24, borderRadius:12, fontSize:15.5, color:ink, background: on ? '#C9B8F3' : '#FFFFFF', border: on ? '1px solid #C9B8F3' : '1px solid #D8D2C6' } }; });
+
+    const faqDefs = [
+      ['ההודעות יוצאות מהמספר שלי?', 'לא. הן יוצאות ממספר וואטסאפ עסקי של ShowUp, עם השמות שלכם בראש ההודעה. הטלפון שלכם נשאר שקט, והתשובות נכנסות ישר לרשימה.'],
+      ['ומה אם סבתא לא תבין?', 'אין קישור לפתוח ואין טופס. ההזמנה מגיעה לוואטסאפ שהיא כבר מכירה, עם כפתורים: ״כן, באים״, ״לא נצליח הפעם״. לוחצים, וזהו.'],
+      ['ומה עם מי שלא עונה?', 'תזכורות יוצאות לבד, רק למי שעוד לא ענה. ואם צריך, שואלים את העוזר ״מי עוד לא ענה?״ ומקבלים רשימה.'],
+      ['איך מכניסים את רשימת האורחים?', 'משתפים אנשי קשר בוואטסאפ למספר של ShowUp, מעלים קובץ, או אומרים לעוזר ״תוסיף את דנה לרשימה״. כל אורח חדש מחכה לאישור שלכם.'],
+      ['מה זה סבב הודעות?', 'כל הודעה שיוצאת לרשימה: הזמנה, תזכורת, תזכורת אחרונה, תודה. Basic כולל 2 סבבים, Plus ו־Pro כוללים 4.'],
+      ['מה אם התחרטנו?', 'יש החזר כספי מלא תוך 14 יום, בלי שאלות.']
+    ];
+    const faqs = faqDefs.map(([q, a], i) => { const open = st.open === i;
+      return { q, a, open, sign: open ? '−' : '+', toggle:() => this.setState({ open: open ? -1 : i }),
+        body:{ maxHeight: open ? 260 : 0, opacity: open ? 1 : 0, overflow:'hidden', transition:'max-height .45s ease, opacity .35s ease' } }; });
+
+    const digits = st.phone.replace(/\D/g, '');
+    const w = st.wa;
+    const wa = { invite:w >= 1, reply:w >= 2, dayChip:w >= 4, day:w >= 5, ticks:{ color: w >= 3 ? '#53BDEB' : '#8696A0', transition:'color .3s' } };
+    const waTyping = (w === 0 || w === 4) ? E('div', { style:{ alignSelf:'flex-start', background:'#FFFFFF', borderRadius:'10px 0 10px 10px', boxShadow:'0 1px 0.5px rgba(11,20,26,.13)', padding:'12px 14px', display:'flex', gap:4, animation:'gpopIn .3s ease both' } },
+      [0,1,2].map(i => E('span', { key:i, style:{ width:7, height:7, borderRadius:'50%', background:'#8696A0', animation:'tdot 1.2s '+(i * 0.16)+'s infinite ease-in-out' } }))) : null;
+    return {
+      wa, waTyping, waBody:{ padding:'14px 12px 18px', display:'flex', flexDirection:'column', gap:6, height:548, overflow:'hidden', backgroundImage:'radial-gradient(rgba(17,27,33,.06) 1px,transparent 1px)', backgroundSize:'18px 18px', opacity: w === 5 ? 1 : 1, transition:'opacity .4s' },
+      compact, heroImg, marquee, chatRef:this.chatRef, asstRef:this.asstRef,
+      navStyle:{ display: st.w < 1060 ? 'none' : 'flex', alignItems:'center', gap:2 },
+      heroInner:{ position:'relative', maxWidth:1240, margin:'0 auto', padding: compact ? '112px 18px 72px' : '140px 48px 110px', display:'block' },
+      name:st.name, onName:(e) => this.setState({ name:e.target.value }),
+      evTypes:['חתונה','אירוסין','חינה','בר מצווה','בת מצווה','ברית','יום הולדת','אירוע חברה','אחר'], evType:st.evType, onEvType:(e) => this.setState({ evType:e.target.value }),
+      phone:st.phone, onPhone:(e) => { const v = e.target.value; this.setState({ phone:v, phoneErr:false }); },
+      phoneStyle:{ flex:1, minWidth:0, height:48, padding:'0 14px', border:'1px solid '+(st.phoneErr ? '#A33A2B' : '#E3DED4'), borderRadius:11, background:'#FAF8F4', fontSize:15, outline:'none', textAlign:'left' },
+      phoneErr:st.phoneErr, sent:st.sent, notSent:!st.sent,
+      sendSample:() => { if (/^0?5\d{8}$/.test(digits)) this.setState({ sent:true, phoneErr:false }); else this.setState({ phoneErr:true }); },
+      chat, replies:opts.map(t => ({ t, onClick:push(t) })),
+      typingEl: st.typing ? dots('#FFFFFF', '#8E887C') : null,
+      demoHint: d.length === 0 ? 'לחצו על תשובה' : finished ? 'בלי טלפון אחד' : 'מתעדכן לבד',
+      resetDemo:() => { clearTimeout(this.tt); this.setState({ d:[], typing:false }); },
+      resetStyle: d.length ? { border:'none', background:'transparent', padding:'4px 2px', cursor:'pointer', fontSize:13, fontWeight:600, color:LD } : hide,
+      asideStyle:{ flex: compact ? '1 1 100%' : '0 0 400px', minWidth:0, padding:'22px 24px', display:'flex', flexDirection:'column', gap:16, background:'#FFFFFF', borderTop: compact ? '1px solid #F0EDE7' : 'none' },
+      trace, tally,
+      marqLabel: compact ? hide : { fontSize:13.5, color:'#6B6660', whiteSpace:'nowrap' },
+      features:[
+        { i:'auto_awesome', t:'עוזר אישי שמבין עניין', d:'מבקשים ממנו, והוא עושה. מוסיף אורחים, שולח תזכורות, יודע בדיוק מי זה מי. כאילו שכרתם מפיק, רק בלי המחיר של מפיק.' },
+        { i:'person_add', t:'שלא תדעו מאקסלים', d:'שולחים את אנשי הקשר בוואטסאפ, והרשימה מסתדרת לבד. בלי הקלדה ידנית, בלי קובץ שנעלם בדיוק כשצריך אותו.' },
+        { i:'how_to_reg', t:'אישור הגעה בלחיצה', d:'האורחים עונים ישר בוואטסאפ, בלחיצה אחת. בלי אפליקציה להוריד, בלי לינק מסתורי, בלי טופס שאף אחד לא ממלא.' },
+        { i:'forum', t:'שואלים, ומקבלים תשובה', d:'״כמה אישרו?״ ״מי עוד לא ענה?״ ״תשלח להם תזכורת.״ הוא עונה ומבצע על המקום. גם ב־2 בלילה, כשאתם לא מצליחים להירדם.' }
+      ],
+      moments, statRows, seq,
+      asstMsgs, askChips, asstTyping: st.asstTyping ? dots('#FFFFFF', '#8E887C') : null,
+      perms, askCount,
+      compare:[
+        ['מי עושה את העבודה','הכול יוצא לבד. אתם רק מאשרים','נציגים מתקשרים לאורחים','אתם, ההורים ומי שמתנדב'],
+        ['איך האורחים עונים','לחיצה בוואטסאפ, מתי שנוח להם','שיחה, בשעות שהמוקד עובד','שיחה או הודעה, אם תפסתם אותם'],
+        ['כמה מגיעים ומה אוכלים','נשאל בתוך השיחה, ישר לדוח','תלוי במה שהנציג רשם','מבררים מחדש עם כל אחד'],
+        ['מתי רואים תשובות','ברגע שענו, מכל טלפון','בדוח שמגיע אליכם','באקסל שמישהו צריך לעדכן'],
+        ['מי שומע מכם','רק מי שעוד לא ענה','בדרך כלל כל הרשימה','כל מי שזכרתם להתקשר אליו']
+      ].map(([t, a, b, c], i, arr) => ({ t, a, b, c, rowStyle:{ display:'grid', gridTemplateColumns:'1.4fr 1.3fr 1fr 1fr', borderBottom: i === arr.length - 1 ? 'none' : '1px solid #F0EDE7' } })),
+      guests:st.guests, guestsLabel: st.guests >= 600 ? '600+' : String(st.guests), onGuests:(e) => this.setState({ guests:+e.target.value }), plans,
+      showQuote: this.props.showQuote ?? true,
+      faqs, faqSide:{ flex: compact ? '1 1 100%' : '0 0 340px', position: compact ? 'static' : 'sticky', top:128 },
+      footer:[
+        { t:'המוצר', items:[{ t:'מה מקבלים', href:'#what' }, { t:'איך זה עובד', href:'#how' }, { t:'העוזר', href:'#assistant' }, { t:'תעריפים', href:'#pricing' }] },
+        { t:'עזרה', items:[{ t:'שאלות נפוצות', href:'#faq' }, { t:'וואטסאפ אלינו', href:'#' }] },
+        { t:'חשבון', items:[{ t:'התחברות', href:'ShowUp Platform v6.dc.html' }, { t:'יוצאים לדרך', href:'ShowUp Event Signup v2.dc.html' }] }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -28,6 +28,7 @@ from .catalog import (
 from .stages import FlowStage, canonical_stage
 from .event_types import event_type_meta
 from .variables import canonical_var_name
+from shared.domain.gift import gift_page_code
 from .custom_templates import CUSTOM_REF_PREFIX, template_from_custom_row
 
 # Default header image path (identical to the old handler's hardcoded value);
@@ -46,11 +47,24 @@ def _serialize_datetime(obj):
     return obj
 
 
+def _event_local(s: str) -> datetime:
+    """The event's wall-clock time. The app stores event_date as a real instant
+    (UTC); guests read it in Israel time. A naive value is already wall-clock."""
+    dt = datetime.fromisoformat(s)
+    if dt.tzinfo is not None:
+        try:
+            from zoneinfo import ZoneInfo
+            dt = dt.astimezone(ZoneInfo(os.getenv("SEND_WINDOW_TZ", "Asia/Jerusalem")))
+        except Exception:  # no tzdata - leave as stored
+            pass
+    return dt
+
+
 def format_event_date(event_date_str) -> str:
     s = _serialize_datetime(event_date_str)
     if not s:
         return ""
-    dt = datetime.fromisoformat(s)
+    dt = _event_local(s)
     weekday = WEEKDAY_HEBREW.get(dt.weekday(), "יום")
     return f"{weekday}, ה־{dt.day}.{dt.month}.{str(dt.year)[-2:]}"
 
@@ -59,7 +73,7 @@ def format_event_time(event_date_str) -> str:
     s = _serialize_datetime(event_date_str)
     if not s:
         return ""
-    return datetime.fromisoformat(s).strftime("%H:%M")
+    return _event_local(s).strftime("%H:%M")
 
 
 def format_inviters(inviters: Optional[List[Dict[str, str]]]) -> str:
@@ -67,6 +81,21 @@ def format_inviters(inviters: Optional[List[Dict[str, str]]]) -> str:
         return " "  # space, not empty (WhatsApp API compatibility) - unchanged
     names = [f"{i.get('fn', '')} {i.get('ln', '')}" for i in inviters]
     return " ו".join(names)
+
+
+def event_host_label(event: Dict[str, Any]) -> str:
+    """Who the guests are told is hosting: company / couple / inviters, else the
+    parents or the honoree. Blank = the bot would write "של   🥳", so an event
+    may not be created without one (core entitlement_service)."""
+    s = (event or {}).get("subjects") or {}
+    if not isinstance(s, dict):
+        s = {}
+    for v in ((s.get("company") or "").strip(), _join_he(s.get("p1"), s.get("p2")),
+              format_inviters([i for i in ((event or {}).get("inviters") or []) if isinstance(i, dict)]).strip(),
+              _join_he(s.get("parent1"), s.get("parent2")), (s.get("honoree") or "").strip()):
+        if v:
+            return v
+    return ""
 
 
 def parse_location(loc: Any) -> tuple[str, str]:
@@ -164,6 +193,9 @@ def _template_from_db_row(row: Dict[str, Any]) -> Template:
     )
 
 
+_RSVP_STAGES = frozenset({"invitation", "reminder"})
+
+
 def prefer_event_variant(t: Optional[Template], event_type: Optional[str]) -> Optional[Template]:
     """Prefer the event-type-specific approved variant `<key>__<event_type>` over a
     base template. The Meta templates that are actually published+approved are the
@@ -171,6 +203,14 @@ def prefer_event_variant(t: Optional[Template], event_type: Optional[str]) -> Op
     have no Meta mapping. When the event has a type and a *usable* variant exists,
     send that; otherwise keep the base as the fallback."""
     if t is None or not event_type:
+        return t
+    # The owner picked (and previewed) THIS copy - when it is itself approved on
+    # Meta it is what goes out. An event-type variant can be entirely different
+    # copy (event_remind__wedding = "last chance to RSVP" + RSVP buttons, sent on
+    # 2.11.26 to everyone instead of the day-before "see you tomorrow").
+    # Exception: the approved base invitations/reminders carry no RSVP buttons,
+    # so there the event-type variant (with buttons) is what lets guests answer.
+    if t.is_usable and t.flow_stage.value not in _RSVP_STAGES:
         return t
     variant = ALL_TEMPLATES.get(f"{t.key}__{event_type}")
     return variant if (variant is not None and variant.is_usable) else t
@@ -208,12 +248,9 @@ def resolve_template(
         if key.startswith(CUSTOM_REF_PREFIX):
             row = db_lookup(key) if db_lookup is not None else None
             return template_from_custom_row(row) if row else None
-        # Exact event-type key, or a base key whose event-type variant is approved.
-        if et:
-            variant = ALL_TEMPLATES.get(f"{key}__{et}")
-            if variant is not None and variant.is_usable:
-                return variant
-        t = builtin_by_key(key)
+        # A base key whose own copy is not approved falls back to its approved
+        # event-type variant (prefer_event_variant).
+        t = builtin_by_key(key) or ALL_TEMPLATES.get(key)
         if t:
             return prefer_event_variant(t, et)
         t = builtin_by_meta_name(key)
@@ -282,11 +319,20 @@ class VariableResolver:
         # `event.subjects`, using the SAME logic the wizard preview uses, so
         # preview and delivery resolve identically. Only non-empty values are set.
         vals.update(self._resolve_subjects())
+        # No inviters typed, but the subjects name the hosts (couple / company):
+        # {host_name} uses that label instead of going out blank.
+        if not (vals.get("host_name") or "").strip() and vals.get("host_display_name"):
+            vals["host_name"] = vals["host_display_name"]
         # Public invitation links (from the event's slug).
         slug = e.get("public_slug")
         if slug and self.public_base:
             vals["invitation_link"] = f"{self.public_base}/i/{slug}"
             vals["rsvp_link"] = f"{self.public_base}/r/{slug}"
+        if e.get("share_code") and self.public_base:
+            vals["calendar_link"] = f"{self.public_base}/c/{e['share_code']}"
+        gift_code = gift_page_code(e.get("gift"))
+        if gift_code and self.public_base:
+            vals["gift_link"] = f"{self.public_base}/g/{gift_code}"
         return vals
 
     def _resolve_subjects(self) -> Dict[str, str]:

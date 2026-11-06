@@ -21,7 +21,7 @@ import { useEvent } from '../contexts/EventContext';
  * The sub-pages render in `embedded` mode. Deep-linkable via `?tab=`.
  */
 const TABS = [
-  { key: 'event', label: 'פרטי האירוע', desc: 'שם, תאריך, שעה ומקום', icon: <EventRoundedIcon /> },
+  { key: 'event', label: 'פרטי האירוע', desc: 'שם, תאריך, שעה, מקום ובעלי האירוע', icon: <EventRoundedIcon /> },
   { key: 'profile', label: 'הפרופיל שלי', desc: 'פרטים אישיים והעדפות', icon: <PersonRoundedIcon /> },
   { key: 'team', label: 'הצוות', desc: 'שותפים והרשאות', icon: <Diversity3RoundedIcon /> },
   { key: 'questions', label: 'שאלות לאורחים', desc: 'הסעה ושאלות אחרי אישור הגעה', icon: <QuizRoundedIcon /> },

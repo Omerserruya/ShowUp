@@ -81,6 +81,8 @@ def clone_event(event_id: uuid.UUID, payload: CloneEventIn, db: Session = Depend
             "event_date": src.event_date,
             "location": src.location,
             "inviters": src.inviters or [],
+            "event_type": src.event_type,
+            "subjects": src.subjects,
         },
     )
     # A clone opens as a DRAFT; re-derive `active` for the new state.

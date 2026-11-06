@@ -1,6 +1,7 @@
 """
 Auth API endpoints
 """
+import hashlib
 import hmac
 import os
 import json
@@ -10,7 +11,7 @@ import httpx
 import pika
 import psycopg2
 import redis
-from fastapi import APIRouter, Body, Header, HTTPException
+from fastapi import APIRouter, Body, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi import status
 from ..token_utils import create_jwt, verify_jwt
@@ -280,7 +281,7 @@ def internal_notify_venue_welcome(payload: dict = Body(...), x_internal_secret: 
     event_id = (payload or {}).get("event_id")
 
     app_base = (os.getenv("APP_BASE_URL") or os.getenv("PUBLIC_BASE_URL") or "").rstrip("/")
-    link = f"{app_base}/login" if app_base else "https://app.showup.co.il/login"
+    link = f"{app_base}/login" if app_base else "https://showup-rsvp.com/login"
 
     env = get_env()
     template_name = os.getenv("WA_VENUE_WELCOME_TEMPLATE")
@@ -460,8 +461,25 @@ def _normalize_wa_msisdn(phone: str) -> str:
     return digits
 
 
+def _record_demo_lead(name: str, phone: str, request: Request) -> None:
+    """Every demo request is a lead (admin "פניות" page + WhatsApp alert).
+    Never blocks the demo itself."""
+    try:
+        from shared.domain.leads import record_lead
+        ip = (request.headers.get("X-Real-IP") or (request.client.host if request.client else "") or "").strip()
+        env = get_env()
+        with psycopg2.connect(host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"],
+                              password=env["DB_PASSWORD"], dbname=env["DB_NAME"]) as conn:
+            with conn.cursor() as cur:
+                record_lead(cur, "whatsapp", name, phone,
+                            ip_hash=hashlib.sha256(ip.encode("utf-8")).hexdigest()[:24],
+                            user_agent=request.headers.get("User-Agent"))
+    except Exception as exc:  # pragma: no cover - logged, demo still goes out
+        print(f"demo lead not recorded: {exc}")
+
+
 @router.post("/demo/whatsapp")
-def demo_whatsapp(payload: dict = Body(...)):
+def demo_whatsapp(request: Request, payload: dict = Body(...)):
     """Public (marketing): send the ShowUp WhatsApp demo template to a visitor who
     pressed "שלחו לי דמו לוואטסאפ" on the landing page. Requires a name + phone.
     Sends the approved MARKETING template `showup_whatsapp_demo` (body var {{1}} =
@@ -475,6 +493,7 @@ def demo_whatsapp(payload: dict = Body(...)):
     recipient = _normalize_wa_msisdn(phone)
     if len(recipient) < 9:
         raise HTTPException(status_code=400, detail="invalid phone")
+    _record_demo_lead(name, phone, request)
 
     first_name = name.split()[0] if name else "חברים"
     template_name = os.getenv("WA_DEMO_TEMPLATE_NAME", "showup_whatsapp_demo")
@@ -534,8 +553,19 @@ def register(payload: dict = Body(...)):
     return JSONResponse(status_code=200, content={"status": "otp_sent"})
 
 
+# The owners' mobile app (mobile/, user agent "... ShowUpApp/x") stays signed in
+# for a month and renews on every open (POST /auth/refresh); the website keeps
+# JWT_EXP_SECONDS.
+APP_JWT_EXP_SECONDS = int(os.getenv("APP_JWT_EXP_SECONDS", str(30 * 24 * 3600)))
+
+
+def _token_lifetime(request: Request, default: int) -> int:
+    ua = (request.headers.get("User-Agent") if request else "") or ""
+    return APP_JWT_EXP_SECONDS if "ShowUpApp/" in ua else default
+
+
 @router.post("/verify-otp")
-def verify_otp(payload: dict = Body(...)):
+def verify_otp(request: Request, payload: dict = Body(...)):
     env = get_env()
     phone = _canonical_phone((payload or {}).get("phone"))
     code = (payload or {}).get("code")
@@ -623,8 +653,34 @@ def verify_otp(payload: dict = Body(...)):
 
     # Issue JWT valid for configured duration; include user_id and sub (phone)
     jwt_payload = {"user_id": user_id, "sub": phone}
-    token = create_jwt(jwt_payload, env["JWT_EXP_SECONDS"])
+    token = create_jwt(jwt_payload, _token_lifetime(request, env["JWT_EXP_SECONDS"]))
     return JSONResponse(status_code=200, content={"access_token": token})
+
+
+@router.post("/refresh")
+def refresh_token(request: Request, authorization: str = Header(None)):
+    """A still-valid token -> a fresh one (the app calls this whenever it opens).
+    A suspended or deleted account gets 401, which signs the app out."""
+    env = get_env()
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing token")
+    try:
+        decoded = verify_jwt(authorization.split(" ", 1)[1])
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    user_id = decoded.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    with psycopg2.connect(
+        host=env["DB_HOST"], port=env["DB_PORT"], user=env["DB_USER"], password=env["DB_PASSWORD"], dbname=env["DB_NAME"],
+    ) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT phone, COALESCE(status,'active') FROM users WHERE id = %s", (str(user_id),))
+            row = cur.fetchone()
+    if not row or row[1] == "suspended":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account unavailable")
+    token = create_jwt({"user_id": str(user_id), "sub": row[0]}, _token_lifetime(request, env["JWT_EXP_SECONDS"]))
+    return {"access_token": token}
 
 
 def _claim_team_invites(phone: str, user_id: str) -> None:

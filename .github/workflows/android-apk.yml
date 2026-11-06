@@ -1,0 +1,90 @@
+# Builds the ShowUp owners' app (mobile/) into an installable APK and publishes
+# it as a GitHub release, so the newest build is always at:
+#   https://github.com/Omerserruya/ShowUp/releases/latest/download/ShowUp.apk
+# Secrets (repo Settings -> Secrets -> Actions):
+#   ANDROID_KEYSTORE_B64, ANDROID_KEYSTORE_PASSWORD  - the app signing key (same key every build)
+#   GOOGLE_SERVICES_JSON_B64                         - Firebase config; without it the APK has no push
+name: Android APK
+
+on:
+  push:
+    paths: ['mobile/**', '.github/workflows/android-apk.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - run: npm ci
+
+      - name: Firebase config (push notifications)
+        env:
+          GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON_B64" ]; then
+            echo "$GOOGLE_SERVICES_JSON_B64" | base64 -d > android/app/google-services.json
+          else
+            # The push plugin crashes the app without Firebase, so leave it out.
+            echo "::warning::GOOGLE_SERVICES_JSON_B64 not set - this APK has no push notifications"
+            npm uninstall --no-audit --no-fund @capacitor/push-notifications
+          fi
+
+      - run: npx cap sync android
+
+      - name: Signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::ANDROID_KEYSTORE_B64 not set - signed with a throwaway debug key"
+          fi
+
+      - name: Build APK
+        working-directory: mobile/android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          APP_VERSION_CODE: ${{ github.run_number }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/ShowUp.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ShowUp-apk-${{ github.run_number }}
+          path: ${{ runner.temp }}/ShowUp.apk
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-${{ github.run_number }}
+          name: ShowUp Android ${{ github.run_number }}
+          body: "APK build ${{ github.run_number }} from ${{ github.sha }}. Install: download ShowUp.apk on the phone and open it."
+          files: ${{ runner.temp }}/ShowUp.apk
+          make_latest: true

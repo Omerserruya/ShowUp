@@ -39,6 +39,7 @@ _EVENT_FIELDS = (
     "inviters",
     "event_type",
     "subjects",
+    "terms_version",
 )
 
 

@@ -53,7 +53,8 @@ def test_stage_definitions_only_use_supported_filter_keys():
     for rule in AudienceRule:
         _, flt = resolve_audience_rule(rule)
         assert set((flt or {}).keys()) <= SUPPORTED_FILTER_KEYS, rule
-    assert STAGE_DEFINITIONS["final_reminder"].audience_rule == AudienceRule.NOT_DECLINED
+    # the event reminder is for guests who confirmed (RSVP rounds chase the rest)
+    assert STAGE_DEFINITIONS["final_reminder"].audience_rule == AudienceRule.CONFIRMED
 
 
 @pytest.mark.parametrize("template,expected", [
@@ -83,12 +84,13 @@ def test_table_assignment_targets_seated_confirmed_guests(client, db):
     assert body["recipient_count"] == 1
 
 
-def test_explicit_audience_is_kept(client, db):
+def test_category_audience_wins_over_an_explicit_one(client, db):
+    # A round's category alone decides who receives it (round_categories).
     owner = uuid.uuid4()
     event_id = make_event(db, owner)
     r = _post(client, owner, event_id, template="reminder", audience="everyone")
     assert r.status_code == 201, r.text
-    assert r.json()["audience"] == "everyone"
+    assert r.json()["audience"] == "no_response" and r.json()["category_id"] == "reminder"
 
 
 def test_table_filter_semantics(client, db):
@@ -118,7 +120,7 @@ def test_recipient_count_persisted_on_create_and_update(client, db):
     r = client.put(f"/campaigns/{cid}", json={"audience": "everyone"}, headers=auth_header(owner))
     assert r.status_code == 200, r.text
     db.expire_all()
-    assert db.query(Campaign).get(cid).recipient_count == 3
+    assert db.query(Campaign).get(cid).recipient_count == 2   # the category's audience still decides
 
 
 def test_status_not_client_writable(client, db):

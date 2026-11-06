@@ -12,6 +12,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.crud.event import merge_subjects
 from app.db import get_db
 from app.models.models import Event, Guest, Campaign, Account, Membership, AuditLog, FeatureFlag
 from app import user_directory
@@ -216,6 +217,9 @@ class AdminEventCreate(BaseModel):
     event_type: Optional[str] = None
     event_date: Optional[dt.datetime] = None
     location: Optional[str] = None
+    # Who is hosting (EventSubjects keys: p1/p2, parent1/2, honoree, company ...).
+    # Required in practice: an event cannot be created without host names.
+    subjects: Optional[dict] = None
     # paid=True comps the event (skips the payment flow) by marking it settled.
     # paid=False leaves it PENDING, which - because `active` is derived from
     # settlement - means the event is created inactive until it is paid for.
@@ -275,6 +279,7 @@ def admin_create_event(
             "event_type": payload.event_type,
             "event_date": payload.event_date,
             "location": payload.location,
+            "subjects": merge_subjects(None, payload.subjects) if payload.subjects else None,
         },
         metadata={"created_via": "admin_direct"},
     )

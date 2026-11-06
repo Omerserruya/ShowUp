@@ -55,15 +55,19 @@ _VARS: List[Variable] = [
     Variable("host_name",     VarScope.EVENT, "שם המזמין",      "משפחת כהן", True,  ("שם_מזמין",)),
     Variable("event_type_name", VarScope.EVENT, "סוג האירוע",   "חתונה",    True,  ("סוג_אירוע",)),
     # links (resolved at send from the event's public invitation slug)
-    Variable("rsvp_link",         VarScope.LINK, "קישור לאישור", "https://showup.co.il/r/ab12", True, ("קישור_אישור",)),
-    Variable("invitation_link",   VarScope.LINK, "דף ההזמנה",    "https://showup.co.il/i/ab12", True, ("דף_הזמנה",)),
+    Variable("rsvp_link",         VarScope.LINK, "קישור לאישור", "https://showup-rsvp.com/r/ab12", True, ("קישור_אישור",)),
+    Variable("invitation_link",   VarScope.LINK, "דף ההזמנה",    "https://showup-rsvp.com/i/ab12", True, ("דף_הזמנה",)),
     Variable("nav_link",          VarScope.LINK, "ניווט (Waze)", "https://waze.com/ul?...",     True,  ("ניווט",)),
+    # the event's gift page (/g/{code}) -> the hosts' own Bit/PayBox group. Resolves
+    # only once the owner saved gift details (campaigns guard on that).
+    Variable("calendar_link",     VarScope.LINK, "הוספה ליומן",  "https://showup-rsvp.com/c/ab12", True,  ("יומן",)),
+    Variable("gift_link",         VarScope.LINK, "קישור למתנה",  "https://showup-rsvp.com/g/ab12", True,  ("מתנה",)),
     # header image asset - resolved at send from the event media (implicit, not a
     # copy token). Declared here so it's a known canonical variable, not a hole.
-    Variable("header_image_url",  VarScope.LINK, "תמונת כותרת",  "https://cdn.showup.co.il/header.jpg", True, ()),
+    Variable("header_image_url",  VarScope.LINK, "תמונת כותרת",  "https://showup-rsvp.com/media/header.jpg", True, ()),
     # cover_image - the event's cover/header image; an alias of header_image_url
     # used by save-the-date copy. Resolves to the same media at send time.
-    Variable("cover_image",       VarScope.LINK, "תמונת רקע",    "https://cdn.showup.co.il/cover.jpg",  True, ()),
+    Variable("cover_image",       VarScope.LINK, "תמונת רקע",    "https://showup-rsvp.com/media/cover.jpg",  True, ()),
     # subject (event-type specific) - now resolvable at delivery from event.subjects
     Variable("bride_name",     VarScope.SUBJECT, "שם הכלה",     "נועה",     True, ("כלה",)),
     Variable("groom_name",     VarScope.SUBJECT, "שם החתן",     "יונתן",    True, ("חתן",)),

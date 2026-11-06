@@ -18,6 +18,11 @@ import type { Event } from '../contexts/EventContext';
 import { parseLocation } from '../config/messaging';
 import { daysUntilEvent } from '../utils/dates';
 
+
+/** Share of confirmed people who usually don't show up on the night. */
+export const NO_SHOW_RATE = 0.1;
+const afterNoShows = (n: number) => Math.round(n * (1 - NO_SHOW_RATE));
+
 export type RsvpStatus = 'confirmed' | 'declined' | 'maybe' | 'pending';
 
 export interface ApiGuest {
@@ -103,7 +108,8 @@ export interface Snapshot {
   };
   invitations: { total: number; confirmed: number; pending: number; declined: number; maybe: number; replied: number };
   people: { invited: number; confirmed: number; maybe: number; pending: number };
-  /** Range of people expected on the night: confirmed .. confirmed + "maybe". */
+  /** Range of people expected on the night: confirmed .. confirmed + "maybe",
+   *  less the usual no-shows (NO_SHOW_RATE) - the number to give the venue. */
   expected: { min: number; max: number };
   guests: GuestRow[];
   unseated: GuestRow[];
@@ -304,7 +310,7 @@ export function buildSnapshot(
       maybe: sum(maybe),
       pending: sum(pending),
     },
-    expected: { min: sum(confirmed), max: sum(confirmed) + sum(maybe) },
+    expected: { min: afterNoShows(sum(confirmed)), max: afterNoShows(sum(confirmed) + sum(maybe)) },
     guests,
     unseated: confirmed.filter((g) => g.table == null),
     noPartySize: confirmed.filter((g) => !g.partyKnown),

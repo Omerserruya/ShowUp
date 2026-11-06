@@ -109,12 +109,16 @@ class EventBase(BaseModel):
     # WhatsApp cover image (default header for image-header WA templates).
     wa_image_url: Optional[str] = Field(None, serialization_alias="waImageUrl", validation_alias="waImageUrl")
     invitation: Optional[dict] = None  # InvitationConfig design (see schemas.InvitationConfig)
+    # Money-gift details {url, bit_phone, code} - see shared/domain/gift.py.
+    gift: Optional[dict] = None
 
     class Config:
         populate_by_name = True  # Allow both plan_id and planId when parsing
 
 
 class EventCreate(EventBase):
+    # The terms-of-use version the creator ticked (shared/domain/legal.py). Required.
+    terms_version: Optional[str] = Field(default=None, max_length=20)
     # Owners should not be sent by clients; will be set to [current_user_id]
     owners: Optional[List[uuid.UUID]] = None
 
@@ -132,6 +136,11 @@ class EventUpdate(BaseModel):
     location: Optional[str] = None
     wa_image_url: Optional[str] = Field(None, serialization_alias="waImageUrl", validation_alias="waImageUrl")
     seating_layout: Optional[dict] = Field(None, serialization_alias="seatingLayout", validation_alias="seatingLayout")
+    # Who the event is for (couple / honoree / parents / company), merged into
+    # the stored subjects - see crud.event.merge_subjects for the allowed keys.
+    subjects: Optional[dict] = None
+    # {url?, bit_phone?} - merged by shared.domain.gift.merge_gift (code is server-minted).
+    gift: Optional[dict] = None
 
 
 class EventOut(EventBase):
@@ -259,6 +268,9 @@ class CampaignBase(BaseModel):
     audience_filter: Optional[dict] = None
     follow_up_after_hours: Optional[int] = Field(default=None, ge=1)
     follow_up_audience: Optional[CampaignAudience] = None
+    # The round's category - it decides the audience (app/round_categories.py).
+    # Omitted -> the built-in category of the template's stage.
+    category_id: Optional[str] = Field(default=None, max_length=60)
 
 
 class CampaignCreate(CampaignBase):
@@ -276,6 +288,7 @@ class CampaignUpdate(BaseModel):
     follow_up_after_hours: Optional[int] = Field(default=None, ge=1)
     follow_up_audience: Optional[CampaignAudience] = None
     header_image_url: Optional[str] = None
+    category_id: Optional[str] = Field(default=None, max_length=60)
     # "Send now": the server stamps schedule_time=now, moves a draft/paused round
     # to 'pending', skips the min-gap spacing and refuses an empty audience
     # (400 code 'no_recipients'). Never persisted.

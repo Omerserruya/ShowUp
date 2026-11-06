@@ -420,6 +420,11 @@ function RulesTable({ block, node }: { block: TreeBlock; node: FlowNode }) {
               onChange={(ev) => editText(e, { when: whenFromKey(ev.target.value, e.when) })}>
               {opts.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
             </select>
+            {e.when.kind === 'text_is' && (
+              <WordsInput resetKey={e.id} words={e.when.words || []} placeholder="תשובות, מופרדות בפסיק"
+                style={{ height: 32, padding: '4px 9px', fontSize: 13, marginTop: 4 }}
+                onChange={(words) => ctx.updateEdge(e.id, { when: { ...e.when, kind: 'text_is', words } })} />
+            )}
             {e.when.kind === 'text_contains' && (
               <WordsInput resetKey={e.id} words={e.when.words || []} placeholder="מילים, מופרדות בפסיק"
                 style={{ height: 32, padding: '4px 9px', fontSize: 13, marginTop: 4 }}

@@ -37,6 +37,8 @@ import {
   useTheme,
   alpha,
 } from '@mui/material';
+import SubjectFields from '../../components/SubjectFields';
+import { EMPTY_SUBJECTS, EventSubjects, HOST_NAMES_HINT, hasHostNames } from '../../config/eventSubjects';
 import {
   Search as SearchIcon,
   Edit as EditIcon,
@@ -122,6 +124,7 @@ function Events() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState('');
   const [createType, setCreateType] = useState('wedding');
+  const [createSubjects, setCreateSubjects] = useState<EventSubjects>(EMPTY_SUBJECTS);
   const [createDate, setCreateDate] = useState('');
   const [createLocation, setCreateLocation] = useState('');
   const [createPaid, setCreatePaid] = useState(true);
@@ -133,6 +136,7 @@ function Events() {
   const handleOpenCreate = () => {
     setCreateName('');
     setCreateType('wedding');
+    setCreateSubjects(EMPTY_SUBJECTS);
     setCreateDate('');
     setCreateLocation('');
     setCreatePaid(true);
@@ -151,6 +155,7 @@ function Events() {
         body: JSON.stringify({
           name: createName.trim(),
           event_type: createType || null,
+          subjects: createSubjects,
           event_date: createDate ? new Date(createDate).toISOString() : null,
           location: createLocation.trim() || null,
           paid: createPaid,
@@ -159,6 +164,7 @@ function Events() {
           owner_last_name: createOwnerLast.trim() || null,
         }),
       });
+      if (res.status === 422) throw new Error(HOST_NAMES_HINT);
       if (!res.ok) throw new Error(await res.text());
       setCreateOpen(false);
       fetchEvents();
@@ -582,6 +588,11 @@ function Events() {
                 <MenuItem value="other">אחר</MenuItem>
               </Select>
             </FormControl>
+            <SubjectFields eventType={createType} subjects={createSubjects} disabled={creating}
+              onChange={(patch) => setCreateSubjects((s) => ({ ...s, ...patch }))} />
+            {!hasHostNames(createSubjects) && (
+              <Typography variant="caption" color="text.secondary">{HOST_NAMES_HINT}</Typography>
+            )}
             <TextField
               label="תאריך ושעה"
               type="datetime-local"
@@ -638,7 +649,7 @@ function Events() {
           <Button onClick={() => setCreateOpen(false)} disabled={creating}>
             ביטול
           </Button>
-          <Button variant="contained" onClick={handleSaveCreate} disabled={creating || !createName.trim()}>
+          <Button variant="contained" onClick={handleSaveCreate} disabled={creating || !createName.trim() || !hasHostNames(createSubjects)}>
             {creating ? <CircularProgress size={20} /> : 'צור'}
           </Button>
         </DialogActions>

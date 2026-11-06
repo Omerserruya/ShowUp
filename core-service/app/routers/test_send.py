@@ -254,6 +254,8 @@ def _event_dict(event: Event) -> Dict[str, Any]:
         "subjects": event.subjects,
         "public_slug": event.public_slug,
         "wa_image_url": event.wa_image_url,
+        "gift": event.gift,
+        "share_code": event.share_code,
         "inviters": event.inviters or [],
         "owners": event.owners or [],
         "account_id": str(event.account_id) if event.account_id else None,

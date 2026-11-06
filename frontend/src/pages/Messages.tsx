@@ -62,6 +62,7 @@ import { useCatalog, isSendableFor } from '../hooks/useCatalog';
 import type { MessagingCatalog, CatalogTemplate } from '../hooks/useCatalog';
 import { renderBody, buildPreviewValues, buildEventValues, parseLocation } from '../config/messaging';
 import type { PreviewCtx } from '../config/messaging';
+import CallRoundRow, { type CallRound } from '../components/v6/CallRoundRow';
 
 // datetime-local inputs expect LOCAL wall-clock components - never a UTC ISO
 // slice, which shifts the shown time by the timezone offset.
@@ -81,11 +82,11 @@ const inDaysLabel = (n: number): string => {
 // Hebrew fallback titles per canonical flow stage (the catalog stage title wins).
 const STAGE_LABELS: Record<string, string> = {
   save_the_date: 'שמרו את התאריך',
-  invitation: 'הזמנה',
-  reminder: 'תזכורת',
-  final_reminder: 'תזכורת אחרונה',
-  table_assignment: 'שיבוץ שולחנות',
-  thank_you: 'תודה',
+  invitation: 'אישור הגעה ראשוני',
+  reminder: 'אישור הגעה נוסף',
+  final_reminder: 'תזכורת לאירוע',
+  table_assignment: 'הודעת שולחן',
+  thank_you: 'תודה אחרי האירוע',
 };
 
 // Lifecycle order for the new-round stage picker (mirrors the backend FlowStage).
@@ -363,6 +364,9 @@ interface CampaignFromAPI {
   // Optional fields that may contain recipients info
   recipient_count?: number;
   recipients?: any[];
+  header_image_url?: string | null;
+  // The round's category - it alone decides who receives it.
+  category_id?: string | null;
   // Delivery + engagement funnel, embedded in every campaign response.
   stats?: {
     sent_count: number;
@@ -375,10 +379,23 @@ interface CampaignFromAPI {
   };
 }
 
+/** A round category (admin-managed): its audience decides who a round reaches. */
+interface RoundCategory {
+  id: string;
+  base_stage: string;
+  title: string;
+  description: string;
+  builtin: boolean;
+  audience: string;
+  audience_label: string;
+  recipients: number;
+}
+
 interface Campaign {
   id: string;
   name: string;
   template: string;
+  categoryId: string | null;
   status: CampaignStatus;
   /** Raw backend status_reason (why it is a draft / failed / empty). */
   statusReason: string | null;
@@ -402,6 +419,8 @@ interface Campaign {
   failedCount: number;
   queuedCount: number;
   attemptedCount: number;
+  /** Header image of an image template (uploaded when the round was set up). */
+  headerImageUrl: string | null;
 }
 
 // Resolve the catalog template backing a campaign (by canonical id).
@@ -430,7 +449,7 @@ function Stat({ icon, text }: { icon: React.ReactNode; text: string }) {
   );
 }
 
-function MsgPreview({ catalog, campaign, variables }: { catalog: MessagingCatalog; campaign: Campaign; variables: Record<string, string> }) {
+function MsgPreview({ catalog, campaign, variables, full = false }: { catalog: MessagingCatalog; campaign: Campaign; variables: Record<string, string>; full?: boolean }) {
   const tpl = commTemplate(catalog, campaign);
   const title = tpl?.title ? renderBody(tpl.title, variables) : '';
   // Custom (free-text) messages keep their {{tokens}} in storage; render them
@@ -443,8 +462,12 @@ function MsgPreview({ catalog, campaign, variables }: { catalog: MessagingCatalo
       <Box sx={{ position: 'absolute', inset: 0, borderRadius: 2.5, bgcolor: '#ece5dd', transform: 'translate(7px, 7px)', opacity: 0.35, zIndex: 0 }} />
       <Box sx={{ position: 'absolute', inset: 0, borderRadius: 2.5, bgcolor: '#ece5dd', transform: 'translate(3.5px, 3.5px)', opacity: 0.6, zIndex: 0 }} />
       {/* front preview - real message, cropped + faded */}
-      <Box sx={{ position: 'relative', zIndex: 1, borderRadius: 2.5, bgcolor: '#ece5dd', p: 1, maxHeight: 120, overflow: 'hidden', direction: 'rtl', textAlign: 'right', boxShadow: '0 1px 2px rgba(0,0,0,0.06)', maskImage: 'linear-gradient(180deg,#000 66%,transparent)', WebkitMaskImage: 'linear-gradient(180deg,#000 66%,transparent)' }}>
+      {/* Collapsed: cropped + faded. Selected (full): the whole message, as the guest sees it. */}
+      <Box sx={{ position: 'relative', zIndex: 1, borderRadius: 2.5, bgcolor: '#ece5dd', p: 1, maxHeight: full ? 'none' : 120, overflow: 'hidden', direction: 'rtl', textAlign: 'right', boxShadow: '0 1px 2px rgba(0,0,0,0.06)', ...(full ? {} : { maskImage: 'linear-gradient(180deg,#000 66%,transparent)', WebkitMaskImage: 'linear-gradient(180deg,#000 66%,transparent)' }) }}>
         <Box sx={{ bgcolor: '#fff', borderRadius: '7.5px', p: 1, boxShadow: '0 1px 0.5px rgba(0,0,0,0.13)' }}>
+          {campaign.headerImageUrl && (
+            <Box component="img" src={campaign.headerImageUrl} alt="" sx={{ display: 'block', width: '100%', height: full ? 'auto' : 64, maxHeight: 260, objectFit: 'cover', borderRadius: '5px', mb: 0.75 }} />
+          )}
           {title && <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#111', mb: 0.25 }}>{title}</Typography>}
           <Typography sx={{ fontSize: 12, lineHeight: 1.5, color: '#333', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{body}</Typography>
           {btnText && (
@@ -459,10 +482,11 @@ function MsgPreview({ catalog, campaign, variables }: { catalog: MessagingCatalo
 }
 
 function Messages() {
-  const { catalog } = useCatalog();
+  const { selectedEvent } = useEvent();
+  // Previews show the copy guests of THIS event type really get.
+  const { catalog } = useCatalog((selectedEvent?.type as string) || 'wedding');
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const { selectedEvent } = useEvent();
   const { user } = useUser();
   const navigate = useNavigate();
   const { campaigns: apiCampaigns, loading: campaignsLoading, error: campaignsError } = useCampaigns();
@@ -489,9 +513,13 @@ function Messages() {
   const [toast, setToast] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({ open: false, message: '', severity: 'info' });
   const [deleteTarget, setDeleteTarget] = useState<Campaign | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  // The "סבב חדש" drawer doubles as the round editor: set => editing that round.
+  const [editId, setEditId] = useState<string | null>(null);
   const [createStage, setCreateStage] = useState('');
   const [createName, setCreateName] = useState('');
   const [createTemplateId, setCreateTemplateId] = useState('');
+  const [createCategory, setCreateCategory] = useState('');
+  const [roundCats, setRoundCats] = useState<RoundCategory[]>([]);
   const [createTime, setCreateTime] = useState('');
   const [createImageUrl, setCreateImageUrl] = useState('');
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -544,6 +572,7 @@ function Messages() {
       id: apiCampaign.id,
       name: apiCampaign.name,
       template: apiCampaign.template,
+      categoryId: apiCampaign.category_id || null,
       status,
       statusReason: reason,
       scheduleTime: apiCampaign.schedule_time ? new Date(apiCampaign.schedule_time) : null,
@@ -558,6 +587,7 @@ function Messages() {
       failedCount: st.failed_count ?? 0,
       queuedCount: st.queued_count ?? 0,
       attemptedCount: st.attempted_count ?? 0,
+      headerImageUrl: apiCampaign.header_image_url || null,
     };
   };
 
@@ -572,6 +602,57 @@ function Messages() {
     setCampaigns(apiCampaigns.map(mapApiCampaign));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiCampaigns, stats?.total_guests]);
+
+  // Round categories with their audience size in this event (core /campaigns/categories).
+  const loadRoundCats = useCallback(async () => {
+    if (!selectedEvent?.id) { setRoundCats([]); return; }
+    try {
+      const r = await fetchWithAuth(`/api/campaigns/categories?event_id=${selectedEvent.id}`);
+      setRoundCats(r.ok ? await r.json() : []);
+    } catch { setRoundCats([]); }
+  }, [selectedEvent?.id]);
+  useEffect(() => { loadRoundCats(); }, [loadRoundCats]);
+
+  // Phone-call rounds (voice-service, through core). Planned automatically from
+  // the event date; shown on the same timeline as the message rounds.
+  type CallData = { rounds_allowed: number; rounds_used: number; can_schedule: boolean; pending_guests: number; rounds: CallRound[] };
+  const [calls, setCalls] = useState<CallData | null>(null);
+  const [addingCall, setAddingCall] = useState(false);
+  const [newCallAt, setNewCallAt] = useState('');
+  const [callErr, setCallErr] = useState<string | null>(null);
+  const loadCalls = useCallback(async () => {
+    if (!selectedEvent?.id) { setCalls(null); return; }
+    try {
+      const r = await fetchWithAuth(`/api/events/${selectedEvent.id}/call-rounds`);
+      setCalls(r.ok ? await r.json() : null);
+    } catch { setCalls(null); }
+  }, [selectedEvent?.id]);
+  useEffect(() => { loadCalls(); }, [loadCalls]);
+  const callError = async (r: Response): Promise<string | null> => {
+    if (r.ok) return null;
+    const code = (await r.json().catch(() => ({})))?.detail?.error;
+    return code === 'in_past' ? 'המועד כבר עבר. בחרו מועד עתידי.'
+      : code === 'after_event' ? 'המועד צריך להיות לפני האירוע.'
+      : code === 'already_started' ? 'הסבב כבר התחיל, אי אפשר להזיז אותו.'
+      : code === 'no_phone_rounds_left' ? 'נוצלו כל סבבי השיחות שבחבילה.'
+      : 'הפעולה לא הצליחה. נסו שוב.';
+  };
+  const moveCallRound = async (id: string, startAt: string) => {
+    const r = await fetchWithAuth(`/api/events/${selectedEvent?.id}/call-rounds/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ start_at: startAt }) });
+    const e = await callError(r); if (!e) loadCalls(); return e;
+  };
+  const cancelCallRound = async (id: string) => {
+    const r = await fetchWithAuth(`/api/events/${selectedEvent?.id}/call-rounds/${id}/cancel`, { method: 'POST' });
+    const e = await callError(r); if (!e) loadCalls(); return e;
+  };
+  const addCallRound = async () => {
+    if (!newCallAt) return;
+    setCallErr(null);
+    const r = await fetchWithAuth(`/api/events/${selectedEvent?.id}/call-rounds`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ start_at: new Date(newCallAt).toISOString() }) });
+    const e = await callError(r);
+    if (e) { setCallErr(e); return; }
+    setAddingCall(false); setNewCallAt(''); loadCalls();
+  };
 
   // Reload the list (and with it every campaign's funnel) from the server.
   const refreshCampaigns = useCallback(async () => {
@@ -910,7 +991,13 @@ function Messages() {
 
   // Hebrew display name for a template's stage (used as the default round name).
   const stageTitle = (flowStage: string): string =>
-    catalog.stages.find((s) => s.id === flowStage)?.title || STAGE_LABELS[flowStage] || 'סבב חדש';
+    roundCats.find((c) => c.id === flowStage)?.title
+    || catalog.stages.find((s) => s.id === flowStage)?.title || STAGE_LABELS[flowStage] || 'סבב חדש';
+
+  // Categories a round of this stage may use (the built-in one first).
+  const categoriesForStage = (stageId: string): RoundCategory[] =>
+    roundCats.filter((c) => c.base_stage === stageId).sort((a, b) => Number(b.builtin) - Number(a.builtin));
+  const categoryOf = (id: string | null | undefined) => roundCats.find((c) => c.id === id);
 
   const eventType = (selectedEvent?.type as string) || 'wedding';
 
@@ -953,12 +1040,14 @@ function Messages() {
     const tpls = templatesForCreateStage(stageId);
     const tpl = tpls.find((t) => t.is_default) || tpls[0];
     setCreateTemplateId(tpl?.id || '');
+    setCreateCategory(tpl?.category_id || stageId);
     setCreateName(stageTitle(stageId));
     setCreateImageUrl('');
   };
 
   // New-round creation ("סבב חדש")
   const openCreate = () => {
+    setEditId(null);
     setCreateTime('');
     setCreateImageUrl('');
     const firstStage = stagesForCreate[0] || '';
@@ -969,13 +1058,61 @@ function Messages() {
 
   const handleCreateTemplateChange = (templateId: string) => {
     setCreateTemplateId(templateId);
-    setCreateImageUrl('');
+    // Editing keeps the round's own name and image; a new round starts fresh.
+    if (!editId) setCreateImageUrl('');
     const tpl = catalog.templates.find((t) => t.id === templateId);
     if (tpl) {
       // The gallery selects a template directly, so the stage follows from it
       // rather than being picked first.
       setCreateStage(tpl.flow_stage);
-      setCreateName(stageTitle(tpl.flow_stage));
+      if (categoryOf(createCategory)?.base_stage !== tpl.flow_stage) setCreateCategory(tpl.category_id || tpl.flow_stage);
+      if (!editId) setCreateName(stageTitle(tpl.flow_stage));
+    }
+  };
+
+  // Open the drawer on an existing (not yet sent) round: full preview with its
+  // image, and template / image / name / time all editable in one place.
+  const openEdit = (campaign: Campaign) => {
+    const tpl = commTemplate(catalog, campaign);
+    setEditId(campaign.id);
+    setCreateTemplateId(tpl?.id || campaign.template || '');
+    setCreateStage(tpl?.flow_stage || '');
+    setCreateCategory(campaign.categoryId || tpl?.flow_stage || '');
+    setCreateName(campaign.name);
+    setCreateImageUrl(campaign.headerImageUrl || '');
+    const d = campaign.scheduleTime;
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    setCreateTime(d ? `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}` : '');
+    setCreateOpen(true);
+  };
+
+  const saveRoundEdit = async () => {
+    if (!editId || !createTemplateId || !createName.trim()) return;
+    if (createNeedsImage && !createImageUrl) {
+      showToast('התבנית הזו כוללת תמונה - נא להעלות תמונה לפני השמירה.', 'error');
+      return;
+    }
+    setCreating(true);
+    try {
+      const body: any = { name: createName.trim(), template: createTemplateId };
+      if (createCategory) body.category_id = createCategory;
+      if (createNeedsImage) body.header_image_url = createImageUrl;
+      if (createTime) body.schedule_time = new Date(createTime).toISOString();
+      const res = await fetchWithAuth(`/api/campaigns/${editId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({} as any));
+        throw new Error(typeof err.detail === 'string' ? err.detail : 'update failed');
+      }
+      await refreshCampaigns();
+      setCreateOpen(false);
+      setEditId(null);
+      showToast('הסבב עודכן', 'success');
+    } catch (error: any) {
+      showToast(error?.message && error.message !== 'update failed' ? error.message : 'שגיאה בעדכון הסבב. נסו שוב.', 'error');
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -1028,6 +1165,7 @@ function Messages() {
         channel: 'whatsapp',
         status: 'pending',
       };
+      if (createCategory) body.category_id = createCategory;
       if (createNeedsImage && createImageUrl) body.header_image_url = createImageUrl;
       if (createTime) body.schedule_time = new Date(createTime).toISOString();
       const res = await fetchWithAuth(`/api/campaigns?event_id=${selectedEvent.id}`, {
@@ -1199,6 +1337,13 @@ function Messages() {
     return ta - tb;
   });
 
+  // Message rounds and phone rounds on one chronological line.
+  type TimelineItem = { kind: 'msg'; at: number; campaign: Campaign } | { kind: 'call'; at: number; round: CallRound };
+  const timelineItems: TimelineItem[] = [
+    ...timelineCampaigns.map((c) => ({ kind: 'msg' as const, at: c.scheduleTime ? new Date(c.scheduleTime).getTime() : Number.POSITIVE_INFINITY, campaign: c })),
+    ...(calls?.rounds || []).map((r) => ({ kind: 'call' as const, at: new Date(r.start_at).getTime(), round: r })),
+  ].sort((a, b) => a.at - b.at);
+
   // Shared timeline action-button styles.
   // gap + RTL-correct icon spacing so the startIcon never overlaps the label.
   const tlBtnBase = { borderRadius: 1.5, px: 1.75, py: 0.6, fontSize: '0.8125rem', fontWeight: 600, textTransform: 'none' as const, gap: 0.5, '& .MuiButton-startIcon': { marginRight: 0, marginLeft: 0 } };
@@ -1294,7 +1439,7 @@ function Messages() {
         <Box>
           {/* The page title lives in the app header (design v6). */}
           <Typography sx={{ fontSize: { xs: '0.95rem', md: '1.05rem' }, color: 'text.secondary', maxWidth: '60ch' }}>
-            כל סבב יוצא לפי לוח השליחה. אפשר לשנות, לעצור או לשלוח עכשיו.
+            כל סבב יוצא לפי לוח השליחה. לחצו על סבב כדי לראות את ההודעה המלאה, לערוך, לעצור או לשלוח עכשיו.
           </Typography>
         </Box>
         <Button
@@ -1357,7 +1502,26 @@ function Messages() {
       </Box>
 
       {/* The communication journey */}
-      {timelineCampaigns.length === 0 ? (
+      {calls && calls.rounds_allowed > 0 && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', mb: 3, px: 2, py: 1.25, borderRadius: 2, bgcolor: alpha(primary, 0.06), border: '1px solid', borderColor: alpha(primary, 0.18) }}>
+          <Typography sx={{ fontSize: 13.5, color: 'text.primary', flex: '1 1 260px' }}>
+            <b>שיחות טלפון:</b> {calls.rounds_used} מתוך {calls.rounds_allowed} סבבים בשימוש. מי שלא ענה בוואטסאפ, או ענה "אולי", מקבל שיחה קצרה ועונה בלחיצה על מקש.
+          </Typography>
+          {calls.can_schedule && !addingCall && (
+            <Button size="small" onClick={() => setAddingCall(true)} startIcon={<PlusIcon sx={{ fontSize: 16 }} />} sx={{ borderRadius: 999, px: 1.75, fontWeight: 600, textTransform: 'none', bgcolor: '#FFFFFF', border: '1px solid', borderColor: alpha(primary, 0.3), color: 'primary.main', gap: 0.5, '& .MuiButton-startIcon': { marginRight: 0, marginLeft: 0 } }}>סבב שיחות</Button>
+          )}
+          {addingCall && (
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap', rowGap: 1 }}>
+              <TextField type="datetime-local" size="small" value={newCallAt} onChange={(e) => setNewCallAt(e.target.value)} inputProps={{ 'aria-label': 'מועד סבב השיחות' }} />
+              <Button size="small" disabled={!newCallAt} onClick={addCallRound} sx={{ borderRadius: 1.5, px: 1.75, fontWeight: 600, textTransform: 'none', bgcolor: '#C9B8F3', color: '#16150F', '&:hover': { bgcolor: '#BBA6EE' } }}>הוספה</Button>
+              <Button size="small" onClick={() => { setAddingCall(false); setCallErr(null); }} sx={{ textTransform: 'none', color: 'text.secondary' }}>ביטול</Button>
+            </Stack>
+          )}
+          {callErr && <Typography role="alert" sx={{ fontSize: 12.5, color: 'error.main', width: '100%' }}>{callErr}</Typography>}
+        </Box>
+      )}
+
+      {timelineItems.length === 0 ? (
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', py: 4 }}>
           <Box sx={{ width: 44, height: 44, flexShrink: 0, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: alpha(primary, 0.1), color: 'primary.main' }}>
             <SparklesIcon />
@@ -1370,7 +1534,14 @@ function Messages() {
         </Box>
       ) : (
         <Box sx={{ position: 'relative' }}>
-          {timelineCampaigns.map((campaign, i) => {
+          {timelineItems.map((item, i) => {
+            if (item.kind === 'call') {
+              return (
+                <CallRoundRow key={`call-${item.round.id}`} round={item.round} pendingGuests={calls?.pending_guests || 0}
+                  isLast={i === timelineItems.length - 1} onMove={moveCallRound} onCancel={cancelCallRound} />
+              );
+            }
+            const campaign = item.campaign;
             const active = (hoveredId ?? selectedId) === campaign.id;
             const selected = selectedId === campaign.id;
             // "Done" rounds take no actions. A failed / empty round stays
@@ -1380,7 +1551,7 @@ function Messages() {
             const isFinishedUnsent = campaign.status === 'failed' || campaign.status === 'empty';
             const explanation = getStatusExplanation(campaign);
             const isLoading = updating === campaign.id;
-            const isLast = i === timelineCampaigns.length - 1;
+            const isLast = i === timelineItems.length - 1;
             const dt = campaign.scheduleTime ? new Date(campaign.scheduleTime) : null;
             const sc = getStatusColor(campaign);
             const readRate = getCampaignReadRate(campaign);
@@ -1492,7 +1663,7 @@ function Messages() {
                     </Stack>
                   ) : (
                     <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: 'wrap', rowGap: 0.5, mb: 1.25 }}>
-                      <Stat icon={<PeopleIcon sx={{ fontSize: 15, color: 'text.secondary' }} />} text={`${campaign.recipientCount} נמענים`} />
+                      <Stat icon={<PeopleIcon sx={{ fontSize: 15, color: 'text.secondary' }} />} text={`${campaign.recipientCount} נמענים${categoryOf(campaign.categoryId) ? ` · ${categoryOf(campaign.categoryId)!.audience_label}` : ''}`} />
                       <Stat icon={<ClockIcon sx={{ fontSize: 15, color: 'text.secondary' }} />} text={dt ? dt.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : 'לא מתוזמן'} />
                     </Stack>
                   )}
@@ -1520,7 +1691,7 @@ function Messages() {
                       </Stack>
                     </Box>
                   ) : (
-                    <MsgPreview catalog={catalog} campaign={campaign} variables={getTemplateVariables()} />
+                    <MsgPreview catalog={catalog} campaign={campaign} variables={getTemplateVariables()} full={selected} />
                   )}
 
                   {/* Reselect / customise the message inline (like the wizard) */}
@@ -1539,6 +1710,7 @@ function Messages() {
                   {/* Primary actions */}
                   {selected && !isSent && customFor !== campaign.id && (
                     <Stack direction="row" spacing={1} onClick={(e) => e.stopPropagation()} sx={{ flexWrap: 'wrap', gap: 1, mt: 1.5 }}>
+                      <Button onClick={() => openEdit(campaign)} disabled={isLoading} startIcon={<EditIcon sx={{ fontSize: 16 }} />} sx={tlBtn.neutral}>עריכה</Button>
                       <Button onClick={() => handleSendNow(campaign)} disabled={isLoading} startIcon={<SendIcon sx={{ fontSize: 16 }} />} sx={tlBtn.primary}>{isFinishedUnsent ? 'ניסיון חוזר עכשיו' : 'שליחה עכשיו'}</Button>
                       {!isFinishedUnsent && (
                         <Button onClick={() => handleEditTime(campaign)} disabled={isLoading} startIcon={<AccessTimeIcon sx={{ fontSize: 16 }} />} sx={tlBtn.neutral}>{campaign.scheduleTime && campaign.status !== 'draft' ? 'שינוי מועד' : 'תזמון'}</Button>
@@ -1741,7 +1913,7 @@ function Messages() {
           sx={{ px: 2.5, py: 1.75, borderBottom: '1px solid', borderColor: 'divider', flexShrink: 0 }}
         >
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography sx={{ fontSize: 18, fontWeight: 700 }}>סבב חדש</Typography>
+            <Typography sx={{ fontSize: 18, fontWeight: 700 }}>{editId ? 'עריכת סבב' : 'סבב חדש'}</Typography>
             <Typography variant="caption" sx={{ color: 'text.secondary' }}>
               בחרו תבנית - כך ההודעה תיראה לאורחים
             </Typography>
@@ -1855,6 +2027,34 @@ function Messages() {
                 onChange={(e) => setCreateName(e.target.value)}
               />
 
+              {/* The category decides who receives the round - shown, not editable. */}
+              {createStage && categoriesForStage(createStage).length > 0 && (
+                <Box>
+                  {categoriesForStage(createStage).length > 1 && (
+                    <TextField
+                      select
+                      size="small"
+                      fullWidth
+                      label="קטגוריה"
+                      value={createCategory}
+                      onChange={(e) => setCreateCategory(e.target.value)}
+                      SelectProps={{ native: true }}
+                      sx={{ mb: 1 }}
+                    >
+                      {categoriesForStage(createStage).map((c) => (
+                        <option key={c.id} value={c.id}>{c.title}</option>
+                      ))}
+                    </TextField>
+                  )}
+                  {categoryOf(createCategory) && (
+                    <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+                      נשלח ל: <b>{categoryOf(createCategory)!.audience_label}</b>
+                      {' · '}{categoryOf(createCategory)!.recipients} אורחים כרגע
+                    </Typography>
+                  )}
+                </Box>
+              )}
+
               {/* Image-header templates require an image. */}
               {createNeedsImage && (
                 <Box>
@@ -1894,7 +2094,7 @@ function Messages() {
                 InputLabelProps={{ shrink: true }}
                 value={createTime}
                 onChange={(e) => setCreateTime(e.target.value)}
-                helperText="בלי מועד, הסבב יישמר כטיוטה ותוכלו לתזמן או לשלוח אותו מתי שתרצו."
+                helperText={editId ? 'שינוי המועד יחול כל עוד הסבב עוד לא נשלח.' : 'בלי מועד, הסבב יישמר כטיוטה ותוכלו לתזמן או לשלוח אותו מתי שתרצו.'}
               />
             </Stack>
           </Box>
@@ -1910,11 +2110,11 @@ function Messages() {
           <Button onClick={() => setCreateOpen(false)} disabled={creating}>ביטול</Button>
           <Button
             variant="contained"
-            onClick={confirmCreate}
+            onClick={editId ? saveRoundEdit : confirmCreate}
             disabled={creating || !createName.trim() || !createTemplateId || (createNeedsImage && !createImageUrl)}
             sx={{ backgroundColor: '#C9B8F3', color: '#16150F', '&:hover': { backgroundColor: '#BBA6EE' } }}
           >
-            {creating ? 'יוצר…' : 'יצירת סבב'}
+            {editId ? (creating ? 'שומר…' : 'שמירת שינויים') : (creating ? 'יוצר…' : 'יצירת סבב')}
           </Button>
         </Stack>
       </Drawer>
