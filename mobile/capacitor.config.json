@@ -34,5 +34,10 @@
       "overlaysWebView": false
     }
   },
-  "appendUserAgent": "ShowUpApp/1.0"
+  "appendUserAgent": "ShowUpApp/1.0",
+  "ios": {
+    "backgroundColor": "#F7F3EC",
+    "contentInset": "never",
+    "scrollEnabled": true
+  }
 }
