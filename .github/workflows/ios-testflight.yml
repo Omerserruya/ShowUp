@@ -12,7 +12,7 @@ name: iOS TestFlight
 
 on:
   push:
-    paths: ['mobile/ios/**', 'mobile/capacitor.config.json', '.github/workflows/ios-testflight.yml']
+    paths: ['mobile/ios/**', 'mobile/scripts/**', 'mobile/package.json', 'mobile/capacitor.config.json', '.github/workflows/ios-testflight.yml']
   workflow_dispatch:
 
 concurrency:

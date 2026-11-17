@@ -1,6 +1,8 @@
 // iOS 18 lets the user share only SOME contacts (CNAuthorizationStatus.limited,
 // raw value 4). @capacitor-community/contacts 6.1.1 treats it as "not granted",
-// so getContacts fails even though the user said yes. Treat limited as granted.
+// so getContacts fails even though the user said yes. Patch: reading contacts
+// works under limited access, and checkPermissions reports "limited" so the page
+// can offer to switch to full access in Settings.
 // Runs on postinstall; idempotent.
 const fs = require('fs');
 const path = require('path');
@@ -12,7 +14,7 @@ const before = s;
 // checkPermissions: limited -> "granted"
 s = s.replace(
   /case \.authorized:\n(\s*)permissionState = "granted"\n(\s*)@unknown default:\n(\s*)permissionState = "prompt"/,
-  (m, a, b, c) => `case .authorized:\n${a}permissionState = "granted"\n${b}@unknown default: // SHOWUP_LIMITED_PATCH\n${c}permissionState = CNContactStore.authorizationStatus(for: .contacts).rawValue == 4 ? "granted" : "prompt"`
+  (m, a, b, c) => `case .authorized:\n${a}permissionState = "granted"\n${b}@unknown default: // SHOWUP_LIMITED_PATCH\n${c}permissionState = CNContactStore.authorizationStatus(for: .contacts).rawValue == 4 ? "limited" : "prompt"`
 );
 // isContactsPermissionGranted: limited -> true
 s = s.replace(
