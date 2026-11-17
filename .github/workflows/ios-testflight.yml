@@ -100,7 +100,7 @@ jobs:
           <plist version="1.0">
           <dict>
             <key>method</key><string>app-store-connect</string>
-            <key>destination</key><string>upload</string>
+            <key>destination</key><string>export</string>
             <key>teamID</key><string>G465C5Q273</string>
             <key>signingStyle</key><string>manual</string>
             <key>signingCertificate</key><string>Apple Distribution</string>
@@ -114,7 +114,13 @@ jobs:
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/App.xcarchive" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
-            -exportPath "$RUNNER_TEMP/export" \
-            -authenticationKeyPath "$ASC_KEY_PATH" \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+            -exportPath "$RUNNER_TEMP/export"
+          IPA=$(ls "$RUNNER_TEMP"/export/*.ipa | head -1)
+          # altool reads the key from ~/.appstoreconnect/private_keys. Retry: Apple's
+          # upload auth fails now and then ("No Accounts with App Store Connect Access").
+          mkdir -p ~/.appstoreconnect/private_keys && cp "$ASC_KEY_PATH" ~/.appstoreconnect/private_keys/
+          for i in 1 2 3; do
+            xcrun altool --upload-app -t ios -f "$IPA" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" && exit 0
+            echo "upload attempt $i failed, retrying"; sleep 30
+          done
+          exit 1
