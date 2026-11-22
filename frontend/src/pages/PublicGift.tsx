@@ -29,7 +29,18 @@ type GiftData = {
 };
 
 const LINK_LABEL: Record<string, string> = { card: 'מתנה בכרטיס אשראי', bit: 'מתנה בביט', paybox: 'מתנה בפייבוקס' };
-const LINK_ICON: Record<string, string> = { card: 'credit_card', bit: 'account_balance_wallet', paybox: 'account_balance_wallet' };
+const LOGO_SRC: Record<string, string> = { bit: '/brand/pay/bit.png', paybox: '/brand/pay/paybox.png' };
+
+/** The app's own icon for Bit / PayBox; a neutral card tile for a credit-card link. */
+function PayLogo({ kind, size = 30 }: { kind: string; size?: number }) {
+  const box: React.CSSProperties = { width: size, height: size, borderRadius: size * 0.26, flexShrink: 0, display: 'block' };
+  if (LOGO_SRC[kind]) return <img src={LOGO_SRC[kind]} alt="" aria-hidden style={{ ...box, objectFit: 'cover' }} />;
+  return (
+    <span aria-hidden style={{ ...box, background: '#1F2A44', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+      <span className="ms" style={{ fontSize: size * 0.62 }}>credit_card</span>
+    </span>
+  );
+}
 
 /** Readable text colour on a solid background (accent buttons vary per invitation). */
 function onColor(hex: string, dark: string): string {
@@ -148,7 +159,7 @@ export default function PublicGift() {
       <>
         <p style={{ fontSize: 16, color: t.muted, margin: 0, textAlign: 'center' }}>מעבירים אתכם להעברת המתנה...</p>
         <a href={direct} rel="noopener noreferrer" style={primary}>
-          <span className="ms" aria-hidden style={{ fontSize: 22 }}>{LINK_ICON[options[0].kind] || 'redeem'}</span>
+          <PayLogo kind={options[0].kind} />
           {LINK_LABEL[options[0].kind] || 'מעבר להעברת המתנה'}
         </a>
       </>
@@ -161,13 +172,15 @@ export default function PublicGift() {
         </p>
         {options.map((o, i) => (
           <a key={o.kind} href={o.url} rel="noopener noreferrer" style={i === 0 ? primary : secondary}>
-            <span className="ms" aria-hidden style={{ fontSize: 22 }}>{LINK_ICON[o.kind] || 'redeem'}</span>
+            <PayLogo kind={o.kind} />
             {LINK_LABEL[o.kind] || 'מעבר להעברת המתנה'}
           </a>
         ))}
         {data.bit_phone && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 18, borderRadius: 16, border: `1px solid ${t.line}`, textAlign: 'center' }}>
-            <span style={{ fontSize: 14, color: t.muted }}>{options.length ? 'או העברה בביט למספר' : 'העברה בביט למספר'}</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 14, color: t.muted }}>
+              <PayLogo kind="bit" size={22} />{options.length ? 'או העברה בביט למספר' : 'העברה בביט למספר'}
+            </span>
             <span dir="ltr" style={{ fontSize: 26, fontWeight: 700, letterSpacing: 1, userSelect: 'all', fontVariantNumeric: 'tabular-nums' }}>{data.bit_phone}</span>
             <button type="button" onClick={copy} style={{ ...(options.length ? secondary : primary), minHeight: 46, fontSize: 15 }}>
               {copied ? 'הועתק ✓' : 'העתקת המספר'}

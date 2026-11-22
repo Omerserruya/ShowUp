@@ -15,6 +15,7 @@ otherwise never be resolved by anyone).
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 from typing import Any, Callable, Dict, Optional
@@ -23,6 +24,36 @@ from shared.domain.delivery import MessageDeliveryStatus
 from push_events import queue_round_sent
 
 logger = logging.getLogger(__name__)
+
+
+def queue_round_sent_whatsapp(cur, campaign_id, event_id, name: str, recipients: int) -> int:
+    """Queue a round_sent WhatsApp to each owner of the event (owner_notifications
+    outbox, drained by notifications.py). Once per round per phone."""
+    if recipients <= 0:
+        return 0
+    cur.execute(
+        """
+        SELECT e.name, u.phone
+        FROM events e
+        JOIN users u ON u.id::text IN (SELECT jsonb_array_elements_text(COALESCE(e.owners::jsonb, '[]'::jsonb)))
+        WHERE e.id = %s AND u.phone IS NOT NULL AND u.phone <> ''
+        """,
+        (str(event_id),),
+    )
+    queued = 0
+    for row in cur.fetchall():
+        ev_name, phone = (row[0], row[1]) if not isinstance(row, dict) else (row["name"], row["phone"])
+        params = {"1": (ev_name or "האירוע").strip(), "2": (name or "סבב הודעות").strip(), "3": str(recipients)}
+        cur.execute(
+            """
+            INSERT INTO owner_notifications (kind, recipient_phone, event_id, params, dedupe_key)
+            VALUES ('round_sent', %s, %s, %s::jsonb, %s)
+            ON CONFLICT (dedupe_key) DO NOTHING
+            """,
+            (phone, str(event_id), json.dumps(params, ensure_ascii=False), f"round_wa:{campaign_id}:{phone}"),
+        )
+        queued += cur.rowcount or 0
+    return queued
 
 # How long a message may sit QUEUED before we treat it as lost. Must exceed the
 # realistic outpost drain time of the largest backlog (incl. delayed retries,
@@ -104,6 +135,10 @@ def finalize_campaigns(conn, outpost_backlog: Optional[Callable[[], Optional[int
                     queue_round_sent(cur, cid, event_id, name or "", int(ok or 0))
                 except Exception as exc:
                     logger.warning("round-sent push not queued | campaign=%s: %s", cid, exc)
+                try:  # ... and the same on WhatsApp (system template round_sent)
+                    queue_round_sent_whatsapp(cur, cid, event_id, name or "", int(ok or 0))
+                except Exception as exc:
+                    logger.warning("round-sent WhatsApp not queued | campaign=%s: %s", cid, exc)
             else:
                 finalized_failed += 1
 

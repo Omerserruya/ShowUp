@@ -184,3 +184,21 @@ templates:
       ביקש/ה: {{3}}
 
       כל הפניות מחכות במסך "פניות" בניהול המערכת.
+
+  round_sent:
+    # To every event OWNER when a message round finished going out
+    # (scheduler-service/campaign_finalizer.py, next to the app push). Once per
+    # round per owner phone (dedupe_key round_wa:<campaign>:<phone>).
+    meta:
+      name: round_sent
+      category: UTILITY
+    language: he
+    params:
+      "1": event name
+      "2": round name (e.g. הזמנה / תזכורת לאירוע)
+      "3": guests the round reached (count)
+    body: |-
+      עדכון על האירוע "{{1}}" 📤
+
+      הסבב "{{2}}" נשלח ל־{{3}} אורחים.
+      התשובות שלהם יתעדכנו אצלכם באפליקציה של ShowUp.
