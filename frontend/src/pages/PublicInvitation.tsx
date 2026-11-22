@@ -112,6 +112,19 @@ export default function PublicInvitation() {
           />
         )}
       />
+      <Box
+        component="a"
+        href="https://showup-rsvp.com/?utm_source=invitation&utm_medium=footer"
+        target="_blank"
+        rel="noopener"
+        sx={{
+          display: 'block', textAlign: 'center', py: 2.5, borderTop: `1px solid ${t.line}`,
+          fontFamily: t.bodyFont, fontSize: 12.5, color: t.muted, textDecoration: 'none',
+          '&:hover': { color: t.ink },
+        }}
+      >
+        נשלח באמצעות <Box component="span" sx={{ fontWeight: 700 }}>ShowUp</Box> · אישורי הגעה לאירועים
+      </Box>
       {data.invitation?.envelope?.enabled && !alreadyOpened && (
         <EnvelopeIntro
           config={data.invitation}
