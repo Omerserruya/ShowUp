@@ -4,6 +4,8 @@ import {
   DialogContent, DialogActions, TextField, MenuItem, Select, FormControl, InputLabel,
   CircularProgress, Alert, Divider, Tooltip, alpha, useTheme,
 } from '@mui/material';
+import SubjectFields from '../../components/SubjectFields';
+import { EMPTY_SUBJECTS, EventSubjects, HOST_NAMES_HINT, hasHostNames } from '../../config/eventSubjects';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import StorefrontRoundedIcon from '@mui/icons-material/StorefrontRounded';
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
@@ -246,13 +248,14 @@ function CreateEventDialog({
     event_type: 'wedding', name: '', event_date: '',
     owner_first_name: '', owner_last_name: '', owner_phone: '', owner_email: '',
   });
+  const [subjects, setSubjects] = useState<EventSubjects>(EMPTY_SUBJECTS);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const canSubmit = form.name.trim() && form.owner_first_name.trim() && form.owner_phone.trim();
+  const canSubmit = form.name.trim() && hasHostNames(subjects) && form.owner_first_name.trim() && form.owner_phone.trim();
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -263,6 +266,7 @@ function CreateEventDialog({
         method: 'POST',
         body: JSON.stringify({
           event_type: form.event_type,
+          subjects,
           name: form.name.trim(),
           event_date: form.event_date ? new Date(form.event_date).toISOString() : null,
           owner_first_name: form.owner_first_name.trim(),
@@ -278,11 +282,12 @@ function CreateEventDialog({
       }
       if (!r.ok) {
         const body = await r.json().catch(() => ({}));
-        setErr(body.detail || 'יצירת האירוע נכשלה. נסו שוב.');
+        setErr(body.detail?.message || (typeof body.detail === 'string' && body.detail) || 'יצירת האירוע נכשלה. נסו שוב.');
         return;
       }
       // reset for next time
       setForm({ event_type: 'wedding', name: '', event_date: '', owner_first_name: '', owner_last_name: '', owner_phone: '', owner_email: '' });
+      setSubjects(EMPTY_SUBJECTS);
       onCreated();
     } catch {
       setErr('יצירת האירוע נכשלה. נסו שוב.');
@@ -308,6 +313,11 @@ function CreateEventDialog({
               {catalog.event_types.map((t) => <MenuItem key={t.key} value={t.key}>{t.name_he}</MenuItem>)}
             </Select>
           </FormControl>
+          <SubjectFields eventType={form.event_type} subjects={subjects} disabled={saving}
+            onChange={(patch) => setSubjects((s) => ({ ...s, ...patch }))} />
+          {!hasHostNames(subjects) && (
+            <Typography variant="caption" color="text.secondary">{HOST_NAMES_HINT}</Typography>
+          )}
           <TextField size="small" label="שם האירוע" value={form.name} onChange={set('name')} fullWidth required />
           <TextField size="small" label="תאריך האירוע" type="datetime-local" value={form.event_date}
             onChange={set('event_date')} fullWidth InputLabelProps={{ shrink: true }} />

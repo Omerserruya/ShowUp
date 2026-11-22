@@ -18,7 +18,7 @@ from shared.domain.messaging import (  # noqa: E402
 )
 from shared.domain.messaging.catalog import MetaShape  # noqa: E402
 from shared.domain.messaging import custom_templates as ct  # noqa: E402
-from shared.domain.messaging.meta_adapter import _slot_value, _button_suffix  # noqa: E402
+from shared.domain.messaging.meta_adapter import _slot_value, _button_suffix, _nav_query  # noqa: E402
 
 EVENT = {
     "id": "00000000-0000-0000-0000-000000000001",
@@ -222,6 +222,11 @@ def test_custom_image_header_event_vs_fixed():
     d2 = _doc(header={"type": "image", "url": "https://cdn.x/sample.jpg", "source": "fixed"})
     p2 = build_meta_parameters(ct.template_from_custom_row(_row(d2)), vals)
     assert p2["header"]["media_url"] == "https://cdn.x/sample.jpg"
+    # the round editor asks for (and previews) a per-round image only when the
+    # image comes from the event, exactly like catalog image templates
+    assert ct.template_from_custom_row(_row(d)).preview.header == "image"
+    assert ct.template_from_custom_row(_row(d2)).preview.header == "none"
+    assert ct.template_from_custom_row(_row(_doc())).preview.header == "none"
 
 
 # --------------------------------------------------------------------------- byte-identical existing delivery
@@ -241,7 +246,10 @@ def _frozen_build_meta_parameters(template, values):
     if meta.buttons:
         qr_offset = min(len(template.quick_replies or ()), 3)
         out["buttons"] = [
-            {"type": b.type, "index": qr_offset + b.index, "url": _button_suffix(values.get(b.var) or b.default)}
+            # nav_link: the Waze button takes the search text (fixed 2.11.26).
+            {"type": b.type, "index": qr_offset + b.index,
+             "url": _nav_query(values, b.default) if b.var == "nav_link"
+             else _button_suffix(values.get(b.var) or b.default)}
             for b in meta.buttons
         ]
     return out
@@ -296,3 +304,14 @@ if __name__ == "__main__":
             print(f"  [FAIL] {n}: {exc!r}")
     print(f"\nRESULT: {len(fns) - failed}/{len(fns)} checks passed")
     sys.exit(1 if failed else 0)
+
+
+def test_event_time_is_israel_wall_clock():
+    from datetime import datetime, timezone
+    from shared.domain.messaging.resolver import format_event_date, format_event_time
+    # stored as a UTC instant (what the app saves) -> guests read Israel time
+    assert format_event_time(datetime(2026, 11, 3, 9, 46, tzinfo=timezone.utc)) == "11:46"
+    assert format_event_time("2026-07-01T17:00:00+00:00") == "20:00"  # summer, +3
+    assert format_event_date(datetime(2026, 11, 3, 22, 30, tzinfo=timezone.utc)) == "יום רביעי, ה־4.11.26"
+    # a naive value is already wall-clock - unchanged
+    assert format_event_time("2026-12-03T19:30:00") == "19:30"

@@ -180,12 +180,12 @@ def test_every_creation_path_queues_one_assistant_intro(client, db, owner_direct
 
     user_id = uuid.uuid4()
     if creator == "self_service":
-        r = client.post("/events", json={"name": "חתונה"}, headers=auth_header(user_id))
+        r = client.post("/events", json={"terms_version": "2026-11-01", "name": "חתונה", "subjects": {"p1": "נועה", "p2": "יונתן"}}, headers=auth_header(user_id))
         assert r.status_code == 201
         event_id = r.json()["id"]
     else:
         ent = entitlement_service.issue(db, source=EntitlementSource.PROMOTION, plan_id="starter")
-        r = client.post(f"/redeem/{ent.code}", json={"name": "בר מצווה"}, headers=auth_header(user_id))
+        r = client.post(f"/redeem/{ent.code}", json={"terms_version": "2026-11-01", "name": "בר מצווה", "subjects": {"honoree": "דניאל"}}, headers=auth_header(user_id))
         assert r.status_code == 201
         event_id = r.json()["id"]
 
@@ -215,6 +215,6 @@ def test_event_creation_survives_a_dead_user_directory(client, db, monkeypatch):
     from app import user_directory
 
     monkeypatch.setattr(user_directory, "resolve_users_by_ids", lambda ids: {})
-    r = client.post("/events", json={"name": "אירוע"}, headers=auth_header(uuid.uuid4()))
+    r = client.post("/events", json={"terms_version": "2026-11-01", "name": "אירוע", "subjects": {"p1": "נועה", "p2": "יונתן"}}, headers=auth_header(uuid.uuid4()))
     assert r.status_code == 201
     assert _intro_rows(db, r.json()["id"]) == []

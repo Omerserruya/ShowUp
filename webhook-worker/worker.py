@@ -28,6 +28,7 @@ MAX_ATTEMPTS = int(os.getenv("WEBHOOK_MAX_RETRIES", "5"))
 RETRY_DELAY_MS = int(os.getenv("WEBHOOK_RETRY_DELAY_MS", "30000"))
 PREFETCH = int(os.getenv("WEBHOOK_PREFETCH", "8"))
 SEEN_CLEANUP_INTERVAL_S = 3600
+NUDGE_INTERVAL_S = 600
 
 
 class Worker:
@@ -298,18 +299,29 @@ class Worker:
                 logger.warning("inbound_seen cleanup failed: %s", e)
             await asyncio.sleep(SEEN_CLEANUP_INTERVAL_S)
 
+    async def _nudge_loop(self) -> None:
+        while True:
+            try:
+                await self.flow_manager.send_count_nudges()
+            except Exception as e:
+                logger.warning("count nudges failed: %s", e)
+            await asyncio.sleep(NUDGE_INTERVAL_S)
+
     async def start(self) -> None:
         await self.connect()
         queue = await self.channel.declare_queue(self.webhook_queue, durable=True)
         await queue.consume(self._on_message, no_ack=False)
         if self._cleanup_task is None:
             self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+            self._nudge_task = asyncio.create_task(self._nudge_loop())
         logger.info("Webhook worker started", extra={"queue": self.webhook_queue})
 
     async def close(self) -> None:
         try:
             if self._cleanup_task:
                 self._cleanup_task.cancel()
+            if getattr(self, "_nudge_task", None):
+                self._nudge_task.cancel()
             if self.channel and not self.channel.is_closed:
                 await self.channel.close()
             if self.out_channel and not self.out_channel.is_closed:

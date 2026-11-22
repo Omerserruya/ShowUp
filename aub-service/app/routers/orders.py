@@ -143,6 +143,8 @@ def _ensure_orders_table_ddl(env: Dict[str, Any]) -> None:
           # Event-type-specific subjects (bride/groom/parents/baby/…), forwarded
           # to the event so subject variables resolve at delivery.
           "ALTER TABLE orders ADD COLUMN IF NOT EXISTS subjects JSONB",
+          # Terms-of-use version the buyer ticked in the wizard, carried to the event.
+          "ALTER TABLE orders ADD COLUMN IF NOT EXISTS terms_version TEXT",
           # Order kind: 'plan' (default - new event or plan change) or
           # 'extra_round' (buy one paid message round for an existing event).
           "ALTER TABLE orders ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'plan'",
@@ -204,6 +206,7 @@ class OrderCreate(BaseModel):
   location: Optional[Dict[str, Any]] = None
   inviters: Optional[List[Dict[str, Any]]] = None
   subjects: Optional[Dict[str, Any]] = None
+  terms_version: Optional[str] = Field(None, max_length=20)
   campaigns: Optional[List[CampaignItem]] = None
 
 
@@ -396,6 +399,10 @@ def create_order(
 
   if payload.event_id:
     _require_event_owner(str(payload.event_id), authorization)
+  elif not (payload.terms_version or "").strip():
+    # A new event: the buyer must have ticked the terms of use in the wizard.
+    raise HTTPException(status_code=422, detail={
+        "code": "terms_required", "message": "יש לאשר את תנאי השימוש לפני יצירת האירוע."})
 
   # Only plans that are actually on sale may be ordered. `get_plan` deliberately
   # resolves inactive/internal tiers (so existing events keep working), which
@@ -452,6 +459,7 @@ def create_order(
               location,
               inviters,
               subjects,
+              terms_version,
               campaigns,
               access_token
           )
@@ -467,6 +475,7 @@ def create_order(
               %s::jsonb,
               %s::jsonb,
               %s::jsonb,
+              %s,
               %s::jsonb,
               %s
           )
@@ -484,6 +493,7 @@ def create_order(
               psycopg2.extras.Json(payload.location) if payload.location is not None else None,
               psycopg2.extras.Json(payload.inviters) if payload.inviters is not None else None,
               psycopg2.extras.Json(payload.subjects) if payload.subjects is not None else None,
+              payload.terms_version,
               # Use Pydantic's JSON mode so datetimes become ISO strings before jsonb insert
               psycopg2.extras.Json(
                   [c.model_dump(mode="json") for c in payload.campaigns]
@@ -1430,6 +1440,7 @@ def provision_order(order_id: uuid.UUID) -> Dict[str, Any]:
       # Carry the event-type-specific subjects so subject variables resolve at
       # delivery exactly as they did in the wizard preview.
       "subjects": order_row.get("subjects"),
+      "terms_version": order_row.get("terms_version"),
   }
   print(f"[PROVISION] Event payload: name={event_payload['name']}, location={location_str[:100] if location_str else None}...")
 

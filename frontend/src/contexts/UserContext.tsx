@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { setUserContext } from '../observability';
 import { fetchWithAuth } from '../utils/fetchWithAuth';
+import { forgetPushDevice, registerForPush } from '../native/app';
 
 export interface User {
   _id: string;
@@ -198,6 +199,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Function to clear user data
   const clearUser = () => {
+    forgetPushDevice();
     setUser(null);
     localStorage.removeItem('user_id');
     localStorage.removeItem('access_token');
@@ -215,6 +217,11 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     refreshUserDetails();
   }, []);
+
+  // Inside the mobile app: once someone is logged in, register for push.
+  useEffect(() => {
+    if (user) registerForPush();
+  }, [user]);
 
   return (
     <UserContext.Provider value={{

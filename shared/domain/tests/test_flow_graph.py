@@ -25,7 +25,7 @@ sys.path.insert(0, _ROOT)
 from shared.domain import flow_config as fc  # noqa: E402
 from shared.domain import flow_graph as fg  # noqa: E402
 
-LEGACY_STATES = {"rsvp_invite", "rsvp_count", "rsvp_count_retry", "rsvp_info_question", "note_info", "rsvp_done",
+LEGACY_STATES = {"rsvp_invite", "rsvp_count", "rsvp_count_retry", "rsvp_info_question", "note_info", "note_saved", "rsvp_done",
                  "rsvp_update", "rsvp_decline", "rsvp_maybe", "didnt_understand", "question_answer",
                  "question_answer_retry"}
 

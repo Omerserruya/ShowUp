@@ -22,3 +22,6 @@ rabbitmqadmin
 **/.omc
 **/**/.omc
 graphify-out/
+
+# Local-only keys (Android signing, Firebase)
+secrets/

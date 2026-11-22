@@ -60,7 +60,8 @@ def auth_header(user_id) -> dict:
 
 def make_event(db, owner_id) -> "uuid.UUID":
     from app.models.models import Event
-    event = Event(owners=[str(owner_id)], inviters=[], name="Test Event", active=True)
+    event = Event(owners=[str(owner_id)], inviters=[], name="Test Event", active=True,
+                  subjects={"p1": "נועה", "p2": "יונתן"})
     db.add(event)
     db.commit()
     db.refresh(event)
@@ -95,7 +96,8 @@ def make_account_with_event(db, members: dict):
     db.flush()
     for uid, role in members.items():
         db.add(Membership(account_id=account.id, user_id=uid, role=role, status="active"))
-    event = Event(owners=[], inviters=[], name="Acct Event", active=True, account_id=account.id)
+    event = Event(owners=[], inviters=[], name="Acct Event", active=True, account_id=account.id,
+                  subjects={"p1": "נועה", "p2": "יונתן"})
     db.add(event)
     db.commit()
     db.refresh(event)

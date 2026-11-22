@@ -2,6 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# ffmpeg: speeds the voice up without raising its pitch (tts.TEMPO, atempo).
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+
 # Build context is the repo root.
 COPY voice-service/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

@@ -74,6 +74,8 @@ import GuestTimeline from '../components/GuestTimeline';
 import BulkActionsBar from '../components/BulkActionsBar';
 import TagPickerDialog, { Tag } from '../components/TagPickerDialog';
 import CopyGuestsDialog from '../components/CopyGuestsDialog';
+import PhoneContactsPicker from '../components/PhoneContactsPicker';
+import { PhoneContact, canReadContacts } from '../native/app';
 import GuestsSummary from '../components/GuestsSummary';
 
 // POST /api/guests/bulk result (core GuestImportReport). One bad row never
@@ -262,7 +264,8 @@ function Guests() {
   const [importReport, setImportReport] = useState<ImportReport | null>(null);
   const [importReportDetails, setImportReportDetails] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [importTab, setImportTab] = useState<'whatsapp' | 'upload'>('whatsapp');
+  // Inside the mobile app the address book is the natural first choice.
+  const [importTab, setImportTab] = useState<'contacts' | 'whatsapp' | 'upload'>('whatsapp');
   const [importDragOver, setImportDragOver] = useState(false);
   const [deleteConfirmGuestId, setDeleteConfirmGuestId] = useState<string | null>(null);
   const [changeCountGuestId, setChangeCountGuestId] = useState<string | null>(null);
@@ -612,6 +615,44 @@ function Guests() {
       setSnackbar({ open: true, message: 'שגיאה בהורדת התבנית', severity: 'error' });
     }
   }, []);
+
+  // Guests picked from the phone's address book (mobile app) - same bulk import
+  // and report as a file.
+  // Contacts picked from the phone go to the approval panel (like contacts shared
+  // on WhatsApp) - they become guests only after the host approves them.
+  const [contactsPickerOpen, setContactsPickerOpen] = useState(false);
+  const [importsKey, setImportsKey] = useState(0);
+  const handleImportContacts = useCallback(async (picked: PhoneContact[]) => {
+    if (!selectedEvent?.id || !picked.length) return;
+    try {
+      setImporting(true);
+      const response = await fetchWithAuth(`/api/guest-imports/phone-contacts?event_id=${selectedEvent.id}`, {
+        method: 'POST',
+        body: JSON.stringify({ contacts: picked.map((c) => ({ name: c.name.slice(0, 200), phone: c.phone.slice(0, 20) })) }),
+      });
+      if (!response.ok) {
+        setSnackbar({ open: true, message: await guestApiError(response, 'שגיאה בהוספת אנשי הקשר'), severity: 'error' });
+        return;
+      }
+      const { added, skipped } = await response.json();
+      setContactsPickerOpen(false);
+      setImportModalOpen(false);
+      setImportsKey((k) => k + 1);
+      setSnackbar({
+        open: true,
+        severity: added ? 'success' : 'warning',
+        message: added
+          ? `${added === 1 ? 'איש קשר אחד מחכה' : `${added} אנשי קשר מחכים`} לאישור שלכם${skipped ? ` (${skipped} כבר ברשימה)` : ''}`
+          : 'כל אנשי הקשר שבחרתם כבר ברשימה או מחכים לאישור',
+      });
+      window.setTimeout(() => document.getElementById('pending-imports')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 400);
+    } catch (error) {
+      console.error('Error importing contacts:', error);
+      setSnackbar({ open: true, message: 'שגיאה בהוספת האורחים', severity: 'error' });
+    } finally {
+      setImporting(false);
+    }
+  }, [selectedEvent?.id]);
 
   // Import guests from CSV/XLSX
   // --- CSV preview & validation (gives users confidence before they commit) ---
@@ -1054,6 +1095,7 @@ function Guests() {
           return Math.floor((new Date(d).getTime() - Date.now()) / 86400000);
         })()}
         onAdd={() => setGuestModalOpen(true)}
+        onAddFromContacts={canReadContacts() ? () => setContactsPickerOpen(true) : undefined}
         onImport={() => setImportModalOpen(true)}
         onExport={(e) => setExportMenuAnchor(e.currentTarget)}
         exportLoading={exportLoading}
@@ -1084,6 +1126,15 @@ function Guests() {
 
 
       {/* Delete confirmation dialog */}
+      <ResponsiveDialog open={contactsPickerOpen} onClose={() => !importing && setContactsPickerOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ px: 3, pt: 3, pb: 0 }}>
+          <Typography component="div" sx={{ fontWeight: 800, fontSize: '1.35rem', letterSpacing: '-0.02em' }}>הוספה מאנשי הקשר</Typography>
+          <Typography sx={{ mt: 0.5, fontSize: '0.9rem', color: 'text.secondary' }}>מסמנים את מי להזמין. אחר כך מאשרים כל אחד, ורק אז הוא נכנס לרשימה.</Typography>
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, pt: 2.5, pb: 2 }}>
+          {contactsPickerOpen && <PhoneContactsPicker busy={importing} onAdd={handleImportContacts} />}
+        </DialogContent>
+      </ResponsiveDialog>
       <ResponsiveDialog
         open={!!deleteConfirmGuestId}
         onClose={() => setDeleteConfirmGuestId(null)}
@@ -1190,7 +1241,9 @@ function Guests() {
       <Box>
         {/* Imported Guests Section - Desktop */}
         <Box sx={{ mb: 2.25 }}>
-          <PendingImportsPanel groups={uniqueGroups} onChanged={() => { setRefreshKey(prev => prev + 1); refreshSnapshot(); }} />
+          <div id="pending-imports" style={{ scrollMarginTop: 90 }}>
+            <PendingImportsPanel key={importsKey} groups={uniqueGroups} onChanged={() => { setRefreshKey(prev => prev + 1); refreshSnapshot(); }} />
+          </div>
         </Box>
 
         {/* Desktop Table View */}
@@ -3156,6 +3209,10 @@ function Guests() {
               );
             })}
           </Box>
+
+          {importTab === 'contacts' ? (
+            <PhoneContactsPicker busy={importing} onAdd={handleImportContacts} />
+          ) : null}
 
           {importTab === 'whatsapp' ? (
             <Stack spacing={2.5} sx={{ pb: 1 }}>

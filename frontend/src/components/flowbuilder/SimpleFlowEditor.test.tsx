@@ -45,7 +45,7 @@ it('adding a choice adds a row; splitting a category clones its messages', () =>
   expect(latest.edges.length).toBe(before + 1);
   expect(latest.nodes.find((n) => n.id === 'rsvp_maybe')!.buttons).toHaveLength(3);
 
-  fireEvent.click(screen.getByRole('tab', { name: /^תזכורת\s*\d*$/ }));
+  fireEvent.click(screen.getByRole('tab', { name: /^אישור הגעה נוסף\s*\d*$/ }));
   fireEvent.click(screen.getByText('פיצול לקטגוריה נפרדת'));
   fireEvent.click(screen.getByText('כן, לפצל'));
   expect(latest.nodes).toHaveLength(24);

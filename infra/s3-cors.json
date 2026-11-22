@@ -2,8 +2,8 @@
   "CORSRules": [
     {
       "AllowedOrigins": [
-        "https://dev.28042000.xyz",
-        "https://*.28042000.xyz",
+        "https://showup-rsvp.com",
+        "https://www.showup-rsvp.com",
         "http://localhost:3000"
       ],
       "AllowedMethods": ["PUT", "GET", "HEAD"],

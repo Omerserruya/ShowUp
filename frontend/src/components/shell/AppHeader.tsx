@@ -65,7 +65,7 @@ export default function AppHeader() {
   if (!title) return null;
 
   return (
-    <Box component="header" sx={{ position: 'sticky', top: isBannerVisible ? '48px' : 0, zIndex: 1100, bgcolor: 'rgba(245,241,233,.9)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', borderBottom: `1.5px solid ${C.lineApp}` }}>
+    <Box component="header" sx={{ position: 'sticky', top: isBannerVisible ? 'calc(48px + env(safe-area-inset-top, 0px))' : 'env(safe-area-inset-top, 0px)', zIndex: 1100, bgcolor: 'rgba(245,241,233,.9)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', borderBottom: `1.5px solid ${C.lineApp}` }}>
       <Box sx={{ maxWidth: 1240, mx: 'auto', px: { xs: 2.25, md: 4 }, pt: { xs: 1.75, md: 2.25 }, pb: { xs: 1.5, md: 2 }, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 2.25, flexWrap: 'wrap' }}>
         <Box sx={{ minWidth: 0 }}>
           {kicker && <Box sx={{ fontSize: 12, letterSpacing: '.06em', color: C.purple, fontWeight: 500 }}>{kicker}</Box>}

@@ -6,7 +6,8 @@ import psycopg2
 import psycopg2.extras
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from shared.domain.delivery import MessageDeliveryStatus, ensure_messages_sent_schema
+from shared.domain.delivery import (MessageDeliveryStatus, ensure_messages_sent_schema,
+                                    RETRY_LATER_CODES, RETRY_LATER_MAX)
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +143,7 @@ def fetch_event_by_id(conn: psycopg2.extensions.connection, event_id: str) -> Op
         cur.execute(
             """
             SELECT id, name, description, event_date, location, active, event_type,
-                   subjects, public_slug, wa_image_url, created_at, updated_at, inviters, owners, account_id
+                   subjects, public_slug, wa_image_url, gift, share_code, created_at, updated_at, inviters, owners, account_id
             FROM events
             WHERE id = %s
             """,
@@ -226,6 +227,52 @@ def claim_message(conn: psycopg2.extensions.connection, campaign_id: str, guest_
             RETURNING 1
             """,
             (campaign_id, guest_id, MessageDeliveryStatus.QUEUED.value),
+        )
+        return cur.fetchone() is not None
+
+
+def fetch_replacement_ref(conn, template_key: str, event_type: Optional[str]) -> Optional[str]:
+    """`custom__<key>` of the Meta-approved Studio copy that replaces this
+    catalog template (core app/template_placement.py), for this event type."""
+    if not template_key or template_key.startswith("custom__"):
+        return None
+    fam = template_key.split("__", 1)[0]
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT key, live->'doc'->'event_types' FROM custom_templates
+                WHERE NOT archived AND live->>'status' = 'approved'
+                  AND live->'doc'->>'replaces' = %s
+                ORDER BY updated_at DESC
+                """, (fam,))
+            for key, ets in cur.fetchall():
+                if not ets or (event_type or "").lower() in ets:
+                    return f"custom__{key}"
+    except Exception:
+        return None
+    return None
+
+
+def claim_retry(conn: psycopg2.extensions.connection, campaign_id: str, guest_id: str) -> bool:
+    """Re-open a retry-later failure for one more send (True if THIS caller won).
+
+    Resets the row to QUEUED with no wamid, so outpost's send claim treats it as
+    a fresh message. Atomic, and bounded by retry_count, so a duplicate retry
+    request can never send twice."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE messages_sent
+            SET status = %s, wa_message_id = NULL, error_code = NULL, error_detail = NULL,
+                send_claimed_at = NULL, send_reclaimed = false,
+                retry_count = retry_count + 1, sent_at = NOW(), updated_at = NOW()
+            WHERE campaign_id = %s AND guest_id = %s
+              AND status = %s AND error_code = ANY(%s) AND retry_count < %s
+            RETURNING 1
+            """,
+            (MessageDeliveryStatus.QUEUED.value, campaign_id, guest_id,
+             MessageDeliveryStatus.FAILED.value, list(RETRY_LATER_CODES), RETRY_LATER_MAX),
         )
         return cur.fetchone() is not None
 

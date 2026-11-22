@@ -165,11 +165,17 @@ def _has_phrase(tokens: list, phrases) -> bool:
     return False
 
 
+# A question is never an answer: "כמה מגיעים לאירוע?" was recorded as attending.
+_QUESTION_WORDS = ("כמה", "מתי", "איפה", "מה", "למה", "איך", "האם", "מי", "באיזה", "איזה", "לאן", "מאיפה")
+
+
 def _heuristic_text_action(t: str) -> RsvpAction:
     if len(t) > _MAX_HEURISTIC_CHARS:
         return RsvpAction.UNKNOWN
     tokens = tokenize_reply(t)
     if not tokens or len(tokens) > _MAX_HEURISTIC_TOKENS:
+        return RsvpAction.UNKNOWN
+    if "?" in t or tokens[0] in _QUESTION_WORDS:
         return RsvpAction.UNKNOWN
     if _has_phrase(tokens, _MAYBE_PHRASES):
         return RsvpAction.MAYBE
@@ -210,6 +216,8 @@ def parse_guest_count(text: Optional[str]) -> Optional[int]:
     raw = str(text).strip()
     if _re.fullmatch(r"\d{1,12}", raw):
         return int(raw)
+    if _re.fullmatch(r"[-\u2212\u2013]\s*\d+", raw):
+        return None   # "-1": tokenizing drops the minus and would read it as 1
     tokens = tokenize_reply(raw)
     if not tokens or len(tokens) > 4:
         return None

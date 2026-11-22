@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Box, Typography, Stack, ButtonBase, alpha, useTheme } from '@mui/material';
 import { useSearchParams } from 'react-router-dom';
 import PersonRoundedIcon from '@mui/icons-material/PersonRounded';
@@ -7,6 +7,9 @@ import CreditCardRoundedIcon from '@mui/icons-material/CreditCardRounded';
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded';
 import EventRoundedIcon from '@mui/icons-material/EventRounded';
 import QuizRoundedIcon from '@mui/icons-material/QuizRounded';
+import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded';
+import PushTestRow from '../components/PushTestRow';
+import DeleteAccountSection from '../components/DeleteAccountSection';
 import EventDetailsPanel from '../components/v6/EventDetailsPanel';
 import GuestQuestionsPanel from '../components/v6/GuestQuestionsPanel';
 import Profile from './Profile';
@@ -14,6 +17,7 @@ import Team from './Team';
 import Billing from './Billing';
 import EventImagesPanel from '../components/EventImagesPanel';
 import { useEvent } from '../contexts/EventContext';
+import { purchasesHidden } from '../native/app';
 
 /**
  * Unified account settings - Profile, Team and Billing under one page with a
@@ -21,14 +25,19 @@ import { useEvent } from '../contexts/EventContext';
  * The sub-pages render in `embedded` mode. Deep-linkable via `?tab=`.
  */
 const TABS = [
-  { key: 'event', label: 'פרטי האירוע', desc: 'שם, תאריך, שעה ומקום', icon: <EventRoundedIcon /> },
+  { key: 'event', label: 'פרטי האירוע', desc: 'שם, תאריך, שעה, מקום ובעלי האירוע', icon: <EventRoundedIcon /> },
   { key: 'profile', label: 'הפרופיל שלי', desc: 'פרטים אישיים והעדפות', icon: <PersonRoundedIcon /> },
   { key: 'team', label: 'הצוות', desc: 'שותפים והרשאות', icon: <Diversity3RoundedIcon /> },
   { key: 'questions', label: 'שאלות לאורחים', desc: 'הסעה ושאלות אחרי אישור הגעה', icon: <QuizRoundedIcon /> },
   { key: 'media', label: 'תמונות האירוע', desc: 'תמונת וואטסאפ והזמנה', icon: <PhotoLibraryRoundedIcon /> },
   // "חבילה", never "מנוי" - the product promise is a one-time payment, no subscription.
+  // App Store 5.1.1(v): account deletion must be easy to find - its own tab,
+  // also linked straight from the mobile "עוד" sheet.
+  { key: 'account', label: 'החשבון', desc: 'התראות ומחיקת החשבון', icon: <ManageAccountsRoundedIcon /> },
   { key: 'billing', label: 'חבילה ותשלום', desc: 'החבילה והשימוש שלך', icon: <CreditCardRoundedIcon /> },
 ] as const;
+
+const visibleTabs = () => (purchasesHidden() ? TABS.filter((t) => t.key !== 'billing') : TABS);
 
 export default function Settings() {
   const theme = useTheme();
@@ -36,14 +45,20 @@ export default function Settings() {
   const { selectedEvent } = useEvent();
   const [params, setParams] = useSearchParams();
   const requested = params.get('tab');
-  const [tab, setTab] = useState<string>(TABS.some(t => t.key === requested) ? requested! : 'event');
+  const [tab, setTab] = useState<string>(visibleTabs().some(t => t.key === requested) ? requested! : 'event');
+
+  // The "עוד" sheet links to ?tab=account while Settings may already be open.
+  useEffect(() => {
+    if (requested && requested !== tab && visibleTabs().some(t => t.key === requested)) setTab(requested);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requested]);
 
   const select = (key: string) => {
     setTab(key);
     setParams(key === 'event' ? {} : { tab: key }, { replace: true });
   };
 
-  const active = TABS.find(t => t.key === tab) ?? TABS[0];
+  const active = visibleTabs().find(t => t.key === tab) ?? TABS[0];
 
   return (
     <Box sx={{ maxWidth: 1040, mx: 'auto', px: { xs: 0, sm: 1 }, py: { xs: 0.5, sm: 1 }, direction: 'rtl' }}>
@@ -58,7 +73,7 @@ export default function Settings() {
             '&::-webkit-scrollbar': { display: 'none' },
           }}
         >
-          {TABS.map((t) => {
+          {visibleTabs().map((t) => {
             const on = t.key === tab;
             return (
               <ButtonBase
@@ -112,6 +127,12 @@ export default function Settings() {
           {tab === 'event' && <EventDetailsPanel />}
           {tab === 'profile' && <Profile embedded />}
           {tab === 'team' && <Team embedded />}
+          {tab === 'account' && (
+            <Box>
+              <PushTestRow />
+              <DeleteAccountSection />
+            </Box>
+          )}
           {tab === 'questions' && <GuestQuestionsPanel />}
           {tab === 'media' && (selectedEvent?.id
             ? (<>
@@ -121,7 +142,7 @@ export default function Settings() {
                 <EventImagesPanel eventId={selectedEvent.id} />
               </>)
             : <Typography color="text.secondary">בחרו אירוע כדי לנהל את התמונות</Typography>)}
-          {tab === 'billing' && <Billing embedded />}
+          {tab === 'billing' && !purchasesHidden() && <Billing embedded />}
         </Box>
       </Box>
     </Box>

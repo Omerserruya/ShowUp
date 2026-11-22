@@ -38,5 +38,15 @@ check("local date of schedule_time", runtime._as_date(datetime(2026, 10, 6, 22, 
 r = runtime.release_instant(date(2026, 10, 5), None)
 check(f"default 09:00 local (got {r})", r == datetime(2026, 10, 5, 6, 0, tzinfo=timezone.utc))
 
+# 2026-10-29: event moved -> invitation shifted to 23:24 tonight; the clamp put it
+# at 09:00 TODAY (already past) and it fired at once. Now: next opening after it.
+sched = datetime(2026, 10, 29, 21, 24, tzinfo=timezone.utc)          # 23:24 IL (winter)
+now = datetime(2026, 10, 29, 13, 9, tzinfo=timezone.utc)              # 15:09 IL
+r = runtime.release_instant(date(2026, 10, 29), sched, now=now)
+check(f"night time today -> tomorrow 09:00, not 'now' (got {r})", r == datetime(2026, 10, 30, 7, 0, tzinfo=timezone.utc))
+# a future day keeps the old clamp (09:00 that day is still ahead)
+r = runtime.release_instant(date(2026, 11, 2), datetime(2026, 11, 2, 21, 24, tzinfo=timezone.utc), now=now)
+check(f"future night -> that day's 09:00 (got {r})", r == datetime(2026, 11, 2, 7, 0, tzinfo=timezone.utc))
+
 print("FAILED" if FAIL else "ALL PASSED")
 sys.exit(1 if FAIL else 0)

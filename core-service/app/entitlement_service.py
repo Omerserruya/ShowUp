@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 import secrets
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
 from sqlalchemy import text
@@ -34,6 +35,7 @@ from app.plans_client import plan_count_limit
 from app.notifications import queue_assistant_intro
 from app.provisioning import apply_entitlement, find_provisioned_event
 from shared.domain.enums import EntitlementSource, EntitlementStatus, EventState, PaymentStatus
+from shared.domain.messaging.resolver import event_host_label
 from shared.domain.rounds import included_rounds
 
 logger = logging.getLogger(__name__)
@@ -41,11 +43,26 @@ logger = logging.getLogger(__name__)
 # Event fields an issuer/redeemer may supply. Entitlement fields (plan, limits)
 # are decided here from the entitlement, never taken from this payload.
 _EVENT_FIELDS = ("name", "description", "event_date", "location", "inviters",
-                 "event_type", "subjects")
+                 "event_type", "subjects", "terms_version")
 
 
 class EntitlementError(Exception):
     """Base for entitlement failures."""
+
+
+class MissingHostNames(EntitlementError):
+    """No host / couple / company name - the bot texts and templates would go
+    out with a blank where the names belong. Every creation path refuses it
+    (app.main maps it to a 422); a PAID order only logs, the money is in."""
+
+
+def require_terms(version: Optional[str]) -> None:
+    """The self-service and gift-link creators must tick the terms of use (the
+    paid wizard records it on the order). Admin/venue create on someone's behalf."""
+    if not (version or "").strip():
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail={
+            "code": "terms_required", "message": "יש לאשר את תנאי השימוש לפני יצירת האירוע."})
 
 
 class EntitlementNotRedeemable(EntitlementError):
@@ -148,6 +165,13 @@ def _build_event(
     max_guests, campaign_rounds, source).
     """
     source = EntitlementSource.normalize(claim["source"])
+    fields = _clean_event_fields(event_fields)
+    if not event_host_label(fields):
+        if source != EntitlementSource.PAYMENT:
+            raise MissingHostNames("missing_host_names")
+        logger.warning("paid order %s provisioned without host names", order_id)
+    if fields.get("terms_version"):
+        fields["terms_accepted_at"] = datetime.now(timezone.utc)
     event = Event(
         owners=[str(owner_user_id)],
         account_id=account_id,
@@ -158,7 +182,7 @@ def _build_event(
         # Per-event limit overrides snapshot from the entitlement (NULL => plan default).
         max_guests_override=claim["max_guests"],
         included_rounds_override=claim["campaign_rounds"],
-        **_clean_event_fields(event_fields),
+        **fields,
     )
     apply_entitlement(event, plan_id=claim["plan_id"], payment_status=_settlement_for_source(source))
     db.add(event)
@@ -240,6 +264,9 @@ def redeem(
             {"eid": str(event.id), "id": str(claim["id"])},
         )
         db.commit()
+    except MissingHostNames:
+        db.rollback()  # the claim stays available - the code can be used again
+        raise
     except IntegrityError:
         # A concurrent payment IPN already created the event for this order (the
         # provisioning_order_id UNIQUE index fired). Roll our claim back and let
@@ -256,6 +283,16 @@ def redeem(
     # admin/venue direct-create. After the commit and best-effort by design: an
     # unsent intro must never undo a redeemed entitlement.
     queue_assistant_intro(db, event=event, owner_user_id=owner_user_id)
+    # Same promise for the round plan: an event is born with its message rounds.
+    # A paid wizard order carries its own (aub creates them from the order), so
+    # only events without an order get the default plan. Best-effort, after commit.
+    if not order_id:
+        try:
+            from app.default_rounds import ensure_default_rounds
+            ensure_default_rounds(db, event)
+        except Exception:  # noqa: BLE001
+            db.rollback()
+            logger.exception("default rounds failed for event %s", event.id)
     return event
 
 

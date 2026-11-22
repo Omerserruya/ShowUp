@@ -41,9 +41,9 @@ export const INPUT_LABEL: Record<InputType, string> = {
 export const STAGES: Stage[] = ['invitation', 'reminder', 'final_reminder', 'default'];
 
 export const STAGE_LABEL: Record<string, string> = {
-  invitation: 'הזמנה',
-  reminder: 'תזכורת',
-  final_reminder: 'תזכורת אחרונה',
+  invitation: 'אישור הגעה ראשוני',
+  reminder: 'אישור הגעה נוסף',
+  final_reminder: 'תזכורת לאירוע',
   default: 'הודעה חופשית מאורח',
 };
 
@@ -58,6 +58,7 @@ export const EDGE_KIND_LABEL: Record<EdgeKind, string> = {
   rsvp: 'זוהתה תשובת הגעה',
   number: 'ענו מספר',
   number_invalid: 'מספר לא תקין',
+  text_is: 'התשובה היא בדיוק',
   text_contains: 'טקסט שמכיל מילים',
   any_text: 'כל טקסט',
   done: 'אחרי השאלות / בסיום',
@@ -122,6 +123,12 @@ export function whenLabel(when: EdgeWhen, graph: FlowGraph, fromId: string): str
       return 'ענו מספר';
     case 'number_invalid':
       return 'מספר לא תקין';
+    case 'text_is': {
+      const w = (when.words || []).filter(Boolean);
+      if (!w.length) return when.no_words ? 'תשובה בלי מילים' : 'התשובה היא: (לא הוגדר)';
+      const shown = w.slice(0, 3).join(', ');
+      return `התשובה היא: ${shown}${w.length > 3 ? '…' : ''}`;
+    }
     case 'text_contains': {
       const w = (when.words || []).filter(Boolean);
       if (!w.length) return 'טקסט שמכיל: (לא הוגדר)';

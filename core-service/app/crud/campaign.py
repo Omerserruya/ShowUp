@@ -156,6 +156,25 @@ def derive_audience(db: Session, data) -> Tuple[str, Optional[dict]]:
     return derived
 
 
+def category_and_audience(db: Session, data, template_ref: Optional[str] = None,
+                          requested: Optional[str] = None):
+    """(category_id, audience, audience_filter) for a round. A template round
+    always gets a category, and the category's audience wins over anything the
+    client sent (app/round_categories.py). A round with no stage (free text)
+    keeps the old derivation."""
+    from app.round_categories import category_for, pair_of
+    from app.template_placement import effective_stage, own_stage, placed_category
+    ref = template_ref if template_ref is not None else data.template
+    stage = effective_stage(db, ref, own_stage(db, ref))
+    cat = category_for(db, requested if requested is not None else getattr(data, "category_id", None), stage,
+                       placed_category(db, ref))
+    if cat is None:
+        aud, flt = derive_audience(db, data)
+        return None, aud, flt
+    aud, flt = pair_of(cat)
+    return cat["id"], aud, flt
+
+
 def _as_aware(value: Optional[dt.datetime]) -> Optional[dt.datetime]:
     if value is None:
         return None
@@ -317,9 +336,10 @@ def create_campaign(db: Session, data: CampaignCreate) -> Campaign:
 
     _tkey = _canonical_key(data.template)
     _sid, _vid = _stage_variant(data.template)
-    audience, audience_filter = derive_audience(db, data)
+    category_id, audience, audience_filter = category_and_audience(db, data)
     campaign = Campaign(
         event_id=str(data.event_id),
+        category_id=category_id,
         name=data.name,
         template=data.template,
         template_key=_tkey,
@@ -469,6 +489,22 @@ def update_campaign(db: Session, campaign: Campaign, data: CampaignUpdate) -> Ca
         campaign.follow_up_audience = _aud(data.follow_up_audience)
     if data.header_image_url is not None:
         campaign.header_image_url = data.header_image_url or None
+    # The category decides the audience - re-applied on every edit, so a
+    # client-sent audience can never override it. A template change to another
+    # stage moves the round to that stage's built-in category.
+    if campaign.custom_message is None:
+        from app.round_categories import category_for, get_category, pair_of
+        from app.template_placement import effective_stage, own_stage, placed_category
+        stage = effective_stage(db, campaign.template, own_stage(db, campaign.template))
+        requested = data.category_id
+        if requested is None:
+            current = get_category(db, campaign.category_id)
+            requested = campaign.category_id if current and current["base_stage"] == stage else None
+        cat = category_for(db, requested, stage, placed_category(db, campaign.template))
+        if cat is not None:
+            aud, flt = pair_of(cat)
+            audience_changed = audience_changed or (aud, flt) != (campaign.audience, campaign.audience_filter)
+            campaign.category_id, campaign.audience, campaign.audience_filter = cat["id"], aud, flt
     if send_now:
         n = _recipient_count(db, campaign.event_id, campaign.audience, campaign.audience_filter)
         if n <= 0:
@@ -521,8 +557,13 @@ def create_campaigns_bulk(db: Session, event_id: uuid.UUID, items: List[Campaign
             logger.error("bulk campaign '%s' skipped for event %s: %s", data.name, event_id, e)
             continue
         _b_sid, _b_vid = _stage_variant(data.template)
-        _b_aud, _b_filter = derive_audience(db, data)
+        try:
+            _b_cat, _b_aud, _b_filter = category_and_audience(db, data)
+        except ValueError as e:
+            logger.error("bulk campaign '%s' skipped for event %s: %s", data.name, event_id, e)
+            continue
         c = Campaign(  # noqa: E128
+            category_id=_b_cat,
             template_key=_canonical_key(data.template),
             stage_id=_b_sid,
             variant_id=_b_vid,

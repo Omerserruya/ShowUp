@@ -114,6 +114,8 @@ export default function EnvelopeIntro({ config, names, embedded, onDone }: Envel
   const paperInk = lightPaper ? shade(paper, -72) : '#e7d8c4';
   const paperInkStrong = lightPaper ? shade(paper, -80) : '#efe2d2';
   const sealScript = (env.stampText && env.stampText.trim()) || 'wedding';
+  // "THE" over a Hebrew monogram reads as a mistake - English only.
+  const hebrewSeal = /[\u0590-\u05FF]/.test(sealScript);
   const paperLines = (env.paperText && env.paperText.trim()) ? env.paperText.trim().split('\n').slice(0, 3) : [];
 
   const [{ w, h }, setDim] = useState(dims);
@@ -229,10 +231,10 @@ export default function EnvelopeIntro({ config, names, embedded, onDone }: Envel
               C-25,-89 -19,-93 0,-92 Z" />
             <circle r="66" fill="url(#ef-waxinner)" filter="url(#ef-waxinset)" />
             <circle r="66" fill="none" stroke={ring} strokeWidth="1" opacity="0.4" />
-            <text x="0" y="-6" textAnchor="middle" fontFamily="Georgia,'Times New Roman',serif" fontSize="18" letterSpacing="4" fill={engrave} opacity="0.9">THE</text>
-            <text x="0" y="0" textAnchor="middle" fontFamily="Georgia,'Times New Roman',serif" fontSize="18" letterSpacing="4" fill="#fff" opacity="0.15">THE</text>
-            <text x="0" y="25" textAnchor="middle" fontFamily={font} fontStyle="italic" fontSize="33" fill={engrave} opacity="0.9">{sealScript}</text>
-            <text x="0" y="26.5" textAnchor="middle" fontFamily={font} fontStyle="italic" fontSize="33" fill="#fff" opacity="0.15">{sealScript}</text>
+            {!hebrewSeal && <text x="0" y="-6" textAnchor="middle" fontFamily="Georgia,'Times New Roman',serif" fontSize="18" letterSpacing="4" fill={engrave} opacity="0.9">THE</text>}
+            {!hebrewSeal && <text x="0" y="0" textAnchor="middle" fontFamily="Georgia,'Times New Roman',serif" fontSize="18" letterSpacing="4" fill="#fff" opacity="0.15">THE</text>}
+            <text x="0" y={hebrewSeal ? 13 : 25} textAnchor="middle" fontFamily={font} fontStyle="italic" fontSize="33" fill={engrave} opacity="0.9">{sealScript}</text>
+            <text x="0" y={hebrewSeal ? 14.5 : 26.5} textAnchor="middle" fontFamily={font} fontStyle="italic" fontSize="33" fill="#fff" opacity="0.15">{sealScript}</text>
           </g>
         </Box>
       </Box>

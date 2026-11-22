@@ -3,6 +3,7 @@ import logging
 import os
 import time
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Type
 
@@ -24,13 +25,17 @@ from shared.domain.delivery import (
 from shared.domain.enums import RsvpAction
 from shared.domain.rsvp import resolve_rsvp_action
 from shared.domain.optout import is_opt_in_text, is_opt_out_text
+from shared.domain.stage_replies import (
+    POST_EVENT_STAGES, acked_state, is_acked, is_stage_state, stage_of,
+)
 from states.base_state import BaseState, load_flow_config
 import graph_runtime
 from utils.phone import mask_phone, normalize_phone
 from states.rsvp_invite import RsvpInviteState
 from states.rsvp_count import RsvpCountState, RsvpCountRetryState
 from states.rsvp_info_question import RsvpInfoQuestionState
-from states.note_info import NoteInfoState
+from states.note_info import GUEST_NOTE_PREFIX, GUEST_NOTE_MAX, NoteInfoState, is_note
+from states.note_saved import NoteSavedState
 from states.rsvp_done import RsvpDoneState
 from states.rsvp_update import RsvpUpdateState
 from states.rsvp_decline import RsvpDeclineState
@@ -55,6 +60,13 @@ logger = logging.getLogger("flow_manager")
 # Two-key form so it can never collide with other advisory-lock users.
 GUEST_LOCK_NAMESPACE = 7301
 
+# "Confirmed but never said how many": one reminder, sent while the guest is
+# still inside WhatsApp's free 24h reply window and only at a decent hour.
+COUNT_NUDGE_AFTER_HOURS = 3
+COUNT_NUDGE_WINDOW_HOURS = 21      # last chance, safely inside the 24h window
+COUNT_NUDGE_LOCAL_HOURS = (9, 21)  # Israel time
+COUNT_NUDGE_STATE = "rsvp_count_nudge"   # messages_log marker - sent once
+
 # Meta only allows free-form (non-template) replies within 24h of the guest's
 # last message. Anything older (a backlog drained after an outage) is still
 # APPLIED (the RSVP is recorded) but we don't try to answer it.
@@ -66,7 +78,9 @@ STALE_REPLY_SECONDS = int(os.getenv("WEBHOOK_STALE_REPLY_SECONDS", str(23 * 3600
 FREE_TEXT_STATES = {"rsvp_count", "rsvp_count_retry", "note_info", *QUESTION_STATES}
 HOT_CONVERSATION_SECONDS = 2 * 3600
 # States in which a typed decline/maybe is re-applied through RsvpInviteState.
-TYPED_CHANGE_OF_HEART_STATES = {"rsvp_done", "rsvp_info_question", "rsvp_update", "rsvp_count", "rsvp_count_retry"}
+# Not the notes steps (rsvp_info_question / note_saved): there "לא אוכל בשר" or
+# "לא תודה" is a note or "nothing to add", never a decline.
+TYPED_CHANGE_OF_HEART_STATES = {"rsvp_done", "rsvp_update", "rsvp_count", "rsvp_count_retry"}
 
 # already_answered.behavior == "acknowledge": a template tap that repeats the
 # answer the guest is already in gets an acknowledgement instead of a re-run.
@@ -134,6 +148,7 @@ class FlowManager:
             "rsvp_count_retry": RsvpCountRetryState,
             "rsvp_info_question": RsvpInfoQuestionState,
             "note_info": NoteInfoState,
+            "note_saved": NoteSavedState,
             "rsvp_done": RsvpDoneState,
             "rsvp_update": RsvpUpdateState,
             "rsvp_decline": RsvpDeclineState,
@@ -203,6 +218,16 @@ class FlowManager:
         if not guest_phone:
             logger.warning("Missing guest_phone; skipping")
             return
+        async with self._guest_lock(guest_phone):
+            if wamid and not await self._claim(wamid, "message"):
+                logger.info("Duplicate inbound %s - already processed, skipping", wamid)
+                return
+            await self.handle_event(guest_phone=guest_phone, **kwargs)
+            if wamid:
+                await self._mark_done(wamid)
+
+    @asynccontextmanager
+    async def _guest_lock(self, guest_phone: str):
         lock_key = canonical_phone_digits(guest_phone) or guest_phone
         async with engine.connect() as lock_conn:
             await lock_conn.execute(
@@ -211,12 +236,7 @@ class FlowManager:
             )
             await lock_conn.commit()
             try:
-                if wamid and not await self._claim(wamid, "message"):
-                    logger.info("Duplicate inbound %s - already processed, skipping", wamid)
-                    return
-                await self.handle_event(guest_phone=guest_phone, **kwargs)
-                if wamid:
-                    await self._mark_done(wamid)
+                yield
             finally:
                 try:
                     await lock_conn.execute(
@@ -228,6 +248,62 @@ class FlowManager:
                     # Never return a connection that may still hold the lock.
                     logger.warning("advisory unlock failed, invalidating connection: %s", exc)
                     await lock_conn.invalidate()
+
+    async def send_count_nudges(self, now: Optional[datetime] = None) -> int:
+        """Guests who confirmed but never answered "how many?": one gentle
+        reminder, COUNT_NUDGE_AFTER_HOURS after their last message. The
+        conversation stays in its count state, so the reply is handled exactly
+        like an answer to the original question."""
+        now = now or datetime.now(timezone.utc)
+        from zoneinfo import ZoneInfo
+        start, end = COUNT_NUDGE_LOCAL_HOURS
+        if not start <= now.astimezone(ZoneInfo("Asia/Jerusalem")).hour < end:
+            return 0
+        async with AsyncSessionLocal() as session:
+            rows = (await session.execute(text(
+                """
+                SELECT c.id, c.guest_phone FROM conversations c
+                JOIN guests g ON g.id = c.guest_id
+                JOIN events e ON CAST(e.id AS text) = c.event_id
+                JOIN LATERAL (SELECT max(created_at) AS at FROM messages_log
+                              WHERE conversation_id = c.id AND direction = 'incoming') li ON true
+                WHERE c.active AND c.current_state IN ('rsvp_count', 'rsvp_count_retry')
+                  AND g.guest_count IS NULL AND g.opted_out_at IS NULL
+                  AND (e.event_date IS NULL OR e.event_date > :now)
+                  AND li.at BETWEEN :now - make_interval(hours => :window) AND :now - make_interval(hours => :after)
+                  AND NOT EXISTS (SELECT 1 FROM messages_log m WHERE m.conversation_id = c.id AND m.state = :marker)
+                """), {"now": now, "window": COUNT_NUDGE_WINDOW_HOURS, "after": COUNT_NUDGE_AFTER_HOURS,
+                       "marker": COUNT_NUDGE_STATE})).fetchall()
+        sent = 0
+        for conv_id, phone in rows:
+            try:
+                async with self._guest_lock(phone):
+                    sent += await self._send_count_nudge(conv_id)
+            except Exception:
+                logger.exception("count nudge failed conversation=%s", conv_id)
+        if sent:
+            logger.info("count nudges sent: %d", sent)
+        return sent
+
+    async def _send_count_nudge(self, conv_id) -> int:
+        async with AsyncSessionLocal() as session:
+            conv = await session.get(Conversation, conv_id)
+            # Re-checked under the guest lock: they may have just answered.
+            if not conv or conv.current_state not in ("rsvp_count", "rsvp_count_retry"):
+                return 0
+            handler = RsvpCountState(self)
+            outgoing = await handler.build_text(
+                session, conv, await handler.cfg_text(session, conv, "after_confirm.ask_party_size.nudge_text"))
+            outgoing.setdefault("conversation_id", str(conv.id))
+            outgoing.setdefault("guest_id", str(conv.guest_id) if conv.guest_id else None)
+            outgoing["state"] = COUNT_NUDGE_STATE
+            await self.log_message(
+                session, conversation_id=conv.id, wa_message_id=None, direction="outgoing",
+                message_type=outgoing.get("message_type", "free_text"), reply_to_id=None,
+                payload=json.dumps(outgoing, ensure_ascii=False)[:4000], state=COUNT_NUDGE_STATE,
+            )
+            await self.publish_outgoing(outgoing)
+            return 1
 
     # ------------------------------------------------------------------
     # Conversation/Message persistence
@@ -589,6 +665,20 @@ class FlowManager:
     ) -> None:
         # Admin flow settings for this event (cached 60s; defaults on any error).
         cfg = await load_flow_config(conv.event_id)
+        # A reply to a round that asked nothing (thank-you, logistics reminder,
+        # save the date...): that stage's own short answer, never the RSVP
+        # steps. Only a clearly typed RSVP change before the event, or an RSVP
+        # button, goes on to the RSVP flow (shared/domain/stage_replies.py).
+        if is_stage_state(effective_state):
+            stage = stage_of(effective_state)
+            rsvp_tap = reply_kind == "template_button" and action in RSVP_ACTIONS
+            typed_change = (not reply_kind and action in RSVP_ACTIONS and stage not in POST_EVENT_STAGES)
+            if not (rsvp_tap or typed_change):
+                await self._handle_stage_reply(
+                    session, conv, cfg, effective_state=effective_state, message_type=message_type,
+                    text=text, raw=raw, context_id=context_id, stale=stale)
+                return
+            effective_state = "rsvp_invite"
         # Admin-edited conversation graph (shared/domain/flow_graph.py). Only an
         # ENABLED graph takes over; none / any problem -> the states below.
         resolved = await graph_runtime.load_flow_graph(conv.event_id)
@@ -724,6 +814,46 @@ class FlowManager:
             payload=json.dumps(outgoing, ensure_ascii=False)[:4000], state=conv.current_state,
         )
         await self.publish_outgoing(outgoing)
+
+    async def _handle_stage_reply(
+        self, session: AsyncSession, conv: Conversation, cfg: Any, *, effective_state: str,
+        message_type: str, text: str, raw: Dict[str, Any], context_id: Optional[str], stale: bool,
+    ) -> None:
+        """Guest wrote back to a round that asked nothing. Their words go to the
+        hosts as a note ("תודה"/"סגור"/an emoji are not notes); the stage's own
+        reply goes out once per round, then the bot stays quiet."""
+        stage = stage_of(effective_state)
+        await self.log_message(
+            session, conversation_id=conv.id, wa_message_id=raw.get("message_id"), direction="incoming",
+            message_type=message_type, reply_to_id=context_id,
+            payload=json.dumps(raw, ensure_ascii=False)[:4000], state=effective_state,
+        )
+        await self._record_reply(session, guest_phone=conv.guest_phone, event_id=conv.event_id,
+                                 context_id=context_id)
+        handler = FreeTextState(self)
+        handler.set_cfg(cfg)
+        message = {"text": text}
+        if text and is_note(message):
+            await NoteInfoState._append_note(handler, session, conv,
+                                             GUEST_NOTE_PREFIX + str(text).strip()[:GUEST_NOTE_MAX])
+        acked = acked_state(stage)
+        if conv.current_state != acked:
+            await self.update_conversation(session, conv, acked)
+        if stale or is_acked(effective_state):
+            logger.info("Stage reply (%s) - already answered this round, staying quiet", stage)
+            return
+        path = f"stage_reply.{stage}.text"
+        body = cfg.legacy_text(path) or cfg.legacy_text("stage_reply.other.text")
+        outgoing = await handler.build_text(session, conv, body)
+        outgoing.setdefault("conversation_id", str(conv.id))
+        outgoing.setdefault("guest_id", str(conv.guest_id) if conv.guest_id else None)
+        await self.log_message(
+            session, conversation_id=conv.id, wa_message_id=None, direction="outgoing",
+            message_type=outgoing.get("message_type", "free_text"), reply_to_id=None,
+            payload=json.dumps(outgoing, ensure_ascii=False)[:4000], state=acked,
+        )
+        await self.publish_outgoing(outgoing)
+        logger.info("Stage reply sent (%s)", stage)
 
     async def _transition_and_send(self, session: AsyncSession, conv: Conversation, next_state_id: str,
                                    *, stale: bool, cfg: Any = None) -> None:

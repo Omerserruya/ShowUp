@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Stack, Typography, Button, IconButton, Tooltip, Snackbar, Popover, TextField, alpha, ToggleButtonGroup, ToggleButton, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions } from '@mui/material';
+import useMediaQuery from '@mui/material/useMediaQuery';
 import DesktopWindowsRoundedIcon from '@mui/icons-material/DesktopWindowsRounded';
 import TabletMacRoundedIcon from '@mui/icons-material/TabletMacRounded';
 import PhoneIphoneRoundedIcon from '@mui/icons-material/PhoneIphoneRounded';
@@ -36,7 +37,11 @@ export interface InvitationStudioProps {
 export default function InvitationStudio({ data, saving, published, publicUrl, onSaveConfig, onTogglePublish, uploadImage, onExit }: InvitationStudioProps) {
   const [cfg, setCfg] = useState<InvitationConfig>({ ...DEFAULT_INVITATION, ...(data.invitation || {}) });
   const [savedCfg, setSavedCfg] = useState<InvitationConfig>(() => ({ ...DEFAULT_INVITATION, ...(data.invitation || {}) }));
-  const [device, setDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
+  // On a phone (the app or mobile web) only the phone layout can be previewed -
+  // no desktop/tablet toggle there.
+  const narrow = useMediaQuery('(max-width: 899px)');
+  const [deviceChoice, setDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
+  const device = narrow ? 'mobile' : deviceChoice;
   const [toast, setToast] = useState<string | null>(null);
   const [designAnchor, setDesignAnchor] = useState<HTMLElement | null>(null);
   const [envPreview, setEnvPreview] = useState(false);
@@ -187,11 +192,11 @@ export default function InvitationStudio({ data, saving, published, publicUrl, o
           <Tooltip title="תצוגת מעטפה"><IconButton size="small" onClick={() => setEnvPreview(true)} sx={{ color: BRAND }}><MailRoundedIcon fontSize="small" /></IconButton></Tooltip>
           <Button startIcon={<AutoAwesomeRoundedIcon />} size="small" onClick={() => setTemplatesOpen(true)} sx={{ borderRadius: 99, px: 2, fontWeight: 700, color: BRAND, bgcolor: alpha(BRAND, 0.08), '&:hover': { bgcolor: alpha(BRAND, 0.16) } }}>תבניות</Button>
           <Button startIcon={<PaletteRoundedIcon />} size="small" onClick={(e) => setDesignAnchor(e.currentTarget)} sx={{ borderRadius: 99, px: 2, fontWeight: 700, color: BRAND, bgcolor: alpha(BRAND, 0.08), '&:hover': { bgcolor: alpha(BRAND, 0.16) } }}>עיצוב</Button>
-          <ToggleButtonGroup exclusive size="small" value={device} onChange={(_, v) => v && setDevice(v)} sx={{ bgcolor: alpha(BRAND, 0.06), borderRadius: 99, p: 0.5, '& .MuiToggleButton-root': { border: 0, borderRadius: '99px !important', px: 1.25, color: 'text.secondary', '&.Mui-selected': { bgcolor: '#fff', color: BRAND, boxShadow: '0 1px 3px rgba(16,24,40,0.12)' } } }}>
+          {!narrow && <ToggleButtonGroup exclusive size="small" value={device} onChange={(_, v) => v && setDevice(v)} sx={{ bgcolor: alpha(BRAND, 0.06), borderRadius: 99, p: 0.5, '& .MuiToggleButton-root': { border: 0, borderRadius: '99px !important', px: 1.25, color: 'text.secondary', '&.Mui-selected': { bgcolor: '#fff', color: BRAND, boxShadow: '0 1px 3px rgba(16,24,40,0.12)' } } }}>
             <ToggleButton value="desktop"><DesktopWindowsRoundedIcon fontSize="small" /></ToggleButton>
             <ToggleButton value="tablet"><TabletMacRoundedIcon fontSize="small" /></ToggleButton>
             <ToggleButton value="mobile"><PhoneIphoneRoundedIcon fontSize="small" /></ToggleButton>
-          </ToggleButtonGroup>
+          </ToggleButtonGroup>}
           {published && publicUrl && (
             <Tooltip title={publicUrl}><IconButton href={publicUrl} target="_blank" size="small"><OpenInNewRoundedIcon fontSize="small" /></IconButton></Tooltip>
           )}

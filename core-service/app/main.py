@@ -131,9 +131,28 @@ def create_app() -> FastAPI:
     from app.routers.admin_flows import router as admin_flows_router; app.include_router(admin_flows_router)  # noqa: E702
     from app.routers.admin_flow_graph import router as admin_flow_graph_router; app.include_router(admin_flow_graph_router)  # noqa: E702
     from app.routers.admin_templates import router as admin_templates_router; app.include_router(admin_templates_router)  # noqa: E702
+    from app.routers.admin_leads import router as admin_leads_router; app.include_router(admin_leads_router)  # noqa: E702
+    from app.routers.push_devices import router as push_devices_router; app.include_router(push_devices_router)  # noqa: E702
+    from app.routers.admin_templates import internal_router as meta_internal_router; app.include_router(meta_internal_router)  # noqa: E702
+    from app.routers.call_rounds import router as call_rounds_router; app.include_router(call_rounds_router)  # noqa: E702
+    from app.routers.call_rounds import internal_router as voice_internal_router; app.include_router(voice_internal_router)  # noqa: E702
     from app.routers.test_send import router as test_send_router; app.include_router(test_send_router)  # noqa: E702
     from app.routers.hostess import router as hostess_router, public_router as hostess_public_router  # noqa: E402
     app.include_router(hostess_router); app.include_router(hostess_public_router)  # noqa: E702
+    from app.routers.public_gift import router as public_gift_router; app.include_router(public_gift_router)  # noqa: E702
+    from app.routers.public_calendar import router as public_cal_router; app.include_router(public_cal_router)  # noqa: E702
+    from app.routers.round_categories_admin import router as round_cat_admin_router; app.include_router(round_cat_admin_router)  # noqa: E702
+    from app.routers.round_categories_admin import placements_router; app.include_router(placements_router)  # noqa: E702
+
+    from app.entitlement_service import MissingHostNames
+
+    @app.exception_handler(MissingHostNames)
+    async def _missing_host_names(request, exc: MissingHostNames):
+        """Every event-creation path (wizard, gift link, admin, venue, clone)."""
+        return JSONResponse(status_code=422, content={"detail": {
+            "code": "missing_host_names",
+            "message": "חסרים שמות בעלי האירוע (הזוג, ההורים, החוגג/ת או החברה) - בלעדיהם ההודעות לאורחים ייצאו עם רווח ריק.",
+        }})
 
     @app.exception_handler(PlanLookupUnavailable)
     async def _plan_lookup_unavailable(request, exc: PlanLookupUnavailable):

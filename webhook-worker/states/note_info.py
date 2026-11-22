@@ -3,6 +3,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from shared.domain.flow_config import is_no_note_reply, is_wants_note_reply
 from states.base_state import BaseState
 
 logger = logging.getLogger(__name__)
@@ -15,6 +16,9 @@ NOTES_TOTAL_MAX = 4000
 
 
 class NoteInfoState(BaseState):
+    """The guest asked to write a note: whatever they type is the note, then
+    note_saved echoes it back. "Nothing" ("אין", "לא תודה", an emoji) and an
+    empty message end the conversation instead."""
     id = "note_info"
     next_states = {
         "*": "rsvp_done",
@@ -22,13 +26,10 @@ class NoteInfoState(BaseState):
 
     async def process_incoming(self, session: AsyncSession, message: Dict[str, Any], conversation: Any) -> None:
         await super().process_incoming(session, message, conversation)
-        text_content = (message.get("text") or "").strip()
-        if not text_content:
-            return
-        note = GUEST_NOTE_PREFIX + text_content[:GUEST_NOTE_MAX]
-        # Append; no status write (attending was recorded in rsvp_count - see
-        # rsvp_done for why later states must not re-write it).
-        await self._append_note(session, conversation, note)
+        await save_note_reply(self, session, message, conversation)
+
+    def get_next_state(self, message: Dict[str, Any]) -> str:
+        return note_reply_next(message, "rsvp_done")
 
     async def _append_note(self, session: AsyncSession, conversation: Any, note: str) -> None:
         from sqlalchemy import text as _t
@@ -65,3 +66,28 @@ class NoteInfoState(BaseState):
             session, conversation,
             await self.cfg_text(session, conversation, "after_confirm.ask_notes.note_prompt_text"),
         )
+
+
+def is_note(message: Dict[str, Any], *, asked: bool = False) -> bool:
+    """`asked`: the reply answers "anything we should know?" - a bare "כן"/"יש"
+    there means "yes, let me write it", not the note itself."""
+    t = message.get("text")
+    return not is_no_note_reply(t) and not (asked and is_wants_note_reply(t))
+
+
+async def save_note_reply(state: BaseState, session: AsyncSession, message: Dict[str, Any], conversation: Any,
+                          *, asked: bool = False) -> None:
+    """Append the guest's typed reply to guests.notes (no status write: attending
+    was recorded in rsvp_count - see rsvp_done for why later states must not
+    re-write it) and keep it on the conversation for note_saved's echo."""
+    if not is_note(message, asked=asked):
+        return
+    text_content = (message.get("text") or "").strip()
+    await NoteInfoState._append_note(state, session, conversation, GUEST_NOTE_PREFIX + text_content[:GUEST_NOTE_MAX])
+    conversation.last_note = text_content
+
+
+def note_reply_next(message: Dict[str, Any], otherwise: str, *, asked: bool = False) -> str:
+    if asked and is_wants_note_reply(message.get("text")):
+        return "note_info"
+    return "note_saved" if is_note(message, asked=asked) else otherwise

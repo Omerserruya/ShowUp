@@ -3,7 +3,7 @@
 Decoupled from templates: a campaign carries its own audience, and this module
 turns that into the guest list. Mirrors core-service/app/audience.py but in raw
 SQL (this worker uses psycopg2). Status values come from the shared SSOT.
-Custom filter keys (must match core exactly): status, group, tag_id, table.
+Custom filter keys (must match core exactly): status, group, tag_id, tag_name, table, skip_no_reminders.
 """
 from __future__ import annotations
 
@@ -50,6 +50,13 @@ def select_guests_by_audience(conn, event_id: str, audience, audience_filter: Op
         # Seating filter - same semantics as core-service/app/audience.py:
         # 'none' -> no table assigned, 'any' -> has a table. Any other value is
         # ignored by BOTH resolvers (a key only one side knows widens the send).
+        if f.get("tag_name"):
+            where.append("EXISTS (SELECT 1 FROM guest_tags gtt JOIN tags tt ON tt.id = gtt.tag_id "
+                         "WHERE gtt.guest_id = g.id AND tt.name = %s)")
+            params.append(f["tag_name"])
+        if f.get("skip_no_reminders"):
+            where.append("NOT EXISTS (SELECT 1 FROM guest_tags gtn JOIN tags tn ON tn.id = gtn.tag_id "
+                         "WHERE gtn.guest_id = g.id AND tn.name = 'no_reminders')")
         table = f.get("table")
         if table == "none":
             where.append("g.table_number IS NULL")

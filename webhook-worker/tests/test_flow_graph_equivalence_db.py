@@ -63,7 +63,7 @@ SCHEMA = [
     "event_field_defs, messages_sent, campaigns, guests, events, inbound_seen, inbound_pending_choice, "
     "messages_log, conversations, users, owner_notifications CASCADE",
     """CREATE TABLE events (id UUID PRIMARY KEY, name TEXT, event_date TIMESTAMPTZ, location TEXT,
-        inviters JSON, state TEXT DEFAULT 'active', event_type VARCHAR(50), account_id UUID, owners JSON)""",
+        inviters JSON, subjects JSON, state TEXT DEFAULT 'active', event_type VARCHAR(50), account_id UUID, owners JSON)""",
     "CREATE TABLE users (id UUID PRIMARY KEY, first_name TEXT, phone TEXT)",
     # mirrors core-service migrations (owner_notifications outbox)
     """CREATE TABLE owner_notifications (id BIGSERIAL PRIMARY KEY, kind VARCHAR(40) NOT NULL,
@@ -268,6 +268,14 @@ SCENARIOS = [
          ("text", "  אני צמחונית 🌱  "), ("tap", "לעדכן הגעה", "rsvp_done__BTN_1"),
          ("tap", "נגיע כמות אחרת בסוף", "rsvp_update__BTN_3"), ("text", "3"),
          ("tap", "אין שום דבר מיוחד", "rsvp_info_question__BTN_1"), ("text", "תודה!")]},
+    {"name": "notes typed without the button: saved + echoed, another note, update; 'לא...' is a note",
+     "steps": [CONFIRM, ("text", "2"), ("text", "בעיית נגישות"),
+               ("tap", "לכתוב לנו משהו אחר", "note_saved__BTN_1"), ("text", "לא אוכל בשר"),
+               ("text", "וגם כיסא תינוק 🙏"), ("text", "תודה!"), ("tap", "לעדכן הגעה", "rsvp_done__BTN_1")]},
+    {"name": "notes: 'nothing' replies end, bare 'כן' asks to write, emoji is nothing, update from the echo",
+     "steps": [CONFIRM, ("text", "3"), ("text", "לא תודה"), CONFIRM, ("text", "3"), ("text", "כן"),
+               ("text", "👍"), CONFIRM, ("text", "1"), ("text", "מגיעה עם עגלה"),
+               ("tap", "לעדכן הגעה", "note_saved__BTN_2"), ("tap", "בסוף לא נוכל להגיע", "rsvp_update__BTN_2")]},
     {"name": "questions: unmatched twice skips, then next question by typed option",
      "questions": True, "steps": [CONFIRM, ("text", "4"), ("text", "xyz"), ("text", "abc"), ("text", "2"),
                                   ("text", "שלום")]},

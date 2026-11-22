@@ -60,6 +60,7 @@ from db_utils import (
 )
 from utils.phone import mask_phone
 from shared.domain.delivery import MessageDeliveryStatus
+from shared.domain.stage_replies import is_stage_state
 
 ATTEMPT_HEADER = "x-outpost-attempt"
 
@@ -496,6 +497,8 @@ class RabbitMQConsumer:
         if not conversation_id:
             return
         state = campaign_log_state(data) if data.get("campaign_id") else None
+        if state and is_stage_state(state):
+            db.set_conversation_state(conversation_id, state)
         if not state:
             current = db.get_conversation_state(conversation_id)
             if mtype == "template":

@@ -45,9 +45,10 @@ function hebDate(iso?: string | null) {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return { date: '', time: '', weekday: '' };
   return {
-    date: d.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' }),
-    time: d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
-    weekday: d.toLocaleDateString('he-IL', { weekday: 'long' }),
+    // Israel time for everyone (a guest abroad must still see the real start time).
+    date: d.toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jerusalem' }),
+    time: d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' }),
+    weekday: d.toLocaleDateString('he-IL', { weekday: 'long', timeZone: 'Asia/Jerusalem' }),
   };
 }
 
@@ -58,6 +59,81 @@ const EyeIcon = ({ off }: { off?: boolean }) => (
     {off && <line x1="3" y1="3" x2="21" y2="21" />}
   </svg>
 );
+
+/* ---- Trend layer: slow photo drift, film grain, marquee strip, live countdown ---- */
+
+const GRAIN = "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>\")";
+
+/** Keyframes for the invitation (injected once per page). */
+function InviteFx() {
+  return (
+    <style>{`
+      @keyframes su-drift { from { transform: scale(1.02) translate3d(0,0,0); } to { transform: scale(1.12) translate3d(-1.5%, -1%, 0); } }
+      @keyframes su-marquee { from { transform: translateX(-50%); } to { transform: translateX(0); } }
+      @keyframes su-rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+      .su-drift { animation: su-drift 24s ease-in-out infinite alternate; transform-origin: 60% 40%; }
+      .su-rise-1 { animation: su-rise 1.2s .15s both cubic-bezier(.22,.61,.36,1); }
+      .su-rise-2 { animation: su-rise 1.2s .45s both cubic-bezier(.22,.61,.36,1); }
+      .su-rise-3 { animation: su-rise 1.2s .75s both cubic-bezier(.22,.61,.36,1); }
+      @media (prefers-reduced-motion: reduce) {
+        .su-drift, .su-rise-1, .su-rise-2, .su-rise-3, .su-marquee-track { animation: none !important; }
+      }
+    `}</style>
+  );
+}
+
+/** Running text strip ("נועה & איתי ✦ 14.01.27 ✦ …"), the Instagram-invite staple. */
+function Marquee({ text, color, border, font, size = 15 }: { text: string; color: string; border: string; font: string; size?: number }) {
+  const unit = `${text}  ✦  `;
+  const run = Array.from({ length: 8 }, () => unit).join('');
+  return (
+    <Box aria-hidden sx={{ overflow: 'hidden', borderTop: `1px solid ${border}`, borderBottom: `1px solid ${border}`, py: 1.5, whiteSpace: 'nowrap', direction: 'ltr' }}>
+      <Box className="su-marquee-track" sx={{ display: 'inline-flex', animation: 'su-marquee 38s linear infinite' }}>
+        {[0, 1].map((k) => (
+          <Box key={k} component="span" dir="rtl" sx={{ fontFamily: font, fontSize: size, letterSpacing: 1, color, pr: 0, whiteSpace: 'pre' }}>{run}</Box>
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
+/** Days · hours · minutes · seconds, ticking. */
+function LiveCountdown({ target, t, big }: { target: number; t: any; big?: boolean }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const id = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(id); }, []);
+  const left = Math.max(0, target - now);
+  const parts: [number, string][] = [
+    [Math.floor(left / 86400000), 'ימים'],
+    [Math.floor(left / 3600000) % 24, 'שעות'],
+    [Math.floor(left / 60000) % 60, 'דקות'],
+    [Math.floor(left / 1000) % 60, 'שניות'],
+  ];
+  return (
+    <Box dir="rtl" sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: { xs: 1, md: 1.5 }, maxWidth: big ? 520 : 400, mx: 'auto' }}>
+      {parts.map(([n, label]) => (
+        <Box key={label} sx={{ py: { xs: 1.75, md: 2.5 }, border: `1px solid ${t.line}`, borderRadius: '14px', bgcolor: 'rgba(255,255,255,0.35)' }}>
+          <Typography sx={{ fontFamily: t.titleFont, fontWeight: 300, fontSize: big ? { xs: 40, md: 64 } : { xs: 36, md: 48 }, lineHeight: 1, color: t.ink, fontVariantNumeric: 'tabular-nums' }}>
+            {String(n).padStart(2, '0')}
+          </Typography>
+          <Typography sx={{ fontFamily: t.bodyFont, fontSize: 12.5, letterSpacing: 1, color: t.muted, mt: 1 }}>{label}</Typography>
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
+/** Names with the ampersand set apart (italic, lighter) - display only. */
+function NamesDisplay({ names, sx, ampColor }: { names: string; sx: any; ampColor?: string }) {
+  const parts = names.split(/\s*&\s*/);
+  if (parts.length !== 2) return <Typography sx={sx}>{names}</Typography>;
+  return (
+    <Typography sx={sx}>
+      {parts[0]}
+      <Box component="span" sx={{ fontStyle: 'italic', fontWeight: 300, mx: '0.18em', opacity: 0.85, color: ampColor || 'inherit', fontFamily: '"Frank Ruhl Libre", Georgia, serif' }}>&amp;</Box>
+      {parts[1]}
+    </Typography>
+  );
+}
 
 /** Fade + gentle rise as a block enters the viewport. Disabled while editing. */
 function Reveal({ children, disabled }: { children: React.ReactNode; disabled?: boolean }) {
@@ -155,6 +231,15 @@ export default function InvitationView({ data, rsvpSlot, embedded, forceLayout, 
   const padY = layout.density === 'airy' ? 18 : layout.density === 'tight' ? 8 : 12;
 
   const { date, time, weekday } = hebDate(data.event_date);
+  const shortDate = useMemo(() => {
+    if (!data.event_date) return '';
+    const d = new Date(data.event_date);
+    if (isNaN(d.getTime())) return '';
+    const f = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: 'Asia/Jerusalem' }).formatToParts(d);
+    const g = (k: string) => f.find((x) => x.type === k)?.value || '';
+    return `${g('day')}.${g('month')}.${g('year')}`;
+  }, [data.event_date]);
+  const eventTs = useMemo(() => (data.event_date ? new Date(data.event_date).getTime() : NaN), [data.event_date]);
   const loc = formatLocation(data.location);
   const imageUrl = cfg.hero?.imageUrl || '';
   const couple = (data.inviters && data.inviters.length
@@ -284,7 +369,7 @@ export default function InvitationView({ data, rsvpSlot, embedded, forceLayout, 
           </Box>
         )}
       </Box>
-      <Typography sx={{ fontFamily: t.titleFont, fontWeight: 400, fontSize: { xs: 22, md: 26 }, lineHeight: 1.4, color: t.ink }}>{value}</Typography>
+      <Typography sx={{ fontFamily: t.titleFont, fontWeight: 400, fontSize: { xs: 23, md: 30 }, lineHeight: 1.35, color: t.ink, textWrap: 'balance' }}>{value}</Typography>
       {!edit && !!opts?.links?.length && (
         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 3.5, mt: 2 }}>
           {opts.links.map((lnk) => (
@@ -304,7 +389,7 @@ export default function InvitationView({ data, rsvpSlot, embedded, forceLayout, 
         return (<>
           {overlineEl('personal_over', 'מילה אישית')}
           <ET edit={edit} k="personalText" value={cfg.personalText || ''} multiline placeholder="כמה מילים חמות למוזמנים…"
-            sx={{ fontFamily: t.titleFont, fontWeight: 300, fontSize: { xs: 22, md: 27 }, lineHeight: 2, color: t.ink, whiteSpace: 'pre-wrap' }} />
+            sx={{ fontFamily: t.titleFont, fontWeight: 300, fontSize: { xs: 23, md: 32 }, lineHeight: 1.85, color: t.ink, whiteSpace: 'pre-wrap', textWrap: 'balance' }} />
         </>);
       case 'details':
         return (<>
@@ -327,8 +412,11 @@ export default function InvitationView({ data, rsvpSlot, embedded, forceLayout, 
       case 'countdown':
         return (<>
           {overlineEl('countdown_over', 'הספירה לאחור')}
-          <Typography sx={{ fontFamily: t.titleFont, fontWeight: 300, fontSize: { xs: 84, md: 120 }, lineHeight: 1, color: t.ink }}>{daysUntil}</Typography>
+          {!edit && daysUntil !== null && daysUntil > 0 && !isNaN(eventTs)
+            ? <LiveCountdown target={eventTs} t={t} big={isDesktop} />
+            : <Typography sx={{ fontFamily: t.titleFont, fontWeight: 300, fontSize: { xs: 84, md: 120 }, lineHeight: 1, color: t.ink }}>{daysUntil}</Typography>}
           {(() => {
+            if (!edit && daysUntil !== null && daysUntil > 0) return null;
             const k = daysUntil === 0 ? 'countdown_today' : daysUntil === 1 ? 'countdown_one' : 'countdown_label';
             const fb = daysUntil === 0 ? 'היום חוגגים' : daysUntil === 1 ? 'עוד יום אחד' : 'ימים עד לאירוע';
             return <ET edit={edit} k={k} value={L(k, fb)} placeholder={fb}
@@ -339,7 +427,7 @@ export default function InvitationView({ data, rsvpSlot, embedded, forceLayout, 
         return (<>
           {overlineEl('rsvp_over', 'אישור הגעה')}
           <ET edit={edit} k="rsvp_title" value={L('rsvp_title', 'נשמח לחגוג יחד')} placeholder="נשמח לחגוג יחד"
-            sx={{ fontFamily: t.titleFont, fontWeight: 300, fontSize: { xs: 30, md: 40 }, lineHeight: 1.2, color: t.ink, mb: 5 }} />
+            sx={{ fontFamily: t.titleFont, fontWeight: 300, fontSize: { xs: 32, md: 48 }, lineHeight: 1.15, color: t.ink, mb: 5, textWrap: 'balance' }} />
           <Box sx={{ textAlign: 'right' }}>{rsvpSlot}</Box>
         </>);
       default: return null;
@@ -360,7 +448,7 @@ export default function InvitationView({ data, rsvpSlot, embedded, forceLayout, 
       textAlign: 'center', opacity: opts.dim ? 0.4 : 1, transition: 'opacity .2s',
     }}>
       <Box sx={{
-        maxWidth: 420, mx: 'auto', width: '100%',
+        maxWidth: isDesktop ? 520 : 420, mx: 'auto', width: '100%',
         ...(glass ? {
           maxWidth: 460,
           bgcolor: 'rgba(10, 12, 20, 0.45)', backdropFilter: 'blur(10px)',
@@ -413,7 +501,7 @@ export default function InvitationView({ data, rsvpSlot, embedded, forceLayout, 
       <ET edit={edit} k="welcome_over" value={L('welcome_over', 'ברוכים הבאים')} placeholder="ברוכים הבאים"
         sx={{ fontFamily: t.bodyFont, fontSize: 14, fontWeight: 600, letterSpacing: 1, color: t.accentText, mb: 4 }} />
       <ET edit={edit} k="welcome_body" value={L('welcome_body', cfg.personalText ? 'הוזמנתם לחגוג' : 'שמחים להזמין אתכם')} placeholder="שמחים להזמין אתכם"
-        sx={{ fontFamily: t.titleFont, fontWeight: 300, fontSize: 30, lineHeight: 1.5, color: t.ink }} />
+        sx={{ fontFamily: t.titleFont, fontWeight: 300, fontSize: 'clamp(36px, 3.4vw, 56px)', lineHeight: 1.2, color: t.ink, textWrap: 'balance' }} />
       {ornament()}
       {date && <Typography sx={{ fontFamily: t.bodyFont, fontSize: 14, letterSpacing: 1, color: t.muted }}>{[weekday, date].filter(Boolean).join(' · ')}</Typography>}
     </Reveal>, { first: true }) : null;
@@ -421,7 +509,7 @@ export default function InvitationView({ data, rsvpSlot, embedded, forceLayout, 
   const footer = blockBox(
     <Reveal disabled={!!edit}>
       {ornament('♥')}
-      <Typography sx={{ fontFamily: t.titleFont, fontWeight: 300, fontSize: { xs: 26, md: 34 }, color: t.ink }}>{names}</Typography>
+      <NamesDisplay names={names} ampColor={t.accent} sx={{ fontFamily: t.titleFont, fontWeight: 300, fontSize: { xs: 34, md: 52 }, lineHeight: 1.1, color: t.ink }} />
       {date && <Typography sx={{ fontFamily: t.bodyFont, mt: 2.5, fontSize: 14, letterSpacing: 1, color: t.muted }}>{date}</Typography>}
       <ET edit={edit} k="footer_note" value={L('footer_note', 'מחכים לראותכם')} placeholder="מחכים לראותכם"
         sx={{ fontFamily: t.bodyFont, mt: 5, fontSize: 14, letterSpacing: 1, color: t.accentText }} />
@@ -437,7 +525,11 @@ export default function InvitationView({ data, rsvpSlot, embedded, forceLayout, 
       </Typography>
     </Reveal>, {}) : null;
 
-  const story = (<>{welcomeOpener}{movable}{rsvpClosedNote}{footer}</>);
+  const marqueeText = [names, shortDate, loc ? loc.split(',')[0] : ''].filter(Boolean).join('  ✦  ');
+  const marquee = !edit && marqueeText ? (
+    <Marquee text={marqueeText} color={t.ink} border={t.line} font={t.titleFont} size={isDesktop ? 17 : 15} />
+  ) : null;
+  const story = (<>{welcomeOpener}{fullPageSections ? null : marquee}{movable}{rsvpClosedNote}{fullPageSections ? marquee : null}{footer}</>);
 
   // The photograph - cover title, edit controls, and a clear drop-zone.
   const photo = (mobile?: boolean) => (
@@ -448,14 +540,15 @@ export default function InvitationView({ data, rsvpSlot, embedded, forceLayout, 
       sx={{ position: 'relative', width: '100%', height: VH, overflow: 'hidden', bgcolor: '#ded3c2' }}
     >
       {imageUrl ? (
-        <Box component="img" src={imageUrl} alt={names} sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+        <Box component="img" src={imageUrl} alt={names} className={edit ? undefined : 'su-drift'} sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
       ) : (
         <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Typography sx={{ fontFamily: t.titleFont, fontSize: 96, color: 'rgba(43,38,34,0.18)' }}>{(names || '♥').trim().charAt(0)}</Typography>
         </Box>
       )}
       <Box sx={{ position: 'absolute', inset: 0, bgcolor: 'rgba(30,24,18,0.22)' }} />
-      <Box sx={{ position: 'absolute', inset: 0, background: mobile ? 'linear-gradient(180deg, rgba(20,15,10,0.28) 0%, rgba(20,15,10,0.1) 45%, rgba(20,15,10,0.5) 100%)' : 'linear-gradient(180deg, rgba(20,15,10,0) 45%, rgba(20,15,10,0.55) 100%)' }} />
+      <Box sx={{ position: 'absolute', inset: 0, background: mobile ? 'linear-gradient(180deg, rgba(20,15,10,0.28) 0%, rgba(20,15,10,0.1) 45%, rgba(20,15,10,0.5) 100%)' : 'linear-gradient(180deg, rgba(20,15,10,0.15) 0%, rgba(20,15,10,0) 35%, rgba(20,15,10,0.65) 100%)' }} />
+      {!edit && <Box aria-hidden sx={{ position: 'absolute', inset: 0, backgroundImage: GRAIN, opacity: 0.22, mixBlendMode: 'overlay', pointerEvents: 'none' }} />}
 
       {/* Edit affordances */}
       {edit && !imageUrl && (
@@ -478,14 +571,26 @@ export default function InvitationView({ data, rsvpSlot, embedded, forceLayout, 
         <Box sx={{ position: 'absolute', inset: 16, zIndex: 4, border: `2px dashed ${EDIT_ON}`, borderRadius: 3, bgcolor: 'rgba(47,107,255,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontFamily: t.bodyFont, fontWeight: 600 }}>שחררו כדי להחליף תמונה</Box>
       )}
 
-      <Box dir="rtl" sx={{ position: 'absolute', color: t.onImage, zIndex: 3, ...(mobile ? { inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', px: 4 } : { bottom: 56, right: 56, left: 56, textAlign: 'right' }) }}>
-        <ET edit={edit} k="overline" value={overline} placeholder="מילת פתיחה" sx={{ fontFamily: t.bodyFont, fontSize: 14, fontWeight: 600, letterSpacing: 1.5, color: 'rgba(255,255,255,0.9)', mb: mobile ? 3 : 2 }} />
-        <ET edit={edit} k="names" value={names} placeholder={couple || 'שמות'} sx={{ fontFamily: t.titleFont, fontWeight: 400, lineHeight: 1.08, fontSize: mobile ? 'clamp(40px, 13vw, 68px)' : 'clamp(36px, 3.4vw, 56px)', textShadow: '0 2px 40px rgba(0,0,0,0.4)' }} />
-        {date && <Typography sx={{ fontFamily: t.bodyFont, mt: mobile ? 3 : 2.5, fontSize: 14.5, letterSpacing: 1, color: 'rgba(255,255,255,0.9)' }}>{[weekday, date].filter(Boolean).join(' · ')}</Typography>}
+      <Box dir="rtl" sx={{ position: 'absolute', color: t.onImage, zIndex: 3, ...(mobile ? { inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', px: 4 } : { bottom: 64, right: 64, left: 64, textAlign: 'right' }) }}>
+        <Box className={edit ? undefined : 'su-rise-1'}>
+          <ET edit={edit} k="overline" value={overline} placeholder="מילת פתיחה" sx={{ fontFamily: t.bodyFont, fontSize: mobile ? 14 : 15, fontWeight: 600, letterSpacing: 3, color: 'rgba(255,255,255,0.9)', mb: mobile ? 3 : 2.5 }} />
+        </Box>
+        <Box className={edit ? undefined : 'su-rise-2'}>
+          {edit
+            ? <ET edit={edit} k="names" value={names} placeholder={couple || 'שמות'} sx={{ fontFamily: t.titleFont, fontWeight: 400, lineHeight: 1.04, fontSize: mobile ? 'clamp(40px, 13vw, 68px)' : 'clamp(52px, 5.6vw, 104px)', textShadow: '0 2px 40px rgba(0,0,0,0.4)' }} />
+            : <NamesDisplay names={names} sx={{ fontFamily: t.titleFont, fontWeight: 400, lineHeight: 1.04, fontSize: mobile ? 'clamp(44px, 14vw, 72px)' : 'clamp(52px, 5.6vw, 104px)', textShadow: '0 2px 40px rgba(0,0,0,0.4)', textWrap: 'balance' }} />}
+        </Box>
+        {date && (
+          <Box className={edit ? undefined : 'su-rise-3'} sx={{ mt: mobile ? 3 : 3.5, display: 'flex', alignItems: 'center', gap: 2, justifyContent: mobile ? 'center' : 'flex-start', color: 'rgba(255,255,255,0.92)' }}>
+            {shortDate && <Typography dir="ltr" sx={{ fontFamily: t.titleFont, fontWeight: 300, fontSize: mobile ? 22 : 30, letterSpacing: 2, fontVariantNumeric: 'tabular-nums' }}>{shortDate}</Typography>}
+            <Box sx={{ width: 28, height: '1px', bgcolor: 'rgba(255,255,255,0.6)' }} />
+            <Typography sx={{ fontFamily: t.bodyFont, fontSize: mobile ? 14 : 15, letterSpacing: 1 }}>{[weekday, time].filter(Boolean).join(' · ')}</Typography>
+          </Box>
+        )}
       </Box>
 
       {mobile && !edit && (
-        <Box sx={{ position: 'absolute', bottom: 34, left: 0, right: 0, textAlign: 'center' }}>
+        <Box className="su-rise-3" sx={{ position: 'absolute', bottom: 34, left: 0, right: 0, textAlign: 'center' }}>
           <Typography sx={{ fontFamily: t.bodyFont, fontSize: 13, letterSpacing: 1, color: 'rgba(255,255,255,0.85)' }}>גללו ↓</Typography>
         </Box>
       )}
@@ -548,10 +653,10 @@ export default function InvitationView({ data, rsvpSlot, embedded, forceLayout, 
   /* ---------- single-column hero per layout ---------- */
   const columnHero = () => {
     const displaySize = isDesktop ? layout.display.sizeDesktop : layout.display.sizeMobile;
-    const nameEl = (
-      <ET edit={edit} k="names" value={names} placeholder={couple || 'שמות'}
-        sx={{ fontFamily: t.titleFont, fontWeight: layout.display.weight, letterSpacing: layout.display.letterSpacing, lineHeight: 1.15, fontSize: `clamp(34px, 8vw, ${displaySize}px)`, color: glass ? '#fff' : t.ink, ...(glass ? { textShadow: `0 0 26px ${t.accent}66, 0 2px 30px rgba(0,0,0,0.55)` } : {}) }} />
-    );
+    const nameSx = { fontFamily: t.titleFont, fontWeight: layout.display.weight, letterSpacing: layout.display.letterSpacing, lineHeight: 1.15, fontSize: `clamp(34px, 8vw, ${displaySize}px)`, color: glass ? '#fff' : t.ink, ...(glass ? { textShadow: `0 0 26px ${t.accent}66, 0 2px 30px rgba(0,0,0,0.55)` } : {}) };
+    const nameEl = edit
+      ? <ET edit={edit} k="names" value={names} placeholder={couple || 'שמות'} sx={nameSx} />
+      : <Box className="su-rise-2"><NamesDisplay names={names} ampColor={glass ? undefined : t.accent} sx={{ ...nameSx, textWrap: 'balance' }} /></Box>;
     const overEl = (
       <ET edit={edit} k="overline" value={overline} placeholder="מילת פתיחה"
         sx={{ fontFamily: t.bodyFont, fontSize: 14, fontWeight: 600, letterSpacing: 2, color: glass ? 'rgba(255,255,255,0.85)' : t.accentText, mb: 3 }} />
@@ -642,6 +747,7 @@ export default function InvitationView({ data, rsvpSlot, embedded, forceLayout, 
     const isBackdrop = layout.hero === 'backdrop';
     return (
       <Box dir="rtl" sx={{ position: 'relative', bgcolor: t.bg, color: t.ink, overflow: 'hidden' }}>
+        <InviteFx />
         {isBackdrop && (
           // Sticky + negative margin = a "fixed" backdrop that works inside any
           // scroll container (the studio preview included).
@@ -672,6 +778,7 @@ export default function InvitationView({ data, rsvpSlot, embedded, forceLayout, 
         {pageFrame}
         <Box sx={{ position: 'relative', zIndex: 2, ...(isBackdrop ? { color: '#fff' } : {}), maxWidth: 760, mx: 'auto' }}>
           {columnHero()}
+          {!isBackdrop && marquee}
           {movable}
           {rsvpClosedNote}
           {footer}
@@ -684,6 +791,7 @@ export default function InvitationView({ data, rsvpSlot, embedded, forceLayout, 
   if (!isDesktop) {
     return (
       <Box sx={{ bgcolor: t.bg, color: t.ink }}>
+        <InviteFx />
         {photo(true)}
         {story}
         {settingsPopover}
@@ -693,6 +801,7 @@ export default function InvitationView({ data, rsvpSlot, embedded, forceLayout, 
 
   return (
     <Box dir="ltr" sx={{ display: 'flex', bgcolor: t.bg, color: t.ink }}>
+      <InviteFx />
       <Box dir="rtl" sx={{ width: '50%', minWidth: 0 }}>{story}</Box>
       <Box sx={{ width: '50%' }}>
         <Box sx={{ position: 'sticky', top: 0, height: VH }}>{photo()}</Box>

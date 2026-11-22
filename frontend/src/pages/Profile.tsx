@@ -607,6 +607,7 @@ export default function Profile({ embedded = false }: { embedded?: boolean } = {
         </Box>
       </Box>
 
+
       {/* Delete event confirm dialog */}
       <Dialog
         open={deleteEventDialogOpen}

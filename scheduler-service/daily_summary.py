@@ -3,7 +3,9 @@ Daily owner summary.
 
 Every day at DAILY_SUMMARY_HOUR (local DAILY_SUMMARY_TZ time, default 20:00
 Asia/Jerusalem) each active event whose attendee confirmations changed since the
-previous summary gets a WhatsApp summary sent to every event owner.
+previous summary gets a WhatsApp summary sent to every event owner. On the event
+day it goes out SUMMARY_PRE_EVENT_HOURS (4) before the event instead, and the
+day after, a final summary (template final_summary) closes the event.
 
 Flow: this module (called from the scheduler main loop) detects due events,
 claims them idempotently via a UNIQUE (event_id, summary_date) row, and publishes
@@ -27,12 +29,14 @@ business-initiated, so free text is not an option. Body parameters, in order:
 import json
 import logging
 import os
-from datetime import datetime
-from typing import Optional, Sequence
+from datetime import datetime, timedelta
+from typing import Dict, Optional, Sequence
 from zoneinfo import ZoneInfo
 
 import psycopg2
 import psycopg2.extras
+
+from push_events import queue_daily_summary
 
 logger = logging.getLogger("daily_summary")
 
@@ -78,12 +82,59 @@ def _local_now() -> datetime:
     return datetime.now(ZoneInfo(SUMMARY_TZ))
 
 
-def _fetch_candidates(conn, summary_date) -> Sequence[dict]:
-    """Active events with no summary row for today, with current RSVP counts.
+# When each event's summary goes out (local time):
+#   before the event day  - DAILY at SUMMARY_HOUR, only if something changed
+#   on the event day      - PRE_EVENT_HOURS before it starts (always), instead of 20:00
+#   the day after         - FINAL at FINAL_HOUR: the closing numbers + congratulations
+PRE_EVENT_HOURS = int(os.getenv("SUMMARY_PRE_EVENT_HOURS", "4"))
+FINAL_HOUR = int(os.getenv("SUMMARY_FINAL_HOUR", "12"))
+DAILY, PRE_EVENT, FINAL = "daily", "pre_event", "final"
 
-    Events more than a day past their date are excluded - there is nothing left
-    to track. NULL event_date events (still being planned) stay included.
-    """
+
+def summary_kind(event_date, now: datetime):
+    """(kind, due_at) for this event today, or None when nothing is due today."""
+    today = now.date()
+    at = lambda h, m=0: now.replace(hour=h, minute=m, second=0, microsecond=0)  # noqa: E731
+    if event_date is None:
+        return DAILY, at(SUMMARY_HOUR, SUMMARY_MINUTE)
+    local = event_date.astimezone(now.tzinfo)
+    days = (local.date() - today).days
+    if days > 0:
+        return DAILY, at(SUMMARY_HOUR, SUMMARY_MINUTE)
+    if days == 0:
+        if (local.hour, local.minute) == (0, 0):  # date without a time
+            return PRE_EVENT, at(12)
+        return PRE_EVENT, max(local - timedelta(hours=PRE_EVENT_HOURS), at(8))
+    if days == -1:
+        return FINAL, at(FINAL_HOUR)
+    return None
+
+
+def _due_events(conn, summary_date, now: datetime) -> Dict[str, str]:
+    """{event_id: kind} for events whose summary is due now and not yet sent today."""
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT e.id, e.event_date FROM events e
+            WHERE e.active = true
+              AND (e.event_date IS NULL OR e.event_date >= NOW() - INTERVAL '2 days')
+              AND NOT EXISTS (SELECT 1 FROM daily_summaries ds
+                              WHERE ds.event_id = e.id AND ds.summary_date = %s)
+            """,
+            (summary_date,),
+        )
+        due = {}
+        for r in cur.fetchall():
+            k = summary_kind(r["event_date"], now)
+            if k and now >= k[1]:
+                due[str(r["id"])] = k[0]
+        return due
+
+
+def _fetch_candidates(conn, summary_date, event_ids: Sequence[str]) -> Sequence[dict]:
+    """Current RSVP counts for the given events."""
+    if not event_ids:
+        return []
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
@@ -99,15 +150,10 @@ def _fetch_candidates(conn, summary_date) -> Sequence[dict]:
                    )::int AS campaigns_sent
             FROM events e
             LEFT JOIN guests g ON g.event_id = e.id
-            WHERE e.active = true
-              AND (e.event_date IS NULL OR e.event_date >= NOW() - INTERVAL '1 day')
-              AND NOT EXISTS (
-                    SELECT 1 FROM daily_summaries ds
-                    WHERE ds.event_id = e.id AND ds.summary_date = %s
-              )
+            WHERE e.id::text = ANY(%s)
             GROUP BY e.id
             """,
-            (summary_date, summary_date, summary_date),
+            (summary_date, summary_date, list(event_ids)),
         )
         return cur.fetchall()
 
@@ -174,20 +220,11 @@ def _deltas(current: dict, last: Optional[dict]) -> dict:
 
 
 def _attention_line(event: dict) -> str:
-    """One short, actionable line - what deserves the owner's attention."""
+    """One short line: who hasn't answered yet, or a calm all-good."""
     pending = int(event.get("pending") or 0)
-    event_date = event.get("event_date")
-    days_left = None
-    if event_date is not None:
-        try:
-            days_left = (event_date.date() - _local_now().date()).days
-        except Exception:
-            days_left = None
-    if pending > 0 and days_left is not None and days_left <= 7:
-        return f"{pending} אורחים עדיין לא ענו והאירוע בעוד {days_left} ימים - שווה לשלוח תזכורת"
     if pending > 0:
-        return f"{pending} אורחים עדיין לא ענו - אפשר לבקש מהעוזרת לשלוח להם תזכורת"
-    return "הכול תחת שליטה, אין מה לעשות כרגע 👌"
+        return f"{pending} אורחים עוד לא ענו"
+    return "כל האורחים ענו 👌"
 
 
 def _claim(conn, event_id, summary_date, counts: dict, recipients: int) -> bool:
@@ -223,6 +260,27 @@ def _unclaim(conn, event_id, summary_date) -> None:
         )
 
 
+def _build_final_message(event: dict, owner: dict) -> dict:
+    from shared.domain.messaging.system_templates import get_system_template
+    t = get_system_template("final_summary")
+    return {
+        "platform": "WA",
+        "message_type": "template",
+        "recipient": owner["phone"],
+        "template": t.meta_name if t else "final_summary",
+        "language": t.language if t else "he",
+        "parameters": {
+            "1": event["name"],
+            "2": str(event["attending"]),
+            "3": str(event["declined"]),
+            "4": str(int(event.get("pending") or 0) + int(event.get("maybe") or 0)),
+        },
+        "sender": "assistant",
+        "event_id": str(event["id"]),
+        "source": "final_summary",
+    }
+
+
 def _build_message(event: dict, owner: dict, deltas: dict) -> dict:
     name, lang = _template()
     return {
@@ -250,19 +308,25 @@ def run_daily_summary_check(conn, publish) -> int:
     """Send due daily summaries. `publish` is a callable(message_dict).
 
     Returns the number of events summarized. Safe to call every scheduler cycle:
-    outside the send window it returns immediately, inside it each event is
-    claimed at most once per local day.
+    each event is claimed at most once per local day, at the time
+    `summary_kind` gives it (evening / hours before the event / the day after).
     """
     now = _local_now()
-    if (now.hour, now.minute) < (SUMMARY_HOUR, SUMMARY_MINUTE):
-        return 0
     summary_date = now.date()
+    due = _due_events(conn, summary_date, now)
+    if not due:
+        return 0
 
     sent_events = 0
-    for event in _fetch_candidates(conn, summary_date):
+    for event in _fetch_candidates(conn, summary_date, list(due)):
+        kind = due[str(event["id"])]
         counts = {k: event[k] for k in ("confirmed", "attending", "declined", "maybe", "pending", "campaigns_sent")}
         last = _last_summary(conn, event["id"])
-        if not _changed(counts, last):
+        # The regular evening summary only when something moved; the event-day
+        # and final summaries always (if anyone answered at all).
+        if kind == DAILY and not _changed(counts, last):
+            continue
+        if kind != DAILY and counts["confirmed"] + counts["declined"] + counts["maybe"] == 0:
             continue
         deltas = _deltas(counts, last)
         owners = _owner_contacts(conn, event["owners"])
@@ -275,7 +339,8 @@ def run_daily_summary_check(conn, publish) -> int:
         delivered = 0
         for owner in owners:
             try:
-                publish(_build_message(event, owner, deltas))
+                publish(_build_final_message(event, owner) if kind == FINAL
+                        else _build_message(event, owner, deltas))
                 delivered += 1
             except Exception as e:
                 logger.error(
@@ -288,6 +353,12 @@ def run_daily_summary_check(conn, publish) -> int:
             continue
 
         sent_events += 1
+        try:  # the owners' app gets the same summary as a push
+            with conn.cursor() as cur:
+                queue_daily_summary(cur, event, [str(o["id"]) for o in owners], deltas, summary_date,
+                                    final=(kind == FINAL))
+        except Exception as e:
+            logger.warning("Daily summary push not queued | event=%s error=%s", event["id"], e)
         logger.info(
             "Daily summary sent | event=%s attending=%s declined=%s pending=%s owners=%s/%s",
             event["id"], counts["attending"], counts["declined"], counts["pending"],

@@ -38,9 +38,9 @@ interface Props {
 }
 
 const TAB_LABEL: Record<Stage, string> = {
-  invitation: 'הזמנה',
-  reminder: 'תזכורת',
-  final_reminder: 'תזכורת אחרונה',
+  invitation: 'אישור הגעה ראשוני',
+  reminder: 'אישור הגעה נוסף',
+  final_reminder: 'תזכורת לאירוע',
   default: 'כללי / כל השאר',
 };
 

@@ -29,10 +29,13 @@ def configured() -> bool:
     return bool(account_sid() and auth_token() and from_number())
 
 
-def place_call(to: str, answer_url: str, status_url: str, *, timeout_sec: int = 25,
-               time_limit_sec: int = 180) -> str:
+def place_call(to: str, answer_url: str, status_url: str, *, amd_url: Optional[str] = None,
+               timeout_sec: int = 25, time_limit_sec: int = 180) -> str:
     """Start a call; Twilio fetches `answer_url` for TwiML once it connects.
-    Answering-machine detection runs before that (AnsweredBy on the webhook)."""
+    With `amd_url`, answering-machine detection runs ASYNC: the opening plays the
+    moment the guest picks up and the verdict arrives at `amd_url` (sync AMD
+    held ~7s of dead air after "hello"). Without it, AMD runs before the answer
+    webhook (AnsweredBy on it)."""
     if not configured():
         raise TelephonyError("Twilio is not configured")
     data = {
@@ -42,6 +45,9 @@ def place_call(to: str, answer_url: str, status_url: str, *, timeout_sec: int = 
         "Timeout": str(timeout_sec), "TimeLimit": str(time_limit_sec),
         "MachineDetection": "Enable",
     }
+    if amd_url:
+        data.update({"AsyncAmd": "true", "AsyncAmdStatusCallback": amd_url,
+                     "AsyncAmdStatusCallbackMethod": "POST"})
     r = httpx.post(f"{API}/Accounts/{account_sid()}/Calls.json", data=data,
                    auth=(account_sid(), auth_token()), timeout=20)
     if r.status_code >= 400:
@@ -54,3 +60,11 @@ def place_call(to: str, answer_url: str, status_url: str, *, timeout_sec: int = 
     if not sid:
         raise TelephonyError("Twilio returned no call sid")
     return sid
+
+
+def hangup(sid: str) -> None:
+    """End a live call (voicemail detected after the opening started)."""
+    r = httpx.post(f"{API}/Accounts/{account_sid()}/Calls/{sid}.json", data={"Status": "completed"},
+                   auth=(account_sid(), auth_token()), timeout=10)
+    if r.status_code >= 400:
+        raise TelephonyError(f"Twilio hangup {r.status_code}")

@@ -17,6 +17,8 @@ import Messages from './pages/Messages';
 import Recap from './pages/Recap';
 import Seating from './pages/Seating';
 import HostessMode from './pages/HostessMode';
+import PublicGift from './pages/PublicGift';
+import PublicCalendar from './pages/PublicCalendar';
 import SeatingList from './pages/SeatingList';
 import useViewportWidth from './design/useViewport';
 
@@ -27,6 +29,7 @@ import Register from './pages/Register';
 import MarketingPage from './pages/MarketingPage';
 import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
+import Support from './pages/Support';
 import AccessibilityStatement from './pages/AccessibilityStatement';
 import EventWizard from './pages/EventWizard';
 import Payment from './pages/Payment';
@@ -42,6 +45,7 @@ import AdminSystemDashboard from './pages/admin/SystemDashboard';
 import AdminVenues from './pages/admin/Venues';
 import AdminSubscriptions from './pages/admin/Subscriptions';
 import AdminCoupons from './pages/admin/Coupons';
+import AdminLeads from './pages/admin/Leads';
 import AdminPlans from './pages/admin/Plans';
 import AdminEntitlements from './pages/admin/Entitlements';
 import AdminFeatureFlags from './pages/admin/FeatureFlags';
@@ -51,9 +55,11 @@ import AdminAuditLog from './pages/admin/AuditLog';
 import AdminConversationFlows from './pages/admin/ConversationFlows';
 import AdminFlowBuilder from './pages/admin/FlowBuilder';
 import AdminTemplates from './pages/admin/Templates';
+import AdminRoundCategories from './pages/admin/RoundCategories';
 import VenueRoute from './components/VenueRoute';
 import VenueDashboard from './pages/venue/VenueDashboard';
 import VenueSettings from './pages/venue/VenueSettings';
+import { isNativeApp, purchasesHidden } from './native/app';
 
 /** Phones get the list-with-fill-bars seating (Mobile Flows 05); desktop keeps the hall map. */
 function SeatingRoute() {
@@ -69,11 +75,15 @@ function App() {
   return (
     <ThemeProvider>
         <Routes>
-                <Route path="/" element={<MarketingPage />} />
+                <Route path="/" element={isNativeApp() ? <Navigate to="/overview" replace /> : <MarketingPage />} />
         {/* Public web invitation + open-form RSVP (no auth, no Layout) */}
         <Route path="/i/:slug" element={<PublicInvitation />} />
         {/* Entrance hostess mode for venue staff (no auth - the link is the credential) */}
         <Route path="/hostess/:token" element={<HostessMode />} />
+        {/* Gift page: hands guests off to the hosts' own Bit/PayBox (no auth) */}
+        <Route path="/g/:code" element={<PublicGift />} />
+        {/* Add-to-calendar page for the save-the-date button (no auth) */}
+        <Route path="/c/:code" element={<PublicCalendar />} />
         {/* Public no-auth demo invitation (landing-page demo CTA target) */}
         <Route path="/demo/invite" element={<DemoInvite />} />
         {/* Public entitlement redemption link (works logged-out) */}
@@ -97,13 +107,16 @@ function App() {
         <Route
           path="/payment"
           element={
+            purchasesHidden() ? <Navigate to="/overview" replace /> : (
             <UserProvider>
               <Payment />
             </UserProvider>
+            )
           }
         />
                 <Route path="/terms" element={<Terms />} />
                 <Route path="/privacy" element={<Privacy />} />
+                <Route path="/support" element={<Support />} />
                 <Route path="/accessibility" element={<AccessibilityStatement />} />
         <Route 
           path="/login" 
@@ -163,6 +176,7 @@ function App() {
           <Route path="/admin/plans" element={<AdminRoute><AdminPlans /></AdminRoute>} />
           <Route path="/admin/entitlements" element={<AdminRoute><AdminEntitlements /></AdminRoute>} />
           <Route path="/admin/coupons" element={<AdminRoute><AdminCoupons /></AdminRoute>} />
+          <Route path="/admin/leads" element={<AdminRoute><AdminLeads /></AdminRoute>} />
           <Route path="/admin/feature-flags" element={<AdminRoute><AdminFeatureFlags /></AdminRoute>} />
           <Route path="/admin/monitoring" element={<AdminRoute><AdminMonitoring /></AdminRoute>} />
           <Route path="/admin/operations" element={<AdminRoute><AdminOperations /></AdminRoute>} />
@@ -170,6 +184,7 @@ function App() {
           <Route path="/admin/flows" element={<AdminRoute><AdminConversationFlows /></AdminRoute>} />
           <Route path="/admin/flow-builder" element={<AdminRoute><AdminFlowBuilder /></AdminRoute>} />
           <Route path="/admin/templates" element={<AdminRoute><AdminTemplates /></AdminRoute>} />
+          <Route path="/admin/round-categories" element={<AdminRoute><AdminRoundCategories /></AdminRoute>} />
         </Route>
         </Routes>
     </ThemeProvider>

@@ -62,7 +62,7 @@ CACHE_TTL_SECONDS = 60
 
 NODE_TYPES = ("template", "message", "question", "end")
 INPUT_KINDS = ("buttons", "list", "number", "text", "none")
-EDGE_KINDS = ("button", "rsvp", "number", "number_invalid", "text_contains", "any_text", "done", "answered")
+EDGE_KINDS = ("button", "rsvp", "number", "number_invalid", "text_is", "text_contains", "any_text", "done", "answered")
 ACTION_TYPES = ("set_rsvp", "set_field", "add_tag", "notify_host", "stop_reminders")
 RSVP_VALUES = ("confirmed", "declined", "maybe")
 SET_RSVP_VALUES = ("confirmed", "declined", "maybe", "invited")
@@ -268,6 +268,11 @@ def build_default_graph(flow: Optional[fc.FlowConfig] = None) -> Dict[str, Any]:
                       _btn("write_note", B("after_confirm.ask_notes.buttons", "write_note"))]),
         node("note_info", "question", "כתיבת הערה", text=T("after_confirm.ask_notes.note_prompt_text"),
              input_="text", x=1020, y=260),
+        node("note_saved", "question", "ההערה נרשמה",
+             text=T("after_confirm.ask_notes.saved.text").replace("{note}", "{answer}"),
+             input_="buttons", x=1020, y=520,
+             buttons=[_btn("another_note", B("after_confirm.ask_notes.saved.buttons", "another_note")),
+                      _btn("update", B("after_confirm.ask_notes.saved.buttons", "update"))]),
         node("rsvp_done", "end", "סיום", text=T("after_confirm.done_message.text"), input_="buttons",
              answered="confirmed", x=1360, y=0,
              buttons=[_btn("update", B("after_confirm.done_message.buttons", "update"))]),
@@ -302,6 +307,9 @@ def build_default_graph(flow: Optional[fc.FlowConfig] = None) -> Dict[str, Any]:
 
     ANY = {"kind": "any_text"}
     DONE = {"kind": "done"}
+    NO_NOTE = {"kind": "text_is", "words": list(fc.NO_NOTE_REPLIES), "no_words": True}
+    WANTS_NOTE = {"kind": "text_is", "words": list(fc.WANTS_NOTE_REPLIES)}
+    save_note = [{"type": "set_field", "field": "notes_append", "value": GUEST_NOTE_PREFIX + "{answer}"}]
 
     def typed_change_of_heart(frm: str) -> List[Dict[str, Any]]:
         # flow_manager.TYPED_CHANGE_OF_HEART_STATES: a TYPED decline/maybe is
@@ -327,13 +335,20 @@ def build_default_graph(flow: Optional[fc.FlowConfig] = None) -> Dict[str, Any]:
               edge("question_answer", "question_answer_retry", ANY),
               edge("question_answer_retry", "rsvp_info_question", DONE),
               edge("question_answer_retry", "question_answer", {"kind": "answered"})]
+    # notes: typed text is the note (echoed by note_saved), never a typed decline
+    # ("לא אוכל בשר"); "nothing" replies end, a bare "כן" asks to write it.
     edges += [edge("rsvp_info_question", "rsvp_done", btn("no_notes")),
-              edge("rsvp_info_question", "note_info", btn("write_note"))]
-    edges += typed_change_of_heart("rsvp_info_question")
-    edges += [edge("rsvp_info_question", "rsvp_info_question", ANY),
+              edge("rsvp_info_question", "note_info", btn("write_note")),
+              edge("rsvp_info_question", "note_info", copy.deepcopy(WANTS_NOTE)),
+              edge("rsvp_info_question", "rsvp_done", copy.deepcopy(NO_NOTE)),
+              edge("rsvp_info_question", "note_saved", ANY, copy.deepcopy(save_note)),
               edge("rsvp_info_question", "rsvp_done", DONE)]
-    edges += [edge("note_info", "rsvp_done", ANY,
-                   [{"type": "set_field", "field": "notes_append", "value": GUEST_NOTE_PREFIX + "{answer}"}])]
+    edges += [edge("note_info", "rsvp_done", copy.deepcopy(NO_NOTE)),
+              edge("note_info", "note_saved", ANY, copy.deepcopy(save_note))]
+    edges += [edge("note_saved", "note_info", btn("another_note")),
+              edge("note_saved", "rsvp_update", btn("update")),
+              edge("note_saved", "rsvp_done", copy.deepcopy(NO_NOTE)),
+              edge("note_saved", "note_saved", ANY, copy.deepcopy(save_note))]
     edges += [edge("rsvp_done", "rsvp_update", btn("update"))]
     edges += typed_change_of_heart("rsvp_done") + [edge("rsvp_done", "rsvp_done", ANY)]
     edges += [edge("rsvp_update", "note_info", btn("add_note")),
@@ -830,7 +845,7 @@ def _validate_edge(e: Dict[str, Any], p: str, eid: Optional[str], nodes: Dict[st
         if src and src.get("input") != "number":
             errs.append(_issue("not_number_node", "תנאי מספר רק בצומת שמבקש מספר", path=f"{p}.when", edge_id=eid,
                                node_id=frm))
-    elif kind == "text_contains":
+    elif kind in ("text_contains", "text_is"):
         words = w.get("words")
         if (not isinstance(words, list) or not words
                 or not all(isinstance(x, str) and x.strip() and len(x) <= 60 for x in words) or len(words) > 50):
@@ -986,11 +1001,20 @@ def _contains(text: str, words: List[str]) -> bool:
     return False
 
 
+def _is_reply(text: str, words: List[str], no_words: bool) -> bool:
+    """The whole reply is one of `words` (word by word; punctuation / emoji
+    ignored). `no_words`: a reply without any word (emoji, sticker) matches too."""
+    toks = tokenize_reply(text)
+    if not toks:
+        return no_words
+    return any(toks == tokenize_reply(w) for w in words or [])
+
+
 def match_edge(graph: Graph, node: Dict[str, Any], inbound: Inbound,
                defaults: Optional[Graph] = None) -> Tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
     """The edge an inbound message takes at `node`, and the turn values
     ({answer, party_size}). Order: button -> rsvp -> number/number_invalid ->
-    text_contains -> any_text."""
+    text_is -> text_contains -> any_text."""
     nid = node["id"]
     text = (inbound.text or "").strip()
     turn: Dict[str, Any] = {"answer": text}
@@ -1018,6 +1042,10 @@ def match_edge(graph: Graph, node: Dict[str, Any], inbound: Inbound,
                 return num_edges[0], turn
         elif inv_edges:
             return inv_edges[0], turn
+    for e in graph.edges_of(nid, "text_is"):
+        w = e.get("when") or {}
+        if _is_reply(text, w.get("words") or [], bool(w.get("no_words"))):
+            return e, turn
     for e in graph.edges_of(nid, "text_contains"):
         if _contains(text, (e.get("when") or {}).get("words") or []):
             return e, turn
@@ -1345,12 +1373,13 @@ def meta() -> Dict[str, Any]:
             {"kind": "rsvp", "label": "תשובת הגעה (מגיע/לא/אולי)", "fields": ["value", "typed_only?"]},
             {"kind": "number", "label": "מספר תקין"},
             {"kind": "number_invalid", "label": "מספר לא תקין"},
+            {"kind": "text_is", "label": "התשובה היא בדיוק", "fields": ["words", "no_words?"]},
             {"kind": "text_contains", "label": "הטקסט מכיל", "fields": ["words"]},
             {"kind": "any_text", "label": "כל תשובה אחרת"},
             {"kind": "done", "label": "המשך (סיום שאלות / דילוג / המשך הודעה)"},
             {"kind": "answered", "label": "שאלה לאורח נענתה (רק בצומת שאלות לאורחים)"},
         ],
-        "match_order": ["button", "rsvp", "number", "number_invalid", "text_contains", "any_text"],
+        "match_order": ["button", "rsvp", "number", "number_invalid", "text_is", "text_contains", "any_text"],
         "action_types": [
             {"type": "set_rsvp", "label": "עדכון סטטוס הגעה", "values": list(SET_RSVP_VALUES)},
             {"type": "set_field", "label": "עדכון שדה", "fields": ["field", "value"]},

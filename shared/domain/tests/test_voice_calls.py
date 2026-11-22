@@ -14,18 +14,19 @@ from shared.domain import voice_calls as vc  # noqa: E402
 
 
 def test_spoken_date():
-    assert vc.spoken_date("2026-11-12T19:30:00") == "ביום חמישי, ה-12 בנובמבר"
-    assert vc.spoken_date("2026-11-14T19:30:00") == "בשבת, ה-14 בנובמבר"
+    assert vc.spoken_date("2026-11-12T19:30:00") == "ביום חמישי, השנים עשר בנובמבר"
+    assert vc.spoken_date("2026-11-14T19:30:00") == "בשבת, הארבעה עשר בנובמבר"
     assert vc.spoken_date(None) == "" and vc.spoken_date("garbage") == ""
 
 
 def test_opening_is_one_personal_utterance_per_event_type():
     w = vc.opening_text("wedding", "דנה כהן", "מיכל ויוסי", "2026-11-12T19:30:00")
-    assert w.startswith("[excited] היי דנה! איזה כיף,")
-    assert "מיכל ויוסי" in w and "לחתונה שלהם ביום חמישי, ה-12 בנובמבר" in w
+    # who we are comes first, so the guest knows at once it is about an RSVP
+    assert w.startswith("[warmly] היי דנה, מדברת מ־ShowUp, אישורי הגעה. ")
+    assert "מיכל ויוסי מזמינים אתכם לחתונה שלהם ביום חמישי, השנים עשר בנובמבר." in w
     assert w.endswith(vc.MENU_TEXT)
     corp = vc.opening_text("corporate", "דנה", "אקמה", None)
-    assert corp.startswith("[friendly] שלום דנה,") and "כיף" not in corp
+    assert corp.startswith("[friendly] שלום דנה,") and "כיף" not in corp and "ShowUp" in corp
     brit = vc.opening_text("brit", "", "משפחת לוי", None)
     assert brit.startswith("[warmly] שלום!") and "לברית." in brit
     assert vc.opening_text("unknown-type", "רון", "", None).startswith("[warmly] היי רון")
@@ -34,9 +35,10 @@ def test_opening_is_one_personal_utterance_per_event_type():
 def test_opening_handles_junk_names_missing_hosts_and_honoree():
     assert vc.first_name("7") == "" and vc.first_name("- כהן") == "" and vc.first_name("0501234567") == ""
     assert vc.first_name("דנה") == "דנה" and vc.first_name("Dana Cohen") == "Dana"
+    assert vc.first_name("שקד קדושים") == "שקד" and vc.first_name("משפחת כהן") == "משפחת כהן"
     t = vc.opening_text("birthday", "7", "", "2026-09-04T20:00:00", "מיכל")
-    assert t.startswith("[excited] היי! איזה כיף,")
-    assert "אנחנו מתקשרים לגבי ההזמנה ליום ההולדת של מיכל ביום שישי, ה-4 בספטמבר." in t
+    assert t.startswith("[warmly] היי, מדברת מ־ShowUp")
+    assert "זה לגבי ההזמנה ליום ההולדת של מיכל ביום שישי, הרביעי בספטמבר." in t
     assert "המארחים" not in t
     assert "לחתונה ב" not in vc.opening_text("wedding", "", "", None)
     assert "לחתונה." in vc.opening_text("wedding", "", "", None)
@@ -64,6 +66,10 @@ def test_menu():
     assert s.gather == "count" and s.result is None
     assert vc.on_digits("menu", "2", 1).result == vc.CallResult.DECLINED
     assert vc.on_digits("menu", "3", 1).result == vc.CallResult.MAYBE
+    nine = vc.on_digits("menu", "9", 1)
+    assert nine.result == vc.CallResult.WHATSAPP and nine.hangup and nine.result not in vc.CallResult.RETRYABLE
+    # "maybe" never promises a call that may not come
+    assert all("נחזור" not in vc.fixed_texts(t)["thanks_maybe"] for t in ("wedding", "brit", "corporate"))
     again = vc.on_digits("menu", "", 1)
     assert again.gather == "menu" and again.tries == 2 and again.play == ("menu",)
     assert vc.on_digits("menu", "7", 1).play == ("menu_invalid",)
@@ -73,7 +79,7 @@ def test_menu():
 
 def test_count():
     assert vc.parse_count("4#") == 4 and vc.parse_count("04") == 4 and vc.parse_count("12") == 12
-    assert vc.parse_count("0") is None and vc.parse_count("") is None and vc.parse_count("99") is None
+    assert vc.parse_count("0") is None and vc.parse_count("") is None and vc.parse_count("100") is None
     s = vc.on_digits("count", "3", 1)
     assert s.result == vc.CallResult.CONFIRMED and s.count == 3 and s.hangup
     retry = vc.on_digits("count", "0", 1)
@@ -134,3 +140,58 @@ if __name__ == "__main__":
         if name.startswith("test_") and callable(fn):
             fn()
             print("ok", name)
+
+
+def test_call_rounds_per_plan_capped_at_three(monkeypatch):
+    assert [vc.included_call_rounds(p) for p in ("basic", "plus", "pro", "PRO", "free", None)] == [0, 1, 3, 3, 0, 0]
+    assert vc.included_call_rounds("basic", override=True) == 3
+    assert vc.included_call_rounds("pro", override=False) == 0
+    monkeypatch.setenv("VOICE_CALL_ROUNDS_JSON", '{"plus": 2, "basic": 9}')
+    assert vc.included_call_rounds("plus") == 2 and vc.included_call_rounds("basic") == 3
+    assert vc.included_call_rounds("pro") == 0   # env replaces the whole table
+
+
+def test_demo_call_script_hours_and_name_guard():
+    from datetime import datetime
+    t = vc.demo_opening_text("נועה כהן")
+    assert t.startswith("[warmly] היי נועה,") and "ביקשתם לשמוע" in t and t.endswith(vc.MENU_TEXT)
+    assert vc.demo_name("x" * 16) == "" and vc.demo_name("<b>שלום</b>") == "" and vc.demo_name("Dana") == "Dana"
+    assert vc.demo_opening_text("12345").startswith("[warmly] היי, ")
+    assert set(vc.fixed_texts("demo")) >= {"menu", "count", "thanks_yes", "thanks_no", "thanks_maybe", "goodbye"}
+    assert vc.is_demo_call_time(datetime(2026, 11, 1, 9, 0))        # Sunday 09:00
+    assert not vc.is_demo_call_time(datetime(2026, 11, 1, 21, 0))
+    assert not vc.is_demo_call_time(datetime(2026, 11, 6, 14, 0))   # Friday afternoon
+    assert not vc.is_demo_call_time(datetime(2026, 11, 7, 12, 0))   # Saturday
+
+
+def test_party_sizes_up_to_99_and_inbound_opening():
+    assert vc.parse_count("85") == 85 and vc.parse_count("85#") == 85
+    assert 'timeout="3"' in vc.twiml(("a",), gather_action="x", count=True)
+    i = vc.inbound_opening_text("wedding", "דנה כהן", "מיכל ויוסי", None)
+    assert i.startswith("[warmly] היי דנה, כאן ShowUp, אישורי הגעה, תודה שחזרתם אלינו.") and i.endswith(vc.MENU_TEXT)
+
+
+def test_opening_parts_cache_per_name_and_per_event():
+    a = vc.opening_parts("wedding", "דנה כהן", "מיכל ויוסי", "2026-11-12T19:30:00")
+    b = vc.opening_parts("wedding", "רון לוי", "מיכל ויוסי", "2026-11-12T19:30:00")
+    c = vc.opening_parts("brit", "דנה", "משפחת לוי", None)
+    assert a[0] == "[warmly] היי דנה, מדברת מ־ShowUp, אישורי הגעה." and a[0] != b[0]  # per name
+    assert a[1] == b[1] and "דנה" not in a[1]                       # body: one clip per event
+    assert a[2] == vc.fixed_texts("celebration")["menu"]            # menu: the tone's fixed clip
+    assert "משפחת לוי" in c[1] and c[1] != a[1]
+
+
+def test_day_of_month_in_correct_hebrew_words():
+    assert [vc.day_words(d) for d in (1, 3, 10, 11, 12, 20, 21, 22, 30, 31)] == [
+        "הראשון", "השלישי", "העשירי", "האחד עשר", "השנים עשר", "העשרים", "העשרים ואחד",
+        "העשרים ושניים", "השלושים", "השלושים ואחד"]
+    assert vc.spoken_date("2026-11-03T19:30:00") == "ביום שלישי, השלישי בנובמבר"
+    assert "הקישו" not in vc.MENU_TEXT and "סולמית" not in vc.COUNT_TEXT and "תלחצו" in vc.MENU_TEXT
+
+
+def test_couple_last_names_on_the_phone():
+    assert vc.couple_with_last_names({"p1": "מיכל", "ln1": "לוי", "p2": "יוסי", "ln2": "כהן"}) == "מיכל לוי ויוסי כהן"
+    assert vc.couple_with_last_names({"p1": "מיכל", "ln1": "לוי", "p2": "יוסי", "ln2": "לוי"}) == "מיכל ויוסי לוי"
+    assert vc.couple_with_last_names({"p1": "מיכל", "ln1": "לוי", "p2": "יוסי"}) == "מיכל לוי ויוסי"
+    assert vc.couple_with_last_names({"p1": "מיכל", "p2": "יוסי"}) == "מיכל ויוסי"
+    assert vc.couple_with_last_names({"p1": "מיכל"}) == ""

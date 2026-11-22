@@ -47,7 +47,7 @@ export default function MobileNav() {
 
   return (
     <Box sx={{ display: { xs: 'block', md: 'none' } }}>
-      <Box component="nav" aria-label="ניווט ראשי" sx={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 1250, display: 'flex', justifyContent: 'space-around', p: '8px 8px calc(10px + env(safe-area-inset-bottom))', bgcolor: 'rgba(250,248,244,.96)', backdropFilter: 'blur(10px)', borderTop: `1.5px solid ${C.lineApp}` }}>
+      <Box component="nav" aria-label="ניווט ראשי" sx={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 1250, display: 'flex', justifyContent: 'space-around', p: '8px 8px var(--su-nav-pb, calc(10px + env(safe-area-inset-bottom)))', bgcolor: 'rgba(250,248,244,.96)', backdropFilter: 'blur(10px)', borderTop: `1.5px solid ${C.lineApp}` }}>
         {mobileTabs.map((t) => tab(t, isActivePath(pathname, t.path), () => go(t.path)))}
         {tab({ id: 'more', label: 'עוד', icon: 'menu' }, open || sheetItems.some((n) => isActivePath(pathname, n.path)), () => setOpen(true))}
       </Box>
@@ -68,6 +68,12 @@ export default function MobileNav() {
                 </Box>
               );
             })}
+          </Box>
+          {/* App Store 5.1.1(v): account deletion one tap from the menu. */}
+          <Box component="button" type="button" onClick={() => go('/settings?tab=account')} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minHeight: 52, px: 0.5, border: 'none', borderBottom: `1.5px solid ${C.line2}`, bgcolor: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 16, fontWeight: 500, color: C.ink, textAlign: 'right' }}>
+            <Box component="span" sx={{ width: 42, height: 42, flex: 'none', borderRadius: '12px', bgcolor: C.tintApp, color: C.purpleDark, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span className="ms" style={{ fontSize: 22 }}>manage_accounts</span></Box>
+            <Box component="span" sx={{ flex: 1 }}>החשבון ומחיקת החשבון</Box>
+            <span className="ms" style={{ fontSize: 22, color: C.muted }}>chevron_left</span>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 1 }}>
             <Box component="span" sx={{ flex: 1, fontSize: 15, fontWeight: 600 }}>{user?.username || 'החשבון שלי'}</Box>

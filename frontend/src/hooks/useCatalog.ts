@@ -7,7 +7,7 @@
  * Mirrors the `useEntitlements`/`useTemplates` pattern: one cached fetch per
  * session, graceful when the API is unavailable.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 export interface CatalogPreview {
   emoji: string;
@@ -44,11 +44,22 @@ export interface CatalogTemplate {
   // globally unsendable while its wedding variant is live. Anywhere the event
   // type is known, filter on THIS - `sendable` alone hides most of the catalog.
   sendable_event_types: string[];
+  // The copy that ACTUALLY goes out for an event type, where it differs from the
+  // base: the worker sends an invitation/reminder as its approved event-type
+  // variant. Previews must show this (see `copyForEventType`).
+  sent_as?: Record<string, SentAsCopy>;
   variables: string[];        // canonical variable names the copy will use
   preview: CatalogPreview;
   meta_template: string | null;
   version: number;
   metadata: Record<string, unknown>;
+  // Admin placement (core app/template_placement.py): the category the template
+  // sits in; `flow_stage` is already that category's stage, `own_stage` its own.
+  category_id?: string;
+  own_stage?: string;
+  replaced_by?: string;     // an approved edited copy stands in for it
+  replaces?: string;        // this is the edited copy of that built-in family
+  source?: string;          // 'custom' for Template Studio templates
 }
 
 /** Templates offered in the wizard: any active/approved template. Actual
@@ -186,8 +197,29 @@ export function renderCatalogBody(body: string, values: Record<string, string>):
   );
 }
 
-/** The messaging catalog (one cached fetch). Preview + selection consume this. */
-export function useCatalog() {
+export interface SentAsCopy {
+  title: string;
+  body: string;
+  category: string;
+  cta_type: string;
+  variables: string[];
+  meta_template: string | null;
+  buttons: string[];
+}
+
+/** The template as guests of this event type will receive it (same id - the
+ *  campaign still stores the base key the worker resolves). */
+export function copyForEventType(t: CatalogTemplate, eventType?: string): CatalogTemplate {
+  const s = eventType ? t.sent_as?.[eventType] : undefined;
+  if (!s) return t;
+  return { ...t, title: s.title, body: s.body, category: s.category, cta_type: s.cta_type,
+           variables: s.variables, meta_template: s.meta_template };
+}
+
+/** The messaging catalog (one cached fetch). Preview + selection consume this.
+ *  Pass the event type wherever it is known, so every preview shows the copy
+ *  that is really sent for it. */
+export function useCatalog(eventType?: string) {
   const [catalog, setCatalog] = useState<MessagingCatalog | null>(cache);
   const [loading, setLoading] = useState(cache === null);
 
@@ -204,5 +236,10 @@ export function useCatalog() {
     };
   }, []);
 
-  return { catalog: catalog || EMPTY, loading };
+  const base = catalog || EMPTY;
+  const forType = useMemo(
+    () => (eventType ? { ...base, templates: base.templates.map((t) => copyForEventType(t, eventType)) } : base),
+    [base, eventType],
+  );
+  return { catalog: forType, loading };
 }

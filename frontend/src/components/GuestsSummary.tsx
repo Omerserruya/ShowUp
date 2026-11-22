@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Typography, Button, alpha, useTheme } from '@mui/material';
+import { Box, Typography, Button, Menu, MenuItem, alpha, useTheme } from '@mui/material';
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
+import ContactsRoundedIcon from '@mui/icons-material/ContactsRounded';
+import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
@@ -96,6 +99,8 @@ export interface GuestsSummaryProps {
   capacity: number | null;
   daysUntil?: number | null;
   onAdd: () => void;
+  /** Mobile app: "הוספת אורחים" opens a menu with "from the phone's contacts". */
+  onAddFromContacts?: () => void;
   onImport: () => void;
   onExport: (e: React.MouseEvent<HTMLElement>) => void;
   exportLoading: boolean;
@@ -105,7 +110,8 @@ export interface GuestsSummaryProps {
  * The Guests page header: a calm masthead (title, one status line, actions)
  * and a single stat strip beneath it. Sits directly on the page - no plate.
  */
-export default function GuestsSummary({ confirmed, pending, declined, totalInvited, capacity, daysUntil, onAdd, onImport, onExport, exportLoading }: GuestsSummaryProps) {
+export default function GuestsSummary({ confirmed, pending, declined, totalInvited, capacity, daysUntil, onAdd, onAddFromContacts, onImport, onExport, exportLoading }: GuestsSummaryProps) {
+  const [addAnchor, setAddAnchor] = useState<HTMLElement | null>(null);
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const capPct = capacity && capacity > 0 ? Math.min(100, (totalInvited / capacity) * 100) : 0;
@@ -129,16 +135,29 @@ export default function GuestsSummary({ confirmed, pending, declined, totalInvit
           </Box>
         </Box>
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: { xs: 'nowrap', sm: 'wrap' } }}>
           <Button
-            onClick={onAdd}
+            onClick={(e) => (onAddFromContacts ? setAddAnchor(e.currentTarget) : onAdd())}
             variant="contained"
             disableElevation
             startIcon={<AddRoundedIcon />}
-            sx={{ borderRadius: 999, px: 2.25, fontWeight: 700, '& .MuiButton-startIcon': { ml: 0.5, mr: -0.25 } }}
+            endIcon={onAddFromContacts ? <ExpandMoreRoundedIcon /> : undefined}
+            sx={{ borderRadius: 999, px: 2.25, fontWeight: 700, '& .MuiButton-startIcon': { ml: 0.5, mr: -0.25 }, '& .MuiButton-endIcon': { mr: 0.25, ml: -0.5 } }}
           >
             הוספת אורחים
           </Button>
+          {onAddFromContacts && (
+            <Menu anchorEl={addAnchor} open={!!addAnchor} onClose={() => setAddAnchor(null)} dir="rtl"
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+              slotProps={{ paper: { sx: { borderRadius: 3, mt: 0.75, minWidth: 220 } } }}>
+              <MenuItem onClick={() => { setAddAnchor(null); onAddFromContacts(); }} sx={{ gap: 1.25, py: 1.25 }}>
+                <ContactsRoundedIcon fontSize="small" sx={{ color: DEEP }} />מאנשי הקשר בטלפון
+              </MenuItem>
+              <MenuItem onClick={() => { setAddAnchor(null); onAdd(); }} sx={{ gap: 1.25, py: 1.25 }}>
+                <EditRoundedIcon fontSize="small" sx={{ color: DEEP }} />הוספה ידנית
+              </MenuItem>
+            </Menu>
+          )}
           <Button
             onClick={onImport}
             variant="outlined"
@@ -151,10 +170,12 @@ export default function GuestsSummary({ confirmed, pending, declined, totalInvit
             onClick={onExport}
             disabled={exportLoading}
             variant="text"
+            aria-label="ייצוא"
             startIcon={<FileDownloadOutlinedIcon />}
-            sx={{ borderRadius: 999, px: 1.5, fontWeight: 600, color: 'text.secondary', '& .MuiButton-startIcon': { ml: 0.5, mr: -0.25 } }}
+            sx={{ borderRadius: 999, px: { xs: 1, sm: 1.5 }, minWidth: 0, fontWeight: 600, color: 'text.secondary', '& .MuiButton-startIcon': { ml: { xs: 0, sm: 0.5 }, mr: { xs: 0, sm: -0.25 } } }}
           >
-            {exportLoading ? 'מייצא...' : 'ייצוא'}
+            {/* Phone: icon only, so the three actions stay on one row. */}
+            <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{exportLoading ? 'מייצא...' : 'ייצוא'}</Box>
           </Button>
         </Box>
       </Box>

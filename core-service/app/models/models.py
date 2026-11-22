@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import secrets
 import uuid
 from typing import List, Optional
 
@@ -138,6 +139,15 @@ class Event(Base):
     # captured in the wizard. Persisted so the SAME subject variables the designer
     # previews also resolve during WhatsApp delivery (preview == delivery).
     subjects = Column(JSON, nullable=True)
+    # Which terms-of-use version the creator accepted, and when (proof of consent).
+    terms_version = Column(String(20), nullable=True)
+    terms_accepted_at = Column(DateTime(timezone=True), nullable=True)
+    # Money-gift details {url, bit_phone, code}: the hosts' own Bit/PayBox group,
+    # shown to guests on /g/{code}. See shared/domain/gift.py.
+    gift = Column(JSON, nullable=True)
+    # Random public handle for event-level guest links that need no invitation
+    # page (the "add to calendar" page /c/{share_code}). Set by the DB default.
+    share_code = Column(String(16), nullable=True, unique=True, default=lambda: secrets.token_hex(6))
     # Seating map: { "tables": [ { "id", "name", "seats", "style", "side", "position", "size", "seatsBride?", "seatsGroom?" }, ... ] }
     seating_layout = Column(JSON, nullable=True)
 
@@ -217,6 +227,9 @@ class Campaign(Base):
     # delivery is unchanged; nullable while old rows backfill.
     stage_id = Column(String(40), nullable=True)
     variant_id = Column(String(60), nullable=True)
+    # The round's category (round_categories.id) - it alone decides the audience,
+    # which is copied onto audience/audience_filter (app/round_categories.py).
+    category_id = Column(String(60), nullable=True)
     # Optional user-written body that overrides the template at send time (once an
     # approved WhatsApp template backs it). Captured in the wizard; persisted here
     # so the custom copy is never lost between order provisioning and sending.

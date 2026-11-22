@@ -12,8 +12,9 @@ export type PlanTier = {
   countLimit?: number | null; // Max guests allowed (null = unlimited)
 };
 
-// Plans differ ONLY by guest capacity and included campaign rounds - every plan
-// includes the full ShowUp experience (AI assistant, WhatsApp campaigns, contact
+// Plans differ ONLY by guest capacity, included campaign rounds and phone-call
+// rounds (basic 0 / plus 1 / pro 3, see shared/domain/voice_calls.py) - every plan
+// includes the rest of the ShowUp experience (AI assistant, WhatsApp campaigns, contact
 // import, invitation builder, seating, analytics and the rest).
 export const plans: PlanTier[] = [
   {
@@ -25,7 +26,7 @@ export const plans: PlanTier[] = [
     features: [
       'עד 50 אורחים',
       '2 סבבי הודעות כלולים',
-      'כל היכולות כלולות',
+      'כל היכולות, חוץ משיחות טלפון',
     ],
     color: '#9D83E0',
     isPopular: false,
@@ -40,6 +41,7 @@ export const plans: PlanTier[] = [
     features: [
       'עד 250 אורחים',
       '4 סבבי הודעות כלולים',
+      'סבב שיחות טלפון אחד',
       'כל היכולות כלולות',
     ],
     color: '#5A3DA6',
@@ -55,6 +57,7 @@ export const plans: PlanTier[] = [
     features: [
       'ללא הגבלת אורחים',
       '4 סבבי הודעות כלולים',
+      'עד 3 סבבי שיחות טלפון',
       'כל היכולות כלולות',
     ],
     color: '#432C85',

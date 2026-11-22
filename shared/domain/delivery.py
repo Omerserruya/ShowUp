@@ -111,6 +111,8 @@ ENSURE_MESSAGES_SENT_DDL = (
     "ALTER TABLE messages_sent ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT NOW()",
     # When this recipient answered the message. NULL = no reply yet.
     "ALTER TABLE messages_sent ADD COLUMN IF NOT EXISTS replied_at timestamptz",
+    # Times this row was re-sent after a retry-later failure (RETRY_LATER_CODES).
+    "ALTER TABLE messages_sent ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0",
     # Delivery receipts arrive keyed by wamid only.
     "CREATE INDEX IF NOT EXISTS ix_messages_sent_wa_message_id ON messages_sent (wa_message_id)",
     # Campaign statistics group by status.
@@ -118,6 +120,18 @@ ENSURE_MESSAGES_SENT_DDL = (
     # Reply attribution looks up a guest's most recent campaign message.
     "CREATE INDEX IF NOT EXISTS ix_messages_sent_guest_recent ON messages_sent (guest_id, sent_at DESC)",
 )
+
+
+# Failures that are about timing, not the guest: Meta's per-user cap on business
+# MARKETING messages (131049 "healthy ecosystem engagement") - the person already
+# got their share today; it resets after ~24h or once they reply. Such a row is
+# re-sent ONCE, by the scheduler, after the delay and only inside the send window
+# (scheduler-service/delivery_retry.py -> campaign-worker retry mode). A guest
+# blocked twice moves to the front of the next phone-call round instead.
+RETRY_LATER_CODES = ("131049",)
+RETRY_LATER_AFTER_HOURS = 24
+RETRY_LATER_MAX_AGE_DAYS = 7     # older than this, the round's moment has passed
+RETRY_LATER_MAX = 1
 
 
 def ensure_messages_sent_schema(cursor) -> None:

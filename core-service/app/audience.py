@@ -3,7 +3,9 @@
 Translates a campaign's audience (+ optional custom filter) into a guest query.
 This is the single place audience selection lives - decoupled from templates.
 Custom filter supported keys: status (list), group (str), tag_id (uuid),
-table ('none' -> no table assigned, 'any' -> has a table). campaign-worker's
+tag_name (str), table ('none' -> no table assigned, 'any' -> has a table),
+skip_no_reminders (bool). The round-category audiences
+(shared/domain/round_categories.py) are built from these. campaign-worker's
 audience.py must understand exactly the same keys with the same semantics - a
 key only one side knows silently widens the send.
 
@@ -64,6 +66,17 @@ def _apply_custom(query: Query, f: dict) -> Query:
     tag_id = f.get("tag_id")
     if tag_id:
         query = query.join(GuestTag, GuestTag.guest_id == Guest.id).filter(GuestTag.tag_id == tag_id)
+    tag_name = f.get("tag_name")
+    if tag_name:
+        from sqlalchemy import exists, and_
+        tagged = GuestTag.__table__.join(Tag.__table__, Tag.id == GuestTag.tag_id)
+        query = query.filter(exists().select_from(tagged).where(
+            and_(GuestTag.guest_id == Guest.id, Tag.name == tag_name)))
+    if f.get("skip_no_reminders"):
+        from sqlalchemy import exists, and_
+        no_rem = GuestTag.__table__.join(Tag.__table__, Tag.id == GuestTag.tag_id)
+        query = query.filter(~exists().select_from(no_rem).where(
+            and_(GuestTag.guest_id == Guest.id, Tag.name == NO_REMINDERS_TAG)))
     table = f.get("table")
     if table == "none":
         query = query.filter(Guest.table_number.is_(None))
@@ -76,7 +89,7 @@ def _apply_custom(query: Query, f: dict) -> Query:
 # understand. Anything else in a custom filter is ignored by them.
 NO_REMINDERS_TAG = "no_reminders"
 
-SUPPORTED_FILTER_KEYS = frozenset({"status", "group", "tag_id", "table"})
+SUPPORTED_FILTER_KEYS = frozenset({"status", "group", "tag_id", "tag_name", "table", "skip_no_reminders"})
 
 
 def count_audience(db: Session, event_id, audience, audience_filter: Optional[dict] = None) -> int:

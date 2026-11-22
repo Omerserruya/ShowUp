@@ -21,7 +21,7 @@ import json
 import os
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, Mapping, Optional, Tuple
+from typing import Dict, List, Mapping, Optional, Tuple
 from xml.sax.saxutils import escape, quoteattr
 
 from .messaging.event_types import EventType, event_type_of
@@ -32,22 +32,26 @@ TTS_MODEL = "eleven_v3"            # multilingual_v2 produces unintelligible Heb
 TTS_LANGUAGE = "he"
 TTS_OUTPUT_FORMAT = "mp3_22050_32"  # phone audio is 8kHz anyway; small files, Twilio plays mp3
 DEFAULT_VOICE_NAME = "Nimrod"       # resolved to a voice_id by name (my voices, then the shared library)
-VOICE_SETTINGS = {"stability": 0.5, "similarity_boost": 0.75, "style": 0.35, "use_speaker_boost": True}
+# speed 1.15 (API max 1.2) + tts.TEMPO afterwards: at 1.0 the voice sounded slow
+# and sleepy on a call. Changing these re-voices every clip (they key the cache).
+VOICE_SETTINGS = {"stability": 0.5, "similarity_boost": 0.75, "style": 0.35, "use_speaker_boost": True,
+                  "speed": 1.15}
 
 # ---- call policy -------------------------------------------------------------
 
 MAX_ATTEMPTS = 2           # per guest per round
-MAX_COUNT = 30             # largest party size accepted on the keypad
+MAX_COUNT = 99             # largest party size accepted on the keypad (2 digits)
 CALL_HOURS = (10, 20)      # local Israel time, [start, end)
 FRIDAY_LAST_HOUR = 13
 MENU_TRIES = 2             # how many times the menu is offered before hanging up
 COUNT_TRIES = 2
 
 # Phone rounds included per plan (plans otherwise differ only by guest cap and
-# message rounds). Unknown plans fail CLOSED, like rounds.included_rounds.
-# Overridable via VOICE_CALL_ROUNDS_JSON, e.g. {"plus": 1, "pro": 2}.
-_DEFAULT_CALL_ROUNDS: Dict[str, int] = {"pro": 1, "legacy": 1}
-OVERRIDE_CALL_ROUNDS = 2   # an admin switching phone calls on for an event
+# message rounds): basic 0, plus 1, pro 3. Unknown plans fail CLOSED, like
+# rounds.included_rounds. Overridable via VOICE_CALL_ROUNDS_JSON, e.g. {"plus": 2}.
+MAX_CALL_ROUNDS = 3
+_DEFAULT_CALL_ROUNDS: Dict[str, int] = {"basic": 0, "plus": 1, "pro": MAX_CALL_ROUNDS, "legacy": MAX_CALL_ROUNDS}
+OVERRIDE_CALL_ROUNDS = MAX_CALL_ROUNDS   # an admin switching phone calls on for an event
 
 
 def included_call_rounds(plan_id, override: Optional[bool] = None) -> int:
@@ -65,7 +69,7 @@ def included_call_rounds(plan_id, override: Optional[bool] = None) -> int:
         except (ValueError, TypeError, AttributeError):
             pass
     key = str(plan_id).strip().lower() if plan_id else ""
-    return max(0, table.get(key, 0))
+    return max(0, min(MAX_CALL_ROUNDS, table.get(key, 0)))
 
 
 class CallResult:
@@ -78,6 +82,7 @@ class CallResult:
     FAILED = "failed"
     MACHINE = "machine"        # voicemail - hung up without playing
     CANCELED = "canceled"
+    WHATSAPP = "whatsapp"      # pressed 9 - the invitation went to WhatsApp, they answer there
 
     RSVP = (CONFIRMED, DECLINED, MAYBE)
     RETRYABLE = (NO_ANSWER, BUSY, MACHINE, NO_INPUT)
@@ -91,24 +96,66 @@ _MONTHS = {1: "בינואר", 2: "בפברואר", 3: "במרץ", 4: "באפרי
 
 
 def _as_datetime(value) -> Optional[datetime]:
+    """The event time in ISRAEL time (stored in UTC: an event at 00:30 is the
+    previous day in UTC)."""
     if not value:
         return None
-    if isinstance(value, datetime):
-        return value
-    try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
-        return None
+    if not isinstance(value, datetime):
+        try:
+            value = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if value.tzinfo is not None:
+        from zoneinfo import ZoneInfo
+        value = value.astimezone(ZoneInfo("Asia/Jerusalem"))
+    return value
+
+
+# Day of the month in words, as correct Hebrew says it: ordinal for 1-10
+# ("השלישי בנובמבר"), masculine cardinal from 11 ("השלושה עשר", "העשרים ואחד").
+# Digits made the voice read "השלוש בנובמבר".
+_ORDINAL = ("", "הראשון", "השני", "השלישי", "הרביעי", "החמישי", "השישי", "השביעי", "השמיני",
+            "התשיעי", "העשירי")
+_UNITS_M = ("", "אחד", "שניים", "שלושה", "ארבעה", "חמישה", "שישה", "שבעה", "שמונה", "תשעה")
+_TEENS_M = ("", "אחד עשר", "שנים עשר", "שלושה עשר", "ארבעה עשר", "חמישה עשר", "שישה עשר",
+            "שבעה עשר", "שמונה עשר", "תשעה עשר")
+
+
+def day_words(day: int) -> str:
+    if 1 <= day <= 10:
+        return _ORDINAL[day]
+    if day < 20:
+        return "ה" + _TEENS_M[day - 10]
+    tens = "העשרים" if day < 30 else "השלושים"
+    unit = day % 10
+    return tens if unit == 0 else f"{tens} ו{_UNITS_M[unit]}"
 
 
 def spoken_date(value) -> str:
-    """'ביום חמישי, ה-12 בנובמבר' - how a person says it (not '12.11.26')."""
+    """'ביום חמישי, השנים עשר בנובמבר' - how a person says it (not '12.11.26')."""
     dt = _as_datetime(value)
     if not dt:
         return ""
     day = _WEEKDAYS[dt.weekday()]
     prefix = "בשבת" if day == "שבת" else f"ביום {day}"
-    return f"{prefix}, ה-{dt.day} {_MONTHS[dt.month]}"
+    return f"{prefix}, {day_words(dt.day)} {_MONTHS[dt.month]}"
+
+
+def couple_with_last_names(subjects: Optional[dict]) -> str:
+    """The couple as said on the phone, with last names when known - with no
+    invitation in front of them, the guest needs to know WHICH Michal and Yossi:
+    'מיכל לוי ויוסי כהן', a shared name once ('מיכל ויוסי לוי'). '' when there is
+    no first name (the caller then uses the usual host label)."""
+    s = subjects or {}
+    p1, p2 = (s.get("p1") or "").strip(), (s.get("p2") or "").strip()
+    l1, l2 = (s.get("ln1") or "").strip(), (s.get("ln2") or "").strip()
+    if not (p1 and p2):
+        return ""
+    if l1 and l1 == l2:
+        return f"{p1} ו{p2} {l1}"
+    a = f"{p1} {l1}".strip()
+    b = f"{p2} {l2}".strip()
+    return f"{a} ו{b}"
 
 
 def first_name(guest_name: str) -> str:
@@ -116,20 +163,25 @@ def first_name(guest_name: str) -> str:
     name with no letters is not said at all."""
     parts = (guest_name or "").strip().split()
     name = parts[0].strip(".,-_()") if parts else ""
+    if name in _FAMILY_WORDS and len(parts) > 1:   # "משפחת כהן" -> said whole, not "היי משפחת!"
+        name = f"משפחת {parts[1].strip('.,-_()')}"
     return name if sum(ch.isalpha() for ch in name) >= 2 else ""
 
 
+_FAMILY_WORDS = {"משפחת", "משפ'", "משפ׳", "משפחה", "מש'"}
+
+
 # ---- scripts per event type ----------------------------------------------------
-# eleven_v3 audio tags ([excited], [warmly]) steer the delivery; they are not read
-# aloud. Each tone keeps the same structure so the state machine is shared.
+# eleven_v3 audio tags ([excited], [warmly], [breathes], [short pause]) steer the
+# delivery; they are not read aloud. The speaker is a woman (first person,
+# feminine: "מתקשרת", "רשמתי") with breaths and pauses so it sounds like a real
+# person, not an IVR. Each tone keeps the same structure so the state machine is shared.
 
 @dataclass(frozen=True)
 class Tone:
     tag: str                 # audio tag opening every clip
     hello: str               # "היי {name}!"
     hello_no_name: str
-    intro: str               # "{hosts} ... {occasion} {date}"
-    intro_no_hosts: str      # when the event has no host names
     thanks_yes: str
     thanks_no: str
     thanks_maybe: str
@@ -148,36 +200,47 @@ _OCCASION = {
 
 _TONES: Dict[str, Tone] = {
     "celebration": Tone(
-        tag="[excited]",
-        hello="היי {name}! איזה כיף,",
-        hello_no_name="היי! איזה כיף,",
-        intro="אנחנו מתקשרים בשם {hosts}, שמזמינים אתכם {occasion}{when}.",
-        intro_no_hosts="אנחנו מתקשרים לגבי ההזמנה {occasion}{when}.",
-        thanks_yes="[excited] מעולה, רשמנו! מחכים לכם, נתראה בשמחות!",
-        thanks_no="[warmly] תודה שעדכנתם, רשמנו שלא תגיעו. המון תודה ויום נפלא!",
-        thanks_maybe="[warmly] בסדר גמור, נחזור אליכם קצת יותר קרוב לאירוע. יום נפלא!",
+        tag="[warmly]",
+        hello="היי {name},",
+        hello_no_name="היי,",
+        thanks_yes="[warmly] מעולה, רשמתי. מחכים לכם, נתראה בשמחות.",
+        thanks_no="[warmly] אוקיי, תודה שעדכנתם, רשמתי. יום נפלא.",
+        thanks_maybe="[warmly] בסדר גמור, אין לחץ. כשתדעו, אפשר לעדכן בוואטסאפ, או פשוט לחזור אלינו למספר הזה. יום נפלא.",
     ),
     "family": Tone(
         tag="[warmly]",
         hello="היי {name}, שלום!",
         hello_no_name="שלום!",
-        intro="אנחנו מתקשרים בשם {hosts}, שמזמינים אתכם {occasion}{when}.",
-        intro_no_hosts="אנחנו מתקשרים לגבי ההזמנה {occasion}{when}.",
-        thanks_yes="[warmly] מעולה, רשמנו! מחכים לכם, נתראה בשמחה!",
-        thanks_no="[warmly] תודה שעדכנתם, רשמנו שלא תגיעו. יום טוב!",
-        thanks_maybe="[warmly] בסדר גמור, נחזור אליכם קרוב יותר לאירוע. יום טוב!",
+        thanks_yes="[warmly] מעולה, רשמתי. מחכים לכם, נתראה בשמחה.",
+        thanks_no="[warmly] אוקיי, תודה שעדכנתם, רשמתי. יום טוב.",
+        thanks_maybe="[warmly] בסדר גמור, אין לחץ. כשתדעו, אפשר לעדכן בוואטסאפ, או לחזור אלינו למספר הזה. יום טוב.",
     ),
     "business": Tone(
         tag="[friendly]",
         hello="שלום {name},",
         hello_no_name="שלום,",
-        intro="מתקשרים בשם {hosts} לגבי ההזמנה {occasion}{when}.",
-        intro_no_hosts="מתקשרים לגבי ההזמנה {occasion}{when}.",
-        thanks_yes="[friendly] תודה, רשמנו את ההגעה. נתראה באירוע!",
-        thanks_no="[friendly] תודה על העדכון, רשמנו שלא תגיעו. יום טוב.",
-        thanks_maybe="[friendly] בסדר, נחזור אליכם קרוב יותר לאירוע. יום טוב.",
+        thanks_yes="[friendly] תודה, רשמתי את ההגעה. נתראה באירוע!",
+        thanks_no="[friendly] תודה על העדכון, רשמתי שלא תגיעו. יום טוב.",
+        thanks_maybe="[friendly] בסדר, רשמתי שעוד לא בטוחים. כשתדעו, אפשר לעדכן בוואטסאפ או להתקשר חזרה למספר הזה. יום טוב.",
     ),
 }
+
+# The landing-page sample call ("נסו שיחת טלפון"): a visitor asked to hear it,
+# so the opening says so up front, then plays a pretend wedding invitation.
+# Nothing is written anywhere - it is a test call.
+_TONES["demo"] = Tone(
+    tag="[warmly]",
+    hello="היי {name},",
+    hello_no_name="היי,",
+    thanks_yes="[warmly] מעולה, רשמתי. וזהו, ככה זה נרשם אצל בעלי השמחה, בלי שאף אחד הרים טלפון. "
+               "רוצים שנעשה את זה גם לאורחים שלכם? נכנסים ל־ShowUp ופותחים אירוע. יום נפלא.",
+    thanks_no="[warmly] אוקיי, גם תשובה כזאת נרשמת מיד. "
+              "רוצים שנעשה את זה גם לאורחים שלכם? נכנסים ל־ShowUp ופותחים אירוע. יום נפלא!",
+    thanks_maybe="[warmly] אין בעיה, גם את זה רושמים. "
+                 "רוצים שנעשה את זה גם לאורחים שלכם? נכנסים ל־ShowUp ופותחים אירוע. יום נפלא!",
+)
+DEMO_INTRO = ("כאן ShowUp. ביקשתם לשמוע איך נשמעת שיחה שלנו לאורחים, אז בואו נדמיין: "
+              "מיכל ויוסי מתחתנים ביום חמישי הבא, ואני מתקשרת לשאול אם תגיעו.")
 
 _TONE_OF = {
     EventType.WEDDING: "celebration",
@@ -190,11 +253,19 @@ _TONE_OF = {
     EventType.CORPORATE: "business",
 }
 
-MENU_TEXT = "אם אתם מגיעים, הקישו אחת. אם לא תוכלו להגיע, הקישו שתיים. ואם עוד לא בטוחים, הקישו שלוש."
-COUNT_TEXT = "כמה תהיו? הקישו את מספר המגיעים, כולל אתכם, ואז סולמית."
-COUNT_INVALID_TEXT = "לא הצלחנו להבין. הקישו מספר בין אחת ל-{max}, ואז סולמית."
-MENU_INVALID_TEXT = "לא הצלחנו להבין."
-GOODBYE_TEXT = "לא קיבלנו תשובה. אפשר לעדכן אותנו גם בהודעה בוואטסאפ. יום טוב!"
+# Spoken like a person, not an IVR: "תלחצו" (everyday) instead of "הקישו",
+# no "ואז סולמית" - the count gather submits on its own after a short silence.
+MENU_TEXT = ("אם אתם מגיעים, פשוט תלחצו אחת. אם לא, שתיים. ואם עוד לא בטוחים, שלוש. "
+             "ואם נוח לכם יותר בוואטסאפ, תלחצו תשע ואשלח לכם את ההזמנה.")
+COUNT_TEXT = "מעולה. כמה תהיו, כולל אתכם? פשוט תלחצו את המספר."
+COUNT_INVALID_TEXT = "סליחה, לא הצלחתי לקלוט. כמה תהיו? תלחצו מספר, למשל שתיים."
+MENU_INVALID_TEXT = "סליחה, לא קלטתי."
+GOODBYE_TEXT = "נראה שזה לא זמן טוב, אין בעיה. אפשר לענות לנו גם בוואטסאפ. יום טוב."
+# "9": the invitation is sent on WhatsApp, the guest answers there.
+WHATSAPP_SENT_TEXT = "[warmly] שלחתי לכם עכשיו את ההזמנה בוואטסאפ, ואפשר לאשר הגעה ישר משם. יום נפלא."
+WHATSAPP_FAILED_TEXT = ("[warmly] סליחה, משהו השתבש בשליחה. אפשר להתקשר חזרה למספר הזה מתי שנוח, "
+                        "ונסיים את זה בטלפון. יום נפלא!")
+WHATSAPP_TEST_TEXT = "[warmly] בשיחה אמיתית, עכשיו הייתה נשלחת אליכם ההזמנה בוואטסאפ. יום נפלא."
 # Occasions that read better with the honoree's name ("ליום ההולדת של מיכל").
 _WITH_HONOREE = {EventType.BAR, EventType.BAT, EventType.BIRTHDAY, EventType.BRIT, EventType.BRITA}
 
@@ -204,14 +275,10 @@ def tone_key(event_type) -> str:
     return _TONE_OF.get(et, "family")
 
 
-def opening_text(event_type, guest_name: str, hosts: str, event_date=None, honoree: str = "") -> str:
-    """The personal clip: greeting + who/what/when + the menu, as ONE utterance so
-    the name flows naturally into the rest. Generated per guest (cached by text)."""
-    et = event_type_of(event_type) or EventType.OTHER
-    tone = _TONES[tone_key(et)]
-    name = first_name(guest_name)
-    hello = tone.hello.format(name=name) if name else tone.hello_no_name
+def _about(et, hosts: str, event_date, honoree: str) -> str:
+    """'נועה ויונתן מזמינים אתכם לחתונה שלהם ביום שלישי, ה-3 בנובמבר.'"""
     when = spoken_date(event_date)
+    when = f" {when}" if when else ""
     hosts = (hosts or "").strip()
     honoree = (honoree or "").strip()
     occasion = _OCCASION.get(et, "לאירוע")
@@ -219,9 +286,96 @@ def opening_text(event_type, guest_name: str, hosts: str, event_date=None, honor
         occasion = "לחתונה"
     if et in _WITH_HONOREE and honoree and honoree not in hosts:
         occasion = f"{occasion} של {honoree}"
-    template = tone.intro if hosts else tone.intro_no_hosts
-    intro = template.format(hosts=hosts, occasion=occasion, when=f" {when}" if when else "")
-    return f"{tone.tag} {hello} {intro} {MENU_TEXT}"
+    return f"{hosts} מזמינים אתכם {occasion}{when}." if hosts else f"זה לגבי ההזמנה {occasion}{when}."
+
+
+def opening_text(event_type, guest_name: str, hosts: str, event_date=None, honoree: str = "",
+                 inbound: bool = False) -> str:
+    """The personal clip: greeting, who we are ("ShowUp, אישורי הגעה" - so the
+    guest knows at once what the call is), whose event, then the menu - ONE
+    utterance so the name flows into the rest. Generated per guest (cached)."""
+    et = event_type_of(event_type) or EventType.OTHER
+    tone = _TONES[tone_key(et)]
+    name = first_name(guest_name)
+    hello = tone.hello.format(name=name) if name else tone.hello_no_name
+    who = (f"כאן ShowUp, אישורי הגעה, {INBOUND_THANKS}" if inbound
+           else "מדברת מ־ShowUp, אישורי הגעה.")
+    return f"{tone.tag} {hello} {who} {_about(et, hosts, event_date, honoree)} {MENU_TEXT}"
+
+
+def opening_parts(event_type, guest_name: str, hosts: str, event_date=None, honoree: str = "",
+                  inbound: bool = False) -> List[str]:
+    """The opening as separately voiced clips, each cached by its exact text:
+      1. greeting with the first name + who we are - one clip per name, shared
+         by every event (and one with no name);
+      2. whose event and when - one clip per event;
+      3. the menu - the tone's fixed clip.
+    The joins fall at sentence ends, where a pause sounds like a breath; a join
+    between the name and the rest of its sentence was clearly audible.
+    Only a name or an event never voiced before costs a new generation. Played
+    back to back they say the same words as opening_text()."""
+    et = event_type_of(event_type) or EventType.OTHER
+    tk = tone_key(et)
+    tone = _TONES[tk]
+    name = first_name(guest_name)
+    hello = tone.hello.format(name=name) if name else tone.hello_no_name
+    # no [breathes] here: inside a short clip it came out as an audible sigh
+    who = f"כאן ShowUp, אישורי הגעה, {INBOUND_THANKS}" if inbound else "מדברת מ־ShowUp, אישורי הגעה."
+    return [f"{tone.tag} {hello} {who}", f"{tone.tag} {_about(et, hosts, event_date, honoree)}",
+            fixed_texts(tk)["menu"]]
+
+
+# ---- calls back to our number (inbound) ---------------------------------------------
+
+INBOUND_THANKS = "תודה שחזרתם אלינו."
+UNKNOWN_CALLER_TEXT = ("[warmly] שלום! [breathes] הגעתם ל־ShowUp, מערכת אישורי הגעה לאירועים. [short pause] "
+                       "אם קיבלתם מאיתנו הזמנה, אפשר לענות עליה גם בהודעת הוואטסאפ ששלחנו. תודה, ויום נפלא!")
+_DIGIT_WORDS = {1: "אחת", 2: "שתיים", 3: "שלוש"}
+MAX_INBOUND_CHOICES = len(_DIGIT_WORDS)
+
+
+def inbound_opening_text(event_type, guest_name: str, hosts: str, event_date=None, honoree: str = "") -> str:
+    """A guest called our number back: greet, say which invitation this is about,
+    then the same menu as the outbound call."""
+    return opening_text(event_type, guest_name, hosts, event_date, honoree, inbound=True)
+
+
+def inbound_choice_text(hosts_list: List[str]) -> str:
+    """The caller is invited to several upcoming events and we did not call them
+    recently: let them pick which invitation they are answering."""
+    parts = [f"אם זה לגבי ההזמנה של {h or 'אירוע אחר'}, הַקִּישׁוּ {_DIGIT_WORDS[i]}."
+             for i, h in enumerate(hosts_list[:MAX_INBOUND_CHOICES], start=1)]
+    return f"[warmly] היי! [breathes] כאן ShowUp, אישורי הגעה, {INBOUND_THANKS} [short pause] " + " ".join(parts)
+
+
+def demo_name(raw: str) -> str:
+    """The visitor's typed name, said aloud on a call to a number they typed.
+    Only a short, letters-only first name is spoken - anything else is dropped,
+    so the form can't be used to make us say arbitrary text to someone."""
+    name = first_name(raw)
+    return name if len(name) <= 15 and all(ch.isalpha() or ch in "'-" for ch in name) else ""
+
+
+def demo_opening_text(visitor_name: str) -> str:
+    tone = _TONES["demo"]
+    name = demo_name(visitor_name)
+    hello = tone.hello.format(name=name) if name else tone.hello_no_name
+    return f"{tone.tag} {hello} {DEMO_INTRO} {MENU_TEXT}"
+
+
+# Sample calls go out only at hours a stranger would accept a call.
+DEMO_HOURS = (9, 21)
+DEMO_FRIDAY_LAST_HOUR = 14
+
+
+def is_demo_call_time(local: datetime) -> bool:
+    wd = local.weekday()
+    if wd == 5:
+        return False
+    start, end = DEMO_HOURS
+    if wd == 4:
+        end = DEMO_FRIDAY_LAST_HOUR
+    return start <= local.hour < end
 
 
 def fixed_texts(event_type_or_tone) -> Dict[str, str]:
@@ -238,6 +392,9 @@ def fixed_texts(event_type_or_tone) -> Dict[str, str]:
         "thanks_no": tone.thanks_no,
         "thanks_maybe": tone.thanks_maybe,
         "goodbye": f"{t} {GOODBYE_TEXT}",
+        "whatsapp_sent": WHATSAPP_SENT_TEXT,
+        "whatsapp_failed": WHATSAPP_FAILED_TEXT,
+        "whatsapp_test": WHATSAPP_TEST_TEXT,
     }
 
 
@@ -284,6 +441,8 @@ def on_digits(step: str, digits: str, tries: int) -> Step:
             return Step(play=("thanks_no",), result=CallResult.DECLINED, hangup=True)
         if key == "3":
             return Step(play=("thanks_maybe",), result=CallResult.MAYBE, hangup=True)
+        if key == "9":   # the caller sends it (and may swap the clip if sending fails)
+            return Step(play=("whatsapp_sent",), result=CallResult.WHATSAPP, hangup=True)
         if tries >= MENU_TRIES:
             return Step(play=("goodbye",), result=CallResult.NO_INPUT, hangup=True)
         return Step(play=("menu_invalid" if digits else "menu",), gather="menu", tries=tries + 1)
@@ -337,7 +496,7 @@ def twiml(urls: Tuple[str, ...], *, gather_action: Optional[str] = None, count: 
     plays = "".join(f"<Play>{escape(u)}</Play>" for u in urls)
     if gather_action:
         attrs = (f' input="dtmf" action={quoteattr(gather_action)} method="POST" actionOnEmptyResult="true"'
-                 + (' finishOnKey="#" timeout="4" numDigits="2"' if count else ' numDigits="1" timeout="6"'))
+                 + (' finishOnKey="#" timeout="3" numDigits="2"' if count else ' numDigits="1" timeout="6"'))
         body = f"<Gather{attrs}>{plays}</Gather>"
     else:
         body = plays

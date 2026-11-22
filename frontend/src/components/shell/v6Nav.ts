@@ -31,6 +31,7 @@ export const venueNav: V6NavItem[] = [
 export const adminNav: V6NavItem[] = [
   { id: 'a-dash', label: 'לוח בקרה', path: '/admin', icon: 'space_dashboard' },
   { id: 'a-ops', label: 'מרכז תפעול', path: '/admin/operations', icon: 'insights' },
+  { id: 'a-leads', label: 'פניות', path: '/admin/leads', icon: 'person_add' },
   { id: 'a-venues', label: 'אולמות', path: '/admin/venues', icon: 'storefront' },
   { id: 'a-users', label: 'משתמשים', path: '/admin/users', icon: 'group' },
   { id: 'a-events', label: 'אירועים', path: '/admin/events', icon: 'event' },
@@ -43,6 +44,7 @@ export const adminNav: V6NavItem[] = [
   { id: 'a-flows', label: 'שיחת אישור הגעה', path: '/admin/flows', icon: 'forum' },
   { id: 'a-flow-builder', label: 'בונה שיחה', path: '/admin/flow-builder', icon: 'account_tree' },
   { id: 'a-templates', label: 'תבניות הודעה', path: '/admin/templates', icon: 'edit_note' },
+  { id: 'a-round-cats', label: 'קטגוריות סבבים', path: '/admin/round-categories', icon: 'category' },
   { id: 'a-audit', label: 'יומן ביקורת', path: '/admin/audit-log', icon: 'history' },
 ];
 

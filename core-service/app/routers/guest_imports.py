@@ -90,6 +90,67 @@ def list_guest_imports(
     return result
 
 
+class PhoneContactIn(BaseModel):
+    name: Optional[str] = None
+    phone: str
+
+
+class PhoneContactsIn(BaseModel):
+    contacts: List[PhoneContactIn]
+
+
+def _phone_key(phone: Optional[str]) -> str:
+    d = "".join(ch for ch in (phone or "") if ch.isdigit())
+    return d[-9:] if len(d) >= 9 else d
+
+
+@router.post("/phone-contacts", status_code=201)
+def create_phone_contacts_import(
+    body: PhoneContactsIn,
+    event_id: uuid.UUID = Query(...),
+    db: Session = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """Contacts picked from the phone's address book (mobile app). Like contacts
+    shared on WhatsApp, they wait in the approval panel and become guests only
+    after the host approves them. Skips numbers already on the guest list or
+    already waiting."""
+    from app.models.models import Guest
+    import json as _json
+
+    event = event_crud.get_event(db, event_id)
+    if not is_owner_or_support(db, event, user_id):
+        raise HTTPException(status_code=404, detail="Event not found or not permitted")
+    if len(body.contacts) > 3000:
+        raise HTTPException(status_code=413, detail="Too many contacts at once")
+
+    taken = {_phone_key(p) for (p,) in db.query(Guest.phone).filter(Guest.event_id == event_id).all()}
+    taken |= {_phone_key(p) for (p,) in db.query(GuestImportContact.phone).join(
+        GuestImport, GuestImportContact.import_id == GuestImport.id
+    ).filter(GuestImport.event_id == str(event_id), GuestImportContact.status == "pending").all()}
+
+    fresh, skipped = [], 0
+    for c in body.contacts:
+        key = _phone_key(c.phone)
+        if not key or key in taken:
+            skipped += 1
+            continue
+        taken.add(key)
+        fresh.append(c)
+    if not fresh:
+        return {"added": 0, "skipped": skipped}
+
+    imp = GuestImport(event_id=str(event_id), source="phone_contacts", status="pending",
+                      raw_payload=_json.dumps({"count": len(fresh)}))
+    db.add(imp)
+    db.flush()
+    for c in fresh:
+        db.add(GuestImportContact(import_id=imp.id, name=(c.name or "").strip()[:200] or None,
+                                  phone=c.phone.strip()[:20], status="pending"))
+    db.commit()
+    return {"added": len(fresh), "skipped": skipped}
+
+
 @router.get("/summary")
 def get_guest_import_summary(
     event_id: uuid.UUID = Query(...),

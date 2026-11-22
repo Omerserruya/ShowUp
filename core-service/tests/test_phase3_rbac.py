@@ -83,7 +83,7 @@ def test_non_member_gets_404(client, db):
 
 def test_event_create_binds_account(client, db):
     user = uuid.uuid4()
-    r = client.post("/events", json={"name": "My Wedding"}, headers=auth_header(user))
+    r = client.post("/events", json={"terms_version": "2026-11-01", "name": "My Wedding", "subjects": {"p1": "נועה", "p2": "יונתן"}}, headers=auth_header(user))
     assert r.status_code == 201
     event_id = r.json()["id"]
 

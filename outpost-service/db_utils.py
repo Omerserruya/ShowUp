@@ -227,6 +227,21 @@ class ConversationDB:
                                 extra={"event_id": event_id, "guest_phone": mask_phone(guest_phone)})
             return None
 
+    def set_conversation_state(self, conversation_id: str, state: str) -> None:
+        """A round that asks nothing moves the conversation to its own stage state
+        (shared/domain/stage_replies.py) so replies to it are not read as RSVP."""
+        if not conversation_id or not state:
+            return
+
+        def _do(conn):
+            with conn.cursor() as cur:
+                cur.execute("UPDATE conversations SET current_state = %s, updated_at = NOW() WHERE id = %s::uuid",
+                            (state, conversation_id))
+        try:
+            self._run(_do)
+        except Exception as e:
+            self.logger.warning(f"Failed to set conversation state: {e}")
+
     def get_conversation_state(self, conversation_id: str) -> Optional[str]:
         if not conversation_id:
             return None

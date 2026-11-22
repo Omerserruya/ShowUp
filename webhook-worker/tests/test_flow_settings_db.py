@@ -44,7 +44,7 @@ SCHEMA = [
     "DROP TABLE IF EXISTS conversation_flow_configs, guest_custom_values, event_field_defs, messages_sent, campaigns, "
     "guests, events, inbound_seen, inbound_pending_choice, messages_log, conversations CASCADE",
     """CREATE TABLE events (id UUID PRIMARY KEY, name TEXT, event_date TIMESTAMPTZ, location TEXT,
-        inviters JSON, state TEXT DEFAULT 'active', event_type VARCHAR(50))""",
+        inviters JSON, subjects JSON, state TEXT DEFAULT 'active', event_type VARCHAR(50))""",
     """CREATE TABLE guests (id UUID PRIMARY KEY, event_id UUID, name TEXT, phone TEXT, status TEXT,
         guest_count INT, last_response TIMESTAMP, notes TEXT,
         opted_out_at TIMESTAMPTZ, opted_out_reason TEXT, opted_out_source TEXT)""",
@@ -185,6 +185,38 @@ async def main():
     check("-> rsvp_done with original text", await state("other") == "rsvp_done"
           and body(out) == D.legacy_text("after_confirm.done_message.text") and buttons(out) == ["לעדכן הגעה"])
     check("attending, 2", await guest("other") == ("attending", 2))
+
+    print("== no inviters typed: the bot names the couple from the event details ==")
+    await exec_sql("UPDATE events SET inviters = CAST('[]' AS json), subjects = CAST(:s AS json) WHERE id = CAST(:e AS uuid)",
+                   e=EV["other"], s=json.dumps({"p1": "שני", "p2": "עומר"}))
+    out = await template_tap("other", "ברור שאגיע!", "rsvp_accepted")
+    check("party-size text says 'של שני ועומר', not a blank", "של שני ועומר 🥳" in (body(out) or ""))
+    await exec_sql("UPDATE events SET inviters = CAST(:i AS json), subjects = NULL WHERE id = CAST(:e AS uuid)",
+                   e=EV["other"], i=json.dumps([{"fn": "נועה", "ln": "כהן"}]))
+
+    print("== a note typed without the button is saved, echoed, and is never a decline ==")
+    await template_tap("other", "ברור שאגיע!", "rsvp_accepted")
+    await inbound("other", "2")
+    out = await inbound("other", "לא אוכל בשר")
+    check("typed note -> note_saved, echoed in quotes",
+          await state("other") == "note_saved"
+          and body(out) == 'אין בעיה, ציינו בפני בעלי האירוע: "לא אוכל בשר"\nאם משהו ישתנה, נשמח אם תעדכן כאן ❤️'
+          and buttons(out) == ["לכתוב לנו משהו אחר", "לעדכן הגעה"]
+          and button_ids(out) == ["note_saved__BTN_1", "note_saved__BTN_2"])
+    notes = (await q1("SELECT notes FROM guests WHERE id = CAST(:g AS uuid)", g=GUEST["other"]))[0]
+    check("'לא אוכל בשר' is a note, guest still attending",
+          notes.endswith("הערת אורח (וואטסאפ): לא אוכל בשר") and await guest("other") == ("attending", 2))
+    out = await tap("other", "לכתוב לנו משהו אחר", "note_saved__BTN_1")
+    check("another note -> asked to write", await state("other") == "note_info")
+    out = await inbound("other", "כיסא תינוק")
+    check("second note echoed", '"כיסא תינוק"' in (body(out) or "") and await state("other") == "note_saved")
+    out = await inbound("other", "תודה!")
+    check("'thanks' after the echo -> done, not a note", await state("other") == "rsvp_done"
+          and not (await q1("SELECT notes FROM guests WHERE id = CAST(:g AS uuid)", g=GUEST["other"]))[0].endswith("תודה!"))
+    await set_state("other", "rsvp_info_question")
+    out = await inbound("other", "לא תודה")
+    check("'לא תודה' at the question -> done, still attending",
+          await state("other") == "rsvp_done" and await guest("other") == ("attending", 2))
     out = await template_tap("other", "ברור שאגיע!", "rsvp_accepted")
     check("default already_answered = restart (re-asks count)", await state("other") == "rsvp_count")
 

@@ -66,3 +66,16 @@
 .su-input:focus { border-color: #5A3DA6 !important; background: #FFFFFF !important; outline: none; box-shadow: 0 0 0 3px rgba(157,131,224,.28); }
 
 .su-scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* iOS app (mobile/ Capacitor shell): the page runs edge to edge, so keep content
+   clear of the status bar. A fixed strip paints behind the status bar; the
+   sticky AppHeader sits under it (top: env(safe-area-inset-top)). Bottom bars
+   already pad with env(safe-area-inset-bottom). Class set by native/app.ts. */
+html.ios-app body { padding-top: env(safe-area-inset-top, 0px); }
+html.ios-app body::before {
+  content: ''; position: fixed; top: 0; left: 0; right: 0; z-index: 1400;
+  height: env(safe-area-inset-top, 0px); background: #F5F1E9;
+}
+/* iOS app: sit the tab bar close to the home indicator, like a native tab bar
+   (the browser value leaves ~44pt under the labels, which reads as "too high"). */
+html.ios-app { --su-nav-pb: max(8px, calc(env(safe-area-inset-bottom, 0px) - 6px)); }

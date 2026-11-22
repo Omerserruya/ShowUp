@@ -63,6 +63,7 @@ CACHE_TTL_SECONDS = 60
 
 BASE_VARS = ("guest_name", "event_name", "host_name", "event_date", "event_time", "venue")
 COUNT_VARS = ("min_count", "max_count")
+NOTE_VARS = ("note",)          # the guest's own note, echoed back in the "noted" message
 
 VARIABLE_LABELS_HE = {
     "guest_name": "שם האורח",
@@ -73,6 +74,7 @@ VARIABLE_LABELS_HE = {
     "venue": "מקום האירוע",
     "min_count": "מינימום משתתפים",
     "max_count": "מקסימום משתתפים",
+    "note": "ההערה שהאורח כתב",
 }
 
 # {var} -> webhook-worker's existing {{x.y}} placeholder (BaseState._render_text).
@@ -96,6 +98,38 @@ FALLBACK_VALUES = {
 }
 
 _VAR_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+# Replies to "anything we should know?" that mean "nothing" - they end the
+# conversation instead of being saved as a note (compared word by word, so
+# punctuation / emoji around them do not matter). A reply with no words at all
+# (an emoji, a sticker) means nothing too.
+NO_NOTE_REPLIES = (
+    "לא", "לא תודה", "לא צריך", "לא נראה לי", "אין", "אין הערות", "אין הערה", "אין צורך", "אין לי", "אין לנו",
+    "אין משהו", "אין שום דבר", "אין תודה", "כלום", "תודה", "תודה רבה", "הכל טוב", "הכול טוב", "הכל בסדר",
+    "הכול בסדר", "בסדר", "סבבה", "אוקיי", "אוקי", "ok", "okay", "no", "nope", "thanks", "מעולה", "מושלם",
+    "סגור", "סגורים", "אחלה", "יופי", "קיבלתי", "קיבלנו", "תודה רבה לכם", "נתראה", "נתראה שם", "מגניב",
+)
+
+
+# ... and replies that mean "yes, I have one" - asked to write it (note_info)
+# instead of saving "כן" as the note.
+WANTS_NOTE_REPLIES = ("כן", "יש", "כן יש", "יש לי", "יש לנו", "יש הערה", "כן יש לי", "כן יש הערה")
+
+
+def _reply_is(text: Optional[str], replies: Iterable[str]) -> bool:
+    from shared.domain.rsvp import tokenize_reply
+    toks = tokenize_reply(text)
+    return any(toks == tokenize_reply(w) for w in replies)
+
+
+def is_no_note_reply(text: Optional[str]) -> bool:
+    from shared.domain.rsvp import tokenize_reply
+    return not tokenize_reply(text) or _reply_is(text, NO_NOTE_REPLIES)
+
+
+def is_wants_note_reply(text: Optional[str]) -> bool:
+    return _reply_is(text, WANTS_NOTE_REPLIES)
 
 
 def variables_in(text: str) -> List[str]:
@@ -163,6 +197,12 @@ DEFAULT_FLOW: Dict[str, Any] = {
                 "לא הצלחנו להבין כמה תהיו 😅\n"
                 "נשמח למספר בלבד, בין {min_count} ל־{max_count} – כולל אותך. למשל: 2"
             ),
+            # Sent once, ~3h after a guest confirmed but never said how many
+            # (webhook-worker FlowManager.send_count_nudges).
+            "nudge_text": (
+                "היי 😊 רק נשאר לנו לדעת כמה תהיו ב{event_name} של {host_name}.\n"
+                "אפשר פשוט לכתוב כאן מספר, כולל אותך. למשל: 2"
+            ),
             "min": 1,
             "max": 50,
         },
@@ -182,6 +222,15 @@ DEFAULT_FLOW: Dict[str, Any] = {
                 "write_note": "לכתוב לנו הערה",
             },
             "note_prompt_text": "בוודאי 😊 נשמח אם תכתוב לנו את ההערה כאן 👇",
+            # states/note_saved.py - after a note is written (typed straight at the
+            # question or after "write_note"); {note} is what the guest wrote.
+            "saved": {
+                "text": "אין בעיה, ציינו בפני בעלי האירוע: \"{note}\"\nאם משהו ישתנה, נשמח אם תעדכן כאן ❤️",
+                "buttons": {
+                    "another_note": "לכתוב לנו משהו אחר",
+                    "update": "לעדכן הגעה",
+                },
+            },
         },
         # states/rsvp_done.py
         "done_message": {
@@ -225,6 +274,15 @@ DEFAULT_FLOW: Dict[str, Any] = {
     "didnt_understand": {
         "text": "לא כל כך הבנו את התשובה 😅 נסו לבחור אחת מהאפשרויות בהודעה למעלה",
     },
+    # A reply to a round that asks nothing (shared/domain/stage_replies.py):
+    # answered once with its stage's own text, never read as an RSVP.
+    "stage_reply": {
+        "save_the_date": {"text": "תודה {guest_name}! 💜 ההזמנה עם כל הפרטים תגיע אליך בהמשך."},
+        "final_reminder": {"text": "תודה {guest_name}! מחכים לראות אותך ב{event_name} 🎉"},
+        "table_assignment": {"text": "תודה {guest_name}! נתראה באירוע 🎉"},
+        "thank_you": {"text": "תודה רבה {guest_name}! 💜 העברנו את הדברים שלך לבעלי האירוע."},
+        "other": {"text": "תודה {guest_name}! 💜 קיבלנו."},
+    },
     # flow_manager.handle_event opt-out ack (phone-level - no event variables).
     "opt_out": {
         "text": "הוסרת מרשימת התפוצה ולא יישלחו אליך הודעות נוספות. כדי לחזור לקבל עדכונים, השב/י 'התחל'.",
@@ -252,6 +310,7 @@ SCHEMA: Dict[str, Dict[str, Any]] = {
     "after_confirm.ask_party_size.enabled": {"kind": "bool", "label": "לשאול כמה יגיעו"},
     "after_confirm.ask_party_size.text": {"kind": "text", "vars": _T + COUNT_VARS, "max": WA_TEXT_MAX, "label": "שאלת כמות"},
     "after_confirm.ask_party_size.retry_text": {"kind": "text", "vars": _T + COUNT_VARS, "max": WA_TEXT_MAX, "label": "הודעה כשהמספר לא תקין"},
+    "after_confirm.ask_party_size.nudge_text": {"kind": "text", "vars": _T + COUNT_VARS, "max": WA_TEXT_MAX, "label": "תזכורת למי שאישר ולא אמר כמה"},
     "after_confirm.ask_party_size.min": {"kind": "int", "min": 1, "max": PARTY_SIZE_HARD_MAX, "label": "מינימום"},
     "after_confirm.ask_party_size.max": {"kind": "int", "min": 1, "max": PARTY_SIZE_HARD_MAX, "label": "מקסימום"},
     "after_confirm.ask_guest_questions.enabled": {"kind": "bool", "label": "לשאול את שאלות האירוע"},
@@ -259,6 +318,8 @@ SCHEMA: Dict[str, Dict[str, Any]] = {
     "after_confirm.ask_notes.text": {"kind": "text", "vars": _T, "max": WA_INTERACTIVE_BODY_MAX, "label": "שאלת הערות"},
     "after_confirm.ask_notes.buttons": {"kind": "buttons", "keys": ("no_notes", "write_note"), "label": "כפתורי הערות"},
     "after_confirm.ask_notes.note_prompt_text": {"kind": "text", "vars": _T, "max": WA_TEXT_MAX, "label": "בקשה לכתוב הערה"},
+    "after_confirm.ask_notes.saved.text": {"kind": "text", "vars": _T + NOTE_VARS, "max": WA_INTERACTIVE_BODY_MAX, "label": "אישור שההערה נרשמה"},
+    "after_confirm.ask_notes.saved.buttons": {"kind": "buttons", "keys": ("another_note", "update"), "label": "כפתורים אחרי הערה"},
     "after_confirm.done_message.text": {"kind": "text", "vars": _T, "max": WA_INTERACTIVE_BODY_MAX, "label": "הודעת סיום"},
     "after_confirm.done_message.buttons": {"kind": "buttons", "keys": ("update",), "label": "כפתור עדכון"},
     "after_confirm.update_menu.text": {"kind": "text", "vars": _T, "max": WA_INTERACTIVE_BODY_MAX, "label": "תפריט עדכון"},
@@ -270,6 +331,11 @@ SCHEMA: Dict[str, Dict[str, Any]] = {
     "after_maybe.remind": {"kind": "bool", "label": "תזכורת למתלבטים"},
     "after_maybe.buttons": {"kind": "buttons", "keys": ("confirm", "decline"), "label": "כפתורי 'אולי'"},
     "didnt_understand.text": {"kind": "text", "vars": _T, "max": WA_TEXT_MAX, "label": "לא הבנו"},
+    "stage_reply.save_the_date.text": {"kind": "text", "vars": _T, "max": WA_TEXT_MAX, "label": "תשובה להודעת שמרו את התאריך"},
+    "stage_reply.final_reminder.text": {"kind": "text", "vars": _T, "max": WA_TEXT_MAX, "label": "תשובה לתזכורת לפני האירוע"},
+    "stage_reply.table_assignment.text": {"kind": "text", "vars": _T, "max": WA_TEXT_MAX, "label": "תשובה להודעת שיבוץ שולחן"},
+    "stage_reply.thank_you.text": {"kind": "text", "vars": _T, "max": WA_TEXT_MAX, "label": "תשובה להודעת התודה"},
+    "stage_reply.other.text": {"kind": "text", "vars": _T, "max": WA_TEXT_MAX, "label": "תשובה להודעה אחרת"},
     "opt_out.text": {"kind": "text", "vars": (), "max": WA_TEXT_MAX, "label": "אישור הסרה"},
     "already_answered.behavior": {"kind": "enum", "values": ALREADY_ANSWERED_BEHAVIORS, "label": "כשכבר ענו"},
     "already_answered.text": {"kind": "text", "vars": _T, "max": WA_INTERACTIVE_BODY_MAX, "label": "הודעה למי שכבר ענה"},
@@ -831,7 +897,7 @@ def schema_for_ui() -> Dict[str, Any]:
         out[path] = s
     return {
         "fields": out,
-        "variables": [{"name": v, "label": VARIABLE_LABELS_HE[v]} for v in BASE_VARS + COUNT_VARS],
+        "variables": [{"name": v, "label": VARIABLE_LABELS_HE[v]} for v in BASE_VARS + COUNT_VARS + NOTE_VARS],
         "limits": {"buttons": WA_MAX_BUTTONS, "button_label": WA_BUTTON_LABEL_MAX,
                    "interactive_body": WA_INTERACTIVE_BODY_MAX, "text": WA_TEXT_MAX},
         "event_types": list(EVENT_TYPE_KEYS),

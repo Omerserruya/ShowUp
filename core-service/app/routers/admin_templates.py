@@ -33,10 +33,11 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import uuid
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -47,15 +48,17 @@ from app import custom_templates_store as store
 from app import messaging_state
 from app.audit import record_audit
 from app.db import get_db
+from app.internal_auth import require_internal_secret
 from app.meta_templates import MetaTemplateClient
 from shared.auth.admin import get_admin_user_id
 from shared.domain.enums import ActorType
 from shared.domain.messaging import (
-    ALL_TEMPLATES, VariableResolver, build_meta_message, published_name,
+    ALL_TEMPLATES, VariableResolver, build_meta_message, published_name, select_templates,
 )
 from shared.domain.messaging import custom_templates as ct
 
 router = APIRouter(prefix="/admin/templates", tags=["admin-templates"])
+logger = logging.getLogger(__name__)
 
 ENTITY = "custom_template"
 
@@ -440,6 +443,8 @@ def preview(payload: PreviewIn = Body(...), db: Session = Depends(get_db),
         event_dict = _event_to_resolver_dict(ev)
         event_dict["id"] = str(ev.id)
         event_dict["wa_image_url"] = getattr(ev, "wa_image_url", None)
+        event_dict["gift"] = getattr(ev, "gift", None)
+        event_dict["share_code"] = getattr(ev, "share_code", None)
         source = "event"
         if payload.guest_id:
             try:
@@ -476,6 +481,9 @@ class DuplicateIn(BaseModel):
     name: Optional[str] = None
     title: Optional[str] = None
     group: Optional[str] = None
+    # Edit a built-in (catalog) template: the copy REPLACES the original once
+    # Meta approves it (app/template_placement.py).
+    replace: bool = False
 
 
 @router.post("/duplicate")
@@ -495,6 +503,12 @@ def duplicate(payload: DuplicateIn = Body(...), db: Session = Depends(get_db),
             raise HTTPException(404, "תבנית הקטלוג לא נמצאה")
         doc = ct.doc_from_catalog_template(t, name="")
         base_title = f"{doc['title']} (עותק)"
+        if payload.replace:
+            from app.template_placement import family
+            doc["replaces"] = family(payload.source_key)
+            base_title = f"{doc['title']} (עריכה)"
+            doc["notes"] = (doc["notes"] + "\n" if doc["notes"] else "") + \
+                f"מחליפה את תבנית הקטלוג {doc['replaces']} אחרי אישור Meta"
     elif src == "system":
         from shared.domain.messaging.system_templates import get_system_template
         st = get_system_template(payload.source_key)
@@ -835,6 +849,52 @@ def _sync_row(db: Session, client: MetaTemplateClient, row: Dict[str, Any]) -> D
          "live": _j(live), "k": key})
     out.update(ok=True, meta_status=status, live_status=(live or {}).get("status"))
     return out
+
+
+# ---------------------------------------------------------------------------
+# Meta webhook: template review status changed (service-to-service)
+# ---------------------------------------------------------------------------
+# webhook-hendler forwards Meta's `message_template_status_update` here, so an
+# approval/rejection shows up without anyone pressing "רענן". The payload only
+# names the template; the status is re-read from Meta through the same code the
+# manual sync uses (_sync_row / fetch_status), so a forged or stale event can at
+# most trigger a refresh.
+internal_router = APIRouter(prefix="/internal/meta", tags=["internal"])
+
+
+class TemplateStatusEvent(BaseModel):
+    name: str = Field(..., min_length=1, max_length=512)
+    event: Optional[str] = Field(None, max_length=40)
+    meta_id: Optional[str] = Field(None, max_length=64)
+
+
+@internal_router.post("/template-status")
+def meta_template_status(body: TemplateStatusEvent, db: Session = Depends(get_db),
+                         x_internal_secret: Optional[str] = Header(None)):
+    require_internal_secret(x_internal_secret)
+    client = MetaTemplateClient()
+    if not client.configured:
+        raise HTTPException(503, "meta not configured")
+    updated: List[str] = []
+    # custom templates (submitted name or the live version's name)
+    for row in store.list_rows(db):
+        live = row.get("live") if isinstance(row.get("live"), dict) else {}
+        if body.name in (row.get("meta_name"), live.get("meta_name")):
+            if _sync_row(db, client, row).get("ok"):
+                updated.append(f"custom:{row['key']}")
+    # catalog templates (published under `published_name`)
+    for t in select_templates("all"):
+        if published_name(t) != body.name:
+            continue
+        res = client.fetch_status(body.name)
+        if res.ok:
+            messaging_state.upsert(db, t.key, meta_id=res.meta_id, meta_status=res.meta_status,
+                                   meta_category=res.category, rejection_reason=res.rejection_reason,
+                                   last_sync=messaging_state.now_utc())
+            updated.append(f"catalog:{t.key}")
+    db.commit()
+    logger.info("meta template status event name=%s event=%s updated=%s", body.name, body.event, updated)
+    return {"updated": updated}
 
 
 @router.post("/{key}/sync")

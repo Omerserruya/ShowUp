@@ -19,7 +19,7 @@ interface Props {
   onClose: () => void;
 }
 
-const KINDS: EdgeKind[] = ['button', 'rsvp', 'number', 'number_invalid', 'text_contains', 'any_text', 'done', 'answered'];
+const KINDS: EdgeKind[] = ['button', 'rsvp', 'number', 'number_invalid', 'text_is', 'text_contains', 'any_text', 'done', 'answered'];
 
 export default function EdgePanel({ edge, graph, meta, errors, onChange, onDelete, onSelectNode, onClose }: Props) {
   const from = graph.nodes.find((n) => n.id === edge.from);
@@ -88,6 +88,15 @@ export default function EdgePanel({ edge, graph, meta, errors, onChange, onDelet
               {RSVP_VALUES.map((v) => <option key={v} value={v}>{RSVP_LABEL[v]}</option>)}
             </select>
             <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>מתאים כשהמערכת זיהתה את תשובת ההגעה (מכפתור התבנית או מטקסט).</div>
+          </div>
+        )}
+        {w.kind === 'text_is' && (
+          <div style={{ marginTop: 8 }}>
+            <WordsInput resetKey={edge.id} words={w.words || []} onChange={(words) => setWhen({ ...w, words })} />
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>
+              כשכל התשובה היא אחת מהאפשרויות (בלי קשר לסימני פיסוק ואימוג'י). הפרידו בפסיק.
+              {w.no_words ? ' גם תשובה בלי מילים (אימוג׳י, מדבקה) מתאימה.' : ''}
+            </div>
           </div>
         )}
         {w.kind === 'text_contains' && (

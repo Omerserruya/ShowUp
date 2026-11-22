@@ -284,10 +284,10 @@ _STAGE_META = {
         next_stages=(FlowStage.FINAL_REMINDER.value,),
     ),
     FlowStage.FINAL_REMINDER: dict(
-        # The day-before message: its copy speaks to BOTH confirmed guests
-        # ("see you tomorrow", navigation) and non-responders ("last chance to
-        # RSVP") - but never to guests who already declined.
-        trigger=Trigger.SCHEDULED, audience_rule=AudienceRule.NOT_DECLINED,
+        # The event reminder (the day before): details, navigation, gift link -
+        # for guests who confirmed. Chasing answers is the RSVP rounds' job
+        # (invitation / reminder), so it no longer goes to non-responders.
+        trigger=Trigger.SCHEDULED, audience_rule=AudienceRule.CONFIRMED,
         completion_rule=CompletionRule.TIMEOUT_REACHED,
         flow_steps=(FlowStep.SEND_MESSAGE, FlowStep.COMPLETE),
         next_stages=(FlowStage.TABLE_ASSIGNMENT.value, FlowStage.THANK_YOU.value),

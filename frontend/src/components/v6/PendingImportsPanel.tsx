@@ -105,7 +105,7 @@ export default function PendingImportsPanel({ groups, onChanged }: Props) {
     if (!handledAll) return null;
     return (
       <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 16px', borderRadius: 14, background: C.okBg, border: `1.5px solid ${C.okBorder}`, color: C.ok, fontSize: 14, fontWeight: 600 }}>
-        <Ms size={19}>check_circle</Ms>כל אנשי הקשר מוואטסאפ טופלו. מה שאושר נוסף לרשימה
+        <Ms size={19}>check_circle</Ms>כל אנשי הקשר טופלו. מה שאושר נוסף לרשימה
       </div>
     );
   }
@@ -116,9 +116,9 @@ export default function PendingImportsPanel({ groups, onChanged }: Props) {
     <section aria-label="ממתינים לאישור" style={{ background: '#FFFFFF', border: `1.5px solid ${C.tintBorder}`, borderRadius: 20, padding: 'clamp(18px,2.2vw,24px)' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 0 }}>
-          <Kicker>ממתינים לאישור · מוואטסאפ</Kicker>
-          <h3 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', margin: '8px 0 0' }}>{contacts.length === 1 ? 'איש קשר אחד הגיע מוואטסאפ' : `${contacts.length} אנשי קשר הגיעו מוואטסאפ`}</h3>
-          <p style={{ fontSize: 14, color: C.body, margin: '6px 0 0', lineHeight: 1.6, maxWidth: '62ch' }}>אנשי קשר ששלחתם בוואטסאפ למספר של ShowUp. הם נכנסים לרשימת המוזמנים רק אחרי שתאשרו או תתקנו</p>
+          <Kicker>ממתינים לאישור</Kicker>
+          <h3 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', margin: '8px 0 0' }}>{contacts.length === 1 ? 'איש קשר אחד מחכה לאישור' : `${contacts.length} אנשי קשר מחכים לאישור`}</h3>
+          <p style={{ fontSize: 14, color: C.body, margin: '6px 0 0', lineHeight: 1.6, maxWidth: '62ch' }}>אנשי קשר שהוספתם מהטלפון או ששלחתם בוואטסאפ למספר של ShowUp. הם נכנסים לרשימת המוזמנים רק אחרי שתאשרו או תתקנו</p>
         </div>
         <Btn kind="ghost" onClick={approveAll} disabled={busy !== null || blocked === contacts.length}>
           {busy === 'all' ? 'מאשרים...' : blocked ? `אישור ${contacts.length - blocked} התקינים` : 'אישור הכול'}

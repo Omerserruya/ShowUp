@@ -4,6 +4,8 @@ WhatsApp Business Cloud API Sender
 Handles sending messages via WhatsApp Business Cloud API using Facebook Graph API.
 """
 
+import uuid
+from shared.domain.sandbox import is_sandbox_phone
 import os
 import logging
 import json
@@ -237,6 +239,10 @@ class WhatsAppSender:
         a slow/failing message never pins a concurrency slot while sleeping.
         Never logs the payload (guest PII) - only status + Meta's error code.
         """
+        if is_sandbox_phone(payload.get("to")):
+            # App Store review demo numbers: pretend it went out, send nothing.
+            self.logger.info("sandbox recipient - message not sent", extra={"recipient": mask_phone(payload.get("to"))})
+            return {"messages": [{"id": f"wamid.SANDBOX.{uuid.uuid4().hex}"}]}
         try:
             response = await self.client.post(self._url_for(sender), json=payload)
         except httpx.HTTPError as exc:  # timeouts, connection resets, DNS...

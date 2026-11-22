@@ -612,13 +612,14 @@ stages:
               content:
                 title: Save the Date
                 body: |-
-                  {{event_name}}
+                  שמרו את התאריך: {{event_name}}
 
                   מתקיים ב{{event_date}}.
 
-                  נשמח לראותכם. הזמנה רשמית תישלח בהמשך.
-
+                  נשמח לראותכם,
                   {{host_name}}
+
+                  הזמנה רשמית תישלח בהמשך.
                 header: '{{header_image_url}}'
                 buttons: []
                 notes: אלגנטי - עסקי, עם תמונה.
@@ -860,7 +861,7 @@ stages:
                 - var: host_display_name
                 - var: event_date
   invitation:
-    title: הזמנה
+    title: אישור הגעה ראשוני
     description: ההזמנה הרשמית ואיסוף אישורי ההגעה, כמות האורחים והערות.
     event_types:
       _shared:
@@ -1405,11 +1406,11 @@ stages:
                   תגיד/י שאתה בפנים, שנדע כמה קרח לשים בבר 🍸
                 header: null
                 buttons:
-                - label: סוגרים על זה 😎
+                - label: סוגרים על זה
                   action: RSVP_ACCEPTED
                 - label: נפספס הפעם
                   action: RSVP_DECLINED
-                - label: עוד במשא ומתן 😅
+                - label: עוד במשא ומתן
                   action: RSVP_MAYBE
                 notes: שנון וקליל - מחייך, לא מוגזם.
               metadata:
@@ -1766,11 +1767,11 @@ stages:
                   הבטחנו קפה חזק לכולם ☕ - רק תגידו שאתם באים.
                 header: null
                 buttons:
-                - label: סוגרים על זה 😎
+                - label: סוגרים על זה
                   action: RSVP_ACCEPTED
                 - label: נפספס הפעם
                   action: RSVP_DECLINED
-                - label: עוד במשא ומתן 😅
+                - label: עוד במשא ומתן
                   action: RSVP_MAYBE
                 notes: שנון ורך - הומור עדין שמתאים לברית.
               metadata:
@@ -2125,11 +2126,11 @@ stages:
                   הבטחנו קפה חזק לכולם ☕ - רק תגידו שאתם באים.
                 header: null
                 buttons:
-                - label: סוגרים על זה 😎
+                - label: סוגרים על זה
                   action: RSVP_ACCEPTED
                 - label: נפספס הפעם
                   action: RSVP_DECLINED
-                - label: עוד במשא ומתן 😅
+                - label: עוד במשא ומתן
                   action: RSVP_MAYBE
                 notes: שנון ורך - הומור עדין.
               metadata:
@@ -2488,11 +2489,11 @@ stages:
                   רק תגידו שאתם באים.
                 header: null
                 buttons:
-                - label: סוגרים על זה 😎
+                - label: סוגרים על זה
                   action: RSVP_ACCEPTED
                 - label: נפספס הפעם
                   action: RSVP_DECLINED
-                - label: עוד במשא ומתן 😅
+                - label: עוד במשא ומתן
                   action: RSVP_MAYBE
                 notes: שנון וקליל.
               metadata:
@@ -2853,11 +2854,11 @@ stages:
                   רק תגידו שאתם באים.
                 header: null
                 buttons:
-                - label: סוגרים על זה 😎
+                - label: סוגרים על זה
                   action: RSVP_ACCEPTED
                 - label: נפספס הפעם
                   action: RSVP_DECLINED
-                - label: עוד במשא ומתן 😅
+                - label: עוד במשא ומתן
                   action: RSVP_MAYBE
                 notes: שנון וקליל.
               metadata:
@@ -3218,11 +3219,11 @@ stages:
                   רק תגידו שאתם באים.
                 header: null
                 buttons:
-                - label: סוגרים על זה 😎
+                - label: סוגרים על זה
                   action: RSVP_ACCEPTED
                 - label: נפספס הפעם
                   action: RSVP_DECLINED
-                - label: עוד במשא ומתן 😅
+                - label: עוד במשא ומתן
                   action: RSVP_MAYBE
                 notes: שנון וקליל.
               metadata:
@@ -3587,11 +3588,11 @@ stages:
                   רק תגידו שאתם באים.
                 header: null
                 buttons:
-                - label: סוגרים על זה 😎
+                - label: סוגרים על זה
                   action: RSVP_ACCEPTED
                 - label: נפספס הפעם
                   action: RSVP_DECLINED
-                - label: עוד במשא ומתן 😅
+                - label: עוד במשא ומתן
                   action: RSVP_MAYBE
                 notes: קליל ומקצועי - הומור עדין.
               metadata:
@@ -3957,11 +3958,11 @@ stages:
                   רק תגידו שאתם באים.
                 header: null
                 buttons:
-                - label: סוגרים על זה 😎
+                - label: סוגרים על זה
                   action: RSVP_ACCEPTED
                 - label: נפספס הפעם
                   action: RSVP_DECLINED
-                - label: עוד במשא ומתן 😅
+                - label: עוד במשא ומתן
                   action: RSVP_MAYBE
                 notes: שנון וקליל.
               metadata:
@@ -4083,8 +4084,8 @@ stages:
                   var: invitation_link
                   type: url
   reminder:
-    title: תזכורת
-    description: תזכורת למי שעדיין לא אישר הגעה. ניתן לשלב מספר תזכורות בתאריכים שונים.
+    title: אישור הגעה נוסף
+    description: סבב נוסף למי שעדיין לא ענה. אפשר כמה סבבים, בתאריכים ובסגנונות שונים.
     event_types:
       _shared:
         variants:
@@ -5367,8 +5368,8 @@ stages:
                 - var: guest_first_name
                 - var: event_name
   final_reminder:
-    title: תזכורת אחרונה
-    description: תזכורת יום לפני האירוע, כולל ניווט.
+    title: תזכורת לאירוע
+    description: יום לפני האירוע, למי שאישר הגעה - פרטי האירוע, ניווט ואפשרות למתנה.
     event_types:
       _shared:
         variants:
@@ -5485,8 +5486,8 @@ stages:
                 language: he
                 shape: structured
                 body:
+                - var: guest_first_name
                 - var: event_time
-                - var: venue_name
                 - var: venue_name
                 - var: host_name
                 buttons:
@@ -6729,7 +6730,7 @@ stages:
                   type: url
                   default: https://www.waze.com/ul?q=%D7%A0%D7%95%D7%A2%D7%94+%D7%94%D7%91%D7%99%D7%AA+%D7%9C%D7%90%D7%99%D7%A8%D7%95%D7%A2%D7%99%D7%9D&navigate=yes
   table_assignment:
-    title: שיוך שולחן
+    title: הודעת שולחן
     description: הודעה לכל אורח עם מספר השולחן שלו וניווט. עצמאית - ידנית או מתוזמנת.
     event_types:
       _shared:
@@ -7532,8 +7533,8 @@ stages:
                   type: url
                   default: https://www.waze.com/ul?q=%D7%A0%D7%95%D7%A2%D7%94+%D7%94%D7%91%D7%99%D7%AA+%D7%9C%D7%90%D7%99%D7%A8%D7%95%D7%A2%D7%99%D7%9D&navigate=yes
   thank_you:
-    title: תודה
-    description: הודעת תודה לאחר האירוע.
+    title: תודה אחרי האירוע
+    description: למחרת ב-10:00 אחרי אירוע ערב, או באותו ערב ב-20:30 אחרי אירוע בוקר או צהריים.
     event_types:
       _shared:
         variants:

@@ -79,7 +79,7 @@ export default function AccessibilityStatement() {
           </Typography>
           <Typography component="div">
             <ul>
-              <li>דואר אלקטרוני: accessibility@showup.co.il</li>
+              <li>דואר אלקטרוני: accessibility@showup-rsvp.com</li>
               <li>טלפון: 03-1234567</li>
               <li>שעות מענה: ימי א'-ה', בין השעות 9:00-17:00</li>
             </ul>

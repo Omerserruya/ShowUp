@@ -11,6 +11,7 @@ import { useUser } from '../contexts/UserContext';
 import { useBanner } from '../contexts/BannerContext';
 import { useEvent } from '../contexts/EventContext';
 import { useVenueAdmin } from '../hooks/useVenueAdmin';
+import { purchasesHidden } from '../native/app';
 
 // Browser-tab titles per section, matching the nav labels so tabs, history and
 // bookmarks are distinguishable.
@@ -86,7 +87,7 @@ function Layout() {
       }
       // Unfinished order → resume at checkout; otherwise onboarding.
       const pendingOrderId = localStorage.getItem('pending_order_id');
-      if (pendingOrderId) return <Navigate to={`/payment?orderId=${encodeURIComponent(pendingOrderId)}`} replace />;
+      if (pendingOrderId && !purchasesHidden()) return <Navigate to={`/payment?orderId=${encodeURIComponent(pendingOrderId)}`} replace />;
       return <Navigate to="/wizard" replace />;
     }
   }

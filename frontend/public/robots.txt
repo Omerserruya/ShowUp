@@ -1,0 +1,22 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /overview
+Disallow: /insights
+Disallow: /invitation
+Disallow: /guests
+Disallow: /messages
+Disallow: /recap
+Disallow: /seating
+Disallow: /settings
+Disallow: /venue
+Disallow: /admin
+Disallow: /payment
+Disallow: /redeem/
+Disallow: /hostess/
+Disallow: /i/
+Disallow: /g/
+Disallow: /c/
+Disallow: /go/
+
+Sitemap: https://showup-rsvp.com/sitemap.xml

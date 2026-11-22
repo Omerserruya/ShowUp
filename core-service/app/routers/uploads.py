@@ -34,7 +34,7 @@ ALLOWED_IMAGE_TYPES: Dict[str, set] = {
 }
 # Folders an upload may target, and whether they are image-only. Keeps keys scoped
 # and prevents a client from writing to arbitrary prefixes.
-ALLOWED_FOLDERS = {"invitations"}
+ALLOWED_FOLDERS = {"invitations", "campaigns"}  # campaigns: per-round header images (Messages)
 
 
 def _upload_max_bytes() -> int:

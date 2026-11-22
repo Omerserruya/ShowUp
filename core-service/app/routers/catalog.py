@@ -76,6 +76,31 @@ def _sendable_event_types() -> dict[str, tuple[str, ...]]:
     return out
 
 
+@lru_cache(maxsize=1)
+def _sent_as() -> dict[str, dict[str, dict]]:
+    """template key -> {event_type: the copy that ACTUALLY goes out}, only where it
+    differs from the base. The worker swaps a base invitation/reminder for its
+    approved `<key>__<event_type>` variant (resolver.prefer_event_variant); the
+    preview must show that copy, not the base one (2.11.26: the owner previewed
+    "see you tomorrow" and guests got "last chance to RSVP")."""
+    from shared.domain.messaging import resolve_template
+
+    out: dict[str, dict[str, dict]] = {}
+    for key, base in BUILTIN_CATALOG.items():
+        for et in EVENT_TYPES:
+            et_key = et.value if hasattr(et, "value") else str(et)
+            r = resolve_template(key, event_type=et_key)
+            if r is None or r is base or not r.is_usable:
+                continue
+            out.setdefault(key, {})[et_key] = {
+                "title": r.title, "body": r.body, "category": r.category.value,
+                "cta_type": r.cta_type.value, "variables": list(r.variables),
+                "meta_template": r.meta.template_name if r.meta else None,
+                "buttons": [q.label for q in r.quick_replies] + [u.label for u in r.url_buttons],
+            }
+    return out
+
+
 def _template_dto(t) -> dict:
     return {
         "id": t.key,
@@ -104,6 +129,7 @@ def _template_dto(t) -> dict:
         # that knows its event MUST filter on this rather than on `sendable`,
         # which is blind to the event-type variants Meta actually approved.
         "sendable_event_types": list(_sendable_event_types().get(t.key, ())),
+        "sent_as": _sent_as().get(t.key, {}),
         "variables": list(t.variables),
         "preview": {
             "emoji": t.preview.emoji, "accent": t.preview.accent, "header": t.preview.header,
@@ -143,6 +169,41 @@ def _custom_template_dtos(db: Session) -> list:
         return []
 
 
+def _placed(dtos: list, db: Session) -> list:
+    """Apply the admin's template moves and replacements (app/template_placement.py):
+    a moved template is offered under its category's stage (`flow_stage`; its own
+    stays in `own_stage`), and an original whose approved Studio copy replaces it
+    is no longer offered for the event types the copy covers."""
+    try:
+        from app.round_categories import list_categories
+        from app.template_placement import family, placements, replacements
+        cats = {c["id"]: c for c in list_categories(db, include_archived=True)}
+        pl = placements(db)
+        swaps = replacements(db)
+        replaced_by = {v["ref"]: k for k, v in swaps.items()}
+    except Exception:
+        return dtos
+    for d in dtos:
+        fam = family(d["id"])
+        d["own_stage"] = d["flow_stage"]
+        cat_id = pl.get(fam) or pl.get(replaced_by.get(d["id"], ""))
+        if cat_id and cat_id in cats:
+            d["category_id"] = cat_id
+            d["flow_stage"] = cats[cat_id]["base_stage"]
+        else:
+            d["category_id"] = d["flow_stage"]
+        swap = swaps.get(fam) if not d["id"].startswith("custom__") else None
+        if swap:
+            d["replaced_by"] = swap["ref"]
+            covered = set(swap["event_types"])
+            d["sendable_event_types"] = [] if not covered else [
+                et for et in d.get("sendable_event_types", []) if et not in covered]
+            d["sendable"] = bool(d["sendable_event_types"]) and d.get("sendable", False)
+        if d["id"] in replaced_by:
+            d["replaces"] = replaced_by[d["id"]]
+    return dtos
+
+
 @router.get("")
 def get_catalog(db: Session = Depends(get_db)):
     """The full messaging catalog: templates (all variants incl. drafts), the
@@ -165,7 +226,7 @@ def get_catalog(db: Session = Depends(get_db)):
         "triggers": [t.value for t in Trigger],
         "audience_rules": [a.value for a in AudienceRule],
         "completion_rules": [c.value for c in CompletionRule],
-        "templates": [_template_dto(t) for t in BUILTIN_CATALOG.values()] + _custom_template_dtos(db),
+        "templates": _placed([_template_dto(t) for t in BUILTIN_CATALOG.values()] + _custom_template_dtos(db), db),
         "flow_stages": [s.value for s in FlowStage],
         "categories": [c.value for c in TemplateCategory],
         "tones": [t.value for t in Tone],

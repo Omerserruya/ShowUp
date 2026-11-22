@@ -312,16 +312,21 @@ export default function Templates() {
     }
   };
 
-  const duplicate = (source: 'custom' | 'catalog' | 'system', key: string) => guarded(() => duplicateNow(source, key));
+  const duplicate = (source: 'custom' | 'catalog' | 'system', key: string, replace = false) =>
+    guarded(() => duplicateNow(source, key, replace));
 
-  const duplicateNow = async (source: 'custom' | 'catalog' | 'system', key: string) => {
+  // replace=true edits a built-in template: the copy stands in for it everywhere
+  // once Meta approves it (core app/template_placement.py).
+  const duplicateNow = async (source: 'custom' | 'catalog' | 'system', key: string, replace = false) => {
     setPendingNav(null);
     setBusy('dup');
     try {
-      const v = await templatesApi.duplicate(source, key);
+      const v = await templatesApi.duplicate(source, key, replace ? { replace: true } : {});
       await refreshAfter(v);
       setNameTouched(true);
-      say('נוצר עותק חדש כטיוטה');
+      say(replace
+        ? 'נוצרה טיוטת עריכה. אחרי שתשלחו ל־Meta ותאושר, היא תחליף את המקורית בכל מקום, גם בסבבים שכבר תוזמנו.'
+        : 'נוצר עותק חדש כטיוטה');
     } catch (e) {
       say(errMsg(e, 'השכפול נכשל'));
     } finally {
@@ -647,9 +652,17 @@ export default function Templates() {
                 {sel.item.body}
               </pre>
               )}
-              <Btn kind="smallPrimary" disabled={busy === 'dup'} onClick={() => duplicate(sel.item.source, sel.item.key)}>
-                <Ms size={18}>content_copy</Ms>שכפול לטיוטה חדשה
-              </Btn>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {sel.item.source === 'catalog' && (
+                  <Btn kind="smallPrimary" disabled={busy === 'dup'} onClick={() => duplicate(sel.item.source, sel.item.key, true)}>
+                    <Ms size={18}>edit</Ms>עריכה (תחליף את המקורית אחרי אישור)
+                  </Btn>
+                )}
+                <Btn kind={sel.item.source === 'catalog' ? 'smallGhost' : 'smallPrimary'} disabled={busy === 'dup'}
+                  onClick={() => duplicate(sel.item.source, sel.item.key)}>
+                  <Ms size={18}>content_copy</Ms>שכפול לטיוטה חדשה
+                </Btn>
+              </div>
             </Card>
           )}
 

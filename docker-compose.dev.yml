@@ -221,6 +221,8 @@ services:
       context: .
       dockerfile: aub-service/Dockerfile
     environment:
+      - REVIEW_LOGIN_PHONE=${REVIEW_LOGIN_PHONE:-}
+      - REVIEW_LOGIN_CODE=${REVIEW_LOGIN_CODE:-}
       - SENTRY_DSN=${SENTRY_DSN:-}
       - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
       - SENTRY_RELEASE=${SENTRY_RELEASE:-}
@@ -290,6 +292,7 @@ services:
       context: .
       dockerfile: outpost-service/Dockerfile
     environment:
+      - REVIEW_LOGIN_PHONE=${REVIEW_LOGIN_PHONE:-}
       - SENTRY_DSN=${SENTRY_DSN:-}
       - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
       - SENTRY_RELEASE=${SENTRY_RELEASE:-}
@@ -321,6 +324,11 @@ services:
       context: .
       dockerfile: scheduler-service/Dockerfile
     environment:
+      - APNS_KEY_B64=${APNS_KEY_B64:-}
+      - APNS_KEY_ID=${APNS_KEY_ID:-}
+      - APNS_TEAM_ID=${APNS_TEAM_ID:-G465C5Q273}
+      - APNS_TOPIC=${APNS_TOPIC:-com.showuprsvp.app}
+      - APNS_ENV=${APNS_ENV:-production}
       - SENTRY_DSN=${SENTRY_DSN:-}
       - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
       - SENTRY_RELEASE=${SENTRY_RELEASE:-}
@@ -341,6 +349,8 @@ services:
       - DAILY_SUMMARY_TZ=${DAILY_SUMMARY_TZ:-Asia/Jerusalem}
       - WA_DAILY_SUMMARY_TEMPLATE_NAME=${WA_DAILY_SUMMARY_TEMPLATE_NAME:-}
       - WA_DAILY_SUMMARY_LANG=${WA_DAILY_SUMMARY_LANG:-he}
+      # Owners' mobile app push (Firebase service-account JSON, base64). Empty = off.
+      - FCM_SERVICE_ACCOUNT_B64=${FCM_SERVICE_ACCOUNT_B64:-}
       # Payment reconciliation: recovers orders whose iCount IPN was lost.
       - AUB_SERVICE_URL=${AUB_SERVICE_URL:-http://aub-service:8000}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
@@ -468,6 +478,9 @@ services:
       - RABBITMQ_PORT=${RABBITMQ_PORT}
       - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
       - RABBITMQ_PASSWORD=${RABBITMQ_DEFAULT_PASS}
+      # Template review updates -> core /internal/meta/template-status
+      - CORE_SERVICE_URL=${BACKEND_PROTOCOL}://${CORE_SERVICE_HOST}:${CORE_SERVICE_PORT}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${WEBHOOK_HANDLER_PORT}/health', timeout=4)"]
       <<: *hc-timing
@@ -552,6 +565,7 @@ services:
       context: .
       dockerfile: voice-service/Dockerfile
     environment:
+      - REVIEW_LOGIN_PHONE=${REVIEW_LOGIN_PHONE:-}
       - SENTRY_DSN=${SENTRY_DSN:-}
       - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
       - SENTRY_RELEASE=${SENTRY_RELEASE:-}
@@ -573,6 +587,9 @@ services:
       - VOICE_MAX_CONCURRENT=${VOICE_MAX_CONCURRENT:-5}
       - VOICE_RETRY_MINUTES=${VOICE_RETRY_MINUTES:-120}
       - VOICE_CALL_ROUNDS_JSON=${VOICE_CALL_ROUNDS_JSON:-}
+      # owner call-round API, reached only through core (/events/{id}/call-rounds)
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+      - CORE_SERVICE_URL=${BACKEND_PROTOCOL}://${CORE_SERVICE_HOST}:${CORE_SERVICE_PORT}
     volumes:
       - voicedata:/data/clips
     healthcheck:

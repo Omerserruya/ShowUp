@@ -10,6 +10,7 @@ templates, so delivery is unchanged.
 from __future__ import annotations
 
 from typing import Any, Dict
+from urllib.parse import parse_qs, quote, urlsplit
 
 from .catalog import Template, MetaMapping, MetaShape, MetaSlot
 
@@ -52,10 +53,30 @@ def build_meta_parameters(template: Template, values: Dict[str, str]) -> Dict[st
         # collides with a quick-reply → "Button at index N must be of type QuickReply".
         qr_offset = min(len(template.quick_replies or ()), 3)
         out["buttons"] = [
-            {"type": b.type, "index": qr_offset + b.index, "url": _button_suffix(values.get(b.var) or b.default)}
+            {"type": b.type, "index": qr_offset + b.index,
+             "url": _nav_query(values, b.default, path=md.get("source") == "custom") if b.var == "nav_link"
+             else _button_suffix(values.get(b.var) or b.default)}
             for b in meta.buttons
         ]
     return out
+
+
+def _nav_query(values: Dict[str, str], default: str, *, path: bool = False) -> str:
+    """The catalog's Waze button on Meta is `https://www.waze.com/ul?navigate=yes&q={{1}}`,
+    so the parameter is the URL-encoded SEARCH TEXT (venue name + address), never a
+    URL or a path segment - that turned into `q=ul?ll=...` and Waze found nothing.
+    Studio (custom) templates publish `https://www.waze.com/{{1}}` instead
+    (custom_templates.BUTTON_URL_VARS), so there `path=True` gives `ul?q=...&navigate=yes`."""
+    name = (values.get("venue_name") or "").strip()
+    address = (values.get("venue_address") or "").strip()
+    text = ", ".join(x for x in (name, address if address != name else "") if x)
+    if not text:
+        for url in (values.get("nav_link"), default):
+            q = parse_qs(urlsplit(url or "").query).get("q")
+            if q and q[0].strip():
+                text = q[0].strip()
+                break
+    return f"ul?q={quote(text)}&navigate=yes" if path else quote(text)
 
 
 def _button_suffix(value: str) -> str:

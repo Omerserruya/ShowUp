@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import {
   Box,
   Typography,
@@ -480,6 +480,22 @@ export default function Seating() {
   // "החלף אורח": מכריח את מסך החיפוש גם כשיש אורח מושב במושב הנבחר.
   const [replaceMode, setReplaceMode] = useState(false);
   const skipSyncRef = useRef(false);
+  // The canvas fills the window down to its bottom edge. Measured from where the
+  // page actually starts it (header, entrance bar), since the shell's content
+  // area is content-height and a fixed calc() left a gap or overflowed.
+  const pageRef = useRef<HTMLDivElement | null>(null);
+  const [pageHeight, setPageHeight] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const fit = () => {
+      const el = pageRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      setPageHeight(Math.max(420, window.innerHeight - top - 16));
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  });
   const nodesRef = useRef<Node[]>([]);
 
   // ReactFlow state
@@ -1060,13 +1076,13 @@ export default function Seating() {
   }
 
   return (
-    <Box sx={{
+    <Box ref={pageRef} sx={{
       position: 'relative',
       width: '100%',
       // The app shell's content area is content-height (no fixed height), so a
       // `height: 100%` here collapses to 0 and ReactFlow renders blank. Anchor to
       // the viewport instead so the canvas always has real height.
-      height: { xs: 'calc(100dvh - 250px)', md: 'calc(100dvh - 200px)' },
+      height: pageHeight ?? { xs: 'calc(100dvh - 250px)', md: 'calc(100dvh - 200px)' },
       minHeight: 420,
       display: 'flex',
       flexDirection: 'column'
@@ -1124,8 +1140,9 @@ export default function Seating() {
             </Typography>
           </Box>
         )}
-      </Box>
 
+      {/* Overlays are positioned inside the canvas, so the entrance / iPlan bar
+          above it is never covered. */}
       {/* Overlay Controls – ריווח ו־nowrap אחידים במובייל */}
       <Box sx={{
         position: 'absolute',
@@ -1296,6 +1313,7 @@ export default function Seating() {
         </Stack>
       </Paper>
       ) : null}
+      </Box>
 
       {/* Add/Edit Table Modal */}
       <Dialog
