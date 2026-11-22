@@ -252,6 +252,16 @@ def update_event(db: Session, event: Event, data: EventUpdate) -> Event:
         except Exception:  # noqa: BLE001
             db.rollback()
             logger.exception("default rounds failed for event %s", event.id)
+    if data.gift is not None:
+        # Gift details saved/cleared -> the day-before reminder gets/loses its
+        # gift button (app/gift_rounds.py).
+        try:
+            from app.gift_rounds import sync_gift_reminders
+            sync_gift_reminders(db, event)
+            db.refresh(event)
+        except Exception:  # noqa: BLE001
+            db.rollback()
+            logger.exception("gift reminder sync failed for event %s", event.id)
     return event
 
 

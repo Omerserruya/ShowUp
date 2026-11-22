@@ -30,7 +30,8 @@ def public_gift(code: str, db: Session = Depends(get_db)):
     gift = event.gift or {}
     if not gift_ready(gift):
         # Link already sent, details since removed by the hosts.
-        return {"available": False, "hosts": _hosts(event), "event_type": event.event_type}
+        return {"available": False, "hosts": _hosts(event), "event_type": event.event_type,
+                "design": _design(event)}
     phone = gift.get("bit_phone") or ""
     return {
         "available": True,
@@ -39,6 +40,22 @@ def public_gift(code: str, db: Session = Depends(get_db)):
         # Any of: credit-card gift link, Bit group, PayBox group (in that order).
         "options": gift_options(gift),
         "bit_phone": format_phone(phone) if phone else None,
+        "design": _design(event),
+    }
+
+
+def _design(event: Event) -> dict:
+    """The invitation's LOOK only (palette, fonts, cover photo, display names),
+    so the gift page feels like the hosts' invitation. No text, venue or guest data."""
+    inv = event.invitation or {}
+    hero = inv.get("hero") or {}
+    theme = inv.get("theme") or {}
+    keep = ("preset", "bg", "ink", "accent", "titleFont", "bodyFont", "layout")
+    return {
+        "theme": {k: theme[k] for k in keep if theme.get(k)},
+        "image_url": hero.get("imageUrl") or None,
+        "names": (hero.get("bigText") or "").strip() or None,
+        "event_date": event.event_date.isoformat() if event.event_date else None,
     }
 
 

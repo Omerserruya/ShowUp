@@ -95,4 +95,11 @@ def ensure_default_rounds(db: Session, event: Event, now: Optional[dt.datetime] 
             logger.warning("default rounds: %s for event %s not created: %s", r.stage, event.id, e)
     if created:
         logger.info("default rounds: created %d round(s) for event %s", created, event.id)
+        # Gift details entered before the rounds existed -> gift reminder now.
+        try:
+            from app.gift_rounds import sync_gift_reminders
+            sync_gift_reminders(db, event)
+        except Exception:  # noqa: BLE001
+            db.rollback()
+            logger.exception("gift reminder sync failed for event %s", event.id)
     return created
