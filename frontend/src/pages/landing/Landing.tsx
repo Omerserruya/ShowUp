@@ -447,7 +447,7 @@ function CallsSection({ compact }: { compact: boolean }) {
             ))}
           </div>
           <div style={{ fontSize: 14, lineHeight: 1.6, color: C.mutedSoft, marginTop: 24, paddingTop: 16, borderTop: `1px solid ${C.line2}` }}>
-            כלול ב־Plus (סבב שיחות אחד) וב־Pro (עד שלושה סבבים). את מועד השיחות קובעים יחד איתכם.
+            כלול ב־Plus (סבב שיחות אחד) וב־Pro (עד שלושה סבבים). המועדים נקבעים אוטומטית, ואפשר להזיז, לבטל או להוסיף סבב בעצמכם בדף ההודעות.
           </div>
           <a href="#top" className="su-hover-deep" style={{ display: compact ? 'flex' : 'inline-flex', justifyContent: 'center', alignItems: 'center', gap: 9, marginTop: 22, fontSize: 15, fontWeight: 600, background: LD, color: '#FFFFFF', borderRadius: 12, padding: '14px 22px' }}>
             <PhoneInTalkIcon style={{ fontSize: 19 }} />רוצים לשמוע על עצמכם? נתקשר אליכם
